@@ -1,0 +1,504 @@
+/**
+ * Progress Notes API — 项目推进细节 CRUD
+ * 
+ * GET    /api/dashboard/progress-notes/:moldNumber — 获取某模具的所有推进记录
+ * GET    /api/dashboard/progress-notes/:moldNumber/latest-backup — 获取最近一次备份时间
+ * POST   /api/dashboard/progress-notes/:moldNumber — 保存（全量替换）某模具的推进记录
+ * POST   /api/dashboard/progress-notes/:moldNumber/create-backup — 手动创建一次备份
+ * POST   /api/dashboard/progress-notes/:moldNumber/restore-latest — 恢复到最近一次备份
+ * DELETE /api/dashboard/progress-notes/:moldNumber/:noteId — 删除单条记录
+ */
+
+import type { Request, Response } from 'express';
+import { eq, and, desc } from 'drizzle-orm';
+import { db, sql as dbSql } from '../db.js';
+import { progressNotes } from '../../shared/schema.js';
+
+type ProgressNotePayload = {
+  id: string;
+  date: string;
+  content: string;
+  imageUrl?: string;
+  assignee?: string;
+  estimatedNodeCompletion?: string;
+};
+
+type BackupEntry = {
+  id: string;
+  date: string;
+  content: string;
+  imageUrl?: string;
+  assignee?: string;
+  estimatedNodeCompletion?: string;
+};
+
+type NoteAuditAction = 'create-entry' | 'update-entry' | 'delete-entry' | 'delete-image' | 'restore-backup';
+
+const BACKUP_KEEP_LIMIT_PER_MOLD = 30;
+
+function decodeNoteContent(raw: string): { content: string; imageUrl?: string; assignee?: string; estimatedNodeCompletion?: string } {
+  if (!raw) return { content: '' };
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object' && typeof parsed.content === 'string') {
+      return {
+        content: parsed.content,
+        imageUrl: typeof parsed.imageUrl === 'string' ? parsed.imageUrl : undefined,
+        assignee: typeof parsed.assignee === 'string' ? parsed.assignee : undefined,
+        estimatedNodeCompletion: typeof parsed.estimatedNodeCompletion === 'string' ? parsed.estimatedNodeCompletion : undefined,
+      };
+    }
+  } catch {
+    // legacy plain-text record
+  }
+  return { content: raw };
+}
+
+function encodeNoteContent(content: string, imageUrl?: string, assignee?: string, estimatedNodeCompletion?: string): string {
+  if (!imageUrl && !assignee && !estimatedNodeCompletion) return content;
+  const obj: Record<string, string> = { content };
+  if (imageUrl) obj.imageUrl = imageUrl;
+  if (assignee) obj.assignee = assignee;
+  if (estimatedNodeCompletion) obj.estimatedNodeCompletion = estimatedNodeCompletion;
+  return JSON.stringify(obj);
+}
+
+async function ensureBackupTable() {
+  if (!dbSql) return;
+  await dbSql.unsafe(`
+    CREATE TABLE IF NOT EXISTS progress_note_backups (
+      id BIGSERIAL PRIMARY KEY,
+      mold_number VARCHAR(100) NOT NULL,
+      snapshot JSONB NOT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+  await dbSql.unsafe(`
+    CREATE INDEX IF NOT EXISTS progress_note_backups_mold_idx
+    ON progress_note_backups(mold_number, created_at DESC)
+  `);
+}
+
+async function ensureProgressAuditTable() {
+  if (!dbSql) return;
+  await dbSql.unsafe(`
+    CREATE TABLE IF NOT EXISTS progress_note_audit_logs (
+      id BIGSERIAL PRIMARY KEY,
+      mold_number VARCHAR(100) NOT NULL,
+      note_id VARCHAR(100),
+      action VARCHAR(50) NOT NULL,
+      operator VARCHAR(255),
+      ip_address VARCHAR(64),
+      old_payload JSONB,
+      new_payload JSONB,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+  await dbSql.unsafe(`
+    CREATE INDEX IF NOT EXISTS progress_note_audit_mold_idx
+    ON progress_note_audit_logs(mold_number, created_at DESC)
+  `);
+}
+
+function getOperator(req: Request): string {
+  const fromHeader = String(req.header('x-operator') || req.header('x-user') || '').trim();
+  if (fromHeader) return fromHeader;
+  return 'anonymous';
+}
+
+function getClientIp(req: Request): string {
+  const forwarded = String(req.header('x-forwarded-for') || '').split(',')[0]?.trim();
+  if (forwarded) return forwarded;
+  return req.ip || '';
+}
+
+async function writeProgressAuditLog(params: {
+  moldNumber: string;
+  noteId?: string;
+  action: NoteAuditAction;
+  operator: string;
+  ipAddress: string;
+  oldPayload?: Record<string, unknown> | null;
+  newPayload?: Record<string, unknown> | null;
+}) {
+  if (!dbSql) return;
+  await ensureProgressAuditTable();
+  await dbSql.unsafe(
+    `
+      INSERT INTO progress_note_audit_logs
+      (mold_number, note_id, action, operator, ip_address, old_payload, new_payload)
+      VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb)
+    `,
+    [
+      params.moldNumber,
+      params.noteId || null,
+      params.action,
+      params.operator,
+      params.ipAddress,
+      JSON.stringify(params.oldPayload ?? null),
+      JSON.stringify(params.newPayload ?? null),
+    ],
+  );
+}
+
+function normalizeEntryPayload(entry: ProgressNotePayload | BackupEntry): BackupEntry {
+  return {
+    id: String(entry.id || ''),
+    date: String(entry.date || ''),
+    content: String(entry.content || ''),
+    imageUrl: entry.imageUrl ? String(entry.imageUrl) : undefined,
+    assignee: entry.assignee ? String(entry.assignee) : undefined,
+    estimatedNodeCompletion: entry.estimatedNodeCompletion ? String(entry.estimatedNodeCompletion) : undefined,
+  };
+}
+
+function entriesEqual(a: BackupEntry, b: BackupEntry): boolean {
+  return a.id === b.id
+    && a.date === b.date
+    && a.content === b.content
+    && (a.imageUrl || '') === (b.imageUrl || '')
+    && (a.assignee || '') === (b.assignee || '')
+    && (a.estimatedNodeCompletion || '') === (b.estimatedNodeCompletion || '');
+}
+
+function classifyUpdateAction(before: BackupEntry, after: BackupEntry): NoteAuditAction {
+  if ((before.imageUrl || '') && !(after.imageUrl || '')) return 'delete-image';
+  return 'update-entry';
+}
+
+async function backupCurrentNotes(moldNumber: string): Promise<boolean> {
+  if (!dbSql || !db) return false;
+  const currentRows = await db.select().from(progressNotes)
+    .where(eq(progressNotes.moldNumber, moldNumber))
+    .orderBy(desc(progressNotes.createdAt));
+
+  const snapshot: BackupEntry[] = currentRows.map((row) => {
+    const decoded = decodeNoteContent(row.content);
+    return {
+      id: row.id,
+      date: row.date,
+      content: decoded.content,
+      imageUrl: decoded.imageUrl,
+    };
+  });
+
+  const latestRows = await dbSql.unsafe(
+    'SELECT snapshot FROM progress_note_backups WHERE mold_number = $1 ORDER BY created_at DESC LIMIT 1',
+    [moldNumber]
+  );
+  const latestRaw = latestRows?.[0] as { snapshot?: BackupEntry[] | string } | undefined;
+  const latestSnapshot = latestRaw?.snapshot;
+  const latestJson = typeof latestSnapshot === 'string'
+    ? latestSnapshot
+    : JSON.stringify(latestSnapshot || []);
+  const currentJson = JSON.stringify(snapshot);
+  if (latestJson === currentJson) {
+    return false;
+  }
+
+  await dbSql.unsafe(
+    'INSERT INTO progress_note_backups (mold_number, snapshot) VALUES ($1, $2::jsonb)',
+    [moldNumber, currentJson]
+  );
+
+  await dbSql.unsafe(
+    `
+      DELETE FROM progress_note_backups
+      WHERE mold_number = $1
+        AND id NOT IN (
+          SELECT id FROM progress_note_backups
+          WHERE mold_number = $1
+          ORDER BY created_at DESC, id DESC
+          LIMIT ${BACKUP_KEEP_LIMIT_PER_MOLD}
+        )
+    `,
+    [moldNumber]
+  );
+
+  return true;
+}
+
+/** GET /api/dashboard/progress-notes/:moldNumber/latest-backup */
+export async function getLatestProgressBackup(req: Request, res: Response): Promise<void> {
+  if (!dbSql) { res.status(503).json({ error: 'Database not configured' }); return; }
+  const { moldNumber } = req.params;
+  if (!moldNumber) { res.status(400).json({ error: 'moldNumber required' }); return; }
+  try {
+    await ensureBackupTable();
+    const rows = await dbSql.unsafe(
+      'SELECT created_at FROM progress_note_backups WHERE mold_number = $1 ORDER BY created_at DESC LIMIT 1',
+      [moldNumber]
+    );
+    const latest = rows?.[0] as { created_at?: string } | undefined;
+    res.json({ backupAt: latest?.created_at || null });
+  } catch (err) {
+    console.error('GET latest-backup progress-notes error:', err);
+    res.status(500).json({ error: (err as Error).message });
+  }
+}
+
+/** GET /api/dashboard/progress-notes/:moldNumber */
+export async function getProgressNotes(req: Request, res: Response): Promise<void> {
+  if (!db) { res.status(503).json({ error: 'Database not configured' }); return; }
+  const { moldNumber } = req.params;
+  if (!moldNumber) { res.status(400).json({ error: 'moldNumber required' }); return; }
+  try {
+    const rows = await db.select().from(progressNotes)
+      .where(eq(progressNotes.moldNumber, moldNumber))
+      .orderBy(desc(progressNotes.createdAt));
+    res.json(rows.map((row) => {
+      const decoded = decodeNoteContent(row.content);
+      return {
+        ...row,
+        content: decoded.content,
+        imageUrl: decoded.imageUrl,
+        assignee: decoded.assignee,
+        estimatedNodeCompletion: decoded.estimatedNodeCompletion,
+      };
+    }));
+  } catch (err) {
+    console.error('GET progress-notes error:', err);
+    res.status(500).json({ error: (err as Error).message });
+  }
+}
+
+/** POST /api/dashboard/progress-notes/:moldNumber — 全量替换 */
+export async function saveProgressNotes(req: Request, res: Response): Promise<void> {
+  if (!db) { res.status(503).json({ error: 'Database not configured' }); return; }
+  const { moldNumber } = req.params;
+  if (!moldNumber) { res.status(400).json({ error: 'moldNumber required' }); return; }
+  const entries: ProgressNotePayload[] = req.body;
+  if (!Array.isArray(entries)) { res.status(400).json({ error: 'Body must be an array' }); return; }
+  try {
+    await ensureBackupTable();
+    const beforeRows = await db.select().from(progressNotes)
+      .where(eq(progressNotes.moldNumber, moldNumber))
+      .orderBy(desc(progressNotes.createdAt));
+
+    const backupCreated = await backupCurrentNotes(moldNumber);
+    const backupRows = await dbSql?.unsafe(
+      'SELECT created_at FROM progress_note_backups WHERE mold_number = $1 ORDER BY created_at DESC LIMIT 1',
+      [moldNumber],
+    );
+    const latestBackupAt = (backupRows?.[0] as { created_at?: string } | undefined)?.created_at || null;
+
+    await db.transaction(async (tx) => {
+      await tx.delete(progressNotes).where(eq(progressNotes.moldNumber, moldNumber));
+      if (entries.length > 0) {
+        await tx.insert(progressNotes).values(
+          entries.map(e => ({
+            id: e.id,
+            moldNumber,
+            date: e.date,
+            content: encodeNoteContent(e.content, e.imageUrl, e.assignee, e.estimatedNodeCompletion),
+          }))
+        );
+      }
+    });
+
+    const operator = getOperator(req);
+    const ipAddress = getClientIp(req);
+    const beforeMap = new Map<string, BackupEntry>();
+    const afterMap = new Map<string, BackupEntry>();
+
+    beforeRows.forEach((row) => {
+      const decoded = decodeNoteContent(row.content);
+      const normalized = normalizeEntryPayload({
+        id: row.id,
+        date: row.date,
+        content: decoded.content,
+        imageUrl: decoded.imageUrl,
+      });
+      beforeMap.set(normalized.id, normalized);
+    });
+
+    entries.forEach((entry) => {
+      const normalized = normalizeEntryPayload(entry);
+      afterMap.set(normalized.id, normalized);
+    });
+
+    for (const [id, afterEntry] of afterMap.entries()) {
+      const beforeEntry = beforeMap.get(id);
+      if (!beforeEntry) {
+        await writeProgressAuditLog({
+          moldNumber,
+          noteId: id,
+          action: 'create-entry',
+          operator,
+          ipAddress,
+          oldPayload: null,
+          newPayload: afterEntry,
+        });
+        continue;
+      }
+      if (!entriesEqual(beforeEntry, afterEntry)) {
+        await writeProgressAuditLog({
+          moldNumber,
+          noteId: id,
+          action: classifyUpdateAction(beforeEntry, afterEntry),
+          operator,
+          ipAddress,
+          oldPayload: beforeEntry,
+          newPayload: afterEntry,
+        });
+      }
+    }
+
+    for (const [id, beforeEntry] of beforeMap.entries()) {
+      if (afterMap.has(id)) continue;
+      await writeProgressAuditLog({
+        moldNumber,
+        noteId: id,
+        action: 'delete-entry',
+        operator,
+        ipAddress,
+        oldPayload: beforeEntry,
+        newPayload: null,
+      });
+    }
+
+    res.json({ success: true, count: entries.length, backupCreated, backupAt: latestBackupAt });
+  } catch (err) {
+    console.error('POST progress-notes error:', err);
+    res.status(500).json({ error: (err as Error).message });
+  }
+}
+
+/** POST /api/dashboard/progress-notes/:moldNumber/create-backup */
+export async function createProgressBackup(req: Request, res: Response): Promise<void> {
+  if (!dbSql) { res.status(503).json({ error: 'Database not configured' }); return; }
+  const { moldNumber } = req.params;
+  if (!moldNumber) { res.status(400).json({ error: 'moldNumber required' }); return; }
+  try {
+    await ensureBackupTable();
+    const created = await backupCurrentNotes(moldNumber);
+    const rows = await dbSql.unsafe(
+      'SELECT created_at FROM progress_note_backups WHERE mold_number = $1 ORDER BY created_at DESC LIMIT 1',
+      [moldNumber]
+    );
+    const latest = rows?.[0] as { created_at?: string } | undefined;
+    res.json({ success: true, created, backupAt: latest?.created_at || null });
+  } catch (err) {
+    console.error('POST create-backup progress-notes error:', err);
+    res.status(500).json({ error: (err as Error).message });
+  }
+}
+
+/** POST /api/dashboard/progress-notes/:moldNumber/restore-latest */
+export async function restoreLatestProgressNotes(req: Request, res: Response): Promise<void> {
+  if (!db || !dbSql) { res.status(503).json({ error: 'Database not configured' }); return; }
+  const { moldNumber } = req.params;
+  if (!moldNumber) { res.status(400).json({ error: 'moldNumber required' }); return; }
+
+  try {
+    await ensureBackupTable();
+    const backups = await dbSql.unsafe(
+      'SELECT snapshot, created_at FROM progress_note_backups WHERE mold_number = $1 ORDER BY created_at DESC LIMIT 1',
+      [moldNumber]
+    );
+
+    if (!backups.length) {
+      res.status(404).json({ error: '暂无可恢复备份' });
+      return;
+    }
+
+    const latest = backups[0] as unknown as { snapshot: BackupEntry[] | string; created_at: string };
+    const snapshot: BackupEntry[] = Array.isArray(latest.snapshot)
+      ? latest.snapshot
+      : JSON.parse(String(latest.snapshot || '[]'));
+
+    await db.transaction(async (tx) => {
+      await tx.delete(progressNotes).where(eq(progressNotes.moldNumber, moldNumber));
+      if (snapshot.length > 0) {
+        await tx.insert(progressNotes).values(snapshot.map((entry) => ({
+          id: entry.id,
+          moldNumber,
+          date: entry.date,
+          content: encodeNoteContent(entry.content, entry.imageUrl),
+        })));
+      }
+    });
+
+    await writeProgressAuditLog({
+      moldNumber,
+      action: 'restore-backup',
+      operator: getOperator(req),
+      ipAddress: getClientIp(req),
+      oldPayload: null,
+      newPayload: { restoredCount: snapshot.length, backupAt: latest.created_at },
+    });
+
+    res.json({ success: true, restoredCount: snapshot.length, backupAt: latest.created_at });
+  } catch (err) {
+    console.error('POST restore-latest progress-notes error:', err);
+    res.status(500).json({ error: (err as Error).message });
+  }
+}
+
+/** DELETE /api/dashboard/progress-notes/:moldNumber/:noteId */
+export async function deleteProgressNote(req: Request, res: Response): Promise<void> {
+  if (!db) { res.status(503).json({ error: 'Database not configured' }); return; }
+  const { moldNumber, noteId } = req.params;
+  try {
+    await ensureBackupTable();
+    await backupCurrentNotes(moldNumber);
+
+    const beforeRows = await db.select().from(progressNotes).where(
+      and(eq(progressNotes.id, noteId), eq(progressNotes.moldNumber, moldNumber))
+    ).limit(1);
+
+    await db.delete(progressNotes).where(
+      and(eq(progressNotes.id, noteId), eq(progressNotes.moldNumber, moldNumber))
+    );
+
+    const before = beforeRows[0];
+    if (before) {
+      const decoded = decodeNoteContent(before.content);
+      await writeProgressAuditLog({
+        moldNumber,
+        noteId,
+        action: 'delete-entry',
+        operator: getOperator(req),
+        ipAddress: getClientIp(req),
+        oldPayload: {
+          id: before.id,
+          date: before.date,
+          content: decoded.content,
+          imageUrl: decoded.imageUrl,
+        },
+        newPayload: null,
+      });
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('DELETE progress-note error:', err);
+    res.status(500).json({ error: (err as Error).message });
+  }
+}
+
+/** GET /api/dashboard/progress-notes/:moldNumber/audit */
+export async function getProgressNoteAuditLogs(req: Request, res: Response): Promise<void> {
+  if (!dbSql) { res.status(503).json({ error: 'Database not configured' }); return; }
+  const { moldNumber } = req.params;
+  if (!moldNumber) { res.status(400).json({ error: 'moldNumber required' }); return; }
+
+  const limit = Math.min(200, Math.max(1, Number(req.query.limit || 50)));
+  try {
+    await ensureProgressAuditTable();
+    const rows = await dbSql.unsafe(
+      `
+        SELECT id, mold_number, note_id, action, operator, ip_address, old_payload, new_payload, created_at
+        FROM progress_note_audit_logs
+        WHERE mold_number = $1
+        ORDER BY created_at DESC, id DESC
+        LIMIT ${limit}
+      `,
+      [moldNumber],
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error('GET progress-note-audit error:', err);
+    res.status(500).json({ error: (err as Error).message });
+  }
+}

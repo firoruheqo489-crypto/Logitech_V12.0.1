@@ -1,0 +1,157 @@
+/**
+ * Demo data for testing the dashboard
+ * Three-section structure
+ */
+
+import { ProjectData } from '../types/project';
+
+export const DEMO_PROJECTS: ProjectData[] = [
+  {
+    no: '1',
+    identity: {
+      customerName: '罗技',
+      customerBase: '苏州',
+      projectName: 'Ziti2',
+      productName: 'housing',
+      factory: 'A厂',
+      moldSets: '1',
+      partNumber: '400-009150',
+      cavityNumber: 'CAV1-4',
+      moldNumber: 'LA25463',
+      projectManager: '张舜杰',
+      projectEngineer: '袁任杰',
+      moldProject: '胡荣武',
+      qe: '柳彬彬',
+      riskLevel: '正常'
+    },
+    milestones: {
+      projectStart: '2025-05-15',
+      t1: '2025-06-09',
+      glTime: '2025-12-03',
+      vmp: '2025-10-19',
+      mp: '2026-12-25',
+      currentStage: 'PQR',
+      t1SizeQualified: '是',
+      trialCount: 'T26',
+      toolingFAI: '0.794',
+      partFAI: '1',
+      currentNode: '进行中'
+    },
+    details: {
+      detailSequence: '（1）',
+      detailDate: '2026-12-25',
+      detailProgress: '纹面压伤修模中,预计12/27试模'
+    }
+  },
+  {
+    no: '2',
+    identity: {
+      customerName: '罗技',
+      customerBase: '深圳',
+      projectName: 'G Pro X',
+      productName: 'top case',
+      factory: 'B厂',
+      moldSets: '2',
+      partNumber: '400-009151',
+      cavityNumber: 'CAV1-2',
+      moldNumber: 'LA25464',
+      projectManager: '李明',
+      projectEngineer: '王芳',
+      moldProject: '陈强',
+      qe: '刘佳',
+      riskLevel: '高'
+    },
+    milestones: {
+      projectStart: '2025-03-10',
+      t1: '2025-04-15',
+      glTime: '2025-11-20',
+      vmp: '2025-09-30',
+      mp: '2026-10-15',
+      currentStage: 'T2',
+      t1SizeQualified: '否',
+      trialCount: 'T15',
+      toolingFAI: '0.652',
+      partFAI: '0',
+      currentNode: '已超时'
+    },
+    details: {
+      detailSequence: '（1）',
+      detailDate: '2026-01-15',
+      detailProgress: '尺寸偏差超标,需要重新调整模具,预计延期2周。此项目为重点关注对象,需要加快进度。'
+    }
+  },
+  {
+    no: '3',
+    identity: {
+      customerName: '罗技',
+      customerBase: '苏州',
+      projectName: 'MX Master 4',
+      productName: 'base',
+      factory: 'A厂',
+      moldSets: '1',
+      partNumber: '400-009152',
+      cavityNumber: 'CAV1-8',
+      moldNumber: 'LA25465',
+      projectManager: '赵伟',
+      projectEngineer: '孙静',
+      moldProject: '周涛',
+      qe: '吴洋',
+      riskLevel: '中'
+    },
+    milestones: {
+      projectStart: '2025-06-01',
+      t1: '2025-07-10',
+      glTime: '2026-01-15',
+      vmp: '2025-11-20',
+      mp: '2027-02-28',
+      currentStage: 'T1',
+      t1SizeQualified: '是',
+      trialCount: 'T8',
+      toolingFAI: '0.823',
+      partFAI: '1',
+      currentNode: '进行中'
+    },
+    details: {
+      detailSequence: '（1）',
+      detailDate: '2026-01-10',
+      detailProgress: 'T1阶段验证中,表面处理工艺需要优化'
+    }
+  },
+  {
+    no: '4',
+    identity: {
+      customerName: '罗技',
+      customerBase: '深圳',
+      projectName: 'StreamCam',
+      productName: 'lens mount',
+      factory: 'C厂',
+      moldSets: '1',
+      partNumber: '400-009153',
+      cavityNumber: 'CAV1-4',
+      moldNumber: 'LA25466',
+      projectManager: '郑洁',
+      projectEngineer: '马超',
+      moldProject: '黄敏',
+      qe: '徐丽',
+      riskLevel: '正常'
+    },
+    milestones: {
+      projectStart: '2024-12-01',
+      t1: '2025-01-15',
+      glTime: '2025-08-30',
+      vmp: '2025-07-10',
+      mp: '2026-09-20',
+      currentStage: 'MP',
+      t1SizeQualified: '是',
+      trialCount: 'T12',
+      toolingFAI: '0.956',
+      partFAI: '1',
+      currentNode: '已完成'
+    },
+    details: {
+      detailSequence: '（1）',
+      detailDate: '2026-01-05',
+      detailProgress: '项目已顺利完成,进入量产阶段'
+    }
+  }
+];
