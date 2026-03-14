@@ -26,6 +26,7 @@ import {
   AccordionTrigger,
 } from '@/components/ui/accordion';
 import { apiFetch } from '@/lib/api';
+import { getModuleTheme } from '@/lib/theme';
 import CyberConfirmDialog from '@/components/ui/CyberConfirmDialog';
 import ProjectLobby from '@/components/ProjectLobby';
 
@@ -137,12 +138,16 @@ function resolveDetailNodeByDate(updateDate?: string, fallbackNode?: string): st
 
 export default function DashboardHome() {
   const isMobile = useIsMobile();
-  const [activeModule, setActiveModule] = useState<string | null>(null);
+  const [activeModule, setActiveModule] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+    return sessionStorage.getItem('dashboard_active_module') || null;
+  });
   const [dbProjects, setDbProjects] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [localProjects, setLocalProjects] = useState<ProjectData[]>([]);
   const [progressEntriesByMold, setProgressEntriesByMold] = useState<Record<string, ProgressEntry[]>>({});
   const [previewImageUrl, setPreviewImageUrl] = useState<string>('');
+  const [activeTab, setActiveTab] = useState('overview');
 
   const loadProjects = useCallback(async () => {
     const startedAt = Date.now();
@@ -157,6 +162,11 @@ export default function DashboardHome() {
   }, []);
 
   useEffect(() => { loadProjects(); }, [loadProjects]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    sessionStorage.removeItem('dashboard_active_module');
+  }, []);
 
   // Scroll restoration - use mobile-scroll on mobile, #root on PC
   useEffect(() => {
@@ -178,6 +188,21 @@ export default function DashboardHome() {
   }, [dbProjects, localProjects]);
 
   const allProjects = useMemo(() => sourceProjects, [sourceProjects]);
+
+  const uniqueModuleNames = useMemo(() => {
+    const seen = new Set<string>();
+    const names: string[] = [];
+    for (const p of allProjects) {
+      const name = p.identity?.projectName?.trim() || '';
+      if (name && !seen.has(name)) { seen.add(name); names.push(name); }
+    }
+    return names;
+  }, [allProjects]);
+
+  const moduleTheme = useMemo(
+    () => activeModule ? getModuleTheme(activeModule, uniqueModuleNames) : { key: 'cyan' as const, hex: '#06b6d4', rgb: '6,182,212' },
+    [activeModule, uniqueModuleNames],
+  );
 
   // Absolute data interception: every detail-page data source must derive from active module.
   const currentModuleData = useMemo(() => {
@@ -500,39 +525,62 @@ export default function DashboardHome() {
   }
 
   return (
-    <div className="w-full min-h-[120vh] h-auto bg-[#0B0F14] pb-40">
-      {/* ── 顶部区域：Header + 搜索栏 + StatsPanel（非冻结） ── */}
-      <div ref={statsPanelRef} className="bg-[#0B0F14]">
-        <header className="bg-[#11161D] border-b border-white/[0.04] shadow-[0_1px_0_rgba(255,255,255,0.04)]">
-          <div className="mx-auto w-full max-w-7xl px-4 md:px-8 pt-9 pb-1 md:pt-11 md:pb-1">
-            <div className="flex items-end justify-between w-full mb-1 md:mb-2">
-              <div className="flex flex-col min-w-0">
-                <h1 className="text-xl md:text-3xl font-bold text-[#E6EDF3]">罗技项目进度看板</h1>
-                <p className="text-xs md:text-sm text-[#8B949E] mt-2 md:mt-3">项目状态可视化管理系统</p>
-              </div>
-              <button
-                onClick={() => { setActiveModule(null); setSearchProjectName(''); setSearchMoldId(''); setFilterStatus('ALL'); }}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-700 bg-slate-800/50 hover:bg-slate-700 hover:border-slate-500 transition-all text-sm font-medium text-slate-200"
-              >
-                <ArrowLeft className="w-4 h-4" />
-                返回项目大厅
-              </button>
+    <div
+      className="w-full min-h-screen h-auto bg-slate-950 pb-40"
+      style={{ '--accent': moduleTheme.hex, '--accent-rgb': moduleTheme.rgb } as React.CSSProperties}
+    >
+      {/* ── 区块一：全局头部 ── */}
+      <div className="bg-slate-900/60 border-b border-slate-800/60">
+        <div className="mx-auto w-full max-w-7xl px-4 md:px-8 pt-9 pb-6 md:pt-11 md:pb-6">
+          <div className="flex items-center gap-6">
+            <button
+              onClick={() => { setActiveModule(null); setSearchProjectName(''); setSearchMoldId(''); setFilterStatus('ALL'); }}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-700 bg-slate-800/50 hover:bg-slate-700 hover:border-slate-500 transition-all text-sm font-medium text-slate-200 shrink-0"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              返回项目大厅
+            </button>
+            <div className="flex flex-col min-w-0">
+              <h1 className="text-2xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-white to-slate-400">{activeModule} 系列主看板</h1>
+              <p className="text-[11px] uppercase tracking-widest text-slate-500 font-semibold mt-0.5">项目状态可视化管理系统</p>
             </div>
+            <span className="ml-auto text-xs text-slate-600 font-mono tracking-tight whitespace-nowrap hidden md:block">
+              当前更新节点时间: {formatBatchLabel(latestBatch || undefined)}
+            </span>
           </div>
-        </header>
-
-        <SearchBar projectName={searchProjectName} moldId={searchMoldId} onProjectNameChange={handleProjectNameChange} onMoldIdChange={handleMoldIdChange} onClear={handleClearSearch} hasActiveFilters={hasActiveFilters} />
-
-        <div className="mx-auto w-full max-w-7xl px-4 md:px-8 pt-4 pb-2 md:pt-6 md:pb-4">
-          <StatsPanel stats={stats} onFilterChange={handleFilterChange} activeFilter={filterStatus} />
         </div>
-        <div className="border-b border-white/[0.04]" />
       </div>
 
-      <main ref={mainRef} className="mx-auto w-full max-w-7xl px-4 md:px-8 py-4 md:py-8 min-h-[150vh]" style={{ overflowAnchor: 'none' }}>
+      {/* ── 区块二：统计卡片区 ── */}
+      <div ref={statsPanelRef} className="mx-auto w-full max-w-7xl px-4 md:px-8 pt-6 pb-2 md:pb-4">
+        <StatsPanel stats={stats} onFilterChange={handleFilterChange} activeFilter={filterStatus} />
+      </div>
 
-        {/* ── Accordion grouped view (PC + Mobile) — 搜索时隐藏 ── */}
-        <div className="w-full mb-8" style={{ display: hasActiveFilters ? 'none' : undefined }}>
+      {/* ── 区块三：Tab 导航栏 ── */}
+      <div className="mx-auto w-full max-w-7xl px-4 md:px-8">
+        <div className="flex items-center gap-2 border-b border-slate-800 pb-px mb-6">
+          {(['overview', 'logs', 'process', 'fmea', 'product'] as const).map((tab) => {
+            const labels: Record<string, string> = { overview: '项目总览', logs: '推进日志', process: '工艺模块', fmea: 'FMEA', product: '产品模块' };
+            return (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                className={`px-6 py-3 text-sm font-medium transition-colors border-b-2 ${activeTab === tab ? 'text-white' : 'border-transparent text-slate-400 hover:text-slate-200'}`}
+                style={activeTab === tab ? { borderColor: moduleTheme.hex } : undefined}
+              >
+                {labels[tab]}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ── 区块四：动态内容装载区 ── */}
+      <main ref={mainRef} className="mx-auto w-full max-w-7xl px-4 md:px-8 pb-8" style={{ overflowAnchor: 'none' }}>
+
+        {/* ── Tab: 推进日志 ── */}
+        {activeTab === 'logs' && (
+        <div className="w-full mb-8">
           <Accordion type="multiple" className="w-full space-y-4" value={openGroups} onValueChange={setOpenGroups}>
             {Object.entries(allGroupedProjects).map(([groupKey, group]) => {
               const isGroupVisible = visibleGroupNames.has(groupKey);
@@ -561,6 +609,7 @@ export default function DashboardHome() {
                     detail: firstProject?.details?.detailProgress || '暂无推进细节',
                     detailImageUrl: null,
                     estimated: firstProject?.milestones?.estimatedCompletion || '-',
+                    assignee: '-',
                     currentNode: (firstProject?.milestones?.currentNode || '').trim() || '-',
                   }];
               // Filter the visible items within this group
@@ -587,23 +636,20 @@ export default function DashboardHome() {
                   className="project-group-card overflow-hidden"
                   style={{ display: isGroupVisible ? undefined : 'none' }}
                 >
-                  <AccordionTrigger className="group-card__header px-6 py-4 hover:no-underline">
-                    <div className="flex items-center w-full pr-4">
-                      <div className="flex items-center gap-2">
-                        <span className="text-lg font-bold text-[#E6EDF3]">{projectName}</span>
-                        <span className="text-[#6E7681] mx-1">|</span>
-                        <span className="text-md font-medium text-[#8B949E]">{productName}</span>
-                        <span className="text-[#6E7681] mx-1">|</span>
-                        <span className="text-md font-medium text-[#8B949E]">{moldNo}</span>
-                      </div>
-                      <div className="flex items-center gap-3 ml-auto mt-0.5 text-xs text-[#6E7681] font-bold pr-2">
-                        <span>当前更新节点时间 {batchLabel}</span>
-                      </div>
+                  <AccordionTrigger className="group-card__header px-6 py-3.5 hover:no-underline">
+                    <div className="flex items-center w-full pr-4 gap-3">
+                      <span className="w-2 h-2 rounded-full shrink-0" style={{ background: moduleTheme.hex }} />
+                      <span className="text-base font-bold text-slate-200">{projectName}</span>
+                      <span className="text-slate-600">·</span>
+                      <span className="text-sm text-slate-400">{productName}</span>
+                      <span className="text-slate-600">·</span>
+                      <span className="text-sm font-mono text-slate-500">{moldNo}</span>
+                      <span className="ml-auto text-xs text-slate-600 font-mono">{batchLabel}</span>
                     </div>
                   </AccordionTrigger>
                   <AccordionContent className="group-card__body px-0 pb-0">
                     {isMobile ? (
-                      <div className="divide-y divide-white/[0.06]">
+                      <div className="divide-y divide-slate-800/50">
                         {(expandedNoteGroups.has(groupKey) ? detailRows : detailRows.slice(0, 6)).map((row) => {
                           const node = resolveDetailNodeByDate(row.updateDate, row.currentNode);
                           const moldNo = row.moldNo || '-';
@@ -611,27 +657,14 @@ export default function DashboardHome() {
                           const detail = row.detail || '';
                           const detailImageUrl = row.detailImageUrl;
                           const estimated = row.estimated || '-';
-                          const currentNode = node || '-';
-                          const placeholderTone = node.includes('已超时')
-                            ? { color: '#FF3B3B', border: 'rgba(255,59,59,0.35)', bg: 'rgba(255,59,59,0.08)' }
-                            : node.includes('已完成')
-                              ? { color: '#00FFA3', border: 'rgba(0,255,163,0.35)', bg: 'rgba(0,255,163,0.08)' }
-                              : node === '进行中'
-                                ? { color: '#FACC15', border: 'rgba(250,204,21,0.35)', bg: 'rgba(250,204,21,0.08)' }
-                                : { color: '#6E7681', border: 'rgba(255,255,255,0.12)', bg: 'rgba(255,255,255,0.03)' };
-                          let dotCls = 'bg-[#6E7681]';
-                          let textCls = 'text-[#8B949E]';
-                          if (node.includes('已超时')) { dotCls = 'bg-[#FF3B3B]'; textCls = 'text-[#FF3B3B]'; }
-                          else if (node.includes('已完成')) { dotCls = 'bg-[#00FFA3]'; textCls = 'text-[#00FFA3]'; }
-                          else if (node === '进行中') { dotCls = 'bg-[#FACC15]'; textCls = 'text-[#FACC15]'; }
                           const hasDetail = detail.trim() && detail !== '暂无推进细节';
                           return (
-                            <div key={row.key} className="px-4 py-3 bg-[#0F141B]">
+                            <div key={row.key} className="px-4 py-3 bg-slate-950/50">
                               <div className="flex items-center justify-between gap-2 min-w-0">
-                                <div className="font-bold text-[15px] text-[#E6EDF3] truncate">{moldNo}</div>
-                                <div className={`flex-none flex items-center gap-1.5 text-[12px] font-semibold ${textCls}`}>
-                                  <span className={`w-2 h-2 rounded-full ${dotCls}`} />
-                                  {currentNode}
+                                <div className="font-bold text-[15px] text-slate-200 truncate">{moldNo}</div>
+                                <div className="flex-none flex items-center gap-1.5 text-[12px] font-semibold text-slate-400">
+                                  <span className="w-2 h-2 rounded-full" style={{ background: moduleTheme.hex, boxShadow: `0 0 6px ${moduleTheme.hex}` }} />
+                                  {(node || '-')}
                                 </div>
                               </div>
                               {hasDetail && (
@@ -639,31 +672,24 @@ export default function DashboardHome() {
                                   {detailImageUrl && (
                                     <button
                                       type="button"
-                                      className="w-12 h-8 rounded-md overflow-hidden border border-white/[0.12] shrink-0 cursor-zoom-in"
+                                      className="w-12 h-8 rounded-lg overflow-hidden ring-1 ring-slate-700/50 shadow-md shrink-0 cursor-zoom-in"
                                       title="查看推进图片"
                                       onClick={() => setPreviewImageUrl(detailImageUrl)}
                                     >
-                                      <img src={detailImageUrl} alt="推进缩略图" className="w-full h-full object-cover" />
+                                      <img src={detailImageUrl} alt="推进缩略图" className="w-full h-full object-cover opacity-90 hover:opacity-100 transition-opacity" />
                                     </button>
                                   )}
                                   {!detailImageUrl && (
-                                    <div
-                                      className="w-12 h-8 rounded-md shrink-0 flex items-center justify-center"
-                                      title="暂无图片"
-                                      style={{
-                                        border: `1px solid ${placeholderTone.border}`,
-                                        background: placeholderTone.bg,
-                                      }}
-                                    >
-                                      <ImageIcon className="w-3.5 h-3.5" style={{ color: placeholderTone.color }} />
+                                    <div className="w-12 h-8 rounded-lg shrink-0 flex items-center justify-center bg-slate-800/60 ring-1 ring-slate-700/50 shadow-md" title="暂无图片">
+                                      <ImageIcon className="w-3.5 h-3.5 text-slate-600" />
                                     </div>
                                   )}
-                                  <p className="text-[13px] leading-[1.45] text-[#8B949E] break-words whitespace-normal line-clamp-2 min-w-0">{detail}</p>
+                                  <p className="text-[13px] leading-[1.45] text-slate-400 break-words whitespace-normal line-clamp-2 min-w-0">{detail}</p>
                                 </div>
                               )}
-                              <div className="mt-2 flex items-center gap-4 text-[11px] text-[#6E7681]">
-                                <span className="inline-flex items-center gap-1"><Clock size={12} className="opacity-70" />{updateDate}</span>
-                                <span className="inline-flex items-center gap-1"><Calendar size={12} className="opacity-70" />{estimated}</span>
+                              <div className="mt-2 flex items-center gap-4 text-[11px] text-slate-600">
+                                <span className="inline-flex items-center gap-1 font-mono tracking-tight"><Clock size={12} />{updateDate}</span>
+                                <span className="inline-flex items-center gap-1 font-mono tracking-tight"><Calendar size={12} />{estimated}</span>
                               </div>
                             </div>
                           );
@@ -673,7 +699,9 @@ export default function DashboardHome() {
                             <button
                               type="button"
                               onClick={() => toggleNoteExpand(groupKey)}
-                              className="text-xs text-[#8B949E] hover:text-[#00FFA3] transition-colors flex items-center gap-1"
+                              className="text-xs text-slate-500 transition-colors flex items-center gap-1"
+                              onMouseEnter={(e) => (e.currentTarget.style.color = moduleTheme.hex)}
+                              onMouseLeave={(e) => (e.currentTarget.style.color = '')}
                             >
                               {expandedNoteGroups.has(groupKey) ? '收起' : `更多 (${detailRows.length - 6}条)`}
                             </button>
@@ -682,78 +710,56 @@ export default function DashboardHome() {
                       </div>
                     ) : (
                       <>
-                    <div className="group-card-header bg-[#11161D] border-b border-white/[0.04] text-xs font-bold text-[#8B949E] uppercase tracking-wider">
-                      <div className="flex justify-center items-center gap-1.5"><Clock size={14} className="text-[#6E7681]" /><span>更新日期</span></div>
-                      <div className="text-center">推进图片</div>
-                      <div className="flex justify-center items-center gap-1.5"><FileText size={14} className="text-[#6E7681]" /><span>项目推进细节</span></div>
-                      <div className="flex justify-center items-center gap-1.5"><Calendar size={14} className="text-[#6E7681]" /><span>节点预估完成时间</span></div>
-                      <div className="flex justify-center items-center gap-1.5"><User size={14} className="text-[#6E7681]" /><span>当前节点负责人</span></div>
+                    <div className="group-card-header text-[10px] font-semibold text-slate-500 uppercase tracking-widest">
+                      <div className="flex items-center gap-1.5"><Clock size={12} className="text-slate-600" /><span>日期</span></div>
+                      <div className="text-center">附图</div>
+                      <div className="flex items-center gap-1.5"><FileText size={12} className="text-slate-600" /><span>推进细节</span></div>
+                      <div className="flex items-center gap-1.5"><Calendar size={12} className="text-slate-600" /><span>预估完成</span></div>
+                      <div className="flex items-center gap-1.5"><User size={12} className="text-slate-600" /><span>负责人</span></div>
                     </div>
                     <div className="flex flex-col">
                       {(expandedNoteGroups.has(groupKey) ? detailRows : detailRows.slice(0, 6)).map((row) => {
-                        const node = resolveDetailNodeByDate(row.updateDate, row.currentNode);
-                        let rowStyle = 'bg-[#151B23] text-[#E6EDF3] hover:bg-[#1B222C]';
-                        let dotColor = 'bg-[#6E7681] shadow-[0_0_4px_#6E7681]';
-                        let borderClass = 'border-l-4 border-white/[0.04]';
-                        let themeClass = 'theme-info';
-                        let dateColor = 'text-[#8B949E]';
-                        if (node.includes('已超时')) { borderClass = 'border-l-4 border-[#FF3B3B]'; dotColor = 'bg-[#FF3B3B] shadow-[0_0_6px_#FF3B3B]'; themeClass = 'theme-danger'; dateColor = 'text-[#FF3B3B]'; }
-                        else if (node.includes('已完成')) { borderClass = 'border-l-4 border-[#00FFA3]'; dotColor = 'bg-[#00FFA3] shadow-[0_0_6px_#00FFA3]'; themeClass = 'theme-success'; dateColor = 'text-[#00FFA3]'; }
-                        else if (node === '进行中') { borderClass = 'border-l-4 border-[#FACC15]'; dotColor = 'bg-[#FACC15] shadow-[0_0_6px_#FACC15]'; themeClass = 'theme-warning'; dateColor = 'text-[#FACC15]'; }
-                        const moldNo = row.moldNo || '-';
                         const updateDate = row.updateDate || '-';
                         const detail = row.detail || '暂无推进细节';
                         const detailImageUrl = row.detailImageUrl;
                         const estimated = row.estimated || '-';
-                        const currentNode = node || '-';
-                        const placeholderTone = node.includes('已超时')
-                          ? { color: '#FF3B3B', border: 'rgba(255,59,59,0.35)', bg: 'rgba(255,59,59,0.08)' }
-                          : node.includes('已完成')
-                            ? { color: '#00FFA3', border: 'rgba(0,255,163,0.35)', bg: 'rgba(0,255,163,0.08)' }
-                            : node === '进行中'
-                              ? { color: '#FACC15', border: 'rgba(250,204,21,0.35)', bg: 'rgba(250,204,21,0.08)' }
-                              : { color: '#6E7681', border: 'rgba(255,255,255,0.12)', bg: 'rgba(255,255,255,0.03)' };
                         return (
-                          <div key={row.key} className={`group-card-row border-b border-white/[0.04] last:border-0 transition-all duration-200 font-sans ${rowStyle} ${borderClass} ${themeClass}`}>
-                            <div className={`flex justify-center items-center font-bold tabular-nums text-sm row-cell-date ${dateColor}`}><Clock size={14} className="mr-1.5 opacity-70" />{updateDate}</div>
+                          <div key={row.key} className="group-card-row last:border-0 font-sans">
+                            <div className="flex items-center text-sm font-mono text-slate-400 tabular-nums">{updateDate}</div>
                             <div className="row-cell-image flex justify-center items-center">
                               {detailImageUrl ? (
                                 <button
                                   type="button"
-                                  className="w-20 h-12 rounded-md overflow-hidden border border-white/[0.12] shrink-0 cursor-zoom-in"
+                                  className="w-20 h-12 rounded-lg overflow-hidden ring-1 ring-slate-700/50 shadow-md shrink-0 cursor-zoom-in"
                                   title="查看推进图片"
                                   onClick={() => setPreviewImageUrl(detailImageUrl)}
                                 >
-                                  <img src={detailImageUrl} alt="推进缩略图" className="w-full h-full object-cover" />
+                                  <img src={detailImageUrl} alt="推进缩略图" className="w-full h-full object-cover opacity-90 hover:opacity-100 transition-opacity" />
                                 </button>
                               ) : (
-                                <div
-                                  className="w-20 h-12 rounded-md shrink-0 flex items-center justify-center"
-                                  title="暂无图片"
-                                  style={{
-                                    border: `1px solid ${placeholderTone.border}`,
-                                    background: placeholderTone.bg,
-                                  }}
-                                >
-                                  <ImageIcon className="w-4 h-4" style={{ color: placeholderTone.color }} />
+                                <div className="w-20 h-12 rounded-lg shrink-0 flex items-center justify-center bg-slate-800/60 ring-1 ring-slate-700/50 shadow-md" title="暂无图片">
+                                  <ImageIcon className="w-4 h-4 text-slate-600" />
                                 </div>
                               )}
                             </div>
                             <div className="row-cell-detail">
-                              <div className={`text-left project-detail-cell min-w-0 !max-w-none ${dateColor}`}>{detail}</div>
+                              <div className="text-left project-detail-cell min-w-0 !max-w-none text-slate-300 text-sm leading-relaxed">{detail}</div>
                             </div>
-                            <div className={`flex justify-center items-center font-bold tabular-nums text-sm row-cell-estimated ${dateColor}`}><Calendar size={14} className="mr-1.5 opacity-70" />{estimated}</div>
-                            <div className={`flex justify-center items-center font-bold text-sm row-cell-node ${dateColor}`}><User size={14} className="mr-1.5 opacity-70" />{row.assignee && row.assignee !== '-' ? row.assignee : '-'}</div>
+                            <div className="flex items-center text-sm font-mono tracking-tight text-slate-400 tabular-nums">{estimated}</div>
+                            <div className="flex items-center text-sm text-slate-200 font-medium">{row.assignee && row.assignee !== '-' ? row.assignee : '-'}</div>
                           </div>
                         );
                       })}
                     </div>
                     {detailRows.length > 6 && (
-                      <div className="flex justify-end px-4 py-2 bg-[#11161D] border-t border-white/[0.04]">
+                      <div className="flex justify-end px-6 py-2.5">
                         <button
                           type="button"
                           onClick={() => toggleNoteExpand(groupKey)}
-                          className="text-xs text-[#8B949E] hover:text-[#00FFA3] transition-colors flex items-center gap-1.5"
+                          className="text-xs text-slate-500 transition-colors flex items-center gap-1.5"
+                          style={{ '--hover-color': moduleTheme.hex } as React.CSSProperties}
+                          onMouseEnter={(e) => (e.currentTarget.style.color = moduleTheme.hex)}
+                          onMouseLeave={(e) => (e.currentTarget.style.color = '')}
                         >
                           {expandedNoteGroups.has(groupKey)
                             ? '收起'
@@ -769,7 +775,12 @@ export default function DashboardHome() {
             })}
           </Accordion>
         </div>
+        )}
 
+        {/* ── Tab: 项目总览 ── */}
+        {activeTab === 'overview' && (
+        <>
+        <SearchBar projectName={searchProjectName} moldId={searchMoldId} onProjectNameChange={handleProjectNameChange} onMoldIdChange={handleMoldIdChange} onClear={handleClearSearch} hasActiveFilters={hasActiveFilters} />
         <div className="mb-6">
           <div className="hidden md:flex items-center justify-between">
             <div className="flex items-center gap-4">
@@ -810,7 +821,7 @@ export default function DashboardHome() {
             <p className="text-sm md:text-lg text-[#8B949E]">{hasActiveFilters ? '未找到匹配的项目，请尝试其他搜索条件' : '暂无项目数据'}</p>
           </div>
         ) : (
-          <div className="project-list-scope relative z-0 grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
+          <div className="project-list-scope relative z-0 grid grid-cols-1 xl:grid-cols-2 gap-6">
             {filteredProjects.map((project, index) => {
               return (
                 <div key={index}>
@@ -819,6 +830,13 @@ export default function DashboardHome() {
               );
             })}
           </div>
+        )}
+        </>
+        )}
+
+        {/* ── Tab: 占位模块 ── */}
+        {['process', 'fmea', 'product'].includes(activeTab) && (
+          <div className="flex items-center justify-center py-20 text-lg text-slate-500">模块建设中...</div>
         )}
       </main>
 

@@ -181,7 +181,7 @@ export async function getLatestDashboardHealthCheck(_req: Request, res: Response
       res.json({ report: null });
       return;
     }
-    const row = rows[0] as { report: unknown; created_at: string };
+    const row = rows[0] as unknown as { report: unknown; created_at: string };
     res.json({ report: row.report, createdAt: row.created_at });
   } catch (err) {
     console.error('GET /api/dashboard/health-check/latest error:', err);

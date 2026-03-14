@@ -959,8 +959,11 @@ export function parseVerticalWBS(
   // ── 3c. 过滤父分组节点: 若某任务的 wbsId 是其他任务 wbsId 的前缀，则为分组行，跳过 ──
   // 例如 WBS "2.1"(T0试模) 有子项 2.1.1/2.1.2/2.1.3/2.1.4，本身只是分组行，不是叶子工序
   {
-    const wbsIds = tasks.map((t) => t.wbsId);
+    const wbsIds = tasks
+      .map((t) => t.wbsId)
+      .filter((id): id is string => typeof id === 'string' && id.length > 0);
     const leafTasks = tasks.filter((t) => {
+      if (!t.wbsId) return true;
       const prefix = t.wbsId + '.';
       return !wbsIds.some((id) => id.startsWith(prefix));
     });

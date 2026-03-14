@@ -30,8 +30,8 @@ async function startServer() {
   // ── 安全中间件 ──
   app.use(securityHeaders);
 
-  // CORS 白名单：只允许本地开发和生产 IP，其余来源一律拒绝
-  const ALLOWED_ORIGINS = new Set([
+  // CORS：GET 对公网开放，写操作预检仅放行可信来源
+  const TRUSTED_ORIGINS = new Set([
     'http://localhost:3000',
     'http://localhost:3001',
     'http://120.27.153.140',
@@ -40,20 +40,32 @@ async function startServer() {
 
   app.use('/api', (req, res, next) => {
     const origin = req.headers.origin as string | undefined;
-    if (origin && ALLOWED_ORIGINS.has(origin)) {
-      res.setHeader('Access-Control-Allow-Origin', origin);
-      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-api-key');
-      res.setHeader('Access-Control-Allow-Credentials', 'true');
-    }
+
     if (req.method === 'OPTIONS') {
-      if (!origin || !ALLOWED_ORIGINS.has(origin)) {
-        res.sendStatus(403);
-        return;
+      // 预检请求：只有可信来源才能获得写操作许可
+      if (origin && TRUSTED_ORIGINS.has(origin)) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-api-key');
+        res.setHeader('Access-Control-Allow-Credentials', 'true');
+        res.sendStatus(204);
+      } else {
+        // 非可信来源的预检：只允许简单 GET
+        res.setHeader('Access-Control-Allow-Origin', origin || '*');
+        res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+        res.sendStatus(204);
       }
-      res.sendStatus(204);
       return;
     }
+
+    // 实际请求：设置对应的 CORS 响应头
+    if (origin && TRUSTED_ORIGINS.has(origin)) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+    } else if (origin) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+    }
+
     next();
   });
 

@@ -1,22 +1,18 @@
 /**
- * API Key 认证中间件
+ * API Key 认证中间件 — 读写分离
  *
- * 全量拦截：所有 /api 路由均需通过 x-api-key 校验。
- * 仅 OPTIONS 预检和 /api/health 健康探针例外。
+ * GET / HEAD / OPTIONS → 放行（公开只读）
+ * POST / PUT / PATCH / DELETE → 强制校验 x-api-key
  */
 
 import type { Request, Response, NextFunction } from 'express';
 
 const API_KEY = process.env.API_SECRET_KEY || '';
 
-export function apiKeyAuth(req: Request, res: Response, next: NextFunction): void {
-  if (req.method === 'OPTIONS') {
-    next();
-    return;
-  }
+const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
-  const reqPath = `${req.baseUrl || ''}${req.path || ''}`;
-  if (reqPath === '/api/health') {
+export function apiKeyAuth(req: Request, res: Response, next: NextFunction): void {
+  if (!WRITE_METHODS.has(req.method)) {
     next();
     return;
   }

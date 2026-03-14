@@ -12,7 +12,6 @@ import { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { ProjectData } from '../types/project';
 import { 
-  getRiskBadgeClass, 
   formatDate, 
   getDisplayValue,
   parseFAIValue,
@@ -30,17 +29,7 @@ interface ProjectCardProps {
 export default function ProjectCard({ project }: ProjectCardProps) {
   const { no, identity, milestones, details } = project;
   
-  // Get visual state based on currentNode
   const visualState = getCardVisualState(milestones.currentNode);
-  
-  // UI-only theme class mapping (no business logic — reads existing visualState.type)
-  const themeMap: Record<string, { cls: string; style: React.CSSProperties }> = {
-    overdue:   { cls: 'theme-danger',  style: { '--accent': '#FF3B3B', '--accent-rgb': '255,59,59' } as React.CSSProperties },
-    ongoing:   { cls: 'theme-warning', style: { '--accent': '#FFCC00', '--accent-rgb': '255,204,0' } as React.CSSProperties },
-    completed: { cls: 'theme-success', style: { '--accent': '#00FFA3', '--accent-rgb': '0,255,163' } as React.CSSProperties },
-    unknown:   { cls: 'theme-info',    style: { '--accent': '#00B4FF', '--accent-rgb': '0,180,255' } as React.CSSProperties },
-  };
-  const theme = themeMap[visualState.type] || themeMap.unknown;
   
   const [detailModalOpen, setDetailModalOpen] = useState(false);
   const [localEntries, setLocalEntries] = useState<Array<{id:string;date:string;content:string;imageUrl?:string}>>([]);
@@ -158,6 +147,7 @@ export default function ProjectCard({ project }: ProjectCardProps) {
       // 记住当前滚动位置，返回时恢复
       sessionStorage.setItem('dashboard_scroll_y', String(document.getElementById('root')?.scrollTop || window.scrollY));
       sessionStorage.setItem('dashboard_filter', sessionStorage.getItem('dashboard_current_filter') || 'ALL');
+      sessionStorage.setItem('dashboard_active_module', identity.projectName || '');
       window.location.href = `/gantt?id=${encodeURIComponent(projectId)}`;
     }
   };
@@ -198,25 +188,16 @@ export default function ProjectCard({ project }: ProjectCardProps) {
   })();
 
   return (
-    <div 
-      style={theme.style}
-      className={`project-card ${theme.cls}
-        ${visualState.bgClass} rounded-lg overflow-hidden
-        transition-all duration-200 ease-[cubic-bezier(.4,0,.2,1)]
-        group/card
-        ${visualState.borderClass}
-        border
-      `}
-    >
+    <div className="project-card group/card">
       {/* Card Header */}
-      <div className="pc-header px-8 py-5 border-b border-white/[0.06]">
+      <div className="pc-header px-8 py-5">
         <div className="flex items-start justify-between gap-4">
           <div className="flex-1 min-w-0">
-            <h3 className="text-2xl font-bold text-[#E6EDF3] tracking-tight leading-tight">
+            <h3 className="text-2xl font-extrabold tracking-tight leading-tight text-transparent bg-clip-text bg-gradient-to-r from-white to-slate-400">
               {getDisplayValue(identity.projectName, 'N/A')}
             </h3>
-            <p className="text-sm text-[#8B949E] mt-1.5 font-medium">
-              {getDisplayValue(identity.productName, 'N/A')} <span className="text-[#6E7681] mx-2">•</span> NO. {getDisplayValue(no, 'N/A')}
+            <p className="text-sm text-slate-500 mt-1.5 font-medium">
+              {getDisplayValue(identity.productName, 'N/A')} <span className="text-slate-700 mx-2">·</span> <span className="font-mono tracking-tight">NO. {getDisplayValue(no, 'N/A')}</span>
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -230,43 +211,39 @@ export default function ProjectCard({ project }: ProjectCardProps) {
         </div>
       </div>
 
-      {/* Section 1: 项目基本信息 */}
+      {/* Section 1: 项目基本信息 — 三层分区 */}
       <div className="pc-section px-8 py-6">
-        <div className="flex items-center gap-2 mb-4">
-          <div className="pc-accent-bar w-1 h-5 rounded-full" />
-          <h4 className="text-lg font-bold text-[#E6EDF3]">
-            项目基本信息
-          </h4>
+        {/* 核心参数区 */}
+        <div className="grid grid-cols-4 gap-4 mb-5">
+          <InfoField label="客户" value={identity.customerName} tier="primary" />
+          <InfoField label="料号" value={identity.partNumber} tier="primary" />
+          <InfoField label="模具编号" value={identity.moldNumber} tier="primary" />
+          <InfoField label="穴号" value={identity.cavityNumber} tier="primary" />
         </div>
-        <div className="grid grid-cols-4 gap-x-8 gap-y-8 text-center justify-items-center">
-          <InfoField label="客户名称" value={identity.customerName} />
-          <InfoField label="客户基地" value={identity.customerBase} />
-          <InfoField label="落地工厂" value={identity.factory} />
-          <InfoField label="模具套数" value={identity.moldSets} />
-          
-          <InfoField label="料号" value={identity.partNumber} />
-          <InfoField label="穴号" value={identity.cavityNumber} />
-          <InfoField label="模具编号" value={identity.moldNumber} />
-          <InfoField label="项目经理" value={identity.projectManager} />
-          
-          <InfoField label="项目工程师" value={identity.projectEngineer} />
-          <InfoField label="模具项目" value={identity.moldProject} />
-          <InfoField label="项目QE" value={identity.qe} />
-          <InfoField label="风险等级" value={identity.riskLevel} />
-          
-          <InfoField label="设计工程" value={identity.designEngineer} />
-          <InfoField label="钳工组" value={identity.fitterGroup} />
+
+        {/* 干系人暗盒 */}
+        <div className="bg-slate-950/80 rounded-xl p-4 shadow-inner ring-1 ring-inset ring-slate-800/50 grid grid-cols-4 gap-4 mb-5">
+          <PersonField label="项目经理" value={identity.projectManager} />
+          <PersonField label="项目工程师" value={identity.projectEngineer} />
+          <PersonField label="项目QE" value={identity.qe} />
+          <PersonField label="钳工组" value={identity.fitterGroup} />
+        </div>
+
+        {/* 补充信息区 */}
+        <div className="grid grid-cols-5 gap-4">
+          <InfoField label="客户基地" value={identity.customerBase} tier="secondary" />
+          <InfoField label="落地工厂" value={identity.factory} tier="secondary" />
+          <InfoField label="模具套数" value={identity.moldSets} tier="secondary" />
+          <InfoField label="设计工程" value={identity.designEngineer} tier="secondary" />
+          <InfoField label="风险等级" value={identity.riskLevel} tier="secondary" />
         </div>
       </div>
 
       {/* Section 2: 内部节点 */}
       <div className="pc-section px-8 py-6">
-        <div className="flex items-center gap-2 mb-5 -mt-1">
-          <div className="pc-accent-bar w-1 h-5 rounded-full" />
-          <h4 className="text-lg font-bold text-[#E6EDF3]">
-            内部节点
-          </h4>
-        </div>
+        <h4 className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest mb-5 -mt-1">
+          内部节点
+        </h4>
         
         {/* Timeline Visual - CSS Grid for Perfect Alignment */}
         <div className="mb-6">
@@ -313,7 +290,7 @@ export default function ProjectCard({ project }: ProjectCardProps) {
             value={milestones.partFAI} 
           />
           <div
-            className="pc-capsule flex items-center p-3 rounded-lg cursor-pointer hover:brightness-125 transition-all duration-200 active:scale-95"
+            className="pc-capsule flex items-center p-3 rounded-lg cursor-pointer bg-slate-800/30 backdrop-blur-sm border border-slate-700/50 hover:bg-slate-700/50 transition-all duration-200 active:scale-95"
             onClick={(e) => { e.stopPropagation(); handleDrillDown(); }}
           >
             <div className="grid grid-cols-[0.9rem_minmax(0,1fr)] sm:grid-cols-[1rem_minmax(0,1fr)] items-center justify-center gap-0.5 sm:gap-1 w-full">
@@ -450,23 +427,40 @@ export default function ProjectCard({ project }: ProjectCardProps) {
   );
 }
 
-// Helper component for info fields in Section 1
-function InfoField({ 
-  label, 
-  value, 
-  highlight = false 
-}: { 
-  label: string; 
-  value: string; 
-  highlight?: boolean;
+function InfoField({
+  label,
+  value,
+  tier = 'primary',
+}: {
+  label: string;
+  value: string;
+  tier?: 'primary' | 'secondary';
 }) {
   const isDanger = value?.trim() === '危险';
-  const valueClassName = isDanger ? 'text-[#FF3B3B]' : highlight ? 'text-[#00B4FF]' : 'text-[#E6EDF3]';
+  const valueColor = isDanger
+    ? 'text-[#FF3B3B]'
+    : tier === 'primary' ? 'text-slate-200' : 'text-slate-500';
   return (
-    <div className="space-y-2">
-      <div className="text-[10px] sm:text-sm font-bold text-[#6E7681] whitespace-nowrap tracking-[0.02em] sm:tracking-wider">{label}</div>
-      <div className={`text-[11px] sm:text-sm font-bold leading-snug whitespace-nowrap truncate ${valueClassName}`}>
+    <div>
+      <span className="text-[10px] uppercase tracking-widest text-slate-500 font-semibold block mb-1">{label}</span>
+      <span className={`text-sm font-bold font-mono tracking-tight truncate block ${valueColor}`}>
         {getDisplayValue(value, '-')}
+      </span>
+    </div>
+  );
+}
+
+function PersonField({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center gap-2 min-w-0">
+      <span className="shrink-0 w-5 h-5 rounded-full bg-slate-800 ring-1 ring-slate-700/50 flex items-center justify-center text-slate-500">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3">
+          <path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM12.7 14c.1 0 .2-.1.3-.2.2-.5.3-1.1.3-1.8 0-2.2-2.4-4-5.3-4S2.7 9.8 2.7 12c0 .7.1 1.3.3 1.8.1.1.2.2.3.2h9.4Z"/>
+        </svg>
+      </span>
+      <div className="min-w-0">
+        <span className="text-[10px] uppercase tracking-widest text-slate-500 font-semibold block leading-tight">{label}</span>
+        <span className="text-sm text-slate-300 font-medium truncate block">{getDisplayValue(value, '-')}</span>
       </div>
     </div>
   );
@@ -479,8 +473,8 @@ function TimelineNode({ label, date }: { label: string; date: string }) {
       <div className="pc-timeline-node w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center mb-1.5 sm:mb-2">
         <div className="pc-timeline-dot w-3 h-3 sm:w-4 sm:h-4 rounded-full" />
       </div>
-      <div className="text-[10px] sm:text-xs font-bold text-[#8B949E] uppercase tracking-wider mb-0.5 whitespace-nowrap text-center">{label}</div>
-      <div className="text-[9px] sm:text-[10px] text-[#6E7681] font-medium whitespace-nowrap text-center scale-90">{date}</div>
+      <div className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-widest mb-0.5 whitespace-nowrap text-center">{label}</div>
+      <div className="text-[9px] sm:text-[10px] text-slate-600 font-mono tracking-tight whitespace-nowrap text-center">{date}</div>
     </div>
   );
 }
@@ -502,18 +496,18 @@ function StatusField({
   const labelLines = label.split('\n');
   const isLongLabel = labelLines.length > 1;
   return (
-    <div className="pc-capsule flex items-center p-3 rounded-lg">
+    <div className="pc-capsule flex items-center p-3 rounded-lg bg-slate-800/30 backdrop-blur-sm border border-slate-700/50 hover:bg-slate-700/50 transition-colors">
       <div className="grid grid-cols-[0.9rem_minmax(0,1fr)] sm:grid-cols-[1rem_minmax(0,1fr)] items-center justify-center gap-0.5 sm:gap-1 w-full">
-        {icon && <span className={`flex items-center justify-center w-4 h-4 ${iconClassName || 'text-[#8B949E]'}`}>{icon}</span>}
+        {icon && <span className={`flex items-center justify-center w-4 h-4 ${iconClassName || 'text-slate-500'}`}>{icon}</span>}
         <div className="min-w-0 text-center">
-          <div className={`text-[9px] sm:text-xs font-bold text-[#6E7681] tracking-normal sm:tracking-wider mb-1 text-center ${isLongLabel ? 'whitespace-normal leading-[1.15]' : 'whitespace-nowrap'}`}>
+          <div className={`text-[9px] sm:text-[10px] font-semibold text-slate-500 uppercase tracking-widest mb-1 text-center ${isLongLabel ? 'whitespace-normal leading-[1.15]' : 'whitespace-nowrap'}`}>
             {isLongLabel
               ? labelLines.map((line, idx) => (
                   <span key={`${line}-${idx}`} className="block">{line}</span>
                 ))
               : label}
           </div>
-          <div className={`pc-metric-value text-[10px] sm:text-sm font-semibold whitespace-nowrap text-center ${valueClassName || 'text-[#E6EDF3]'}`}>
+          <div className={`pc-metric-value text-[10px] sm:text-sm font-bold font-mono tracking-tight whitespace-nowrap text-center ${valueClassName || 'text-slate-200'}`}>
             {getDisplayValue(value, '-')}
           </div>
         </div>
@@ -537,14 +531,14 @@ function FAIField({
   const isQualified = numericValue === 100;
   
   return (
-    <div className="pc-capsule flex items-center p-3 rounded-lg">
+    <div className="pc-capsule flex items-center p-3 rounded-lg bg-slate-800/30 backdrop-blur-sm border border-slate-700/50 hover:bg-slate-700/50 transition-colors">
       <div className="grid grid-cols-[0.9rem_minmax(0,1fr)] sm:grid-cols-[1rem_minmax(0,1fr)] items-center justify-center gap-0.5 sm:gap-1 w-full">
-        <span className="flex items-center justify-center w-4 h-4 shrink-0 text-[#8B949E]">
+        <span className="flex items-center justify-center w-4 h-4 shrink-0 text-slate-500">
           {isQualified ? <CheckCircle2 className="w-4 h-4" /> : <X className="w-4 h-4" />}
         </span>
         <div className="min-w-0 text-center">
-          <div className="text-[9px] sm:text-xs font-bold text-[#6E7681] whitespace-nowrap tracking-normal sm:tracking-wider mb-1 text-center">{label}</div>
-          <div className={`pc-metric-value text-sm font-semibold truncate text-center w-full ${colorClass}`}>
+          <div className="text-[9px] sm:text-[10px] font-semibold text-slate-500 uppercase tracking-widest whitespace-nowrap mb-1 text-center">{label}</div>
+          <div className={`pc-metric-value text-sm font-bold font-mono tracking-tight truncate text-center w-full ${colorClass}`}>
             {displayValue}
           </div>
         </div>

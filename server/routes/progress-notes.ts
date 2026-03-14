@@ -179,6 +179,8 @@ async function backupCurrentNotes(moldNumber: string): Promise<boolean> {
       date: row.date,
       content: decoded.content,
       imageUrl: decoded.imageUrl,
+      assignee: decoded.assignee,
+      estimatedNodeCompletion: decoded.estimatedNodeCompletion,
     };
   });
 
@@ -317,7 +319,7 @@ export async function saveProgressNotes(req: Request, res: Response): Promise<vo
       afterMap.set(normalized.id, normalized);
     });
 
-    for (const [id, afterEntry] of afterMap.entries()) {
+    for (const [id, afterEntry] of Array.from(afterMap.entries())) {
       const beforeEntry = beforeMap.get(id);
       if (!beforeEntry) {
         await writeProgressAuditLog({
@@ -344,7 +346,7 @@ export async function saveProgressNotes(req: Request, res: Response): Promise<vo
       }
     }
 
-    for (const [id, beforeEntry] of beforeMap.entries()) {
+    for (const [id, beforeEntry] of Array.from(beforeMap.entries())) {
       if (afterMap.has(id)) continue;
       await writeProgressAuditLog({
         moldNumber,
@@ -414,7 +416,7 @@ export async function restoreLatestProgressNotes(req: Request, res: Response): P
           id: entry.id,
           moldNumber,
           date: entry.date,
-          content: encodeNoteContent(entry.content, entry.imageUrl),
+          content: encodeNoteContent(entry.content, entry.imageUrl, entry.assignee, entry.estimatedNodeCompletion),
         })));
       }
     });

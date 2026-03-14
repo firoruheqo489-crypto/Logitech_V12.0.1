@@ -10,6 +10,7 @@ import {
   Clock,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { ACCENT_PALETTE } from "@/lib/theme";
 
 // ==================== 数据接口定义 ====================
 interface ProjectItem {
@@ -52,8 +53,8 @@ interface DashboardProjectRow {
   current_node: string | null;
 }
 
-// ==================== 颜色轮转表 ====================
-const ACCENT_COLORS = ["cyan", "purple", "rose", "amber", "emerald", "sky"] as const;
+// ==================== 颜色轮转表（共享自 theme.ts） ====================
+const ACCENT_COLORS = ACCENT_PALETTE;
 
 // ==================== 转换函数 ====================
 function rowToItem(row: DashboardProjectRow): ProjectItem {

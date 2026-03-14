@@ -888,246 +888,87 @@ html, body {
   ring: none !important;
 }
 
-/* ═══════════════ STAT-CARD INDUSTRIAL SYSTEM ═══════════════ */
+/* ═══════════════ STAT-CARD — CLEAN SLATE ═══════════════ */
 
-/* ── Base card ── */
 .stat-card {
   position: relative;
   overflow: hidden;
-  border-radius: 14px;
-  background-color: #121821;
-  background-image:
-    radial-gradient(700px 220px at 20% 35%, rgba(var(--accent), 0.18), transparent 60%),
-    linear-gradient(135deg, rgba(var(--accent), 0.08), rgba(0,0,0,0) 55%);
-  border: 1px solid rgba(255,255,255,0.06);
-  box-shadow:
-    0 10px 30px rgba(0,0,0,0.35),
-    inset 0 1px 0 rgba(255,255,255,0.04),
-    0 0 0 1px rgba(255,255,255,0.04),
-    0 0 14px rgba(var(--accent), 0.12);
-  transition:
-    transform .25s cubic-bezier(.4,0,.2,1),
-    box-shadow .25s cubic-bezier(.4,0,.2,1),
-    border-color .25s cubic-bezier(.4,0,.2,1),
-    filter .25s cubic-bezier(.4,0,.2,1);
-  animation: statBreathe 4.2s ease-in-out infinite;
+  border-radius: 12px;
+  background-color: rgb(15 23 42);     /* slate-900 */
+  border: 1px solid rgb(30 41 59);     /* slate-800 */
+  transition: border-color .2s ease, box-shadow .2s ease;
 }
-
-/* ── Active state ring ── */
 .stat-card.is-active {
   border-color: rgba(var(--accent), 0.4);
-  box-shadow:
-    0 10px 30px rgba(0,0,0,0.35),
-    inset 0 1px 0 rgba(255,255,255,0.04),
-    0 0 0 2px rgba(var(--accent), 0.35),
-    0 0 20px rgba(var(--accent), 0.18);
+  box-shadow: 0 0 14px rgba(var(--accent), 0.12);
 }
+.stat-card::before,
+.stat-card::after { display: none; }
 
-/* ── Particle layer (::before) ── */
-.stat-card::before {
-  content: "";
-  position: absolute;
-  inset: -40%;
-  background:
-    radial-gradient(circle at 30% 40%, rgba(255,255,255,0.10) 0 1px, transparent 2px) 0 0 / 22px 22px,
-    radial-gradient(circle at 70% 60%, rgba(255,255,255,0.06) 0 1px, transparent 2px) 0 0 / 28px 28px;
-  opacity: 0.16;
-  transform: translate3d(0,0,0) rotate(8deg);
-  filter: blur(0.2px);
-  pointer-events: none;
-  mix-blend-mode: screen;
-  animation: particlesFloat 8s ease-in-out infinite;
-  z-index: 0;
-}
-
-/* ── Scan sweep (::after) ── */
-.stat-card::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(120deg, transparent 0%, rgba(255,255,255,0.06) 45%, transparent 55%);
-  transform: translateX(-120%);
-  opacity: 0.35;
-  pointer-events: none;
-  mix-blend-mode: overlay;
-  animation: scanSweep 3.8s ease-in-out infinite;
-  z-index: 0;
-}
-
-/* ── Hover ── */
 .stat-card:hover {
-  transform: translateY(-4px);
-  border-color: rgba(var(--accent), 0.45);
-  animation-play-state: paused;
-  box-shadow:
-    0 18px 44px rgba(0,0,0,0.55),
-    inset 0 1px 0 rgba(255,255,255,0.06),
-    0 0 0 1px rgba(var(--accent), 0.45),
-    0 0 34px rgba(var(--accent), 0.18);
+  border-color: rgba(var(--accent), 0.3);
 }
-.stat-card:hover::after {
-  animation-duration: 1.6s;
-}
-
-/* ── Text styling ── */
-.stat-card .stat-label {
-  color: #9AA4B2;
-}
+.stat-card .stat-label { color: #9AA4B2; }
 .stat-card .stat-value {
   color: var(--accent-hex);
-  text-shadow:
-    0 0 16px rgba(var(--accent), 0.50),
-    0 0 32px rgba(var(--accent), 0.15);
+  text-shadow: 0 0 10px rgba(var(--accent), 0.35);
 }
-
-/* ── Icon styling ── */
 .stat-card .stat-icon {
   background: rgba(var(--accent), 0.08);
-  border: 1px solid rgba(var(--accent), 0.15);
+  border: 1px solid rgba(var(--accent), 0.12);
   color: var(--accent-hex);
-  filter: drop-shadow(0 0 10px rgba(var(--accent), 0.40));
 }
-.stat-card .stat-icon-glow {
-  background: var(--accent-hex);
-}
-
-/* ── Animations ── */
-@keyframes statBreathe {
-  0%, 100% {
-    box-shadow:
-      0 10px 30px rgba(0,0,0,0.35),
-      inset 0 1px 0 rgba(255,255,255,0.04),
-      0 0 0 1px rgba(255,255,255,0.06),
-      0 0 14px rgba(var(--accent), 0.12);
-  }
-  50% {
-    box-shadow:
-      0 12px 34px rgba(0,0,0,0.42),
-      inset 0 1px 0 rgba(255,255,255,0.04),
-      0 0 0 1px rgba(255,255,255,0.08),
-      0 0 22px rgba(var(--accent), 0.20);
-  }
-}
-
-@keyframes particlesFloat {
-  0%, 100% {
-    transform: translate3d(0,0,0) rotate(8deg);
-    opacity: 0.14;
-  }
-  50% {
-    transform: translate3d(-10px,-6px,0) rotate(8deg);
-    opacity: 0.22;
-  }
-}
-
-@keyframes scanSweep {
-  0%   { transform: translateX(-120%); }
-  45%  { transform: translateX(120%); }
-  100% { transform: translateX(120%); }
-}
+.stat-card .stat-icon-glow { display: none; }
 
 /* ═══════════════ END STAT-CARD ═══════════════ */
 
 
 
-/* ═══════════════ PROJECT-CARD INDUSTRIAL SYSTEM ═══════════════ */
+/* ═══════════════ PROJECT-CARD — CLEAN THEME ═══════════════ */
 
-/* ── Theme defaults (fallback to blue) ── */
-.project-card {
-  --accent: #00B4FF;
-  --accent-rgb: 0,180,255;
-}
+/*
+ * --accent / --accent-rgb are now set on the page container by DashboardHome,
+ * driven by the module theme (same palette as lobby).
+ * Cards no longer override these per-status.
+ */
 
-/* ── Card base ── */
 .project-card {
   position: relative;
   overflow: hidden;
-  border-radius: 14px !important;
-  background-color: #121821 !important;
-  background-image:
-    radial-gradient(800px 240px at 15% 25%, rgba(var(--accent-rgb),0.16), transparent 60%),
-    linear-gradient(135deg, rgba(var(--accent-rgb),0.07), transparent 55%) !important;
-  border: 1px solid rgba(var(--accent-rgb),0.22) !important;
-  box-shadow:
-    0 10px 30px rgba(0,0,0,0.35),
-    0 0 0 1px rgba(var(--accent-rgb),0.08),
-    0 0 18px rgba(var(--accent-rgb),0.08);
-  transition: transform .25s cubic-bezier(.4,0,.2,1), border-color .25s cubic-bezier(.4,0,.2,1), filter .25s cubic-bezier(.4,0,.2,1) !important;
-  animation: pcBreathe 4.2s ease-in-out infinite;
+  display: flex;
+  flex-direction: column;
+  border-radius: 16px;
+  background: linear-gradient(to bottom, rgba(30,41,59,0.6), rgb(15,23,42));
+  border: 1px solid rgba(51,65,85,0.5);
+  border-top-color: rgb(71,85,105);
+  box-shadow: 0 20px 40px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.02) inset;
+  transition: border-color .25s ease, box-shadow .25s ease;
 }
 
-/* ── Particle layer ── */
-.project-card::before {
-  content: "";
-  position: absolute;
-  inset: -40%;
-  background:
-    radial-gradient(circle at 30% 40%, rgba(255,255,255,0.08) 0 1px, transparent 2px) 0 0 / 22px 22px,
-    radial-gradient(circle at 70% 60%, rgba(255,255,255,0.05) 0 1px, transparent 2px) 0 0 / 28px 28px;
-  opacity: 0.12;
-  transform: translate3d(0,0,0) rotate(8deg);
-  filter: blur(0.2px);
-  pointer-events: none;
-  mix-blend-mode: screen;
-  animation: pcParticles 10s ease-in-out infinite;
-  z-index: 0;
-}
+.project-card::before,
+.project-card::after { display: none; }
 
-/* ── Scan sweep ── */
-.project-card::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(120deg, transparent 0%, rgba(var(--accent-rgb),0.06) 45%, transparent 55%);
-  transform: translateX(-120%);
-  opacity: 0.25;
-  pointer-events: none;
-  mix-blend-mode: overlay;
-  animation: pcScanSweep 6s ease-in-out infinite;
-  z-index: 0;
-}
-
-/* ── Hover ── */
 .project-card:hover {
-  transform: translateY(-4px) !important;
-  border-color: rgba(var(--accent-rgb),0.45) !important;
-  animation-play-state: paused;
-  box-shadow:
-    0 18px 44px rgba(0,0,0,0.55),
-    0 0 0 1px rgba(var(--accent-rgb),0.45),
-    0 0 32px rgba(var(--accent-rgb),0.16) !important;
-}
-.project-card:hover::after {
-  animation-duration: 2.5s;
+  border-color: rgba(var(--accent-rgb), 0.5);
+  box-shadow: 0 0 24px rgba(var(--accent-rgb), 0.12);
 }
 
-/* ── All direct children above pseudo-elements ── */
 .project-card > * {
   position: relative;
   z-index: 1;
 }
 
-/* ── Card header ── */
-.project-card {
-  display: flex;
-  flex-direction: column;
-}
-
+/* ── Header ── */
 .project-card .pc-header {
-  background: rgba(var(--accent-rgb),0.03);
-  border-bottom: 1px solid rgba(var(--accent-rgb),0.08);
+  border-bottom: 1px solid rgba(255,255,255,0.04);
 }
 
-/* ── Internal sections ── */
+/* ── Sections ── */
 .project-card .pc-section {
-  background: rgba(255,255,255,0.015);
-  border-top: 1px solid rgba(var(--accent-rgb),0.05);
+  border-top: 1px solid rgba(255,255,255,0.03);
 }
-.project-card .pc-section:first-of-type {
-  border-top: none;
-}
+.project-card .pc-section:first-of-type { border-top: none; }
 .project-card .pc-section-last {
-  background: rgba(255,255,255,0.015);
   padding-bottom: 16px;
   flex: 1;
   display: flex;
@@ -1137,83 +978,58 @@ html, body {
 /* ── Accent bars ── */
 .project-card .pc-accent-bar {
   background: var(--accent);
-  box-shadow: 0 0 8px rgba(var(--accent-rgb),0.5), 0 0 16px rgba(var(--accent-rgb),0.2);
+  box-shadow: 0 0 8px rgba(var(--accent-rgb), 0.4);
 }
 .project-card .pc-accent-bar.pc-accent-muted {
   background: #8B949E;
-  box-shadow: 0 0 6px rgba(139,148,158,0.3);
+  box-shadow: 0 0 4px rgba(139,148,158,0.2);
 }
 
-/* ── Status badge ── */
+/* ── Status badge (keeps per-status inline colors from JSX) ── */
 .project-card .pc-badge {
-  background: rgba(var(--accent-rgb),0.12) !important;
-  border: 1px solid rgba(var(--accent-rgb),0.35) !important;
-  color: var(--accent) !important;
-  box-shadow: 0 0 14px rgba(var(--accent-rgb),0.12);
   backdrop-filter: blur(4px);
 }
 
 /* ── Capsule indicators ── */
 .project-card .pc-capsule {
-  background: rgba(var(--accent-rgb),0.03);
-  border: 1px solid rgba(var(--accent-rgb),0.06);
+  background: rgba(var(--accent-rgb), 0.03);
+  border: 1px solid rgba(var(--accent-rgb), 0.06);
   border-radius: 10px;
   transition: all .2s ease;
 }
 .project-card:hover .pc-capsule {
-  background: rgba(var(--accent-rgb),0.05);
-  border-color: rgba(var(--accent-rgb),0.10);
+  background: rgba(var(--accent-rgb), 0.05);
+  border-color: rgba(var(--accent-rgb), 0.10);
 }
 
-/* ── Metric values glow ── */
+/* ── Metric values ── */
 .project-card .pc-metric-value {
-  text-shadow: 0 0 12px currentColor;
+  text-shadow: 0 0 8px currentColor;
 }
 
 /* ── Timeline nodes ── */
 .project-card .pc-timeline-node {
-  background: #121821;
-  border: 2px solid rgba(var(--accent-rgb),0.45);
-  box-shadow: 0 0 12px rgba(var(--accent-rgb),0.2), inset 0 0 6px rgba(var(--accent-rgb),0.08);
+  background: rgb(15 23 42);
+  border: 2px solid rgba(var(--accent-rgb), 0.45);
+  box-shadow: 0 0 10px rgba(var(--accent-rgb), 0.18);
   transition: all .2s ease;
 }
 .project-card:hover .pc-timeline-node {
-  border-color: rgba(var(--accent-rgb),0.65);
-  box-shadow: 0 0 18px rgba(var(--accent-rgb),0.3), inset 0 0 8px rgba(var(--accent-rgb),0.12);
+  border-color: rgba(var(--accent-rgb), 0.65);
+  box-shadow: 0 0 16px rgba(var(--accent-rgb), 0.28);
 }
 .project-card .pc-timeline-dot {
   background: var(--accent);
-  box-shadow: 0 0 10px rgba(var(--accent-rgb),0.55);
+  box-shadow: 0 0 10px rgba(var(--accent-rgb), 0.55);
 }
 .project-card .pc-timeline-line {
-  background: linear-gradient(90deg, rgba(var(--accent-rgb),0.15), rgba(var(--accent-rgb),0.06), rgba(var(--accent-rgb),0.15));
+  background: linear-gradient(90deg, rgba(var(--accent-rgb), 0.15), rgba(var(--accent-rgb), 0.06), rgba(var(--accent-rgb), 0.15));
 }
 
-/* ── Animations ── */
-@keyframes pcBreathe {
-  0%, 100% {
-    box-shadow:
-      0 10px 30px rgba(0,0,0,0.35),
-      0 0 0 1px rgba(var(--accent-rgb),0.08),
-      0 0 18px rgba(var(--accent-rgb),0.08);
-  }
-  50% {
-    box-shadow:
-      0 12px 34px rgba(0,0,0,0.42),
-      0 0 0 1px rgba(var(--accent-rgb),0.22),
-      0 0 36px rgba(var(--accent-rgb),0.28);
-  }
-}
-
+/* ── Gantt link text ── */
 @keyframes ganttTextBreathe {
-  0%, 100% {
-    background-position: 0% 50%;
-    opacity: 0.55;
-  }
-  50% {
-    background-position: 100% 50%;
-    opacity: 1;
-  }
+  0%, 100% { background-position: 0% 50%; opacity: 0.55; }
+  50%      { background-position: 100% 50%; opacity: 1; }
 }
 .gantt-text-breathe {
   background: linear-gradient(90deg, #6E7681, #C0C8D2, #8B949E, #E6EDF3, #8B949E, #6E7681);
@@ -1224,143 +1040,45 @@ html, body {
   animation: ganttTextBreathe 3s ease-in-out infinite;
 }
 
-@keyframes pcParticles {
-  0%, 100% { transform: translate3d(0,0,0) rotate(8deg); opacity: 0.10; }
-  50% { transform: translate3d(-8px,-5px,0) rotate(8deg); opacity: 0.16; }
-}
-@keyframes pcScanSweep {
-  0%   { transform: translateX(-120%); }
-  40%  { transform: translateX(120%); }
-  100% { transform: translateX(120%); }
-}
-
 /* ═══════════════ END PROJECT-CARD ═══════════════ */
 
 
 
-/* ═══════════════ PROJECT-GROUP-CARD INDUSTRIAL SYSTEM ═══════════════ */
+/* ═══════════════ PROJECT-GROUP-CARD — CLEAN SLATE ═══════════════ */
 
-/* ── Shell variables (always blue) ── */
 .project-group-card {
-  --shell: #00B4FF;
-  --shell-rgb: 0,180,255;
-  position: relative;
+  border-radius: 16px;
+  background: linear-gradient(to bottom, rgba(30,41,59,0.6), rgb(15,23,42));
+  border: 1px solid rgba(51,65,85,0.5);
+  border-top-color: rgb(71,85,105);
   overflow: hidden;
-  border-radius: 14px !important;
-  background-color: #121821 !important;
-  border: 1px solid rgba(var(--shell-rgb),0.18) !important;
-  box-shadow:
-    0 8px 28px rgba(0,0,0,0.35),
-    0 0 0 1px rgba(var(--shell-rgb),0.06),
-    0 0 16px rgba(var(--shell-rgb),0.06) !important;
-  transition: all .25s cubic-bezier(.4,0,.2,1) !important;
+  box-shadow: 0 20px 40px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.02) inset;
+  transition: border-color .2s ease;
 }
+.project-group-card::before,
+.project-group-card::after { display: none; }
+.project-group-card > * { position: relative; z-index: 1; }
 
-/* ── Particle layer (blue tinted) ── */
-.project-group-card::before {
-  content: "";
-  position: absolute;
-  inset: -40%;
-  background:
-    radial-gradient(circle at 25% 35%, rgba(255,255,255,0.07) 0 1px, transparent 2px) 0 0 / 24px 24px,
-    radial-gradient(circle at 65% 55%, rgba(255,255,255,0.04) 0 1px, transparent 2px) 0 0 / 30px 30px;
-  opacity: 0.10;
-  transform: translate3d(0,0,0) rotate(6deg);
-  filter: blur(0.2px);
-  pointer-events: none;
-  mix-blend-mode: screen;
-  animation: pgParticles 12s ease-in-out infinite;
-  z-index: 0;
-}
-
-/* ── Scan sweep (blue) ── */
-.project-group-card::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(120deg, transparent 0%, rgba(var(--shell-rgb),0.05) 45%, transparent 55%);
-  transform: translateX(-120%);
-  opacity: 0.2;
-  pointer-events: none;
-  mix-blend-mode: overlay;
-  animation: pgScanSweep 7s ease-in-out infinite;
-  z-index: 0;
-}
-
-/* ── Hover (blue shell glow) ── */
-.project-group-card:hover {
-  border-color: rgba(var(--shell-rgb),0.35) !important;
-  box-shadow:
-    0 14px 40px rgba(0,0,0,0.5),
-    0 0 0 1px rgba(var(--shell-rgb),0.35),
-    0 0 28px rgba(var(--shell-rgb),0.12) !important;
-}
-.project-group-card:hover::after {
-  animation-duration: 3s;
-}
-
-/* ── Children above pseudo-elements ── */
-.project-group-card > * {
-  position: relative;
-  z-index: 1;
-}
-
-/* ══ HEADER (always blue shell) ══ */
+/* ── Trigger header ── */
 .project-group-card .group-card__header {
-  background-color: #121821 !important;
-  background-image:
-    radial-gradient(900px 260px at 15% 35%, rgba(var(--shell-rgb),0.18), transparent 60%),
-    linear-gradient(135deg, rgba(var(--shell-rgb),0.08), transparent 55%) !important;
-  border-bottom: 1px solid rgba(var(--shell-rgb),0.12) !important;
-  transition: background .2s ease !important;
+  background: transparent !important;
+  border-bottom: 1px solid rgb(30 41 59) !important;
+  transition: background .15s ease !important;
 }
 .project-group-card .group-card__header:hover {
-  background-image:
-    radial-gradient(900px 260px at 15% 35%, rgba(var(--shell-rgb),0.24), transparent 60%),
-    linear-gradient(135deg, rgba(var(--shell-rgb),0.12), transparent 55%) !important;
+  background: rgba(255,255,255,0.02) !important;
 }
-
-/* Header title glow */
-.project-group-card .group-card__header .text-lg.font-bold {
-  text-shadow: 0 0 20px rgba(var(--shell-rgb),0.30);
-}
-
-/* Accordion chevron */
 .project-group-card .group-card__header svg {
-  color: #8B949E;
-  transition: color .2s ease, filter .2s ease;
+  color: #6E7681;
+  transition: color .2s ease;
 }
 .project-group-card .group-card__header:hover svg {
-  color: var(--shell);
-  filter: drop-shadow(0 0 6px rgba(var(--shell-rgb),0.4));
+  color: var(--accent, #94a3b8);
 }
 
-/* ══ BODY (neutral dark, rows keep their own status colors) ══ */
+/* ── Body ── */
 .project-group-card .group-card__body {
-  background: #0F141B !important;
-  border-top: 1px solid rgba(var(--shell-rgb),0.08);
-}
-
-/* Table column header row */
-.project-group-card .group-card__body .bg-\[\#11161D\] {
-  background: rgba(var(--shell-rgb),0.04) !important;
-  border-bottom-color: rgba(var(--shell-rgb),0.08) !important;
-}
-
-/* Status dot glow */
-.project-group-card .rounded-full.mr-2 {
-  box-shadow: 0 0 8px currentColor;
-}
-
-/* ── Animations ── */
-@keyframes pgParticles {
-  0%, 100% { transform: translate3d(0,0,0) rotate(6deg); opacity: 0.08; }
-  50% { transform: translate3d(-6px,-4px,0) rotate(6deg); opacity: 0.14; }
-}
-@keyframes pgScanSweep {
-  0%   { transform: translateX(-120%); }
-  40%  { transform: translateX(120%); }
-  100% { transform: translateX(120%); }
+  background: rgb(2 6 23 / 0.5) !important;    /* slate-950/50 */
 }
 
 /* ═══════════════ END PROJECT-GROUP-CARD ═══════════════ */
@@ -1510,12 +1228,12 @@ html, body {
   padding-left: 24px;
   padding-right: 24px;
 }
-.group-card-header { height: 58px; }
+.group-card-header { height: 48px; }
 .group-card-row {
-  min-height: 52px;
-  padding-top: 12px;
-  padding-bottom: 12px;
-  border-top: 1px solid rgba(255,255,255,0.04);
+  min-height: 48px;
+  padding-top: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(30,41,59,0.5);
 }
 
 /* ══════════════════════════════════════════════════════════
@@ -1684,13 +1402,10 @@ html, body {
     transition: none !important;
   }
   
-  /* 移动端禁用 ProjectCard hover 变换 */
-  .project-card {
-    transform: none !important;
-    transition: none !important;
-  }
+  /* 移动端禁用 ProjectCard hover */
   .project-card:hover {
-    transform: none !important;
+    border-color: rgb(30 41 59) !important;
+    box-shadow: none !important;
   }
   .sticky.top-0.z-10 {
     position: relative !important;
@@ -1779,33 +1494,35 @@ html, body {
 /* ═══════════════ END RESPONSIVE-GRID-LAYOUT ═══════════════ */
 
 
-/* ── ROW-THEME-VARS ── */
-
-/* ── Row theme variables (driven by themeClass on .group-card-row) ── */
-.group-card-row.theme-info {
-  --accent: 0,180,255;
-  --accent-rgb: 0,180,255;
-  background: linear-gradient(90deg, rgba(0,180,255,0.06) 0%, rgba(0,180,255,0.02) 40%, transparent 100%);
+/* ── Row styling ── */
+.group-card-row {
+  position: relative;
+  overflow: hidden;
+  background: transparent;
+  transition: background .15s ease;
 }
-.group-card-row.theme-danger {
-  --accent: 255,59,59;
-  --accent-rgb: 255,59,59;
-  background: linear-gradient(90deg, rgba(255,59,59,0.10) 0%, rgba(255,59,59,0.04) 40%, transparent 100%);
+.group-card-row:nth-child(even) {
+  background: rgba(255,255,255,0.01);
 }
-.group-card-row.theme-warning {
-  --accent: 255,204,0;
-  --accent-rgb: 255,204,0;
-  background: linear-gradient(90deg, rgba(255,204,0,0.08) 0%, rgba(255,204,0,0.03) 40%, transparent 100%);
+.group-card-row::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--accent, #94a3b8);
+  opacity: 0;
+  transition: opacity .15s ease;
 }
-.group-card-row.theme-success {
-  --accent: 0,255,163;
-  --accent-rgb: 0,255,163;
-  background: linear-gradient(90deg, rgba(0,255,163,0.08) 0%, rgba(0,255,163,0.03) 40%, transparent 100%);
+.group-card-row:hover {
+  background: rgba(255,255,255,0.03);
 }
-
-/* ── Detail text follows row theme at reduced intensity ── */
+.group-card-row:hover::before {
+  opacity: 1;
+}
 .group-card-row .project-detail-cell {
-  color: rgba(var(--accent-rgb, 230,237,243), 0.92);
+  color: rgb(203 213 225);  /* slate-300 */
   text-shadow: none;
 }
 
