@@ -19,24 +19,59 @@ interface ProductModuleAdminModalProps {
   onUploadSuccess: () => Promise<void> | void;
 }
 
-function resolveUploadErrorMessage(message: string): string {
-  const normalized = message.trim();
-  if (!normalized) return '产品模块数据上传失败';
+const DEFAULT_UPLOAD_ERROR_MESSAGE = '产品模块数据上传失败';
+const AUTH_UPLOAD_ERROR_MESSAGE = '本地上传被旧鉴权拦截了，请重启本地 API 服务后再试。';
+const DATABASE_UPLOAD_ERROR_MESSAGE = '本地 API 已响应，但数据库连接不可用，请检查 .env 里的 DATABASE_URL。';
 
-  if (
-    normalized.includes('API Key') ||
-    normalized.includes('未授权') ||
-    normalized.includes('Write API key is not configured')
-  ) {
-    return '本地上传被旧鉴权拦截了，请重启本地 API 服务后再试。';
+class ProductModuleUploadResponseError extends Error {
+  readonly status: number;
+
+  constructor(status: number, message?: string) {
+    super(message?.trim() || `HTTP ${status}`);
+    this.name = 'ProductModuleUploadResponseError';
+    this.status = status;
   }
+}
+
+function readResponseErrorMessage(payload: unknown): string | undefined {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return undefined;
+  }
+
+  const { error } = payload as { error?: unknown };
+  if (typeof error !== 'string') {
+    return undefined;
+  }
+
+  const normalized = error.trim();
+  return normalized || undefined;
+}
+
+function resolveUploadErrorMessage(error: unknown): string {
+  if (error instanceof ProductModuleUploadResponseError) {
+    if (error.status === 401 || error.status === 403) {
+      return AUTH_UPLOAD_ERROR_MESSAGE;
+    }
+
+    if (error.status === 503) {
+      if (error.message.includes('Write API key is not configured')) {
+        return AUTH_UPLOAD_ERROR_MESSAGE;
+      }
+      if (error.message.includes('Database not configured')) {
+        return DATABASE_UPLOAD_ERROR_MESSAGE;
+      }
+    }
+  }
+
+  const normalized = error instanceof Error ? error.message.trim() : '';
+  if (!normalized) return DEFAULT_UPLOAD_ERROR_MESSAGE;
 
   if (
     normalized.includes('Database not configured') ||
     normalized.includes('CONNECT_TIMEOUT') ||
     normalized.toLowerCase().includes('timeout')
   ) {
-    return '本地 API 已响应，但数据库连接不可用，请检查 .env 里的 DATABASE_URL。';
+    return DATABASE_UPLOAD_ERROR_MESSAGE;
   }
 
   return normalized;
@@ -71,7 +106,7 @@ export function ProductModuleAdminModal({
 
       if (!response.ok) {
         const payload = await response.json().catch(() => ({}));
-        throw new Error((payload as { error?: string }).error || '产品模块数据上传失败');
+        throw new ProductModuleUploadResponseError(response.status, readResponseErrorMessage(payload));
       }
 
       toast.success(`产品模块数据已更新 ${records.length} 条`);
@@ -79,8 +114,7 @@ export function ProductModuleAdminModal({
       onOpenChange(false);
     } catch (error) {
       console.error('Failed to upload product module Excel:', error);
-      const message = error instanceof Error ? error.message : '产品模块数据上传失败';
-      toast.error(resolveUploadErrorMessage(message));
+      toast.error(resolveUploadErrorMessage(error));
     } finally {
       setIsUploading(false);
     }
