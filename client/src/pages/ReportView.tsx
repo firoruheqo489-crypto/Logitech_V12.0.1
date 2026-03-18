@@ -13,16 +13,8 @@ import {
 } from 'lucide-react';
 import { generateDiagnosticPDF } from './generateDiagnosticPDF';
 import CyberConfirmDialog from '@/components/ui/CyberConfirmDialog';
-
-interface ImageItem { id: string; preview: string; name: string; size: number; compressed: boolean; }
-interface ModuleData { text: string; images: ImageItem[]; }
-interface IssueRecord {
-  id: string; projectId?: string; projectName?: string; productName?: string;
-  types: string[]; date: string; process: string;
-  quantity?: string; technician?: string; machine?: string; cavity?: string;
-  modules: { evidence: ModuleData; description: ModuleData; rootCause: ModuleData; solution: ModuleData; verification: ModuleData; };
-  status: 'draft' | 'submitted'; createdAt: string; updatedAt: string;
-}
+import { getIssueProcessStepLabel, getIssueTypeLabels } from '@/lib/issueDomain';
+import type { IssueRecord, ModuleData, ImageItem } from '@/lib/issueService';
 
 const MODULES = [
   { key: 'evidence' as const,     icon: Eye,          label: '现场证据', en: 'Evidence',        accent: '#00B4FF', rgb: '0,180,255' },
@@ -128,6 +120,8 @@ export default function ReportView({ record, onBack, onEdit, onDelete }: ReportV
   const [lightbox, setLightbox] = useState<{ src: string; alt: string } | null>(null);
   const [exporting, setExporting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const typeLabel = getIssueTypeLabels(record.types).join(' · ') || '—';
+  const processLabel = record.process ? getIssueProcessStepLabel(record.process) : '—';
 
   const openLightbox = useCallback((src: string, alt: string) => setLightbox({ src, alt }), []);
   const closeLightbox = useCallback(() => setLightbox(null), []);
@@ -207,11 +201,11 @@ export default function ReportView({ record, onBack, onEdit, onDelete }: ReportV
             {/* Metadata row */}
             {/* Row 1: required fields */}
             <div className="grid grid-cols-4 rounded-t-lg overflow-hidden border border-white/[0.06]">
-              {[
+              {[ 
                 { icon: Tag, label: '编号', value: record.id },
-                { icon: Layers, label: '问题类型', value: record.types.join(' · ') || '—' },
+                { icon: Layers, label: '问题类型', value: typeLabel },
                 { icon: Calendar, label: '发生日期', value: record.date },
-                { icon: ScanLine, label: '发现环节', value: record.process || '—' },
+                { icon: ScanLine, label: '发现环节', value: processLabel },
               ].map((s, i) => (
                 <div key={i} className={`bg-white/[0.02] px-4 py-3 text-center ${i > 0 ? 'border-l border-white/[0.06]' : ''}`}>
                   <div className="flex items-center justify-center gap-1.5 mb-1.5">

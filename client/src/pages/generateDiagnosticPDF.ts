@@ -4,15 +4,8 @@
  * Canvas渲染中文(永不加粗) | 固定页脚页码
  */
 
-interface ImageItem { id: string; preview: string; name: string; size: number; compressed: boolean; }
-interface ModuleData { text: string; images: ImageItem[]; }
-interface IssueRecord {
-  id: string; projectId?: string; projectName?: string; productName?: string;
-  types: string[]; date: string; process: string;
-  quantity?: string; technician?: string; machine?: string; cavity?: string;
-  modules: { evidence: ModuleData; description: ModuleData; rootCause: ModuleData; solution: ModuleData; verification: ModuleData; };
-  status: 'draft' | 'submitted'; createdAt: string; updatedAt: string;
-}
+import { getIssueProcessStepLabel, getIssueTypeLabels } from '@/lib/issueDomain';
+import type { IssueRecord } from '@/lib/issueService';
 
 export async function generateDiagnosticPDF(record: IssueRecord, filename: string) {
   const jspdfMod = await import('jspdf');
@@ -480,9 +473,9 @@ export async function generateDiagnosticPDF(record: IssueRecord, filename: strin
 
   const metaRow1: { label: string; value: string; isMono?: boolean }[] = [
     { label: '编号', value: record.id, isMono: true },
-    { label: '问题类型', value: record.types.join(' · ') || '—' },
+    { label: '问题类型', value: getIssueTypeLabels(record.types).join(' · ') || '—' },
     { label: '发生日期', value: record.date || '—' },
-    { label: '发现环节', value: record.process || '—' },
+    { label: '发现环节', value: record.process ? getIssueProcessStepLabel(record.process) : '—' },
   ];
 
   const meta2Items = [

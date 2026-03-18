@@ -10,7 +10,7 @@
  */
 
 import type { Request, Response } from 'express';
-import { eq, and, desc } from 'drizzle-orm';
+import { and, desc, eq, notInArray } from 'drizzle-orm';
 import { db, sql as dbSql } from '../db.js';
 import { progressNotes } from '../../shared/schema.js';
 
@@ -21,6 +21,8 @@ type ProgressNotePayload = {
   imageUrl?: string;
   assignee?: string;
   estimatedNodeCompletion?: string;
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 type BackupEntry = {
@@ -30,11 +32,39 @@ type BackupEntry = {
   imageUrl?: string;
   assignee?: string;
   estimatedNodeCompletion?: string;
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 type NoteAuditAction = 'create-entry' | 'update-entry' | 'delete-entry' | 'delete-image' | 'restore-backup';
 
 const BACKUP_KEEP_LIMIT_PER_MOLD = 30;
+let progressBackupTableReady: Promise<void> | null = null;
+let progressAuditTableReady: Promise<void> | null = null;
+
+function toIsoTimestamp(value: unknown): string {
+  if (!value) return '';
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+
+  const raw = String(value).trim();
+  if (!raw) return '';
+
+  if (/[zZ]|[+\-]\d{2}:\d{2}$/.test(raw)) {
+    const parsed = new Date(raw);
+    return Number.isNaN(parsed.getTime()) ? raw : parsed.toISOString();
+  }
+
+  const normalized = raw.replace(' ', 'T');
+  const parsedUtc = new Date(`${normalized}Z`);
+  if (!Number.isNaN(parsedUtc.getTime())) {
+    return parsedUtc.toISOString();
+  }
+
+  const parsedLocal = new Date(normalized);
+  return Number.isNaN(parsedLocal.getTime()) ? raw : parsedLocal.toISOString();
+}
 
 function decodeNoteContent(raw: string): { content: string; imageUrl?: string; assignee?: string; estimatedNodeCompletion?: string } {
   if (!raw) return { content: '' };
@@ -63,41 +93,73 @@ function encodeNoteContent(content: string, imageUrl?: string, assignee?: string
   return JSON.stringify(obj);
 }
 
-async function ensureBackupTable() {
-  if (!dbSql) return;
-  await dbSql.unsafe(`
-    CREATE TABLE IF NOT EXISTS progress_note_backups (
-      id BIGSERIAL PRIMARY KEY,
-      mold_number VARCHAR(100) NOT NULL,
-      snapshot JSONB NOT NULL,
-      created_at TIMESTAMP NOT NULL DEFAULT NOW()
-    )
-  `);
-  await dbSql.unsafe(`
-    CREATE INDEX IF NOT EXISTS progress_note_backups_mold_idx
-    ON progress_note_backups(mold_number, created_at DESC)
-  `);
+function toDateObject(value: unknown): Date | undefined {
+  const iso = toIsoTimestamp(value);
+  if (!iso) return undefined;
+
+  const parsed = new Date(iso);
+  return Number.isNaN(parsed.getTime()) ? undefined : parsed;
 }
 
-async function ensureProgressAuditTable() {
-  if (!dbSql) return;
-  await dbSql.unsafe(`
-    CREATE TABLE IF NOT EXISTS progress_note_audit_logs (
-      id BIGSERIAL PRIMARY KEY,
-      mold_number VARCHAR(100) NOT NULL,
-      note_id VARCHAR(100),
-      action VARCHAR(50) NOT NULL,
-      operator VARCHAR(255),
-      ip_address VARCHAR(64),
-      old_payload JSONB,
-      new_payload JSONB,
-      created_at TIMESTAMP NOT NULL DEFAULT NOW()
-    )
-  `);
-  await dbSql.unsafe(`
-    CREATE INDEX IF NOT EXISTS progress_note_audit_mold_idx
-    ON progress_note_audit_logs(mold_number, created_at DESC)
-  `);
+function buildProgressNoteRow(
+  moldNumber: string,
+  entry: ProgressNotePayload | BackupEntry,
+  createdAt?: Date,
+) {
+  return {
+    id: entry.id,
+    moldNumber,
+    date: entry.date,
+    content: encodeNoteContent(entry.content, entry.imageUrl, entry.assignee, entry.estimatedNodeCompletion),
+    createdAt,
+  };
+}
+
+export function ensureBackupTable(): Promise<void> {
+  if (!dbSql) return Promise.resolve();
+  if (!progressBackupTableReady) {
+    progressBackupTableReady = (async () => {
+      await dbSql.unsafe(`
+        CREATE TABLE IF NOT EXISTS progress_note_backups (
+          id BIGSERIAL PRIMARY KEY,
+          mold_number VARCHAR(100) NOT NULL,
+          snapshot JSONB NOT NULL,
+          created_at TIMESTAMP NOT NULL DEFAULT NOW()
+        )
+      `);
+      await dbSql.unsafe(`
+        CREATE INDEX IF NOT EXISTS progress_note_backups_mold_idx
+        ON progress_note_backups(mold_number, created_at DESC)
+      `);
+    })();
+  }
+  return progressBackupTableReady;
+}
+
+export function ensureProgressAuditTable(): Promise<void> {
+  if (!dbSql) return Promise.resolve();
+  if (!progressAuditTableReady) {
+    progressAuditTableReady = (async () => {
+      await dbSql.unsafe(`
+        CREATE TABLE IF NOT EXISTS progress_note_audit_logs (
+          id BIGSERIAL PRIMARY KEY,
+          mold_number VARCHAR(100) NOT NULL,
+          note_id VARCHAR(100),
+          action VARCHAR(50) NOT NULL,
+          operator VARCHAR(255),
+          ip_address VARCHAR(64),
+          old_payload JSONB,
+          new_payload JSONB,
+          created_at TIMESTAMP NOT NULL DEFAULT NOW()
+        )
+      `);
+      await dbSql.unsafe(`
+        CREATE INDEX IF NOT EXISTS progress_note_audit_mold_idx
+        ON progress_note_audit_logs(mold_number, created_at DESC)
+      `);
+    })();
+  }
+  return progressAuditTableReady;
 }
 
 function getOperator(req: Request): string {
@@ -149,6 +211,7 @@ function normalizeEntryPayload(entry: ProgressNotePayload | BackupEntry): Backup
     imageUrl: entry.imageUrl ? String(entry.imageUrl) : undefined,
     assignee: entry.assignee ? String(entry.assignee) : undefined,
     estimatedNodeCompletion: entry.estimatedNodeCompletion ? String(entry.estimatedNodeCompletion) : undefined,
+    createdAt: entry.createdAt ? String(entry.createdAt) : undefined,
   };
 }
 
@@ -181,6 +244,7 @@ async function backupCurrentNotes(moldNumber: string): Promise<boolean> {
       imageUrl: decoded.imageUrl,
       assignee: decoded.assignee,
       estimatedNodeCompletion: decoded.estimatedNodeCompletion,
+      createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt || ''),
     };
   });
 
@@ -220,6 +284,50 @@ async function backupCurrentNotes(moldNumber: string): Promise<boolean> {
   return true;
 }
 
+type NoteAuditTimestamps = {
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+async function getNoteAuditTimestampsByNoteId(moldNumber: string): Promise<Map<string, NoteAuditTimestamps>> {
+  const recovered = new Map<string, NoteAuditTimestamps>();
+  if (!dbSql) return recovered;
+
+  try {
+    await ensureProgressAuditTable();
+    const rows = await dbSql.unsafe(
+      `
+        SELECT
+          note_id,
+          MIN(CASE WHEN action = 'create-entry' THEN created_at END) AS created_at,
+          MAX(created_at) AS updated_at
+        FROM progress_note_audit_logs
+        WHERE mold_number = $1
+          AND note_id IS NOT NULL
+          AND action IN ('create-entry', 'update-entry', 'delete-image')
+        GROUP BY note_id
+      `,
+      [moldNumber],
+    );
+
+    for (const row of rows as Array<{ note_id?: string; created_at?: string | Date; updated_at?: string | Date }>) {
+      const noteId = String(row?.note_id || '').trim();
+      if (!noteId) continue;
+      const createdAt = row?.created_at ? toIsoTimestamp(row.created_at) : '';
+      const updatedAt = row?.updated_at ? toIsoTimestamp(row.updated_at) : '';
+      if (!createdAt && !updatedAt) continue;
+      recovered.set(noteId, {
+        createdAt: createdAt || undefined,
+        updatedAt: updatedAt || createdAt || undefined,
+      });
+    }
+  } catch (err) {
+    console.error('recover note audit timestamps failed:', err);
+  }
+
+  return recovered;
+}
+
 /** GET /api/dashboard/progress-notes/:moldNumber/latest-backup */
 export async function getLatestProgressBackup(req: Request, res: Response): Promise<void> {
   if (!dbSql) { res.status(503).json({ error: 'Database not configured' }); return; }
@@ -232,7 +340,7 @@ export async function getLatestProgressBackup(req: Request, res: Response): Prom
       [moldNumber]
     );
     const latest = rows?.[0] as { created_at?: string } | undefined;
-    res.json({ backupAt: latest?.created_at || null });
+    res.json({ backupAt: latest?.created_at ? toIsoTimestamp(latest.created_at) : null });
   } catch (err) {
     console.error('GET latest-backup progress-notes error:', err);
     res.status(500).json({ error: (err as Error).message });
@@ -245,17 +353,29 @@ export async function getProgressNotes(req: Request, res: Response): Promise<voi
   const { moldNumber } = req.params;
   if (!moldNumber) { res.status(400).json({ error: 'moldNumber required' }); return; }
   try {
+    const includeAuditTimestamps = req.query.includeAuditTimestamps === '1';
     const rows = await db.select().from(progressNotes)
       .where(eq(progressNotes.moldNumber, moldNumber))
       .orderBy(desc(progressNotes.createdAt));
+    const noteAuditTimestampsById = includeAuditTimestamps
+      ? await getNoteAuditTimestampsByNoteId(moldNumber)
+      : new Map<string, NoteAuditTimestamps>();
+
     res.json(rows.map((row) => {
       const decoded = decodeNoteContent(row.content);
+      const persistedCreatedAt = row.createdAt ? toIsoTimestamp(row.createdAt) : '';
+      const auditTimestamps = noteAuditTimestampsById.get(row.id);
+      const effectiveCreatedAt = auditTimestamps?.createdAt || persistedCreatedAt || undefined;
+      const effectiveUpdatedAt = auditTimestamps?.updatedAt || effectiveCreatedAt;
+
       return {
         ...row,
         content: decoded.content,
         imageUrl: decoded.imageUrl,
         assignee: decoded.assignee,
         estimatedNodeCompletion: decoded.estimatedNodeCompletion,
+        createdAt: effectiveCreatedAt,
+        updatedAt: effectiveUpdatedAt,
       };
     }));
   } catch (err) {
@@ -264,7 +384,7 @@ export async function getProgressNotes(req: Request, res: Response): Promise<voi
   }
 }
 
-/** POST /api/dashboard/progress-notes/:moldNumber — 全量替换 */
+/** POST /api/dashboard/progress-notes/:moldNumber — snapshot sync */
 export async function saveProgressNotes(req: Request, res: Response): Promise<void> {
   if (!db) { res.status(503).json({ error: 'Database not configured' }); return; }
   const { moldNumber } = req.params;
@@ -276,6 +396,13 @@ export async function saveProgressNotes(req: Request, res: Response): Promise<vo
     const beforeRows = await db.select().from(progressNotes)
       .where(eq(progressNotes.moldNumber, moldNumber))
       .orderBy(desc(progressNotes.createdAt));
+    const existingCreatedAtById = new Map(
+      beforeRows.map((row) => [row.id, row.createdAt] as const),
+    );
+    const normalizedEntries = entries.map((entry) => normalizeEntryPayload(entry));
+    const incomingIds = normalizedEntries
+      .map((entry) => entry.id)
+      .filter((id): id is string => typeof id === 'string' && id.trim().length > 0);
 
     const backupCreated = await backupCurrentNotes(moldNumber);
     const backupRows = await dbSql?.unsafe(
@@ -285,16 +412,29 @@ export async function saveProgressNotes(req: Request, res: Response): Promise<vo
     const latestBackupAt = (backupRows?.[0] as { created_at?: string } | undefined)?.created_at || null;
 
     await db.transaction(async (tx) => {
-      await tx.delete(progressNotes).where(eq(progressNotes.moldNumber, moldNumber));
-      if (entries.length > 0) {
-        await tx.insert(progressNotes).values(
-          entries.map(e => ({
-            id: e.id,
-            moldNumber,
-            date: e.date,
-            content: encodeNoteContent(e.content, e.imageUrl, e.assignee, e.estimatedNodeCompletion),
-          }))
+      if (incomingIds.length === 0) {
+        await tx.delete(progressNotes).where(eq(progressNotes.moldNumber, moldNumber));
+      } else {
+        await tx.delete(progressNotes).where(
+          and(eq(progressNotes.moldNumber, moldNumber), notInArray(progressNotes.id, incomingIds)),
         );
+      }
+
+      for (const entry of normalizedEntries) {
+        const row = buildProgressNoteRow(
+          moldNumber,
+          entry,
+          existingCreatedAtById.get(entry.id) ?? toDateObject(entry.createdAt),
+        );
+
+        await tx.insert(progressNotes).values(row).onConflictDoUpdate({
+          target: progressNotes.id,
+          set: {
+            moldNumber: row.moldNumber,
+            date: row.date,
+            content: row.content,
+          },
+        });
       }
     });
 
@@ -314,9 +454,8 @@ export async function saveProgressNotes(req: Request, res: Response): Promise<vo
       beforeMap.set(normalized.id, normalized);
     });
 
-    entries.forEach((entry) => {
-      const normalized = normalizeEntryPayload(entry);
-      afterMap.set(normalized.id, normalized);
+    normalizedEntries.forEach((entry) => {
+      afterMap.set(entry.id, entry);
     });
 
     for (const [id, afterEntry] of Array.from(afterMap.entries())) {
@@ -379,7 +518,7 @@ export async function createProgressBackup(req: Request, res: Response): Promise
       [moldNumber]
     );
     const latest = rows?.[0] as { created_at?: string } | undefined;
-    res.json({ success: true, created, backupAt: latest?.created_at || null });
+    res.json({ success: true, created, backupAt: latest?.created_at ? toIsoTimestamp(latest.created_at) : null });
   } catch (err) {
     console.error('POST create-backup progress-notes error:', err);
     res.status(500).json({ error: (err as Error).message });
@@ -408,16 +547,41 @@ export async function restoreLatestProgressNotes(req: Request, res: Response): P
     const snapshot: BackupEntry[] = Array.isArray(latest.snapshot)
       ? latest.snapshot
       : JSON.parse(String(latest.snapshot || '[]'));
+    const normalizedSnapshot = snapshot.map((entry) => normalizeEntryPayload(entry));
+    const incomingIds = normalizedSnapshot
+      .map((entry) => entry.id)
+      .filter((id): id is string => typeof id === 'string' && id.trim().length > 0);
+    const currentRows = await db.select().from(progressNotes)
+      .where(eq(progressNotes.moldNumber, moldNumber))
+      .orderBy(desc(progressNotes.createdAt));
+    const existingCreatedAtById = new Map(
+      currentRows.map((row) => [row.id, row.createdAt] as const),
+    );
 
     await db.transaction(async (tx) => {
-      await tx.delete(progressNotes).where(eq(progressNotes.moldNumber, moldNumber));
-      if (snapshot.length > 0) {
-        await tx.insert(progressNotes).values(snapshot.map((entry) => ({
-          id: entry.id,
+      if (incomingIds.length === 0) {
+        await tx.delete(progressNotes).where(eq(progressNotes.moldNumber, moldNumber));
+      } else {
+        await tx.delete(progressNotes).where(
+          and(eq(progressNotes.moldNumber, moldNumber), notInArray(progressNotes.id, incomingIds)),
+        );
+      }
+
+      for (const entry of normalizedSnapshot) {
+        const row = buildProgressNoteRow(
           moldNumber,
-          date: entry.date,
-          content: encodeNoteContent(entry.content, entry.imageUrl, entry.assignee, entry.estimatedNodeCompletion),
-        })));
+          entry,
+          existingCreatedAtById.get(entry.id) ?? toDateObject(entry.createdAt),
+        );
+
+        await tx.insert(progressNotes).values(row).onConflictDoUpdate({
+          target: progressNotes.id,
+          set: {
+            moldNumber: row.moldNumber,
+            date: row.date,
+            content: row.content,
+          },
+        });
       }
     });
 
@@ -430,7 +594,7 @@ export async function restoreLatestProgressNotes(req: Request, res: Response): P
       newPayload: { restoredCount: snapshot.length, backupAt: latest.created_at },
     });
 
-    res.json({ success: true, restoredCount: snapshot.length, backupAt: latest.created_at });
+    res.json({ success: true, restoredCount: snapshot.length, backupAt: toIsoTimestamp(latest.created_at) });
   } catch (err) {
     console.error('POST restore-latest progress-notes error:', err);
     res.status(500).json({ error: (err as Error).message });
@@ -498,7 +662,12 @@ export async function getProgressNoteAuditLogs(req: Request, res: Response): Pro
       `,
       [moldNumber],
     );
-    res.json(rows);
+    res.json(
+      (rows as Array<Record<string, unknown>>).map((row) => ({
+        ...row,
+        created_at: row.created_at ? toIsoTimestamp(row.created_at) : row.created_at,
+      })),
+    );
   } catch (err) {
     console.error('GET progress-note-audit error:', err);
     res.status(500).json({ error: (err as Error).message });

@@ -20,6 +20,17 @@ import {
   fetchIssues, createIssue, updateIssue, deleteIssue,
   uploadImage, deleteImage, isSupabaseReady,
 } from '@/lib/issueService';
+import {
+  getIssueProcessStepLabel,
+  getIssueTypeLabels,
+  ISSUE_TYPE_OPTIONS,
+  matchesIssueProcessStepQuery,
+  matchesIssueTypeQuery,
+  PROCESS_STEP_OPTIONS,
+  type IssueProcessStepId,
+  type IssueTypeId,
+} from '@/lib/issueDomain';
+import { useDebouncedDirtyIssueAutosave } from '@/hooks/useDebouncedDirtyIssueAutosave';
 import VDISurfaceGrid from '@/components/VDISurfaceGrid';
 import DefectLab from '@/components/DefectLab';
 import CyberConfirmDialog from '@/components/ui/CyberConfirmDialog';
@@ -27,9 +38,6 @@ import CyberConfirmDialog from '@/components/ui/CyberConfirmDialog';
 // ═══════════════════════════════════════════════
 // Constants
 // ═══════════════════════════════════════════════
-
-const ISSUE_TYPES = ['外观问题', '尺寸问题', '装配问题'] as const;
-const PROCESS_STEPS = ['注塑工序', 'CNC工序', '装配工序', '客诉工序'] as const;
 
 const MODULE_CONFIG = [
   { key: 'evidence' as const, label: '证据展示', icon: Eye, num: 4, maxImages: 6, desc: '上传异常现场照片、检测报告等证据材料' },
@@ -70,7 +78,7 @@ function createEmptyRecord(existing: IssueRecord[] = [], projectId = '', project
 
 async function compressImage(file: File, maxSizeKB = 500): Promise<File> {
   if (file.size <= maxSizeKB * 1024) return file;
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const img = new window.Image();
     const url = URL.createObjectURL(file);
     img.onload = () => {
@@ -83,7 +91,12 @@ async function compressImage(file: File, maxSizeKB = 500): Promise<File> {
         width = Math.round(width * ratio); height = Math.round(height * ratio);
       }
       canvas.width = width; canvas.height = height;
-      canvas.getContext('2d')!.drawImage(img, 0, 0, width, height);
+      const context = canvas.getContext('2d');
+      if (!context) {
+        resolve(file);
+        return;
+      }
+      context.drawImage(img, 0, 0, width, height);
       let lo = 0.1, hi = 0.92, mid = 0.7;
       const tryCompress = () => {
         canvas.toBlob((blob) => {
@@ -95,6 +108,10 @@ async function compressImage(file: File, maxSizeKB = 500): Promise<File> {
       };
       tryCompress();
     };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error(`Failed to load image "${file.name}" for compression`));
+    };
     img.src = url;
   });
 }
@@ -105,17 +122,19 @@ async function compressImage(file: File, maxSizeKB = 500): Promise<File> {
 // Sub-components
 // ═══════════════════════════════════════════════
 
-function TypeTagSelector({ selected, onChange }: { selected: string[]; onChange: (v: string[]) => void }) {
-  const toggle = (t: string) => onChange(selected.includes(t) ? selected.filter(x => x !== t) : [...selected, t]);
+function TypeTagSelector({ selected, onChange }: { selected: IssueTypeId[]; onChange: (v: IssueTypeId[]) => void }) {
+  const toggle = (typeId: IssueTypeId) =>
+    onChange(selected.includes(typeId) ? selected.filter((item) => item !== typeId) : [...selected, typeId]);
+
   return (
     <div className="flex flex-wrap gap-2">
-      {ISSUE_TYPES.map(t => {
-        const active = selected.includes(t);
+      {ISSUE_TYPE_OPTIONS.map((option) => {
+        const active = selected.includes(option.id);
         return (
-          <button key={t} type="button" onClick={() => toggle(t)}
+          <button key={option.id} type="button" onClick={() => toggle(option.id)}
             className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200 cursor-pointer border
               ${active ? 'bg-[#3b82f6]/20 border-[#3b82f6]/50 text-[#60a5fa] shadow-[0_0_12px_rgba(59,130,246,0.2)]' : 'bg-white/[0.03] border-white/[0.08] text-[#8B949E] hover:bg-white/[0.06] hover:border-white/[0.15]'}`}>
-            {t}
+            {option.label}
           </button>
         );
       })}
@@ -123,16 +142,22 @@ function TypeTagSelector({ selected, onChange }: { selected: string[]; onChange:
   );
 }
 
-function ProcessSelector({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+function ProcessSelector({
+  value,
+  onChange,
+}: {
+  value: IssueProcessStepId | '';
+  onChange: (v: IssueProcessStepId) => void;
+}) {
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
-      {PROCESS_STEPS.map(p => {
-        const active = value === p;
+      {PROCESS_STEP_OPTIONS.map((option) => {
+        const active = value === option.id;
         return (
-          <button key={p} type="button" onClick={() => onChange(p)}
+          <button key={option.id} type="button" onClick={() => onChange(option.id)}
             className={`px-4 py-3 rounded-lg text-sm font-semibold transition-all duration-200 cursor-pointer border
               ${active ? 'bg-[#3b82f6]/15 border-[#3b82f6]/40 text-[#60a5fa] shadow-[0_0_10px_rgba(59,130,246,0.15)]' : 'bg-white/[0.03] border-white/[0.08] text-[#8B949E] hover:bg-white/[0.06]'}`}>
-            {p}
+            {option.label}
           </button>
         );
       })}
@@ -221,19 +246,25 @@ function ClosedLoopModule({ issueId, config, data, onChange }: {
   const handleAddImages = useCallback(async (files: File[]) => {
     const remaining = config.maxImages - data.images.length;
     const toProcess = files.slice(0, remaining);
+    let nextImages = data.images;
     for (const file of toProcess) {
-      const compressed = await compressImage(file);
-      // Upload to Supabase Storage
-      const result = await uploadImage(issueId, config.key, compressed);
-      const preview = result ? result.publicUrl : URL.createObjectURL(compressed);
-      const newImg: ImageItem = {
-        id: `img-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        file: compressed, preview, name: file.name, size: compressed.size,
-        compressed: compressed.size < file.size,
-        storagePath: result?.storagePath,
-      };
-      onChange({ ...data, images: [...data.images, newImg] });
-      if (compressed.size < file.size) toast.success(`${file.name} 已压缩: ${(file.size/1024).toFixed(0)}KB → ${(compressed.size/1024).toFixed(0)}KB`);
+      try {
+        const compressed = await compressImage(file);
+        const result = await uploadImage(issueId, config.key, compressed);
+        const preview = result ? result.publicUrl : URL.createObjectURL(compressed);
+        const newImg: ImageItem = {
+          id: `img-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          file: compressed, preview, name: file.name, size: compressed.size,
+          compressed: compressed.size < file.size,
+          storagePath: result?.storagePath,
+        };
+        nextImages = [...nextImages, newImg];
+        onChange({ ...data, images: nextImages });
+        if (compressed.size < file.size) toast.success(`${file.name} 已压缩: ${(file.size/1024).toFixed(0)}KB → ${(compressed.size/1024).toFixed(0)}KB`);
+      } catch (error) {
+        console.error('Image processing failed:', error);
+        toast.error(`${file.name} 处理失败，请重试`);
+      }
     }
   }, [data, config.maxImages, config.key, issueId, onChange]);
 
@@ -285,7 +316,8 @@ function IssueListItem({ record, isActive, onClick }: { record: IssueRecord; isA
     submitted: { label: '已提交', cls: 'border-emerald-500/40 text-emerald-300 bg-emerald-500/10' },
   };
   const s = statusMap[record.status];
-  const typeStr = record.types.length > 0 ? record.types.join(' · ') : '未分类';
+  const typeStr = getIssueTypeLabels(record.types).join(' · ') || '未分类';
+  const processLabel = record.process ? getIssueProcessStepLabel(record.process) : '—';
   return (
     <div onClick={onClick}
       className={`px-4 py-3.5 border-b border-white/[0.04] cursor-pointer transition-all duration-200
@@ -306,7 +338,7 @@ function IssueListItem({ record, isActive, onClick }: { record: IssueRecord; isA
             <Clock className="w-3 h-3 opacity-70 text-slate-500 shrink-0" />
             <span className="font-bold bg-clip-text text-transparent" style={{ backgroundImage: 'linear-gradient(135deg, #a78bfa, #818cf8, #60a5fa)' }}>{record.date}</span>
             <span className="text-slate-700">·</span>
-            <span className="font-bold bg-clip-text text-transparent" style={{ backgroundImage: 'linear-gradient(135deg, #a78bfa, #818cf8, #60a5fa)' }}>{record.process || '—'}</span>
+            <span className="font-bold bg-clip-text text-transparent" style={{ backgroundImage: 'linear-gradient(135deg, #a78bfa, #818cf8, #60a5fa)' }}>{processLabel}</span>
           </div>
         </div>
         <span className={`shrink-0 text-[11px] font-semibold px-2 py-1 rounded-full border ${s.cls}`}>{s.label}</span>
@@ -339,86 +371,186 @@ export default function FaultDashboard() {
   // ── 状态提升：材质 & VDI 全局共享给 VDISurfaceGrid + DefectLab ──
   const [selectedMat, setSelectedMat] = useState<'PC/ABS' | 'POM/PA' | 'PP/PE'>('PC/ABS');
   const [currentVDI, setCurrentVDI] = useState<number>(30);
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isRecordInLocalScope = useCallback((record: IssueRecord) => (
+    !projectId || record.projectId === projectId
+  ), [projectId]);
+
+  const upsertRecordCollections = useCallback((record: IssueRecord) => {
+    setRecords(prev => prev.some(r => r.id === record.id)
+      ? prev.map(r => r.id === record.id ? record : r)
+      : [record, ...prev]);
+
+    if (isRecordInLocalScope(record)) {
+      setLocalRecords(prev => prev.some(r => r.id === record.id)
+        ? prev.map(r => r.id === record.id ? record : r)
+        : [record, ...prev]);
+    }
+  }, [isRecordInLocalScope]);
+
+  const removeRecordCollections = useCallback((id: string) => {
+    setRecords(prev => prev.filter(r => r.id !== id));
+    setLocalRecords(prev => prev.filter(r => r.id !== id));
+  }, []);
+
+  const persistIssueQuietly = useCallback(async (record: IssueRecord): Promise<boolean> => {
+    try {
+      return await updateIssue(record);
+    } catch (error) {
+      console.error('Issue persistence failed:', error);
+      return false;
+    }
+  }, []);
+
+  const { markDirty: queueIssueSave, clearDirty: clearQueuedIssueSave } = useDebouncedDirtyIssueAutosave({
+    persistRecord: persistIssueQuietly,
+    onPartialFailure: () => {
+      toast.error('Issue auto-save failed');
+    },
+  });
 
   // Load from Supabase on mount, filtered by projectId
   useEffect(() => {
-    fetchIssues(projectId || undefined).then(data => {
-      setRecords(data);
-      setLocalRecords(data);
-      setLoading(false);
-    }).catch(() => setLoading(false));
-    // Also fetch global count across all projects
-    fetchIssues().then(all => setGlobalCount(all.length)).catch(() => {});
+    let cancelled = false;
+    setLoading(true);
+
+    void (async () => {
+      try {
+        const data = await fetchIssues(projectId || undefined);
+        if (cancelled) return;
+        setRecords(data);
+        setLocalRecords(data);
+
+        const all = await fetchIssues();
+        if (!cancelled) setGlobalCount(all.length);
+      } catch (error) {
+        console.error('Failed to load issues:', error);
+        if (!cancelled) toast.error('问题数据加载失败，请稍后重试');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [projectId]);
 
   const toggleGlobal = useCallback(async () => {
     if (showGlobal) {
-      // Switch back to current project
       setRecords(localRecords);
       setShowGlobal(false);
       setActiveId(null);
-    } else {
-      // Load all projects
+      return;
+    }
+
+    try {
       const all = await fetchIssues();
       setRecords(all);
       setShowGlobal(true);
       setActiveId(null);
+    } catch (error) {
+      console.error('Failed to load global issues:', error);
+      toast.error('全局问题数据加载失败，请稍后重试');
     }
   }, [showGlobal, localRecords]);
 
-  // Debounced auto-save to Supabase on record changes (skip initial load)
-  const isInitial = useRef(true);
+  /*
   useEffect(() => {
     if (isInitial.current) { isInitial.current = false; return; }
     if (saveTimer.current) clearTimeout(saveTimer.current);
+    let cancelled = false;
     saveTimer.current = setTimeout(() => {
-      // Save each changed record
-      records.forEach(r => updateIssue(r));
+      void (async () => {
+        const results = await Promise.all(records.map(r => persistIssueQuietly(r)));
+        if (!cancelled && results.some(saved => !saved)) {
+          toast.error('自动保存失败，请稍后重试');
+        }
+      })();
     }, 1500);
-    return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
-  }, [records]);
+    return () => {
+      cancelled = true;
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+    };
+  }, [persistIssueQuietly, records]);
+  */
 
   const activeRecord = records.find(r => r.id === activeId) || null;
   const filteredRecords = records.filter(r => {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
-    return r.id.toLowerCase().includes(q) || r.types.some(t => t.includes(q)) || r.process.includes(q);
+    return (
+      r.id.toLowerCase().includes(q) ||
+      r.types.some((type) => matchesIssueTypeQuery(type, q)) ||
+      matchesIssueProcessStepQuery(r.process, q)
+    );
   });
 
   const draftCount = records.filter(r => r.status === 'draft').length;
   const submittedCount = records.filter(r => r.status === 'submitted').length;
 
-  const handleCreate = async () => {
+  const handleCreate = useCallback(async () => {
     const n = createEmptyRecord(records, projectId, projectName, productName);
     setRecords(prev => [n, ...prev]);
+    setLocalRecords(prev => [n, ...prev]);
     setActiveId(n.id);
-    await createIssue(n);
+    let created = false;
+    try {
+      created = await createIssue(n);
+    } catch (error) {
+      console.error('Issue creation failed:', error);
+    }
+    if (!created) {
+      removeRecordCollections(n.id);
+      setActiveId(current => current === n.id ? null : current);
+      toast.error('新问题创建失败，请检查服务连接');
+      return;
+    }
     toast.success('新问题已创建');
-  };
+  }, [productName, projectId, projectName, records, removeRecordCollections]);
 
   const handleUpdate = useCallback((updated: IssueRecord) => {
     const withTime = { ...updated, updatedAt: new Date().toISOString() };
-    setRecords(prev => prev.map(r => r.id === updated.id ? withTime : r));
-  }, []);
+    queueIssueSave(withTime);
+    upsertRecordCollections(withTime);
+  }, [queueIssueSave, upsertRecordCollections]);
 
   const handleDelete = useCallback(async (id: string) => {
-    const record = records.find(r => r.id === id);
-    if (record) await deleteIssue(id, record.modules);
-    setRecords(prev => prev.filter(r => r.id !== id));
+    const record = records.find(r => r.id === id) || localRecords.find(r => r.id === id);
+    if (record) {
+      let deleted = false;
+      try {
+        deleted = await deleteIssue(id, record.modules);
+      } catch (error) {
+        console.error('Issue deletion failed:', error);
+      }
+      if (!deleted) {
+        toast.error('记录删除失败，请稍后重试');
+        return;
+      }
+    }
+    clearQueuedIssueSave(id);
+    removeRecordCollections(id);
     if (activeId === id) setActiveId(null);
     toast.success('记录已删除');
-  }, [activeId, records]);
+  }, [activeId, clearQueuedIssueSave, localRecords, records, removeRecordCollections]);
 
   const handleSubmit = useCallback((id: string) => {
     const updated = records.find(r => r.id === id);
-    if (updated) {
-      const submitted = { ...updated, status: 'submitted' as const, updatedAt: new Date().toISOString() };
-      setRecords(prev => prev.map(r => r.id === id ? submitted : r));
-      updateIssue(submitted);
-    }
-    toast.success('问题已提交');
-  }, [records]);
+    if (!updated) return;
+    const submitted = { ...updated, status: 'submitted' as const, updatedAt: new Date().toISOString() };
+    upsertRecordCollections(submitted);
+    void (async () => {
+      const saved = await persistIssueQuietly(submitted);
+      if (!saved) {
+        queueIssueSave(updated);
+        upsertRecordCollections(updated);
+        toast.error('问题提交失败，请稍后重试');
+        return;
+      }
+      toast.success('问题已提交');
+      clearQueuedIssueSave(id);
+    })();
+  }, [clearQueuedIssueSave, persistIssueQuietly, queueIssueSave, records, upsertRecordCollections]);
 
   return (
     <div className="w-full h-screen bg-[#0B0F14] flex flex-col overflow-hidden">
@@ -549,7 +681,7 @@ export default function FaultDashboard() {
                   background: 'oklch(0.65 0.22 28 / 0.08)',
                   boxShadow: 'inset 0 0 10px oklch(0.65 0.22 28 / 0.14), 0 0 12px oklch(0.65 0.22 28 / 0.18)',
                 }}>
-                <Microscope className="w-4.5 h-4.5 shrink-0" /><span>诊断</span>
+                <Microscope className="w-4.5 h-4.5 shrink-0" /><span>注塑诊所</span>
               </button>
               <a href={projectId ? `/gantt?id=${encodeURIComponent(projectId)}` : '/'}
                 className="relative flex items-center justify-center gap-2 w-[118px] h-[84px] text-[15px] font-mono font-extrabold tracking-[0.18em] uppercase rounded-sm border text-cyan-400 hover:text-cyan-200 hover:border-cyan-300 transition-all duration-300 cursor-pointer"
@@ -609,9 +741,17 @@ export default function FaultDashboard() {
               onBack={() => setActiveId(null)}
               onEdit={() => {
                 const edited = { ...activeRecord, status: 'draft' as const };
-                setRecords(prev => prev.map(r => r.id === activeRecord.id ? edited : r));
-                updateIssue(edited);
-                toast.success('已切换为编辑模式');
+                upsertRecordCollections(edited);
+                void (async () => {
+                  const saved = await persistIssueQuietly(edited);
+                  if (!saved) {
+                    upsertRecordCollections(activeRecord);
+                    toast.error('切换编辑模式失败，请稍后重试');
+                    return;
+                  }
+                  toast.success('已切换为编辑模式');
+                  clearQueuedIssueSave(edited.id);
+                })();
               }}
               onDelete={() => handleDelete(activeRecord.id)}
             />

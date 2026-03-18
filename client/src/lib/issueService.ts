@@ -27,6 +27,13 @@
  * -- Create bucket "issue-images" with public access
  */
 
+import {
+  normalizeIssueProcessStepId,
+  normalizeIssueTypes,
+  type IssueModuleKey,
+  type IssueProcessStepId,
+  type IssueTypeId,
+} from './issueDomain';
 import { supabase } from './supabase';
 
 // ═══════════════════════════════════════════════
@@ -48,25 +55,27 @@ export interface ModuleData {
   images: ImageItem[];
 }
 
+export interface IssueModules {
+  evidence: ModuleData;
+  description: ModuleData;
+  rootCause: ModuleData;
+  solution: ModuleData;
+  verification: ModuleData;
+}
+
 export interface IssueRecord {
   id: string;
   projectId: string;
   projectName?: string;
   productName?: string;
-  types: string[];
+  types: IssueTypeId[];
   date: string;
-  process: string;
+  process: IssueProcessStepId | '';
   quantity?: string;
   technician?: string;
   machine?: string;
   cavity?: string;
-  modules: {
-    evidence: ModuleData;
-    description: ModuleData;
-    rootCause: ModuleData;
-    solution: ModuleData;
-    verification: ModuleData;
-  };
+  modules: IssueModules;
   status: 'draft' | 'submitted';
   createdAt: string;
   updatedAt: string;
@@ -106,35 +115,100 @@ interface DbRow {
   types: string[];
   date: string;
   process: string;
-  modules: Record<string, any>;
+  modules: Record<string, unknown>;
   status: string;
   created_at: string;
   updated_at: string;
 }
 
+type IssueMetaPayload = {
+  projectName?: unknown;
+  productName?: unknown;
+  quantity?: unknown;
+  technician?: unknown;
+  machine?: unknown;
+  cavity?: unknown;
+};
+
+type StoredModuleData = {
+  text?: unknown;
+  images?: unknown;
+};
+
+type StoredModulesPayload = Partial<Record<IssueModuleKey, StoredModuleData>> & {
+  _meta?: IssueMetaPayload;
+};
+
+function sanitizeString(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
+function sanitizeImageItems(value: unknown): ImageItem[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.reduce<ImageItem[]>((items, item, index) => {
+      if (!item || typeof item !== 'object') {
+        return items;
+      }
+
+      const record = item as Record<string, unknown>;
+      const preview = sanitizeString(record.preview);
+      const name = sanitizeString(record.name);
+      if (!preview) {
+        return items;
+      }
+
+      items.push({
+        id: sanitizeString(record.id) || `img-${index}`,
+        preview,
+        name,
+        size: typeof record.size === 'number' && Number.isFinite(record.size) ? record.size : 0,
+        compressed: Boolean(record.compressed),
+        storagePath: sanitizeString(record.storagePath) || undefined,
+      });
+
+      return items;
+    }, []);
+}
+
+function sanitizeModuleData(value: unknown): ModuleData {
+  if (!value || typeof value !== 'object') {
+    return { text: '', images: [] };
+  }
+
+  const record = value as StoredModuleData;
+  return {
+    text: sanitizeString(record.text),
+    images: sanitizeImageItems(record.images),
+  };
+}
+
 function rowToRecord(row: DbRow): IssueRecord {
-  const defaultMod = (): ModuleData => ({ text: '', images: [] });
-  const m = row.modules || {};
-  // _meta is stored inside modules JSONB to avoid needing new DB columns
-  const meta = (m as any)._meta || {};
+  const modulesPayload = (row.modules && typeof row.modules === 'object'
+    ? row.modules
+    : {}) as StoredModulesPayload;
+  const meta = modulesPayload._meta ?? {};
+
   return {
     id: row.id,
     projectId: row.project_id || '',
-    projectName: meta.projectName || '',
-    productName: meta.productName || '',
-    types: row.types || [],
+    projectName: sanitizeString(meta.projectName),
+    productName: sanitizeString(meta.productName),
+    types: normalizeIssueTypes(row.types || []),
     date: row.date || '',
-    process: row.process || '',
-    quantity: meta.quantity || '',
-    technician: meta.technician || '',
-    machine: meta.machine || '',
-    cavity: meta.cavity || '',
+    process: normalizeIssueProcessStepId(row.process),
+    quantity: sanitizeString(meta.quantity),
+    technician: sanitizeString(meta.technician),
+    machine: sanitizeString(meta.machine),
+    cavity: sanitizeString(meta.cavity),
     modules: {
-      evidence: m.evidence || defaultMod(),
-      description: m.description || defaultMod(),
-      rootCause: m.rootCause || defaultMod(),
-      solution: m.solution || defaultMod(),
-      verification: m.verification || defaultMod(),
+      evidence: sanitizeModuleData(modulesPayload.evidence),
+      description: sanitizeModuleData(modulesPayload.description),
+      rootCause: sanitizeModuleData(modulesPayload.rootCause),
+      solution: sanitizeModuleData(modulesPayload.solution),
+      verification: sanitizeModuleData(modulesPayload.verification),
     },
     status: (row.status as 'draft' | 'submitted') || 'draft',
     createdAt: row.created_at,
@@ -145,9 +219,9 @@ function rowToRecord(row: DbRow): IssueRecord {
 function recordToRow(r: IssueRecord) {
   // Strip file objects from images before saving to DB
   const cleanModules: Record<string, unknown> = Object.fromEntries(
-    Object.entries(r.modules).map(([k, v]) => [
+    (Object.entries(r.modules) as Array<[IssueModuleKey, ModuleData]>).map(([k, v]) => [
       k,
-      { text: v.text, images: v.images.map(img => ({ ...img, file: undefined })) },
+      { text: v.text, images: v.images.map((img: ImageItem) => ({ ...img, file: undefined })) },
     ])
   );
   // Store extra fields inside modules JSONB as _meta (no DB migration needed)
@@ -162,9 +236,9 @@ function recordToRow(r: IssueRecord) {
   return {
     id: r.id,
     project_id: r.projectId || '',
-    types: r.types,
+    types: normalizeIssueTypes(r.types),
     date: r.date || null,
-    process: r.process,
+    process: normalizeIssueProcessStepId(r.process),
     modules: cleanModules,
     status: r.status,
     updated_at: new Date().toISOString(),
