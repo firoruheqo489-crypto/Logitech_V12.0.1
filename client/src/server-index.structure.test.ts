@@ -35,4 +35,12 @@ describe('server/index.ts structure', () => {
     expect(registerPolicyIndex).toBeGreaterThan(securityHeadersIndex);
     expect(firstApiRouteIndex).toBeGreaterThan(registerPolicyIndex);
   });
+
+  it('keeps the dev-api-only fallback on a machine-readable error payload', async () => {
+    const source = await loadServerIndexSource();
+
+    expect(source).toMatch(
+      /res\.status\(404\)\.json\(\{\s*error:\s*"not found \(dev API only\)",\s*code:\s*"ROUTE_NOT_FOUND"\s*\}\);/,
+    );
+  });
 });

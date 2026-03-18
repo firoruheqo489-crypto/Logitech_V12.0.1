@@ -120,7 +120,7 @@ async function startServer() {
     });
   } else {
     app.use((_req, res) => {
-      res.status(404).json({ error: "Not found (dev API only)" });
+      res.status(404).json({ error: "not found (dev API only)", code: "ROUTE_NOT_FOUND" });
     });
   }
 
