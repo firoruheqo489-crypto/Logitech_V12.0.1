@@ -7,6 +7,7 @@
 
 import type { Request, Response } from 'express';
 import { eq } from 'drizzle-orm';
+import { asc } from 'drizzle-orm';
 import { db, sql as dbSql } from '../db.js';
 import { dashboardProjects } from '../../shared/schema.js';
 
@@ -20,6 +21,11 @@ type DashboardHealthReport = {
   ok: boolean;
 };
 
+type DashboardModuleOrderRow = {
+  project_name: string;
+  sort_index: number;
+};
+
 type DashboardRouteErrorCode =
   | 'BODY_MUST_BE_ARRAY'
   | 'DATABASE_NOT_CONFIGURED'
@@ -28,6 +34,8 @@ type DashboardRouteErrorCode =
   | 'INVALID_ID'
   | 'NOT_FOUND';
 
+const PINNED_HEAD_MODULE_NAMES = ['Ziti', 'Bioko -M'] as const;
+const PINNED_TAIL_MODULE_NAMES = ['KIDDY'] as const;
 const DASHBOARD_ROUTE_ERROR_MESSAGES: Record<DashboardRouteErrorCode, string> = {
   BODY_MUST_BE_ARRAY: 'request body must be an array',
   DATABASE_NOT_CONFIGURED: 'database not configured',
@@ -37,6 +45,9 @@ const DASHBOARD_ROUTE_ERROR_MESSAGES: Record<DashboardRouteErrorCode, string> = 
   NOT_FOUND: 'not found',
 };
 
+let dashboardHealthTableReady: Promise<void> | null = null;
+let dashboardModuleOrderTableReady: Promise<void> | null = null;
+
 function sendDashboardRouteError(res: Response, status: number, code: DashboardRouteErrorCode): void {
   res.status(status).json({
     error: DASHBOARD_ROUTE_ERROR_MESSAGES[code],
@@ -44,15 +55,129 @@ function sendDashboardRouteError(res: Response, status: number, code: DashboardR
   });
 }
 
-async function ensureDashboardHealthTable() {
-  if (!dbSql) return;
-  await dbSql.unsafe(`
-    CREATE TABLE IF NOT EXISTS dashboard_health_checks (
-      id BIGSERIAL PRIMARY KEY,
-      report JSONB NOT NULL,
-      created_at TIMESTAMP NOT NULL DEFAULT NOW()
-    )
+function normalizeModuleName(value: unknown): string {
+  return String(value ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function extractOrderedModuleNames(items: Array<Record<string, unknown>>): string[] {
+  const names: string[] = [];
+  const seen = new Set<string>();
+
+  for (const item of items) {
+    const moduleName = String(item.projectName || '').trim();
+    if (!moduleName) continue;
+    const normalizedName = normalizeModuleName(moduleName);
+    if (seen.has(normalizedName)) continue;
+    seen.add(normalizedName);
+    names.push(moduleName);
+  }
+
+  return names;
+}
+
+function buildNextModuleOrder(
+  uploadModuleNames: string[],
+  persistedModuleNames: string[],
+): string[] {
+  const uploadNameMap = new Map<string, string>();
+  for (const moduleName of uploadModuleNames) {
+    uploadNameMap.set(normalizeModuleName(moduleName), moduleName);
+  }
+
+  const activeNameSet = new Set(uploadNameMap.keys());
+  const consumed = new Set<string>();
+  const nextOrder: string[] = [];
+
+  const pushName = (moduleName: string | undefined) => {
+    if (!moduleName) return;
+    const normalizedName = normalizeModuleName(moduleName);
+    if (!normalizedName || consumed.has(normalizedName) || !activeNameSet.has(normalizedName)) return;
+    nextOrder.push(uploadNameMap.get(normalizedName) || moduleName);
+    consumed.add(normalizedName);
+  };
+
+  for (const moduleName of PINNED_HEAD_MODULE_NAMES) {
+    pushName(moduleName);
+  }
+
+  for (const moduleName of persistedModuleNames) {
+    pushName(moduleName);
+  }
+
+  for (const moduleName of uploadModuleNames) {
+    pushName(moduleName);
+  }
+
+  for (const moduleName of PINNED_TAIL_MODULE_NAMES) {
+    pushName(moduleName);
+  }
+
+  return nextOrder;
+}
+
+export function ensureDashboardHealthTable(): Promise<void> {
+  if (!dbSql) return Promise.resolve();
+  if (!dashboardHealthTableReady) {
+    dashboardHealthTableReady = dbSql.unsafe(`
+      CREATE TABLE IF NOT EXISTS dashboard_health_checks (
+        id BIGSERIAL PRIMARY KEY,
+        report JSONB NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `).then(() => undefined);
+  }
+  return dashboardHealthTableReady;
+}
+
+export function ensureDashboardModuleOrderTable(): Promise<void> {
+  if (!dbSql) return Promise.resolve();
+  if (!dashboardModuleOrderTableReady) {
+    dashboardModuleOrderTableReady = dbSql.unsafe(`
+      CREATE TABLE IF NOT EXISTS dashboard_module_order (
+        project_name VARCHAR(255) PRIMARY KEY,
+        sort_index INTEGER NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `).then(() => undefined);
+  }
+  return dashboardModuleOrderTableReady;
+}
+
+async function readDashboardModuleOrder(): Promise<DashboardModuleOrderRow[]> {
+  if (!dbSql) return [];
+  await ensureDashboardModuleOrderTable();
+  const rows = await dbSql.unsafe(`
+    SELECT project_name, sort_index
+    FROM dashboard_module_order
+    ORDER BY sort_index ASC, project_name ASC
   `);
+  return rows as unknown as DashboardModuleOrderRow[];
+}
+
+async function syncDashboardModuleOrder(items: Array<Record<string, unknown>>): Promise<Map<string, number>> {
+  if (!dbSql) return new Map();
+
+  const uploadModuleNames = extractOrderedModuleNames(items);
+  await ensureDashboardModuleOrderTable();
+  const persistedRows = await readDashboardModuleOrder();
+  const persistedNames = persistedRows.map((row) => row.project_name);
+  const nextOrder = buildNextModuleOrder(uploadModuleNames, persistedNames);
+
+  for (let index = 0; index < nextOrder.length; index += 1) {
+    const moduleName = nextOrder[index];
+    await dbSql.unsafe(
+      `
+        INSERT INTO dashboard_module_order (project_name, sort_index, created_at, updated_at)
+        VALUES ($1, $2, NOW(), NOW())
+        ON CONFLICT (project_name)
+        DO UPDATE SET sort_index = EXCLUDED.sort_index, updated_at = NOW()
+      `,
+      [moduleName, index],
+    );
+  }
+
+  return new Map(nextOrder.map((moduleName, index) => [normalizeModuleName(moduleName), index]));
 }
 
 function isLikelyValidDate(raw: string): boolean {
@@ -104,8 +229,15 @@ export async function runDashboardHealthCheck(): Promise<DashboardHealthReport |
 export async function listDashboardProjects(_req: Request, res: Response): Promise<void> {
   if (!db) { sendDashboardRouteError(res, 503, 'DATABASE_NOT_CONFIGURED'); return; }
   try {
-    const rows = await db.select().from(dashboardProjects);
-    res.json(rows);
+    const rows = await db.select().from(dashboardProjects).orderBy(asc(dashboardProjects.id));
+    const moduleOrderMap = await syncDashboardModuleOrder(rows as Array<Record<string, unknown>>);
+    const sortedRows = [...rows].sort((left, right) => {
+      const leftOrder = moduleOrderMap.get(normalizeModuleName(left.projectName)) ?? Number.MAX_SAFE_INTEGER;
+      const rightOrder = moduleOrderMap.get(normalizeModuleName(right.projectName)) ?? Number.MAX_SAFE_INTEGER;
+      if (leftOrder !== rightOrder) return leftOrder - rightOrder;
+      return left.id - right.id;
+    });
+    res.json(sortedRows);
   } catch (err) {
     console.error('GET /api/dashboard/projects error:', err);
     sendDashboardRouteError(res, 500, 'INTERNAL_ERROR');
@@ -147,6 +279,7 @@ export async function batchReplaceDashboardProjects(req: Request, res: Response)
     }
 
     const normalizedItems = [...noMoldItems, ...Array.from(dedupedByMold.values())];
+    await syncDashboardModuleOrder(normalizedItems);
     const batchNow = new Date();
     await db.transaction(async (tx) => {
       await tx.delete(dashboardProjects);
