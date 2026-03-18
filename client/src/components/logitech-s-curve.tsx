@@ -41,8 +41,8 @@ interface TaskRow {
 
 /** S 曲线的 5 个里程碑节点定义 */
 interface MilestoneNode {
-  /** 匹配关键词（模糊匹配 name_cn） */
-  keywords: string[]
+  /** Canonical stage IDs used by the engine/import pipeline */
+  stageIds: string[]
   /** 对应的进度百分比 */
   progress: number
   /** 显示标签 */
@@ -51,13 +51,13 @@ interface MilestoneNode {
   shortLabel: string
 }
 
-/** 5 个关键里程碑节点 — 从 tasks 表中按 name_cn 模糊匹配 */
+/** 5 key milestones matched by canonical stage IDs */
 const MILESTONE_NODES: MilestoneNode[] = [
-  { keywords: ['项目立项'], progress: 0, label: '项目立项', shortLabel: 'KO' },
-  { keywords: ['模具Fai', '模具FAI', 'FaiCpk', 'FAICpk', 'mold_fai'], progress: 25, label: '模具FAI/CPK', shortLabel: 'FAI' },
-  { keywords: ['T0综合报告', 't0_summary', 'T0综合'], progress: 50, label: 'T0综合报告', shortLabel: 'T0' },
-  { keywords: ['T0问题闭环', 't0_closure', '闭环报告'], progress: 75, label: 'T0问题闭环', shortLabel: 'T1' },
-  { keywords: ['巡检SPC', 'SPC数据', 'spc_inspection'], progress: 100, label: '巡检SPC数据', shortLabel: 'SPC' },
+  { stageIds: ['project_launch'], progress: 0, label: '项目立项', shortLabel: 'KO' },
+  { stageIds: ['mold_fai_cpk'], progress: 25, label: '模具FAI/CPK', shortLabel: 'FAI' },
+  { stageIds: ['t0_summary'], progress: 50, label: 'T0综合报告', shortLabel: 'T0' },
+  { stageIds: ['t0_closure_report'], progress: 75, label: 'T0问题闭环', shortLabel: 'T1' },
+  { stageIds: ['spc_inspection'], progress: 100, label: '巡检SPC数据', shortLabel: 'SPC' },
 ]
 
 /** A single data point on the S-curve time axis (weekly) */
@@ -106,6 +106,108 @@ export interface LogitechSCurveProps {
   /** Optional mold_id for display */
   moldNumber?: string
   className?: string
+}
+
+type UnknownRecord = Record<string, unknown>
+
+type SCurveSeriesKey = 'planned' | 'actual' | 'forecast'
+
+type SCurveTooltipEntry = {
+  dataKey?: string
+  value?: number | string | null
+  payload?: SCurvePoint
+}
+
+type SCurveTooltipProps = {
+  active?: boolean
+  payload?: SCurveTooltipEntry[]
+  label?: string | number
+}
+
+function asRecord(value: unknown): UnknownRecord | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  return value as UnknownRecord
+}
+
+function readString(value: unknown): string {
+  if (typeof value === 'string') return value
+  if (value == null) return ''
+  return String(value)
+}
+
+function readOptionalString(value: unknown): string | undefined {
+  const normalized = readString(value).trim()
+  return normalized ? normalized : undefined
+}
+
+function readNumber(value: unknown): number {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string') {
+    const parsed = Number(value)
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return 0
+}
+
+function readOptionalNumber(value: unknown): number | undefined {
+  if (value == null || value === '') return undefined
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string') {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : undefined
+  }
+  return undefined
+}
+
+function readBoolean(value: unknown): boolean | undefined {
+  if (typeof value === 'boolean') return value
+  if (typeof value === 'string') {
+    if (value === 'true') return true
+    if (value === 'false') return false
+  }
+  return undefined
+}
+
+function normalizeTaskRow(raw: unknown): TaskRow | null {
+  const row = asRecord(raw)
+  if (!row) return null
+
+  return {
+    id: readString(row.id),
+    project_id: readString(row.project_id),
+    name: readString(row.name),
+    name_cn: readString(row.name_cn),
+    phase: readString(row.phase),
+    track: readOptionalString(row.track),
+    stage: readOptionalString(row.stage),
+    weight: readOptionalNumber(row.weight),
+    duration_days: readNumber(row.duration_days),
+    baseline_start: readString(row.baseline_start),
+    baseline_end: readString(row.baseline_end),
+    actual_start: readOptionalString(row.actual_start),
+    actual_end: readOptionalString(row.actual_end),
+    progress: readNumber(row.progress),
+    status: readString(row.status),
+    is_milestone: readBoolean(row.is_milestone),
+    is_merge_point: readBoolean(row.is_merge_point),
+  }
+}
+
+function normalizeTaskRows(payload: unknown): TaskRow[] {
+  if (!Array.isArray(payload)) return []
+  return payload
+    .map((row) => normalizeTaskRow(row))
+    .filter((row): row is TaskRow => row !== null)
+}
+
+function readTooltipValue(payload: SCurveTooltipEntry[] | undefined, key: SCurveSeriesKey): number | null {
+  const value = payload?.find((entry) => entry.dataKey === key)?.value
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string') {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+  return null
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -168,15 +270,9 @@ function extractMilestonesFromTasks(
   const results: { date: Date; actualDate: Date | null; progress: number; label: string; shortLabel: string; task: TaskRow }[] = []
 
   for (const node of MILESTONE_NODES) {
-    // 在所有任务中寻找 name_cn 包含任一关键词的任务
     const matched = tasks.find((t) => {
-      const nameCn = (t.name_cn || '').replace(/\s+/g, '')
-      const name = (t.name || '').replace(/\s+/g, '')
-      const stage = (t.stage || '')
-      return node.keywords.some((kw) => {
-        const kwClean = kw.replace(/\s+/g, '')
-        return nameCn.includes(kwClean) || name.includes(kwClean) || stage === kwClean
-      })
+      const canonicalId = (t.stage || t.id || '').replace(/\s+/g, '')
+      return node.stageIds.includes(canonicalId)
     })
 
     if (matched) {
@@ -425,20 +521,20 @@ function buildSCurveData(
   } else {
     // ── 21工序模型 ──
     // 前置工序: 项目立项 + 2D图纸 + 3D图纸 + MTD = 4道
-    const PREP_NAMES = ['项目立项', '2D图纸', '3D图纸', 'MTD']
+    const PREP_STAGE_IDS = ['project_launch', 'drawing_2d', 'drawing_3d', 'mtd']
     const prepTasks = leafTasks.filter(t => {
-      const name = (t.name_cn || '').trim()
-      return PREP_NAMES.includes(name)
+      const canonicalId = ((t.stage || t.id) || '').trim()
+      return PREP_STAGE_IDS.includes(canonicalId)
     })
     // 泳道工序: 4条泳道各有14道工序，四合一后算14道
     const TRACKS = ['cavity_core', 'cavity_insert', 'lifter', 'slider']
     const trackTasks = leafTasks.filter(t => t.track && TRACKS.includes(t.track))
     // 后续节点: 非前置、非泳道的任务
     const postTasks = leafTasks.filter(t => {
-      const name = (t.name_cn || '').trim()
-      const isPrepName = PREP_NAMES.includes(name)
+      const canonicalId = ((t.stage || t.id) || '').trim()
+      const isPrepTask = PREP_STAGE_IDS.includes(canonicalId)
       const isTrack = t.track && TRACKS.includes(t.track)
-      return !isPrepName && !isTrack
+      return !isPrepTask && !isTrack
     })
 
     // 获取泳道中每道工序的唯一名称列表（用第一条泳道的工序名）
@@ -459,7 +555,7 @@ function buildSCurveData(
     for (const t of prepTasks) {
       const ae = parseDate(t.actual_end)
       processes21.push({
-        name: t.name_cn,
+        name: t.name || t.stage || t.id,
         baselineEnd: parseDate(t.baseline_end),
         actualEnd: ae,
         completed: !!ae && ae <= today,
@@ -468,11 +564,15 @@ function buildSCurveData(
 
     // 2) 泳道四合一 (14道) — 每道工序取4条泳道中最晚的actual_end
     for (const refTask of firstTrackTasks) {
-      // 找到4条泳道中同名/同stage的工序
+      const refCanonicalId = ((refTask.stage || refTask.id) || '').trim()
+      const refName = (refTask.name || '').trim()
+      // 找到4条泳道中同工序的兄弟任务，优先使用stage/id，仅在缺失时回退到英文name
       const siblings = trackTasks.filter(t => {
-        // 匹配方式：同stage 或 同name_cn
-        return (t.stage && refTask.stage && t.stage === refTask.stage) ||
-               (t.name_cn === refTask.name_cn)
+        const taskCanonicalId = ((t.stage || t.id) || '').trim()
+        if (refCanonicalId) {
+          return taskCanonicalId === refCanonicalId
+        }
+        return !!refName && (t.name || '').trim() === refName
       })
 
       // 取最晚的 baseline_end
@@ -499,7 +599,7 @@ function buildSCurveData(
       }
 
       processes21.push({
-        name: refTask.name_cn + '(四合一)',
+        name: `${refTask.name || refTask.stage || refTask.id}(4-in-1)`,
         baselineEnd: latestBE,
         actualEnd: latestAE,
         completed: allSiblingsComplete,
@@ -510,7 +610,7 @@ function buildSCurveData(
     for (const t of postTasks) {
       const ae = parseDate(t.actual_end)
       processes21.push({
-        name: t.name_cn,
+        name: t.name || t.stage || t.id,
         baselineEnd: parseDate(t.baseline_end),
         actualEnd: ae,
         completed: !!ae && ae <= today,
@@ -624,12 +724,12 @@ function buildSCurveData(
 // Custom Tooltip Component
 // ═══════════════════════════════════════════════════════════════
 
-function SCurveTooltip({ active, payload, label }: any) {
+function SCurveTooltip({ active, payload, label }: SCurveTooltipProps) {
   if (!active || !payload?.length) return null
 
-  const planned = payload.find((p: any) => p.dataKey === 'planned')?.value
-  const actual = payload.find((p: any) => p.dataKey === 'actual')?.value
-  const forecast = payload.find((p: any) => p.dataKey === 'forecast')?.value
+  const planned = readTooltipValue(payload, 'planned')
+  const actual = readTooltipValue(payload, 'actual')
+  const forecast = readTooltipValue(payload, 'forecast')
   const milestone = payload[0]?.payload?.milestone
 
   return (
@@ -699,13 +799,15 @@ export function LogitechSCurve({ projectId, moldNumber, className = '' }: Logite
       try {
         const res = await apiFetch(`/api/tasks?projectId=${encodeURIComponent(projectId)}`)
         if (!res.ok) {
-          const body = await res.json().catch(() => ({}))
-          throw new Error(body.error || `HTTP ${res.status}`)
+          const body = await res.json().catch(() => null)
+          const record = asRecord(body)
+          const message = typeof record?.error === 'string' ? record.error : `HTTP ${res.status}`
+          throw new Error(message)
         }
-        const taskRows = await res.json()
-        if (!cancelled) setTasks((taskRows as TaskRow[]) || [])
-      } catch (e: any) {
-        if (!cancelled) setError(e.message || '数据加载失败')
+        const taskRows = normalizeTaskRows(await res.json())
+        if (!cancelled) setTasks(taskRows)
+      } catch (error: unknown) {
+        if (!cancelled) setError(error instanceof Error ? error.message : '数据加载失败')
       } finally {
         if (!cancelled) setLoading(false)
       }

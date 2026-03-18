@@ -90,7 +90,7 @@ export default function GanttV3TaskBar({
   if (task.wbsId === '4' || task.nameCn?.includes('MTD')) {
     console.warn(
       `[V10] MTD: bl=${task.baselineStart}→${task.baselineEnd}, ` +
-      `ac=${task.actualStart ?? '—'}→${task.actualEnd ?? '—'}, crit=${task.isCritical}, isOverdue=${(task as any).isOverdue}`
+      `ac=${task.actualStart ?? '—'}→${task.actualEnd ?? '—'}, crit=${task.isCritical}, isOverdue=${task.isOverdue ?? false}`
     );
   }
 
