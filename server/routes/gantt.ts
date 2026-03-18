@@ -10,86 +10,17 @@ import { db } from '../db.js';
 import { tasks, projects, evidence } from '../../shared/schema.js';
 import { getGanttData } from '../../shared/ganttEngine.js';
 import type { TaskNode, ProjectInfo, GanttData } from '../../shared/ganttEngine.js';
-import type { Task } from '../../shared/schema.js';
+import {
+  normalizeEvidencePayload,
+  normalizeGanttImportPayload,
+  normalizeProjectImagePayload,
+  readTrimmedString,
+  taskNodeToRow,
+  taskRowToTaskNode,
+  toDateStr,
+} from './ganttBoundary.js';
 
 const DEFAULT_PROJECT_ID = 'LA26006';
-
-const VALID_STATUS = ['NotStart', 'InProgress', 'Blocked', 'Done'] as const;
-const VALID_PHASE = ['physical', 'data', 'production'] as const;
-
-/** Normalize to YYYY-MM-DD for Postgres date columns */
-function toDateStr(val: unknown): string | null {
-  if (val == null) return null;
-  if (typeof val === 'string') {
-    const trimmed = val.trim();
-    if (/^\d{4}-\d{2}-\d{2}/.test(trimmed)) return trimmed.slice(0, 10);
-    return trimmed || null;
-  }
-  if (typeof (val as Date).toISOString === 'function') return (val as Date).toISOString().slice(0, 10);
-  return null;
-}
-
-function taskRowToTaskNode(row: Task): TaskNode {
-  const id = row.logicalId ?? String(row.id);
-  return {
-    id,
-    dbId: String(row.id),
-    projectId: row.projectId,
-    wbsId: row.wbsId ?? undefined,
-    name: row.name,
-    nameCn: row.nameCn,
-    phase: (VALID_PHASE.includes(row.phase as any) ? row.phase : 'physical') as TaskNode['phase'],
-    track: (row.track as TaskNode['track']) ?? undefined,
-    stage: row.stage ?? undefined,
-    stageOrder: Number(row.stageOrder) || 0,
-    weight: Number(row.weight) || 1,
-    durationDays: Number(row.durationDays) || 1,
-    baselineStart: String(row.baselineStart).slice(0, 10),
-    baselineEnd: String(row.baselineEnd).slice(0, 10),
-    actualStart: row.actualStart != null ? String(row.actualStart).slice(0, 10) : undefined,
-    actualEnd: row.actualEnd != null ? String(row.actualEnd).slice(0, 10) : undefined,
-    progress: Number(row.progress) || 0,
-    status: (VALID_STATUS.includes(row.status as any) ? row.status : 'NotStart') as TaskNode['status'],
-    isCritical: Boolean(row.isCritical),
-    isMergePoint: Boolean(row.isMergePoint),
-    isMilestone: Boolean(row.isMilestone),
-    assignee: row.assignee ?? undefined,
-    notes: row.notes ?? undefined,
-  };
-}
-
-function taskNodeToRow(task: TaskNode, projectId: string, index: number) {
-  const baseStart = toDateStr(task.baselineStart) ?? '';
-  const baseEnd = toDateStr(task.baselineEnd) ?? baseStart;
-  const logicalId = (task.id != null && String(task.id).trim() !== '')
-    ? String(task.id).trim()
-    : `${projectId}_${index}`;
-  return {
-    projectId,
-    logicalId,
-    wbsId: task.wbsId ?? null,
-    name: String(task.name ?? '').slice(0, 255),
-    nameCn: String(task.nameCn ?? task.name ?? '').slice(0, 255),
-    phase: VALID_PHASE.includes(task.phase as any) ? task.phase : 'physical',
-    track: task.track ?? null,
-    stage: task.stage ?? null,
-    stageOrder: Math.floor(Number(task.stageOrder)) || 0,
-    weight: Number(task.weight) || 1,
-    durationDays: Math.max(1, Math.floor(Number(task.durationDays)) || 1),
-    baselineStart: baseStart || new Date().toISOString().slice(0, 10),
-    baselineEnd: baseEnd || baseStart || new Date().toISOString().slice(0, 10),
-    actualStart: toDateStr(task.actualStart),
-    actualEnd: toDateStr(task.actualEnd),
-    progress: Math.min(100, Math.max(0, Math.floor(Number(task.progress))) || 0),
-    status: VALID_STATUS.includes(task.status as any) ? task.status : 'NotStart',
-    isCritical: Boolean(task.isCritical),
-    isMergePoint: Boolean(task.isMergePoint),
-    isMilestone: Boolean(task.isMilestone),
-    assignee: task.assignee ?? null,
-    notes: task.notes ?? null,
-    updatedAt: new Date(),
-  };
-}
 
 export async function getGanttDataHandler(req: Request, res: Response): Promise<void> {
   if (!db) {
@@ -97,7 +28,7 @@ export async function getGanttDataHandler(req: Request, res: Response): Promise<
     return;
   }
 
-  const projectId = (req.query.projectId as string)?.trim() || DEFAULT_PROJECT_ID;
+  const projectId = readTrimmedString(req.query.projectId, 50) ?? DEFAULT_PROJECT_ID;
 
   try {
     const [projectRow] = await db.select().from(projects).where(eq(projects.id, projectId)).limit(1);
@@ -137,16 +68,13 @@ export async function postGanttImportHandler(req: Request, res: Response): Promi
     return;
   }
 
-  const body = req.body as { tasks?: TaskNode[]; projectInfo?: ProjectInfo };
-  const inputTasks = body.tasks ?? [];
-  const projectInfo = body.projectInfo;
-
-  if (inputTasks.length === 0) {
-    res.status(400).json({ error: 'tasks array is required and non-empty' });
+  const normalizedImport = normalizeGanttImportPayload(req.body, DEFAULT_PROJECT_ID);
+  if (!normalizedImport.ok) {
+    res.status(400).json({ error: normalizedImport.error });
     return;
   }
 
-  const projectId = projectInfo?.id ?? inputTasks[0]?.projectId ?? DEFAULT_PROJECT_ID;
+  const { tasks: inputTasks, projectInfo, projectId } = normalizedImport;
 
   try {
     const projStart = toDateStr(projectInfo?.startDate);
@@ -181,7 +109,7 @@ export async function postGanttImportHandler(req: Request, res: Response): Promi
       });
 
     const incomingRows = inputTasks.map((task, index) => taskNodeToRow(task, projectId, index));
-    const incomingLogicalIds = Array.from(new Set(incomingRows.map((row) => row.logicalId).filter(Boolean))) as string[];
+    const incomingLogicalIds = [...new Set(incomingRows.map((row) => row.logicalId))];
 
     if (incomingLogicalIds.length > 0) {
       await db
@@ -237,10 +165,15 @@ export async function postGanttImportHandler(req: Request, res: Response): Promi
   } catch (err) {
     console.error('POST /api/gantt/import error:', err);
     const msg = err instanceof Error ? err.message : 'Failed to save gantt data';
+    const safeHint = /connection|ECONNREFUSED|timeout|connect/i.test(String(msg))
+      ? ' (check DATABASE_URL and database connectivity)'
+      : '';
+    /*
     const hint = /connection|ECONNREFUSED|timeout|connect/i.test(String(msg))
       ? '（请检查 .env 中 DATABASE_URL 与 Supabase 服务是否可用）'
       : '';
-    res.status(500).json({ error: msg + hint });
+    */
+    res.status(500).json({ error: msg + safeHint });
   }
 }
 
@@ -250,7 +183,7 @@ export async function checkProjectExistsHandler(req: Request, res: Response): Pr
     res.status(503).json({ error: 'Database not configured' });
     return;
   }
-  const projectId = (req.query.id as string)?.trim();
+  const projectId = readTrimmedString(req.query.id, 50);
   if (!projectId) {
     res.status(400).json({ error: 'id query param required' });
     return;
@@ -271,10 +204,10 @@ export async function patchProjectImageHandler(req: Request, res: Response): Pro
     return;
   }
 
-  const projectId = (req.params.projectId as string)?.trim();
-  const { productImageUrl } = (req.body as { productImageUrl?: string }) ?? {};
+  const projectId = readTrimmedString(req.params.projectId, 50);
+  const payload = normalizeProjectImagePayload(req.body);
 
-  if (!projectId || typeof productImageUrl !== 'string' || !productImageUrl.trim()) {
+  if (!projectId || !payload) {
     res.status(400).json({ error: 'projectId and productImageUrl are required' });
     return;
   }
@@ -283,7 +216,7 @@ export async function patchProjectImageHandler(req: Request, res: Response): Pro
     await db
       .update(projects)
       .set({
-        productImageUrl: productImageUrl.trim().slice(0, 1024),
+        productImageUrl: payload.productImageUrl,
         updatedAt: new Date(),
       })
       .where(eq(projects.id, projectId));
@@ -301,7 +234,7 @@ export async function deleteGanttProject(req: Request, res: Response): Promise<v
     res.status(503).json({ error: 'Database not configured' });
     return;
   }
-  const projectId = (req.params.projectId as string)?.trim();
+  const projectId = readTrimmedString(req.params.projectId, 50);
   if (!projectId) {
     res.status(400).json({ error: 'projectId is required' });
     return;
@@ -321,7 +254,7 @@ export async function deleteGanttProject(req: Request, res: Response): Promise<v
 /** GET /api/gantt/task/:taskId/evidence — 获取任务的所有证据 */
 export async function getTaskEvidenceHandler(req: Request, res: Response): Promise<void> {
   if (!db) { res.status(503).json({ error: 'Database not configured' }); return; }
-  const taskId = req.params.taskId?.trim();
+  const taskId = readTrimmedString(req.params.taskId, 64);
   if (!taskId) { res.status(400).json({ error: 'taskId is required' }); return; }
   try {
     const rows = await db.select().from(evidence).where(eq(evidence.taskId, taskId));
@@ -335,19 +268,19 @@ export async function getTaskEvidenceHandler(req: Request, res: Response): Promi
 /** POST /api/gantt/task/:taskId/evidence — 添加证据记录 */
 export async function postTaskEvidenceHandler(req: Request, res: Response): Promise<void> {
   if (!db) { res.status(503).json({ error: 'Database not configured' }); return; }
-  const taskId = req.params.taskId?.trim();
+  const taskId = readTrimmedString(req.params.taskId, 64);
   if (!taskId) { res.status(400).json({ error: 'taskId is required' }); return; }
-  const { type, url, fileName, fileSize, mimeType, description } = req.body ?? {};
-  if (!type || !url) { res.status(400).json({ error: 'type and url are required' }); return; }
+  const payload = normalizeEvidencePayload(req.body);
+  if (!payload) { res.status(400).json({ error: 'Valid evidence type and url are required' }); return; }
   try {
     const [row] = await db.insert(evidence).values({
       taskId,
-      type,
-      url,
-      fileName: fileName ?? null,
-      fileSize: fileSize ?? null,
-      mimeType: mimeType ?? null,
-      description: description ?? null,
+      type: payload.type,
+      url: payload.url,
+      fileName: payload.fileName,
+      fileSize: payload.fileSize,
+      mimeType: payload.mimeType,
+      description: payload.description,
     }).returning();
     res.status(201).json(row);
   } catch (err) {
@@ -359,7 +292,7 @@ export async function postTaskEvidenceHandler(req: Request, res: Response): Prom
 /** DELETE /api/gantt/evidence/:evidenceId — 删除单条证据 */
 export async function deleteEvidenceHandler(req: Request, res: Response): Promise<void> {
   if (!db) { res.status(503).json({ error: 'Database not configured' }); return; }
-  const evidenceId = req.params.evidenceId?.trim();
+  const evidenceId = readTrimmedString(req.params.evidenceId, 64);
   if (!evidenceId) { res.status(400).json({ error: 'evidenceId is required' }); return; }
   try {
     await db.delete(evidence).where(eq(evidence.id, evidenceId));
@@ -373,7 +306,7 @@ export async function deleteEvidenceHandler(req: Request, res: Response): Promis
 /** GET /api/gantt/project/:projectId/evidence-counts — 批量获取项目所有任务的证据数量 */
 export async function getProjectEvidenceCountsHandler(req: Request, res: Response): Promise<void> {
   if (!db) { res.status(503).json({ error: 'Database not configured' }); return; }
-  const projectId = req.params.projectId?.trim();
+  const projectId = readTrimmedString(req.params.projectId, 50);
   if (!projectId) { res.status(400).json({ error: 'projectId is required' }); return; }
   try {
     const rows = await db
