@@ -25,7 +25,7 @@ export function apiKeyAuth(req: Request, res: Response, next: NextFunction): voi
   const clientKey = req.headers['x-api-key'] as string | undefined;
 
   if (!clientKey || clientKey !== API_KEY) {
-    res.status(403).json({ error: '未授权：缺少或无效的 API Key' });
+    res.status(403).json({ error: 'api key missing or invalid', code: 'API_KEY_INVALID' });
     return;
   }
 
