@@ -26,6 +26,14 @@ function Log($msg) { Write-Host "[OK] $msg" -ForegroundColor Green }
 function Warn($msg) { Write-Host "[!!] $msg" -ForegroundColor Yellow }
 function Err($msg) { Write-Host "[ERR] $msg" -ForegroundColor Red; exit 1 }
 
+function Invoke-ReleaseCommand([string]$Label, [scriptblock]$Command, [string]$FailureMessage) {
+    Log $Label
+    & $Command
+    if ($LASTEXITCODE -ne 0) {
+        Err $FailureMessage
+    }
+}
+
 function Resolve-DeployRoot() {
     if ($DeployRoot) {
         return (Resolve-Path $DeployRoot).Path
@@ -122,10 +130,10 @@ try {
     if ($LASTEXITCODE -ne 0 -or -not $DEPLOY_COMMIT) { Err "Failed to resolve the deploy commit" }
     Log "Deploying committed tree at ${DEPLOY_COMMIT}"
 
-    # ======================== Step 1: local build ========================
-    Log "Starting local build..."
-    pnpm build
-    if ($LASTEXITCODE -ne 0) { Err "Build failed" }
+    # ======================== Step 1: local verification and build ========================
+    Invoke-ReleaseCommand "Running TypeScript verification..." { pnpm exec tsc --noEmit } "TypeScript verification failed"
+    Invoke-ReleaseCommand "Running release structure guard tests..." { pnpm exec vitest run client/src/server-index.structure.test.ts client/src/server-error-payload.structure.test.ts } "Release structure guard tests failed"
+    Invoke-ReleaseCommand "Starting local build..." { pnpm build } "Build failed"
     Log "Build complete -> dist/"
 
     # ======================== Step 2: upload files ========================
