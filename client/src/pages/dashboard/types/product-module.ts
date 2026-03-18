@@ -1,0 +1,31 @@
+export interface ProductModuleRecord {
+  moldNumber: string;
+  serialNumber?: string;
+  productName?: string;
+  netWeight?: string;
+  runnerWeight?: string;
+  productSize?: string;
+  cavityNumber?: string;
+  material?: string;
+  materialErpName?: string;
+  materialErpCode?: string;
+  recycledMaterialErpCode?: string;
+  recycledMaterialSpec?: string;
+  rawMaterialName?: string;
+  rawMaterialSpec?: string;
+  finishedPartNumber?: string;
+  semiFinishedPartNumber?: string;
+  internalFinishedErpCode?: string;
+  internalSemiFinishedErpCode?: string;
+  internalProductName?: string;
+  moldSize?: string;
+  moldWeight?: string;
+  machineTonnage?: string;
+  moldMaterial?: string;
+  openMoldDate?: string;
+  t0Time?: string;
+  assetNumber?: string;
+  moldOwner?: string;
+  serviceLife?: string;
+  updatedAt?: string;
+}
