@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { NextFunction, Request, Response } from 'express';
-import { createApiCorsMiddleware } from './apiCors.js';
+import { API_TRUSTED_ORIGINS, createApiCorsMiddleware } from './apiCors.js';
 
 type MockResponseState = {
   headers: Record<string, string>;
@@ -39,6 +39,10 @@ function createMockResponse(): { res: Response; state: MockResponseState } {
 
 describe('createApiCorsMiddleware', () => {
   const middleware = createApiCorsMiddleware(new Set(['http://trusted.example']));
+
+  it('keeps the local API-only dev origin in the trusted origin set', () => {
+    expect(API_TRUSTED_ORIGINS.has('http://localhost:3001')).toBe(true);
+  });
 
   it('allows trusted write preflight requests', () => {
     const req = createMockRequest({
