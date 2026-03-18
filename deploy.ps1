@@ -38,11 +38,61 @@ function Resolve-DeployRoot() {
     }
 
     $preferredRoot = Join-Path $scriptRoot ".codex-deploy-ready-current"
-    if (Test-Path $preferredRoot) {
-        return (Resolve-Path $preferredRoot).Path
+    if (-not (Test-Path $preferredRoot)) {
+        $targetCommit = (git -C $scriptRoot rev-parse HEAD).Trim()
+        if ($LASTEXITCODE -ne 0 -or -not $targetCommit) {
+            Err "Failed to resolve the current HEAD for clean deploy root creation."
+        }
+
+        Log "Creating clean deploy root at ${preferredRoot} for ${targetCommit}"
+        git -C $scriptRoot worktree add --detach $preferredRoot $targetCommit | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            Err "Failed to create clean deploy root at ${preferredRoot}"
+        }
     }
 
-    Err "No clean deploy root found. Create .codex-deploy-ready-current first or pass -DeployRoot explicitly."
+    return (Resolve-Path $preferredRoot).Path
+}
+
+function Sync-DeployRootCommit($resolvedRoot) {
+    if ($DeployRoot) {
+        return
+    }
+
+    $scriptRoot = $PSScriptRoot
+    $scriptRootName = Split-Path $scriptRoot -Leaf
+    if ($scriptRootName -like ".codex-deploy-ready*") {
+        return
+    }
+
+    $targetCommit = (git -C $scriptRoot rev-parse HEAD).Trim()
+    if ($LASTEXITCODE -ne 0 -or -not $targetCommit) {
+        Err "Failed to resolve the source HEAD for deploy root sync."
+    }
+
+    $deployStatus = git -C $resolvedRoot status --porcelain=v1 --untracked-files=all 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        Err "Failed to read deploy root state"
+    }
+    if ($deployStatus) {
+        Write-Host $deployStatus -ForegroundColor Yellow
+        Err "Refusing to sync a dirty deploy root. Clean ${resolvedRoot} first."
+    }
+
+    $deployCommit = (git -C $resolvedRoot rev-parse HEAD).Trim()
+    if ($LASTEXITCODE -ne 0 -or -not $deployCommit) {
+        Err "Failed to resolve the deploy root commit"
+    }
+
+    if ($deployCommit -eq $targetCommit) {
+        return
+    }
+
+    Log "Syncing deploy root to ${targetCommit}"
+    git -C $resolvedRoot checkout --detach $targetCommit | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        Err "Failed to sync deploy root to ${targetCommit}"
+    }
 }
 
 function RequireCleanGitWorkspace() {
@@ -55,6 +105,7 @@ function RequireCleanGitWorkspace() {
 }
 
 $ResolvedDeployRoot = Resolve-DeployRoot
+Sync-DeployRootCommit $ResolvedDeployRoot
 Log "Deploy root: $ResolvedDeployRoot"
 
 Push-Location $ResolvedDeployRoot
