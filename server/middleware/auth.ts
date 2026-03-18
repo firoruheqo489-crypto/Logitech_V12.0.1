@@ -10,6 +10,13 @@ import type { Request, Response, NextFunction } from 'express';
 const API_KEY = process.env.API_SECRET_KEY || '';
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1']);
 
+type AuthErrorCode = 'API_KEY_INVALID' | 'API_KEY_NOT_CONFIGURED';
+
+const AUTH_ERROR_MESSAGES: Record<AuthErrorCode, string> = {
+  API_KEY_INVALID: 'api key missing or invalid',
+  API_KEY_NOT_CONFIGURED: 'Write API key is not configured on the server',
+};
+
 function extractHostname(input: string): string {
   const trimmed = input.trim();
   if (!trimmed) return '';
@@ -43,6 +50,13 @@ function isLocalDevelopmentRequest(req: Request): boolean {
   return candidates.some((hostname) => LOCAL_HOSTS.has(hostname));
 }
 
+function sendAuthError(res: Response, status: number, code: AuthErrorCode): void {
+  res.status(status).json({
+    error: AUTH_ERROR_MESSAGES[code],
+    code,
+  });
+}
+
 export function apiKeyAuth(req: Request, res: Response, next: NextFunction): void {
   if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') {
     next();
@@ -56,14 +70,14 @@ export function apiKeyAuth(req: Request, res: Response, next: NextFunction): voi
   }
 
   if (!API_KEY) {
-    res.status(503).json({ error: 'Write API key is not configured on the server' });
+    sendAuthError(res, 503, 'API_KEY_NOT_CONFIGURED');
     return;
   }
 
   const clientKey = req.headers['x-api-key'] as string | undefined;
 
   if (!clientKey || clientKey !== API_KEY) {
-    res.status(403).json({ error: 'api key missing or invalid', code: 'API_KEY_INVALID' });
+    sendAuthError(res, 403, 'API_KEY_INVALID');
     return;
   }
 

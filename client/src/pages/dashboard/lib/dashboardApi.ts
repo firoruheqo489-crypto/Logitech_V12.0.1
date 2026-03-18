@@ -48,6 +48,7 @@ export type DashboardProjectViewData = ProjectData & {
 
 export type DashboardApiErrorCode =
   | 'API_KEY_INVALID'
+  | 'API_KEY_NOT_CONFIGURED'
   | 'BACKUP_NOT_FOUND'
   | 'BODY_MUST_BE_ARRAY'
   | 'DATABASE_NOT_CONFIGURED'
@@ -58,6 +59,7 @@ export type DashboardApiErrorCode =
 
 const DASHBOARD_API_ERROR_CODES = new Set<DashboardApiErrorCode>([
   'API_KEY_INVALID',
+  'API_KEY_NOT_CONFIGURED',
   'BACKUP_NOT_FOUND',
   'BODY_MUST_BE_ARRAY',
   'DATABASE_NOT_CONFIGURED',
@@ -241,6 +243,8 @@ export function getDashboardApiErrorDisplayMessage(error: unknown, fallbackMessa
     switch (error.code) {
       case 'API_KEY_INVALID':
         return '当前会话未授权，请刷新后重试';
+      case 'API_KEY_NOT_CONFIGURED':
+        return '服务端写接口授权未配置，暂时无法提交';
       case 'BACKUP_NOT_FOUND':
         return '暂无可恢复备份';
       case 'BODY_MUST_BE_ARRAY':
