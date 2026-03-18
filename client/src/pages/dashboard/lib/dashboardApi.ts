@@ -29,6 +29,12 @@ export type DashboardProgressSaveResult = {
   backupAt: string;
 };
 
+export type DashboardProgressBackupMutationResult = {
+  created: boolean;
+  restoredCount: number;
+  backupAt: string;
+};
+
 export type DashboardProjectViewData = ProjectData & {
   projectName: string;
   productName: string;
@@ -39,6 +45,39 @@ export type DashboardProjectViewData = ProjectData & {
   projectEngineer: string;
   projectManager: string;
 };
+
+export type DashboardApiErrorCode =
+  | 'API_KEY_INVALID'
+  | 'BACKUP_NOT_FOUND'
+  | 'BODY_MUST_BE_ARRAY'
+  | 'DATABASE_NOT_CONFIGURED'
+  | 'INTERNAL_ERROR'
+  | 'MOLD_NUMBER_REQUIRED'
+  | 'NOTE_ID_REQUIRED'
+  | 'UNKNOWN_ERROR';
+
+const DASHBOARD_API_ERROR_CODES = new Set<DashboardApiErrorCode>([
+  'API_KEY_INVALID',
+  'BACKUP_NOT_FOUND',
+  'BODY_MUST_BE_ARRAY',
+  'DATABASE_NOT_CONFIGURED',
+  'INTERNAL_ERROR',
+  'MOLD_NUMBER_REQUIRED',
+  'NOTE_ID_REQUIRED',
+  'UNKNOWN_ERROR',
+]);
+
+export class DashboardApiError extends Error {
+  readonly code: DashboardApiErrorCode;
+  readonly status: number;
+
+  constructor(message: string, code: DashboardApiErrorCode, status: number) {
+    super(message);
+    this.name = 'DashboardApiError';
+    this.code = code;
+    this.status = status;
+  }
+}
 
 function asRecord(value: unknown): UnknownRecord | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -63,6 +102,11 @@ function readOptionalString(value: unknown): string | undefined {
   return normalized ? normalized : undefined;
 }
 
+function readBoolean(value: unknown): boolean {
+  if (typeof value === 'boolean') return value;
+  return Boolean(value);
+}
+
 function readNumber(value: unknown): number {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
   if (typeof value === 'string') {
@@ -77,6 +121,14 @@ function readDateLike(value: unknown): string | Date | null {
   if (value instanceof Date) return value;
   const normalized = readString(value).trim();
   return normalized ? normalized : null;
+}
+
+function readDashboardApiErrorCode(value: unknown, fallbackCode: DashboardApiErrorCode): DashboardApiErrorCode {
+  const normalized = readOptionalString(value);
+  if (!normalized) return fallbackCode;
+  return DASHBOARD_API_ERROR_CODES.has(normalized as DashboardApiErrorCode)
+    ? normalized as DashboardApiErrorCode
+    : fallbackCode;
 }
 
 function normalizeDashboardProjectRow(raw: unknown): DashboardProjectBoundaryRow | null {
@@ -154,7 +206,16 @@ export function normalizeDashboardProgressEntries(payload: unknown): DashboardPr
 export function normalizeDashboardProgressSaveResult(payload: unknown): DashboardProgressSaveResult {
   const row = asRecord(payload);
   return {
-    backupCreated: Boolean(row?.backupCreated),
+    backupCreated: readBoolean(row?.backupCreated),
+    backupAt: readOptionalString(row?.backupAt) ?? '',
+  };
+}
+
+export function normalizeDashboardProgressBackupMutationResult(payload: unknown): DashboardProgressBackupMutationResult {
+  const row = asRecord(payload);
+  return {
+    created: readBoolean(row?.created),
+    restoredCount: readNumber(row?.restoredCount),
     backupAt: readOptionalString(row?.backupAt) ?? '',
   };
 }
@@ -162,6 +223,47 @@ export function normalizeDashboardProgressSaveResult(payload: unknown): Dashboar
 export function normalizeDashboardLatestBackupAt(payload: unknown): string {
   const row = asRecord(payload);
   return readOptionalString(row?.backupAt) ?? '';
+}
+
+export function normalizeDashboardApiError(
+  payload: unknown,
+  status: number,
+  fallbackCode: DashboardApiErrorCode = 'UNKNOWN_ERROR',
+): DashboardApiError {
+  const row = asRecord(payload);
+  const code = readDashboardApiErrorCode(row?.code, fallbackCode);
+  const message = readOptionalString(row?.error) ?? `Request failed (${status})`;
+  return new DashboardApiError(message, code, status);
+}
+
+export function getDashboardApiErrorDisplayMessage(error: unknown, fallbackMessage: string): string {
+  if (error instanceof DashboardApiError) {
+    switch (error.code) {
+      case 'API_KEY_INVALID':
+        return '当前会话未授权，请刷新后重试';
+      case 'BACKUP_NOT_FOUND':
+        return '暂无可恢复备份';
+      case 'BODY_MUST_BE_ARRAY':
+        return '提交数据格式无效，请刷新页面后重试';
+      case 'DATABASE_NOT_CONFIGURED':
+        return '服务端数据库未配置，暂时无法执行此操作';
+      case 'INTERNAL_ERROR':
+        return '服务暂时异常，请稍后重试';
+      case 'MOLD_NUMBER_REQUIRED':
+        return '缺少模具编号，无法继续操作';
+      case 'NOTE_ID_REQUIRED':
+        return '缺少记录标识，无法继续操作';
+      case 'UNKNOWN_ERROR':
+        break;
+    }
+  }
+
+  if (error instanceof Error) {
+    const message = error.message.trim();
+    return message || fallbackMessage;
+  }
+
+  return fallbackMessage;
 }
 
 function decorateProjectData(project: ProjectData): DashboardProjectViewData {

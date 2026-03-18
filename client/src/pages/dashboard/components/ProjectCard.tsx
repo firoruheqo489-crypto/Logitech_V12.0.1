@@ -41,7 +41,10 @@ import {
 import { apiFetch } from '@/lib/api';
 import {
   fetchDashboardProgressEntries,
+  getDashboardApiErrorDisplayMessage,
+  normalizeDashboardApiError,
   normalizeDashboardLatestBackupAt,
+  normalizeDashboardProgressBackupMutationResult,
   type DashboardProgressEntry,
 } from '../lib/dashboardApi';
 import ProgressDetailModal from './ProgressDetailModal';
@@ -165,16 +168,22 @@ export default function ProjectCard({ project, theme }: ProjectCardProps) {
       const response = await apiFetch(`/api/dashboard/progress-notes/${encodeURIComponent(mold)}/restore-latest`, {
         method: 'POST',
       });
-      const data = await response.json().catch(() => ({}));
+      const data = await response.json().catch(() => null);
       if (!response.ok) {
-        window.alert(data?.error || '恢复失败，请稍后重试');
+        const error = normalizeDashboardApiError(
+          data,
+          response.status,
+          response.status === 404 ? 'BACKUP_NOT_FOUND' : 'UNKNOWN_ERROR',
+        );
+        window.alert(getDashboardApiErrorDisplayMessage(error, '恢复失败，请稍后重试'));
         return;
       }
+      const result = normalizeDashboardProgressBackupMutationResult(data);
       fetchEntries();
       fetchLatestBackupTime();
-      window.alert(`恢复成功，共恢复 ${data?.restoredCount ?? 0} 条`);
-    } catch {
-      window.alert('恢复失败，请稍后重试');
+      window.alert(`恢复成功，共恢复 ${result.restoredCount} 条`);
+    } catch (error) {
+      window.alert(getDashboardApiErrorDisplayMessage(error, '恢复失败，请稍后重试'));
     } finally {
       setRestoringBackup(false);
     }
@@ -190,15 +199,17 @@ export default function ProjectCard({ project, theme }: ProjectCardProps) {
       const response = await apiFetch(`/api/dashboard/progress-notes/${encodeURIComponent(mold)}/create-backup`, {
         method: 'POST',
       });
-      const data = await response.json().catch(() => ({}));
+      const data = await response.json().catch(() => null);
       if (!response.ok) {
-        window.alert(data?.error || '备份失败，请稍后重试');
+        const error = normalizeDashboardApiError(data, response.status, 'UNKNOWN_ERROR');
+        window.alert(getDashboardApiErrorDisplayMessage(error, '备份失败，请稍后重试'));
         return;
       }
+      const result = normalizeDashboardProgressBackupMutationResult(data);
       fetchLatestBackupTime();
-      window.alert(data?.created ? '备份成功' : '内容未变化，已复用最近备份');
-    } catch {
-      window.alert('备份失败，请稍后重试');
+      window.alert(result.created ? '备份成功' : '内容未变化，已复用最近备份');
+    } catch (error) {
+      window.alert(getDashboardApiErrorDisplayMessage(error, '备份失败，请稍后重试'));
     } finally {
       setCreatingBackup(false);
     }

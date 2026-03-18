@@ -37,10 +37,37 @@ type BackupEntry = {
 };
 
 type NoteAuditAction = 'create-entry' | 'update-entry' | 'delete-entry' | 'delete-image' | 'restore-backup';
+type ProgressNotesErrorCode =
+  | 'BACKUP_NOT_FOUND'
+  | 'BODY_MUST_BE_ARRAY'
+  | 'DATABASE_NOT_CONFIGURED'
+  | 'INTERNAL_ERROR'
+  | 'MOLD_NUMBER_REQUIRED';
 
 const BACKUP_KEEP_LIMIT_PER_MOLD = 30;
+const PROGRESS_NOTES_ERROR_MESSAGES: Record<ProgressNotesErrorCode, string> = {
+  BACKUP_NOT_FOUND: 'latest backup not found',
+  BODY_MUST_BE_ARRAY: 'request body must be an array',
+  DATABASE_NOT_CONFIGURED: 'database not configured',
+  INTERNAL_ERROR: 'internal server error',
+  MOLD_NUMBER_REQUIRED: 'moldNumber required',
+};
+
 let progressBackupTableReady: Promise<void> | null = null;
 let progressAuditTableReady: Promise<void> | null = null;
+
+function sendProgressNotesError(res: Response, status: number, code: ProgressNotesErrorCode): void {
+  res.status(status).json({
+    error: PROGRESS_NOTES_ERROR_MESSAGES[code],
+    code,
+  });
+}
+
+function readAuditLogLimit(raw: unknown): number {
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return 50;
+  return Math.min(200, Math.max(1, Math.trunc(parsed)));
+}
 
 function toIsoTimestamp(value: unknown): string {
   if (!value) return '';
@@ -330,9 +357,9 @@ async function getNoteAuditTimestampsByNoteId(moldNumber: string): Promise<Map<s
 
 /** GET /api/dashboard/progress-notes/:moldNumber/latest-backup */
 export async function getLatestProgressBackup(req: Request, res: Response): Promise<void> {
-  if (!dbSql) { res.status(503).json({ error: 'Database not configured' }); return; }
+  if (!dbSql) { sendProgressNotesError(res, 503, 'DATABASE_NOT_CONFIGURED'); return; }
   const { moldNumber } = req.params;
-  if (!moldNumber) { res.status(400).json({ error: 'moldNumber required' }); return; }
+  if (!moldNumber) { sendProgressNotesError(res, 400, 'MOLD_NUMBER_REQUIRED'); return; }
   try {
     await ensureBackupTable();
     const rows = await dbSql.unsafe(
@@ -343,15 +370,15 @@ export async function getLatestProgressBackup(req: Request, res: Response): Prom
     res.json({ backupAt: latest?.created_at ? toIsoTimestamp(latest.created_at) : null });
   } catch (err) {
     console.error('GET latest-backup progress-notes error:', err);
-    res.status(500).json({ error: (err as Error).message });
+    sendProgressNotesError(res, 500, 'INTERNAL_ERROR');
   }
 }
 
 /** GET /api/dashboard/progress-notes/:moldNumber */
 export async function getProgressNotes(req: Request, res: Response): Promise<void> {
-  if (!db) { res.status(503).json({ error: 'Database not configured' }); return; }
+  if (!db) { sendProgressNotesError(res, 503, 'DATABASE_NOT_CONFIGURED'); return; }
   const { moldNumber } = req.params;
-  if (!moldNumber) { res.status(400).json({ error: 'moldNumber required' }); return; }
+  if (!moldNumber) { sendProgressNotesError(res, 400, 'MOLD_NUMBER_REQUIRED'); return; }
   try {
     const includeAuditTimestamps = req.query.includeAuditTimestamps === '1';
     const rows = await db.select().from(progressNotes)
@@ -380,17 +407,17 @@ export async function getProgressNotes(req: Request, res: Response): Promise<voi
     }));
   } catch (err) {
     console.error('GET progress-notes error:', err);
-    res.status(500).json({ error: (err as Error).message });
+    sendProgressNotesError(res, 500, 'INTERNAL_ERROR');
   }
 }
 
 /** POST /api/dashboard/progress-notes/:moldNumber — snapshot sync */
 export async function saveProgressNotes(req: Request, res: Response): Promise<void> {
-  if (!db) { res.status(503).json({ error: 'Database not configured' }); return; }
+  if (!db) { sendProgressNotesError(res, 503, 'DATABASE_NOT_CONFIGURED'); return; }
   const { moldNumber } = req.params;
-  if (!moldNumber) { res.status(400).json({ error: 'moldNumber required' }); return; }
+  if (!moldNumber) { sendProgressNotesError(res, 400, 'MOLD_NUMBER_REQUIRED'); return; }
   const entries: ProgressNotePayload[] = req.body;
-  if (!Array.isArray(entries)) { res.status(400).json({ error: 'Body must be an array' }); return; }
+  if (!Array.isArray(entries)) { sendProgressNotesError(res, 400, 'BODY_MUST_BE_ARRAY'); return; }
   try {
     await ensureBackupTable();
     const beforeRows = await db.select().from(progressNotes)
@@ -501,15 +528,15 @@ export async function saveProgressNotes(req: Request, res: Response): Promise<vo
     res.json({ success: true, count: entries.length, backupCreated, backupAt: latestBackupAt });
   } catch (err) {
     console.error('POST progress-notes error:', err);
-    res.status(500).json({ error: (err as Error).message });
+    sendProgressNotesError(res, 500, 'INTERNAL_ERROR');
   }
 }
 
 /** POST /api/dashboard/progress-notes/:moldNumber/create-backup */
 export async function createProgressBackup(req: Request, res: Response): Promise<void> {
-  if (!dbSql) { res.status(503).json({ error: 'Database not configured' }); return; }
+  if (!dbSql) { sendProgressNotesError(res, 503, 'DATABASE_NOT_CONFIGURED'); return; }
   const { moldNumber } = req.params;
-  if (!moldNumber) { res.status(400).json({ error: 'moldNumber required' }); return; }
+  if (!moldNumber) { sendProgressNotesError(res, 400, 'MOLD_NUMBER_REQUIRED'); return; }
   try {
     await ensureBackupTable();
     const created = await backupCurrentNotes(moldNumber);
@@ -521,15 +548,15 @@ export async function createProgressBackup(req: Request, res: Response): Promise
     res.json({ success: true, created, backupAt: latest?.created_at ? toIsoTimestamp(latest.created_at) : null });
   } catch (err) {
     console.error('POST create-backup progress-notes error:', err);
-    res.status(500).json({ error: (err as Error).message });
+    sendProgressNotesError(res, 500, 'INTERNAL_ERROR');
   }
 }
 
 /** POST /api/dashboard/progress-notes/:moldNumber/restore-latest */
 export async function restoreLatestProgressNotes(req: Request, res: Response): Promise<void> {
-  if (!db || !dbSql) { res.status(503).json({ error: 'Database not configured' }); return; }
+  if (!db || !dbSql) { sendProgressNotesError(res, 503, 'DATABASE_NOT_CONFIGURED'); return; }
   const { moldNumber } = req.params;
-  if (!moldNumber) { res.status(400).json({ error: 'moldNumber required' }); return; }
+  if (!moldNumber) { sendProgressNotesError(res, 400, 'MOLD_NUMBER_REQUIRED'); return; }
 
   try {
     await ensureBackupTable();
@@ -539,7 +566,7 @@ export async function restoreLatestProgressNotes(req: Request, res: Response): P
     );
 
     if (!backups.length) {
-      res.status(404).json({ error: '暂无可恢复备份' });
+      sendProgressNotesError(res, 404, 'BACKUP_NOT_FOUND');
       return;
     }
 
@@ -597,13 +624,13 @@ export async function restoreLatestProgressNotes(req: Request, res: Response): P
     res.json({ success: true, restoredCount: snapshot.length, backupAt: toIsoTimestamp(latest.created_at) });
   } catch (err) {
     console.error('POST restore-latest progress-notes error:', err);
-    res.status(500).json({ error: (err as Error).message });
+    sendProgressNotesError(res, 500, 'INTERNAL_ERROR');
   }
 }
 
 /** DELETE /api/dashboard/progress-notes/:moldNumber/:noteId */
 export async function deleteProgressNote(req: Request, res: Response): Promise<void> {
-  if (!db) { res.status(503).json({ error: 'Database not configured' }); return; }
+  if (!db) { sendProgressNotesError(res, 503, 'DATABASE_NOT_CONFIGURED'); return; }
   const { moldNumber, noteId } = req.params;
   try {
     await ensureBackupTable();
@@ -639,17 +666,17 @@ export async function deleteProgressNote(req: Request, res: Response): Promise<v
     res.json({ success: true });
   } catch (err) {
     console.error('DELETE progress-note error:', err);
-    res.status(500).json({ error: (err as Error).message });
+    sendProgressNotesError(res, 500, 'INTERNAL_ERROR');
   }
 }
 
 /** GET /api/dashboard/progress-notes/:moldNumber/audit */
 export async function getProgressNoteAuditLogs(req: Request, res: Response): Promise<void> {
-  if (!dbSql) { res.status(503).json({ error: 'Database not configured' }); return; }
+  if (!dbSql) { sendProgressNotesError(res, 503, 'DATABASE_NOT_CONFIGURED'); return; }
   const { moldNumber } = req.params;
-  if (!moldNumber) { res.status(400).json({ error: 'moldNumber required' }); return; }
+  if (!moldNumber) { sendProgressNotesError(res, 400, 'MOLD_NUMBER_REQUIRED'); return; }
 
-  const limit = Math.min(200, Math.max(1, Number(req.query.limit || 50)));
+  const limit = readAuditLogLimit(req.query.limit);
   try {
     await ensureProgressAuditTable();
     const rows = await dbSql.unsafe(
@@ -670,6 +697,6 @@ export async function getProgressNoteAuditLogs(req: Request, res: Response): Pro
     );
   } catch (err) {
     console.error('GET progress-note-audit error:', err);
-    res.status(500).json({ error: (err as Error).message });
+    sendProgressNotesError(res, 500, 'INTERNAL_ERROR');
   }
 }

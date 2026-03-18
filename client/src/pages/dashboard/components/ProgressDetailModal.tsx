@@ -10,6 +10,8 @@ import { Plus, Trash2, Pencil, Check, X, Image as ImageIcon, History } from 'luc
 import { apiFetch } from '@/lib/api';
 import {
   fetchDashboardProgressEntries,
+  getDashboardApiErrorDisplayMessage,
+  normalizeDashboardApiError,
   normalizeDashboardProgressSaveResult,
   type DashboardProgressEntry,
 } from '../lib/dashboardApi';
@@ -49,8 +51,8 @@ async function saveEntries(moldNumber: string, entries: ProgressEntry[]) {
     body: JSON.stringify(entries),
   });
   if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(text || `保存失败(${res.status})`);
+    const payload = await res.json().catch(() => null);
+    throw normalizeDashboardApiError(payload, res.status, 'INTERNAL_ERROR');
   }
   return normalizeDashboardProgressSaveResult(await res.json().catch(() => null));
 }
@@ -274,7 +276,7 @@ export default function ProgressDetailModal({
       if (showAuditPanel) await refreshAuditLogs();
     } catch (err) {
       setEntries(entries);
-      toast.error(err instanceof Error ? err.message : '保存失败');
+      toast.error(getDashboardApiErrorDisplayMessage(err, '保存失败'));
     }
   }, [entries, moldNumber, newContent, newDate, newImageUrl, newAssignee, newEstimatedNodeCompletion, showAuditPanel, refreshAuditLogs]);
 
@@ -287,7 +289,7 @@ export default function ProgressDetailModal({
       if (showAuditPanel) await refreshAuditLogs();
     } catch (err) {
       setEntries(entries);
-      toast.error(err instanceof Error ? err.message : '删除失败');
+      toast.error(getDashboardApiErrorDisplayMessage(err, '删除失败'));
     }
   }, [entries, moldNumber, showAuditPanel, refreshAuditLogs]);
 
@@ -300,7 +302,7 @@ export default function ProgressDetailModal({
       if (showAuditPanel) await refreshAuditLogs();
     } catch (err) {
       setEntries(entries);
-      toast.error(err instanceof Error ? err.message : '删除图片失败');
+      toast.error(getDashboardApiErrorDisplayMessage(err, '删除图片失败'));
     }
   }, [entries, moldNumber, showAuditPanel, refreshAuditLogs]);
 
@@ -327,7 +329,7 @@ export default function ProgressDetailModal({
       if (showAuditPanel) await refreshAuditLogs();
     } catch (err) {
       setEntries(entries);
-      toast.error(err instanceof Error ? err.message : '更新失败');
+      toast.error(getDashboardApiErrorDisplayMessage(err, '更新失败'));
     }
   }, [entries, moldNumber, editingId, editContent, editDate, editImageUrl, editAssignee, editEstimatedNodeCompletion, showAuditPanel, refreshAuditLogs]);
 
