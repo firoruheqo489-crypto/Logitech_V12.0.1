@@ -5,6 +5,7 @@
  * row3: 更新日期(左) + 预计完成(右)
  */
 import { Clock, Calendar } from 'lucide-react';
+import { getProjectStatusLabel, normalizeProjectStatus } from '@/lib/dashboardProjectState';
 
 interface MobileProgressItemProps {
   moldNo: string;
@@ -17,13 +18,15 @@ interface MobileProgressItemProps {
 export default function MobileProgressItem({
   moldNo, updateDate, detail, estimated, currentNode
 }: MobileProgressItemProps) {
-  const node = currentNode.trim();
+  const node = normalizeProjectStatus(currentNode);
+  const nodeLabel = getProjectStatusLabel(node);
   let statusCls = 'is-default';
-  if (node.includes('已超时')) statusCls = 'is-overdue';
-  else if (node.includes('已完成')) statusCls = 'is-done';
-  else if (node === '进行中') statusCls = 'is-doing';
+  if (node === 'overdue' || node === 'delayed') statusCls = 'is-overdue';
+  else if (node === 'completed') statusCls = 'is-done';
+  else if (node === 'ongoing') statusCls = 'is-doing';
 
-  const hasDetail = detail?.trim() && detail !== '暂无推进细节';
+  const detailText = detail?.trim() || '';
+  const hasDetail = detailText.length > 0;
   const hasUpdate = updateDate?.trim() && updateDate !== '-';
   const hasEta = estimated?.trim() && estimated !== '-';
   const hasRow3 = hasUpdate || hasEta;
@@ -34,11 +37,11 @@ export default function MobileProgressItem({
         <div className="m-no">{moldNo}</div>
         <div className={`m-status ${statusCls}`}>
           <span className="m-dot" />
-          <span className="m-statusText">{node || '未知'}</span>
+          <span className="m-statusText">{nodeLabel === '-' ? '未知' : nodeLabel}</span>
         </div>
       </div>
 
-      {hasDetail && <div className="m-detail">{detail}</div>}
+      {hasDetail && <div className="m-detail">{detailText}</div>}
 
       {hasRow3 && (
         <div className="m-row3">

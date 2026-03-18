@@ -36,8 +36,8 @@ export default function MobileProjectCard({ project }: Props) {
   const faiP = parseFAIValue(milestones.partFAI);
   const faiTCls = getFAIColorClass(milestones.toolingFAI);
   const faiPCls = getFAIColorClass(milestones.partFAI);
-  const detailText = details.detailProgress?.trim() || '暂无推进细节';
-  const hasDetail = detailText !== '暂无推进细节';
+  const detailText = details.detailProgress?.trim() || '';
+  const hasDetail = detailText.length > 0;
 
   return (
     <div className={`rounded-xl overflow-hidden border border-white/[0.06] bg-[#121821] border-l-[3px] ${borderAccent}`}>

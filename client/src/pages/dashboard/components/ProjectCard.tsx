@@ -14,6 +14,7 @@ import {
 } from '../lib/projectUtils';
 import {
   getProjectQualifiedFlagLabel,
+  normalizeProjectQualifiedFlag,
   getProjectRiskLevelLabel,
   getProjectStatusLabel,
 } from '@/lib/dashboardProjectState';
@@ -662,7 +663,7 @@ function MetricPanelCard({
 }
 
 function buildMetricTypographyClass(value: string): string {
-  if (value === '是' || value === '否') {
+  if (normalizeProjectQualifiedFlag(value) !== 'unknown') {
     return 'text-base md:text-lg font-sans font-medium tracking-widest mt-1';
   }
 

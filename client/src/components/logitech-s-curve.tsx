@@ -76,6 +76,8 @@ interface SCurvePoint {
   forecast: number | null
   /** Milestone label if this week aligns with one */
   milestone?: string
+  /** True when the milestone comes from the forecast overlay, not a canonical stage */
+  isForecastMilestone?: boolean
 }
 
 interface SCurveMetrics {
@@ -433,6 +435,7 @@ function buildSCurveData(
       actual,
       forecast: null,
       milestone,
+      isForecastMilestone: false,
     })
   }
 
@@ -454,6 +457,7 @@ function buildSCurveData(
       actual: Math.round(actualAtToday * 100) / 100,
       forecast: null,
       milestone: undefined,
+      isForecastMilestone: false,
     })
     actuals.push({ week: todayFractionalWeek, value: Math.round(actualAtToday * 100) / 100 })
     points.sort((a, b) => a.timestamp - b.timestamp)
@@ -668,7 +672,8 @@ function buildSCurveData(
                 planned: 100,
                 actual: null,
                 forecast: Math.round(pct * 100) / 100,
-                milestone: pct >= 100 ? '预测完工' : undefined,
+                milestone: pct >= 100 ? 'FORECAST' : undefined,
+                isForecastMilestone: pct >= 100,
               })
             }
           }
@@ -731,14 +736,16 @@ function SCurveTooltip({ active, payload, label }: SCurveTooltipProps) {
   const actual = readTooltipValue(payload, 'actual')
   const forecast = readTooltipValue(payload, 'forecast')
   const milestone = payload[0]?.payload?.milestone
+  const milestoneLabel =
+    milestone && payload[0]?.payload?.isForecastMilestone ? '预测完工' : milestone
 
   return (
     <div className="bg-gray-900/95 border border-white/10 rounded-xl p-4 backdrop-blur-xl shadow-[0_8px_32px_rgba(0,0,0,0.5)]">
       <div className="font-bold text-white mb-2 flex items-center gap-2">
         {label}
-        {milestone && (
+        {milestoneLabel && (
           <span className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-400 font-medium">
-            {milestone}
+            {milestoneLabel}
           </span>
         )}
       </div>
@@ -1052,7 +1059,7 @@ export function LogitechSCurve({ projectId, moldNumber, className = '' }: Logite
 
             {/* Milestone reference lines */}
             {points
-              .filter((p: SCurvePoint) => p.milestone && p.milestone !== '预测完工')
+              .filter((p: SCurvePoint) => p.milestone && !p.isForecastMilestone)
               .map((p: SCurvePoint) => (
                 <ReferenceLine
                   key={p.milestone}

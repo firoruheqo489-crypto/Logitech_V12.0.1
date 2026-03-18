@@ -758,7 +758,7 @@ export default function DashboardHome() {
                     key: entry.id || `${moldNo}-${idx}`,
                     updateDate: entry.date || '-',
                     uploadedAt: entry.updatedAt || entry.createdAt || '',
-                    detail: entry.content?.trim() || '暂无推进细节',
+                    detail: entry.content?.trim() || '',
                     detailImageUrl: entry.imageUrl?.trim() || null,
                     estimated: entry.estimatedNodeCompletion || firstProject?.milestones?.estimatedCompletion || '-',
                     assignee: entry.assignee || '-',
@@ -767,7 +767,7 @@ export default function DashboardHome() {
                     key: `${moldNo}-fallback`,
                     updateDate: firstProject?.details?.detailDate || '-',
                     uploadedAt: '',
-                    detail: firstProject?.details?.detailProgress || '暂无推进细节',
+                    detail: firstProject?.details?.detailProgress?.trim() || '',
                     detailImageUrl: null,
                     estimated: firstProject?.milestones?.estimatedCompletion || '-',
                     assignee: '-',
@@ -802,7 +802,7 @@ export default function DashboardHome() {
                     <div className="divide-y divide-slate-800/50">
                       {(expandedNoteGroups.has(groupKey) ? detailRows : detailRows.slice(0, 6)).map((row) => {
                         const updateDate = resolveProgressUpdateLabel(row.uploadedAt, row.updateDate);
-                        const detail = row.detail || '暂无推进细节';
+                        const detail = row.detail || '';
                         const detailImageUrl = row.detailImageUrl;
                         const estimated = row.estimated || '-';
                         return (
@@ -825,7 +825,7 @@ export default function DashboardHome() {
                               )}
                             </div>
                             <div className="min-w-0 px-2 text-left text-sm leading-7 whitespace-normal break-words [overflow-wrap:anywhere] text-slate-300">
-                              {detail}
+                              {detail || '-'}
                             </div>
                             <div className="text-center text-sm font-mono tracking-tight text-slate-400 tabular-nums">{estimated}</div>
                             <div className="text-center text-sm font-medium text-slate-200">{row.assignee && row.assignee !== '-' ? row.assignee : '-'}</div>
