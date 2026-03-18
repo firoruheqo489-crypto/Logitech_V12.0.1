@@ -83,7 +83,13 @@ async function startServer() {
       await sql`SELECT 1`;
       res.status(200).json({ ok: true, api: true, db: "ok" });
     } catch (e) {
-      res.status(503).json({ ok: false, api: true, db: "error", message: (e as Error).message });
+      res.status(503).json({
+        ok: false,
+        api: true,
+        db: "error",
+        message: "database unavailable",
+        code: "DATABASE_UNAVAILABLE",
+      });
     }
   });
 
