@@ -11,6 +11,7 @@ import { apiKeyAuth } from "./middleware/auth.js";
 import { securityHeaders } from "./middleware/security.js";
 import { getGanttDataHandler, postGanttImportHandler, patchProjectImageHandler, checkProjectExistsHandler, deleteGanttProject, getTaskEvidenceHandler, postTaskEvidenceHandler, deleteEvidenceHandler, getProjectEvidenceCountsHandler } from "./routes/gantt.js";
 import { listDashboardProjects, getDashboardProject, batchReplaceDashboardProjects, clearDashboardProjects, getDashboardHealthCheck, getLatestDashboardHealthCheck, runDashboardHealthCheck } from "./routes/dashboard.js";
+import { listDashboardProjectAssets, upsertDashboardProjectAsset, deleteDashboardProjectAsset } from "./routes/dashboard-assets.js";
 import { listDashboardProductData, batchUpsertDashboardProductData } from "./routes/dashboard-product-data.js";
 import { getProgressNotes, getLatestProgressBackup, saveProgressNotes, createProgressBackup, restoreLatestProgressNotes, deleteProgressNote, getProgressNoteAuditLogs } from "./routes/progress-notes.js";
 import { getTasksForSCurve } from "./routes/tasks.js";
@@ -103,6 +104,9 @@ async function startServer() {
   app.get("/api/dashboard/projects", listDashboardProjects);
   app.get("/api/dashboard/projects/:id", getDashboardProject);
   app.post("/api/dashboard/projects/batch-replace", batchReplaceDashboardProjects);
+  app.get("/api/dashboard/project-assets", listDashboardProjectAssets);
+  app.patch("/api/dashboard/project-assets/:moldNumber/:slotType", upsertDashboardProjectAsset);
+  app.delete("/api/dashboard/project-assets/:moldNumber/:slotType", deleteDashboardProjectAsset);
   app.get("/api/dashboard/product-data", listDashboardProductData);
   app.post("/api/dashboard/product-data/batch-upsert", batchUpsertDashboardProductData);
   app.delete("/api/dashboard/projects", clearDashboardProjects);
