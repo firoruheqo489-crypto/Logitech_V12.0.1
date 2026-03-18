@@ -47,6 +47,7 @@ async function startServer() {
       // 预检请求：只有可信来源才能获得写操作许可
       if (origin && TRUSTED_ORIGINS.has(origin)) {
         res.setHeader('Access-Control-Allow-Origin', origin);
+        res.setHeader('Vary', 'Origin');
         res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
         res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-api-key');
         res.setHeader('Access-Control-Allow-Credentials', 'true');
@@ -54,6 +55,9 @@ async function startServer() {
       } else {
         // 非可信来源的预检：只允许简单 GET
         res.setHeader('Access-Control-Allow-Origin', origin || '*');
+        if (origin) {
+          res.setHeader('Vary', 'Origin');
+        }
         res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
         res.sendStatus(204);
       }
@@ -63,9 +67,11 @@ async function startServer() {
     // 实际请求：设置对应的 CORS 响应头
     if (origin && TRUSTED_ORIGINS.has(origin)) {
       res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Vary', 'Origin');
       res.setHeader('Access-Control-Allow-Credentials', 'true');
     } else if (origin) {
       res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Vary', 'Origin');
     }
 
     next();
