@@ -64,7 +64,27 @@ type ProductModulePayload = {
   serviceLife?: string;
 };
 
+type ProductDataRouteErrorCode =
+  | 'BODY_MUST_BE_ARRAY'
+  | 'DATABASE_NOT_CONFIGURED'
+  | 'PRODUCT_MODULE_DATA_LOAD_FAILED'
+  | 'PRODUCT_MODULE_DATA_SAVE_FAILED';
+
+const PRODUCT_DATA_ROUTE_ERROR_MESSAGES: Record<ProductDataRouteErrorCode, string> = {
+  BODY_MUST_BE_ARRAY: 'Body must be an array',
+  DATABASE_NOT_CONFIGURED: 'Database not configured',
+  PRODUCT_MODULE_DATA_LOAD_FAILED: 'Failed to load product module data',
+  PRODUCT_MODULE_DATA_SAVE_FAILED: 'Failed to save product module data',
+};
+
 let dashboardProductDataTableReady: Promise<void> | null = null;
+
+function sendProductDataRouteError(res: Response, status: number, code: ProductDataRouteErrorCode): void {
+  res.status(status).json({
+    error: PRODUCT_DATA_ROUTE_ERROR_MESSAGES[code],
+    code,
+  });
+}
 
 export function ensureDashboardProductDataTable(): Promise<void> {
   if (!dbSql) return Promise.resolve();
@@ -178,7 +198,7 @@ function normalizeValue(value: unknown, maxLength: number): string | null {
 
 export async function listDashboardProductData(_req: Request, res: Response): Promise<void> {
   if (!dbSql) {
-    res.status(503).json({ error: 'Database not configured' });
+    sendProductDataRouteError(res, 503, 'DATABASE_NOT_CONFIGURED');
     return;
   }
 
@@ -222,19 +242,19 @@ export async function listDashboardProductData(_req: Request, res: Response): Pr
     res.status(200).json({ rows });
   } catch (err) {
     console.error('GET /api/dashboard/product-data error:', err);
-    res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to load product module data' });
+    sendProductDataRouteError(res, 500, 'PRODUCT_MODULE_DATA_LOAD_FAILED');
   }
 }
 
 export async function batchUpsertDashboardProductData(req: Request, res: Response): Promise<void> {
   if (!dbSql) {
-    res.status(503).json({ error: 'Database not configured' });
+    sendProductDataRouteError(res, 503, 'DATABASE_NOT_CONFIGURED');
     return;
   }
 
   const items = Array.isArray(req.body) ? (req.body as ProductModulePayload[]) : null;
   if (!items) {
-    res.status(400).json({ error: 'Body must be an array' });
+    sendProductDataRouteError(res, 400, 'BODY_MUST_BE_ARRAY');
     return;
   }
 
@@ -348,6 +368,6 @@ export async function batchUpsertDashboardProductData(req: Request, res: Respons
     res.status(200).json({ success: true, count: affected });
   } catch (err) {
     console.error('POST /api/dashboard/product-data/batch-upsert error:', err);
-    res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to save product module data' });
+    sendProductDataRouteError(res, 500, 'PRODUCT_MODULE_DATA_SAVE_FAILED');
   }
 }

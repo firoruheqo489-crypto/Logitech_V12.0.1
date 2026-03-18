@@ -10,15 +10,33 @@ import { eq } from 'drizzle-orm';
 import { db } from '../db.js';
 import { tasks } from '../../shared/schema.js';
 
+type TasksRouteErrorCode =
+  | 'DATABASE_NOT_CONFIGURED'
+  | 'PROJECT_ID_REQUIRED'
+  | 'TASKS_LOAD_FAILED';
+
+const TASKS_ROUTE_ERROR_MESSAGES: Record<TasksRouteErrorCode, string> = {
+  DATABASE_NOT_CONFIGURED: 'Database not configured',
+  PROJECT_ID_REQUIRED: 'projectId is required',
+  TASKS_LOAD_FAILED: 'Failed to load tasks',
+};
+
+function sendTasksRouteError(res: Response, status: number, code: TasksRouteErrorCode): void {
+  res.status(status).json({
+    error: TASKS_ROUTE_ERROR_MESSAGES[code],
+    code,
+  });
+}
+
 export async function getTasksForSCurve(req: Request, res: Response): Promise<void> {
   if (!db) {
-    res.status(503).json({ error: 'Database not configured' });
+    sendTasksRouteError(res, 503, 'DATABASE_NOT_CONFIGURED');
     return;
   }
 
   const projectId = (req.query.projectId as string)?.trim();
   if (!projectId) {
-    res.status(400).json({ error: 'projectId is required' });
+    sendTasksRouteError(res, 400, 'PROJECT_ID_REQUIRED');
     return;
   }
 
@@ -50,6 +68,6 @@ export async function getTasksForSCurve(req: Request, res: Response): Promise<vo
     res.status(200).json(rows);
   } catch (err) {
     console.error('GET /api/tasks error:', err);
-    res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to load tasks' });
+    sendTasksRouteError(res, 500, 'TASKS_LOAD_FAILED');
   }
 }

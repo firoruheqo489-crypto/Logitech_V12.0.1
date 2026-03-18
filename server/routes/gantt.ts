@@ -22,9 +22,60 @@ import {
 
 const DEFAULT_PROJECT_ID = 'LA26006';
 
+type GanttRouteErrorCode =
+  | 'DATABASE_NOT_CONFIGURED'
+  | 'EVIDENCE_COUNTS_LOAD_FAILED'
+  | 'EVIDENCE_DELETE_FAILED'
+  | 'EVIDENCE_ID_REQUIRED'
+  | 'EVIDENCE_LOAD_FAILED'
+  | 'EVIDENCE_SAVE_FAILED'
+  | 'GANTT_DATA_LOAD_FAILED'
+  | 'GANTT_SAVE_FAILED'
+  | 'ID_REQUIRED'
+  | 'INVALID_EVIDENCE_PAYLOAD'
+  | 'INVALID_IMPORT_PAYLOAD'
+  | 'PROJECT_CHECK_FAILED'
+  | 'PROJECT_DELETE_FAILED'
+  | 'PROJECT_ID_AND_PRODUCT_IMAGE_URL_REQUIRED'
+  | 'PROJECT_ID_REQUIRED'
+  | 'PROJECT_IMAGE_UPDATE_FAILED'
+  | 'TASK_ID_REQUIRED';
+
+const GANTT_ROUTE_ERROR_MESSAGES: Record<GanttRouteErrorCode, string> = {
+  DATABASE_NOT_CONFIGURED: 'Database not configured',
+  EVIDENCE_COUNTS_LOAD_FAILED: 'Failed',
+  EVIDENCE_DELETE_FAILED: 'Failed to delete evidence',
+  EVIDENCE_ID_REQUIRED: 'evidenceId is required',
+  EVIDENCE_LOAD_FAILED: 'Failed to load evidence',
+  EVIDENCE_SAVE_FAILED: 'Failed to save evidence',
+  GANTT_DATA_LOAD_FAILED: 'Failed to load gantt data',
+  GANTT_SAVE_FAILED: 'Failed to save gantt data',
+  ID_REQUIRED: 'id query param required',
+  INVALID_EVIDENCE_PAYLOAD: 'Valid evidence type and url are required',
+  INVALID_IMPORT_PAYLOAD: 'Invalid import payload',
+  PROJECT_CHECK_FAILED: 'check failed',
+  PROJECT_DELETE_FAILED: 'Failed to delete project data',
+  PROJECT_ID_AND_PRODUCT_IMAGE_URL_REQUIRED: 'projectId and productImageUrl are required',
+  PROJECT_ID_REQUIRED: 'projectId is required',
+  PROJECT_IMAGE_UPDATE_FAILED: 'Failed to update project image',
+  TASK_ID_REQUIRED: 'taskId is required',
+};
+
+function sendGanttRouteError(
+  res: Response,
+  status: number,
+  code: GanttRouteErrorCode,
+  errorMessage?: string,
+): void {
+  res.status(status).json({
+    error: errorMessage ?? GANTT_ROUTE_ERROR_MESSAGES[code],
+    code,
+  });
+}
+
 export async function getGanttDataHandler(req: Request, res: Response): Promise<void> {
   if (!db) {
-    res.status(503).json({ error: 'Database not configured' });
+    sendGanttRouteError(res, 503, 'DATABASE_NOT_CONFIGURED');
     return;
   }
 
@@ -58,19 +109,19 @@ export async function getGanttDataHandler(req: Request, res: Response): Promise<
     res.status(200).json(ganttData);
   } catch (err) {
     console.error('GET /api/gantt/data error:', err);
-    res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to load gantt data' });
+    sendGanttRouteError(res, 500, 'GANTT_DATA_LOAD_FAILED');
   }
 }
 
 export async function postGanttImportHandler(req: Request, res: Response): Promise<void> {
   if (!db) {
-    res.status(503).json({ error: 'Database not configured' });
+    sendGanttRouteError(res, 503, 'DATABASE_NOT_CONFIGURED');
     return;
   }
 
   const normalizedImport = normalizeGanttImportPayload(req.body, DEFAULT_PROJECT_ID);
   if (!normalizedImport.ok) {
-    res.status(400).json({ error: normalizedImport.error });
+    sendGanttRouteError(res, 400, 'INVALID_IMPORT_PAYLOAD', normalizedImport.error);
     return;
   }
 
@@ -164,28 +215,19 @@ export async function postGanttImportHandler(req: Request, res: Response): Promi
     res.status(200).json(ganttData);
   } catch (err) {
     console.error('POST /api/gantt/import error:', err);
-    const msg = err instanceof Error ? err.message : 'Failed to save gantt data';
-    const safeHint = /connection|ECONNREFUSED|timeout|connect/i.test(String(msg))
-      ? ' (check DATABASE_URL and database connectivity)'
-      : '';
-    /*
-    const hint = /connection|ECONNREFUSED|timeout|connect/i.test(String(msg))
-      ? '（请检查 .env 中 DATABASE_URL 与 Supabase 服务是否可用）'
-      : '';
-    */
-    res.status(500).json({ error: msg + safeHint });
+    sendGanttRouteError(res, 500, 'GANTT_SAVE_FAILED');
   }
 }
 
 /** GET /api/gantt/check-project?id=LA26006 — 检查项目是否已存在 */
 export async function checkProjectExistsHandler(req: Request, res: Response): Promise<void> {
   if (!db) {
-    res.status(503).json({ error: 'Database not configured' });
+    sendGanttRouteError(res, 503, 'DATABASE_NOT_CONFIGURED');
     return;
   }
   const projectId = readTrimmedString(req.query.id, 50);
   if (!projectId) {
-    res.status(400).json({ error: 'id query param required' });
+    sendGanttRouteError(res, 400, 'ID_REQUIRED');
     return;
   }
   try {
@@ -193,14 +235,14 @@ export async function checkProjectExistsHandler(req: Request, res: Response): Pr
     res.status(200).json({ exists: !!row });
   } catch (err) {
     console.error('GET /api/gantt/check-project error:', err);
-    res.status(500).json({ error: err instanceof Error ? err.message : 'check failed' });
+    sendGanttRouteError(res, 500, 'PROJECT_CHECK_FAILED');
   }
 }
 
 /** PATCH /api/gantt/project-image — 更新项目 product_image_url */
 export async function patchProjectImageHandler(req: Request, res: Response): Promise<void> {
   if (!db) {
-    res.status(503).json({ error: 'Database not configured' });
+    sendGanttRouteError(res, 503, 'DATABASE_NOT_CONFIGURED');
     return;
   }
 
@@ -208,7 +250,7 @@ export async function patchProjectImageHandler(req: Request, res: Response): Pro
   const payload = normalizeProjectImagePayload(req.body);
 
   if (!projectId || !payload) {
-    res.status(400).json({ error: 'projectId and productImageUrl are required' });
+    sendGanttRouteError(res, 400, 'PROJECT_ID_AND_PRODUCT_IMAGE_URL_REQUIRED');
     return;
   }
 
@@ -224,19 +266,19 @@ export async function patchProjectImageHandler(req: Request, res: Response): Pro
     res.status(200).json({ success: true });
   } catch (err) {
     console.error('PATCH /api/gantt/project-image error:', err);
-    res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to update project image' });
+    sendGanttRouteError(res, 500, 'PROJECT_IMAGE_UPDATE_FAILED');
   }
 }
 
 /** DELETE /api/gantt/project/:projectId — 清除指定项目的甘特数据 */
 export async function deleteGanttProject(req: Request, res: Response): Promise<void> {
   if (!db) {
-    res.status(503).json({ error: 'Database not configured' });
+    sendGanttRouteError(res, 503, 'DATABASE_NOT_CONFIGURED');
     return;
   }
   const projectId = readTrimmedString(req.params.projectId, 50);
   if (!projectId) {
-    res.status(400).json({ error: 'projectId is required' });
+    sendGanttRouteError(res, 400, 'PROJECT_ID_REQUIRED');
     return;
   }
   try {
@@ -245,7 +287,7 @@ export async function deleteGanttProject(req: Request, res: Response): Promise<v
     res.status(200).json({ success: true, projectId });
   } catch (err) {
     console.error('DELETE /api/gantt/project error:', err);
-    res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to delete project data' });
+    sendGanttRouteError(res, 500, 'PROJECT_DELETE_FAILED');
   }
 }
 
@@ -253,25 +295,25 @@ export async function deleteGanttProject(req: Request, res: Response): Promise<v
 
 /** GET /api/gantt/task/:taskId/evidence — 获取任务的所有证据 */
 export async function getTaskEvidenceHandler(req: Request, res: Response): Promise<void> {
-  if (!db) { res.status(503).json({ error: 'Database not configured' }); return; }
+  if (!db) { sendGanttRouteError(res, 503, 'DATABASE_NOT_CONFIGURED'); return; }
   const taskId = readTrimmedString(req.params.taskId, 64);
-  if (!taskId) { res.status(400).json({ error: 'taskId is required' }); return; }
+  if (!taskId) { sendGanttRouteError(res, 400, 'TASK_ID_REQUIRED'); return; }
   try {
     const rows = await db.select().from(evidence).where(eq(evidence.taskId, taskId));
     res.status(200).json(rows);
   } catch (err) {
     console.error('GET /api/gantt/task/:taskId/evidence error:', err);
-    res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to load evidence' });
+    sendGanttRouteError(res, 500, 'EVIDENCE_LOAD_FAILED');
   }
 }
 
 /** POST /api/gantt/task/:taskId/evidence — 添加证据记录 */
 export async function postTaskEvidenceHandler(req: Request, res: Response): Promise<void> {
-  if (!db) { res.status(503).json({ error: 'Database not configured' }); return; }
+  if (!db) { sendGanttRouteError(res, 503, 'DATABASE_NOT_CONFIGURED'); return; }
   const taskId = readTrimmedString(req.params.taskId, 64);
-  if (!taskId) { res.status(400).json({ error: 'taskId is required' }); return; }
+  if (!taskId) { sendGanttRouteError(res, 400, 'TASK_ID_REQUIRED'); return; }
   const payload = normalizeEvidencePayload(req.body);
-  if (!payload) { res.status(400).json({ error: 'Valid evidence type and url are required' }); return; }
+  if (!payload) { sendGanttRouteError(res, 400, 'INVALID_EVIDENCE_PAYLOAD'); return; }
   try {
     const [row] = await db.insert(evidence).values({
       taskId,
@@ -285,29 +327,29 @@ export async function postTaskEvidenceHandler(req: Request, res: Response): Prom
     res.status(201).json(row);
   } catch (err) {
     console.error('POST /api/gantt/task/:taskId/evidence error:', err);
-    res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to save evidence' });
+    sendGanttRouteError(res, 500, 'EVIDENCE_SAVE_FAILED');
   }
 }
 
 /** DELETE /api/gantt/evidence/:evidenceId — 删除单条证据 */
 export async function deleteEvidenceHandler(req: Request, res: Response): Promise<void> {
-  if (!db) { res.status(503).json({ error: 'Database not configured' }); return; }
+  if (!db) { sendGanttRouteError(res, 503, 'DATABASE_NOT_CONFIGURED'); return; }
   const evidenceId = readTrimmedString(req.params.evidenceId, 64);
-  if (!evidenceId) { res.status(400).json({ error: 'evidenceId is required' }); return; }
+  if (!evidenceId) { sendGanttRouteError(res, 400, 'EVIDENCE_ID_REQUIRED'); return; }
   try {
     await db.delete(evidence).where(eq(evidence.id, evidenceId));
     res.status(200).json({ success: true });
   } catch (err) {
     console.error('DELETE /api/gantt/evidence/:evidenceId error:', err);
-    res.status(500).json({ error: err instanceof Error ? err.message : 'Failed to delete evidence' });
+    sendGanttRouteError(res, 500, 'EVIDENCE_DELETE_FAILED');
   }
 }
 
 /** GET /api/gantt/project/:projectId/evidence-counts — 批量获取项目所有任务的证据数量 */
 export async function getProjectEvidenceCountsHandler(req: Request, res: Response): Promise<void> {
-  if (!db) { res.status(503).json({ error: 'Database not configured' }); return; }
+  if (!db) { sendGanttRouteError(res, 503, 'DATABASE_NOT_CONFIGURED'); return; }
   const projectId = readTrimmedString(req.params.projectId, 50);
-  if (!projectId) { res.status(400).json({ error: 'projectId is required' }); return; }
+  if (!projectId) { sendGanttRouteError(res, 400, 'PROJECT_ID_REQUIRED'); return; }
   try {
     const rows = await db
       .select({
@@ -323,6 +365,6 @@ export async function getProjectEvidenceCountsHandler(req: Request, res: Respons
     res.status(200).json(counts);
   } catch (err) {
     console.error('GET evidence-counts error:', err);
-    res.status(500).json({ error: err instanceof Error ? err.message : 'Failed' });
+    sendGanttRouteError(res, 500, 'EVIDENCE_COUNTS_LOAD_FAILED');
   }
 }
