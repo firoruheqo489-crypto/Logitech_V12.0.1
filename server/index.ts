@@ -7,8 +7,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import express from "express";
 import { createServer } from "http";
-import { apiKeyAuth } from "./middleware/auth.js";
-import { apiCors } from "./middleware/apiCors.js";
+import { registerApiAccessPolicy } from "./middleware/apiAccessPolicy.js";
 import { securityHeaders } from "./middleware/security.js";
 import { getGanttDataHandler, postGanttImportHandler, patchProjectImageHandler, checkProjectExistsHandler, deleteGanttProject, getTaskEvidenceHandler, postTaskEvidenceHandler, deleteEvidenceHandler, getProjectEvidenceCountsHandler } from "./routes/gantt.js";
 import { listDashboardProjects, getDashboardProject, batchReplaceDashboardProjects, clearDashboardProjects, getDashboardHealthCheck, getLatestDashboardHealthCheck, runDashboardHealthCheck, ensureDashboardHealthTable, ensureDashboardModuleOrderTable } from "./routes/dashboard.js";
@@ -32,9 +31,7 @@ async function startServer() {
 
   // ── 安全中间件 ──
   app.use(securityHeaders);
-  app.use('/api', apiCors);
-
-  app.use('/api', apiKeyAuth);
+  registerApiAccessPolicy(app);
 
   // 健康检查：用于确认后端与数据库是否可用
   app.get("/api/health", async (_req, res) => {

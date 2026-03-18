@@ -10,6 +10,11 @@ type MockResponseState = {
   jsonBody: unknown;
 };
 
+type MockAppUseCall = {
+  path: string;
+  handler: RequestHandler;
+};
+
 function setEnv(name: string, value: string | undefined): void {
   if (value === undefined) {
     delete process.env[name];
@@ -70,6 +75,19 @@ function createMockResponse(): { res: Response; state: MockResponseState } {
   } as unknown as Response;
 
   return { res, state };
+}
+
+function createMockApp() {
+  const calls: MockAppUseCall[] = [];
+
+  return {
+    calls,
+    app: {
+      use(path: string, handler: RequestHandler) {
+        calls.push({ path, handler });
+      },
+    },
+  };
 }
 
 function runMiddlewarePipeline(
@@ -174,5 +192,39 @@ describe('api access policy pipeline', () => {
     expect(state.statusCode).toBeNull();
     expect(state.headers['Access-Control-Allow-Origin']).toBe('http://localhost:3000');
     expect(state.headers['Access-Control-Allow-Credentials']).toBe('true');
+  });
+});
+
+describe('registerApiAccessPolicy', () => {
+  it('registers both /api policy middlewares on the shared api path', async () => {
+    const { apiCors } = await import('./apiCors.js');
+    const { apiKeyAuth } = await import('./auth.js');
+    const { API_ACCESS_POLICY_PATH, registerApiAccessPolicy } = await import('./apiAccessPolicy.js');
+    const { app, calls } = createMockApp();
+
+    registerApiAccessPolicy(app);
+
+    expect(calls).toHaveLength(2);
+    expect(calls[0]).toEqual({
+      path: API_ACCESS_POLICY_PATH,
+      handler: apiCors,
+    });
+    expect(calls[1]).toEqual({
+      path: API_ACCESS_POLICY_PATH,
+      handler: apiKeyAuth,
+    });
+  });
+
+  it('keeps apiCors ahead of apiKeyAuth so public reads stay open before write checks', async () => {
+    const { apiCors } = await import('./apiCors.js');
+    const { apiKeyAuth } = await import('./auth.js');
+    const { registerApiAccessPolicy } = await import('./apiAccessPolicy.js');
+    const { app, calls } = createMockApp();
+
+    registerApiAccessPolicy(app);
+
+    expect(calls).toHaveLength(2);
+    expect(calls[0]?.handler).toBe(apiCors);
+    expect(calls[1]?.handler).toBe(apiKeyAuth);
   });
 });
