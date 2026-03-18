@@ -8,6 +8,7 @@ import { fileURLToPath } from "url";
 import express from "express";
 import { createServer } from "http";
 import { apiKeyAuth } from "./middleware/auth.js";
+import { apiCors } from "./middleware/apiCors.js";
 import { securityHeaders } from "./middleware/security.js";
 import { getGanttDataHandler, postGanttImportHandler, patchProjectImageHandler, checkProjectExistsHandler, deleteGanttProject, getTaskEvidenceHandler, postTaskEvidenceHandler, deleteEvidenceHandler, getProjectEvidenceCountsHandler } from "./routes/gantt.js";
 import { listDashboardProjects, getDashboardProject, batchReplaceDashboardProjects, clearDashboardProjects, getDashboardHealthCheck, getLatestDashboardHealthCheck, runDashboardHealthCheck, ensureDashboardHealthTable, ensureDashboardModuleOrderTable } from "./routes/dashboard.js";
@@ -31,51 +32,7 @@ async function startServer() {
 
   // ── 安全中间件 ──
   app.use(securityHeaders);
-
-  // CORS：GET 对公网开放，写操作预检仅放行可信来源
-  const TRUSTED_ORIGINS = new Set([
-    'http://localhost:3000',
-    'http://localhost:3001',
-    'http://120.27.153.140',
-    'http://120.27.153.140:3000',
-  ]);
-
-  app.use('/api', (req, res, next) => {
-    const origin = req.headers.origin as string | undefined;
-
-    if (req.method === 'OPTIONS') {
-      // 预检请求：只有可信来源才能获得写操作许可
-      if (origin && TRUSTED_ORIGINS.has(origin)) {
-        res.setHeader('Access-Control-Allow-Origin', origin);
-        res.setHeader('Vary', 'Origin');
-        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
-        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-api-key');
-        res.setHeader('Access-Control-Allow-Credentials', 'true');
-        res.sendStatus(204);
-      } else {
-        // 非可信来源的预检：只允许简单 GET
-        res.setHeader('Access-Control-Allow-Origin', origin || '*');
-        if (origin) {
-          res.setHeader('Vary', 'Origin');
-        }
-        res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-        res.sendStatus(204);
-      }
-      return;
-    }
-
-    // 实际请求：设置对应的 CORS 响应头
-    if (origin && TRUSTED_ORIGINS.has(origin)) {
-      res.setHeader('Access-Control-Allow-Origin', origin);
-      res.setHeader('Vary', 'Origin');
-      res.setHeader('Access-Control-Allow-Credentials', 'true');
-    } else if (origin) {
-      res.setHeader('Access-Control-Allow-Origin', origin);
-      res.setHeader('Vary', 'Origin');
-    }
-
-    next();
-  });
+  app.use('/api', apiCors);
 
   app.use('/api', apiKeyAuth);
 
