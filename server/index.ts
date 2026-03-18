@@ -10,10 +10,10 @@ import { createServer } from "http";
 import { apiKeyAuth } from "./middleware/auth.js";
 import { securityHeaders } from "./middleware/security.js";
 import { getGanttDataHandler, postGanttImportHandler, patchProjectImageHandler, checkProjectExistsHandler, deleteGanttProject, getTaskEvidenceHandler, postTaskEvidenceHandler, deleteEvidenceHandler, getProjectEvidenceCountsHandler } from "./routes/gantt.js";
-import { listDashboardProjects, getDashboardProject, batchReplaceDashboardProjects, clearDashboardProjects, getDashboardHealthCheck, getLatestDashboardHealthCheck, runDashboardHealthCheck } from "./routes/dashboard.js";
-import { listDashboardProjectAssets, upsertDashboardProjectAsset, deleteDashboardProjectAsset } from "./routes/dashboard-assets.js";
-import { listDashboardProductData, batchUpsertDashboardProductData } from "./routes/dashboard-product-data.js";
-import { getProgressNotes, getLatestProgressBackup, saveProgressNotes, createProgressBackup, restoreLatestProgressNotes, deleteProgressNote, getProgressNoteAuditLogs } from "./routes/progress-notes.js";
+import { listDashboardProjects, getDashboardProject, batchReplaceDashboardProjects, clearDashboardProjects, getDashboardHealthCheck, getLatestDashboardHealthCheck, runDashboardHealthCheck, ensureDashboardHealthTable, ensureDashboardModuleOrderTable } from "./routes/dashboard.js";
+import { listDashboardProjectAssets, upsertDashboardProjectAsset, deleteDashboardProjectAsset, ensureDashboardProjectAssetsTable } from "./routes/dashboard-assets.js";
+import { listDashboardProductData, batchUpsertDashboardProductData, ensureDashboardProductDataTable } from "./routes/dashboard-product-data.js";
+import { getProgressNotes, getLatestProgressBackup, saveProgressNotes, createProgressBackup, restoreLatestProgressNotes, deleteProgressNote, getProgressNoteAuditLogs, ensureBackupTable, ensureProgressAuditTable } from "./routes/progress-notes.js";
 import { getTasksForSCurve } from "./routes/tasks.js";
 import { db, sql } from "./db.js";
 
@@ -163,6 +163,21 @@ async function startServer() {
       res.status(404).json({ error: "Not found (dev API only)" });
     });
   }
+
+  const warmupResults = await Promise.allSettled([
+    ensureDashboardProjectAssetsTable(),
+    ensureDashboardProductDataTable(),
+    ensureDashboardHealthTable(),
+    ensureDashboardModuleOrderTable(),
+    ensureBackupTable(),
+    ensureProgressAuditTable(),
+  ]);
+
+  warmupResults.forEach((result, index) => {
+    if (result.status === "rejected") {
+      console.error(`[db-warmup] task-${index} failed:`, result.reason);
+    }
+  });
 
   const port = process.env.PORT || (isDevApiOnly ? 3001 : 3000);
   server.listen(port, () => {
