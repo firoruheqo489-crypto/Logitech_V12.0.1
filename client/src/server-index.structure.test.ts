@@ -36,6 +36,12 @@ describe('server/index.ts structure', () => {
     expect(firstApiRouteIndex).toBeGreaterThan(registerPolicyIndex);
   });
 
+  it('keeps api access policy wiring out of server/index.ts inline middleware blocks', async () => {
+    const source = await loadServerIndexSource();
+
+    expect(source).not.toMatch(/app\.use\(['"]\/api['"],\s*\(req,\s*res,\s*next\)\s*=>/);
+  });
+
   it('keeps the dev-api-only fallback on a machine-readable error payload', async () => {
     const source = await loadServerIndexSource();
 
