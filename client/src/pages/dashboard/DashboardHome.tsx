@@ -13,10 +13,19 @@ import MobileProjectCard from './components/MobileProjectCard';
 import SearchBar from './components/SearchBar';
 import { AdminButton } from './components/AdminButton';
 import { AdminModal } from './components/AdminModal';
+import { ProductModuleAdminModal } from './components/ProductModuleAdminModal';
+import MoldTrialDrawerWorkspace from './components/MoldTrialDrawerWorkspace';
+import MacroStageGateDrawerWorkspace from './components/MacroStageGateDrawerWorkspace';
+import ReliabilityDrawerWorkspace from './components/ReliabilityDrawerWorkspace';
+import SpcRadarDrawerWorkspace from './components/SpcRadarDrawerWorkspace';
+import SpcCalculatorDrawerWorkspace from './components/SpcCalculatorDrawerWorkspace';
+import ProductDataDrawerWorkspace from './components/ProductDataDrawerWorkspace';
+import ProcessDrawerWorkspace from './components/ProcessDrawerWorkspace';
 
-import { transformProjectToData, transformDataToProject } from './lib/dataTransformer';
+import { transformDataToProject } from './lib/dataTransformer';
+import { fetchDashboardProjectData, fetchDashboardProgressEntries, type DashboardProgressEntry } from './lib/dashboardApi';
 import { toast } from 'sonner';
-import { FileSpreadsheet, Sparkles, Clock, Calendar, FileText, Image as ImageIcon, X, User, ArrowLeft } from 'lucide-react';
+import { FileSpreadsheet, Sparkles, Image as ImageIcon, X, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { DEMO_PROJECTS } from './lib/demoData';
 import {
@@ -26,9 +35,24 @@ import {
   AccordionTrigger,
 } from '@/components/ui/accordion';
 import { apiFetch } from '@/lib/api';
-import { getModuleTheme } from '@/lib/theme';
+import { getModuleTheme, getThemeGlowClass, orderModuleNamesForDisplay } from '@/lib/theme';
 import CyberConfirmDialog from '@/components/ui/CyberConfirmDialog';
 import ProjectLobby from '@/components/ProjectLobby';
+import VDISurfaceGrid, { type MaterialType } from '@/components/VDISurfaceGrid';
+import DefectLab from '@/components/DefectLab';
+import FmeaIssueWorkspace from '@/components/FmeaIssueWorkspace';
+import type { ProductModuleRecord } from './types/product-module';
+import {
+  buildProductModuleLookupKey,
+  formatProductSequenceLabel,
+  normalizeMoldLookupKey,
+} from './lib/productModuleUtils';
+import type { DashboardFilter } from '@/lib/dashboardProjectState';
+import {
+  normalizeDashboardFilter,
+  normalizeProjectDataEnums,
+  normalizeProjectStatus,
+} from '@/lib/dashboardProjectState';
 
 function useIsMobile(breakpoint = 767) {
   const [isMobile, setIsMobile] = React.useState(
@@ -43,10 +67,8 @@ function useIsMobile(breakpoint = 767) {
   }, [breakpoint]);
   return isMobile;
 }
-async function fetchProjects(): Promise<any[]> {
-  const res = await apiFetch('/api/dashboard/projects');
-  if (!res.ok) return [];
-  return res.json();
+async function fetchProjects(): Promise<ProjectData[]> {
+  return fetchDashboardProjectData();
 }
 
 async function batchReplaceProjects(data: Record<string, string | undefined>[]): Promise<void> {
@@ -63,10 +85,10 @@ async function clearAllProjects(): Promise<void> {
   if (!res.ok) throw new Error('清除失败');
 }
 
-function formatBatchLabel(uploadBatch?: string): string {
-  if (!uploadBatch) return '历史批次';
-  const dt = new Date(uploadBatch);
-  if (isNaN(dt.getTime())) return '历史批次';
+function formatDateTimeLabel(timestamp?: string): string {
+  if (!timestamp) return '-';
+  const dt = new Date(timestamp);
+  if (isNaN(dt.getTime())) return '-';
   const y = dt.getFullYear();
   const m = String(dt.getMonth() + 1).padStart(2, '0');
   const d = String(dt.getDate()).padStart(2, '0');
@@ -75,7 +97,75 @@ function formatBatchLabel(uploadBatch?: string): string {
   return `${y}-${m}-${d} ${hh}:${mm}`;
 }
 
-type ProgressEntry = { id: string; date: string; content: string; imageUrl?: string; assignee?: string; estimatedNodeCompletion?: string };
+function normalizeDateOnlyLabel(value?: string): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+  const dt = new Date(trimmed);
+  if (isNaN(dt.getTime())) return null;
+  const y = dt.getFullYear();
+  const m = String(dt.getMonth() + 1).padStart(2, '0');
+  const d = String(dt.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function resolveProgressUpdateLabel(uploadedAt?: string, mappedDate?: string): string {
+  const mappedDateOnly = normalizeDateOnlyLabel(mappedDate);
+  const uploadedDateOnly = normalizeDateOnlyLabel(uploadedAt);
+
+  if (uploadedAt && uploadedDateOnly && (!mappedDateOnly || uploadedDateOnly === mappedDateOnly)) {
+    return formatDateTimeLabel(uploadedAt);
+  }
+
+  return mappedDate?.trim() || '-';
+}
+
+function formatBatchLabel(uploadBatch?: string): string {
+  if (!uploadBatch) return '历史批次';
+  const dt = new Date(uploadBatch);
+  if (isNaN(dt.getTime())) return '历史批次';
+  return formatDateTimeLabel(uploadBatch);
+}
+
+function parseMoldSetCount(value?: string): number {
+  if (!value) return 0;
+  const match = value.match(/\d+/);
+  if (!match) return 0;
+  const count = Number.parseInt(match[0], 10);
+  return Number.isFinite(count) ? count : 0;
+}
+
+type ProgressEntry = DashboardProgressEntry;
+
+async function fetchProgressEntriesForMold(mold: string): Promise<{ mold: string; entries: ProgressEntry[] }> {
+  return {
+    mold,
+    entries: await fetchDashboardProgressEntries(mold),
+  };
+}
+
+async function loadProgressEntriesByMoldLimited(
+  moldNumbers: string[],
+  concurrency = 3,
+): Promise<Record<string, ProgressEntry[]>> {
+  const next: Record<string, ProgressEntry[]> = {};
+  let cursor = 0;
+
+  const worker = async () => {
+    while (cursor < moldNumbers.length) {
+      const currentIndex = cursor;
+      cursor += 1;
+      const mold = moldNumbers[currentIndex];
+      const result = await fetchProgressEntriesForMold(mold);
+      next[result.mold] = result.entries;
+    }
+  };
+
+  const workerCount = Math.max(1, Math.min(concurrency, moldNumbers.length));
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  return next;
+}
 
 function normalizeText(value?: string): string {
   return (value || '').trim();
@@ -99,55 +189,21 @@ function buildBatchSignature(projects: ProjectData[]): string {
     .join('||');
 }
 
-function parseDateToDayStart(value?: string): number | null {
-  const raw = (value || '').trim();
-  if (!raw) return null;
-
-  const isoMatch = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
-  if (isoMatch) {
-    const y = Number(isoMatch[1]);
-    const m = Number(isoMatch[2]);
-    const d = Number(isoMatch[3]);
-    return new Date(y, m - 1, d).setHours(0, 0, 0, 0);
-  }
-
-  const slashMatch = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/);
-  if (slashMatch) {
-    const m = Number(slashMatch[1]);
-    const d = Number(slashMatch[2]);
-    const yearRaw = Number(slashMatch[3]);
-    const y = yearRaw < 100 ? 2000 + yearRaw : yearRaw;
-    return new Date(y, m - 1, d).setHours(0, 0, 0, 0);
-  }
-
-  const parsed = new Date(raw);
-  if (Number.isNaN(parsed.getTime())) return null;
-  return new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate()).setHours(0, 0, 0, 0);
-}
-
-function resolveDetailNodeByDate(updateDate?: string, fallbackNode?: string): string {
-  const today = new Date();
-  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate()).setHours(0, 0, 0, 0);
-  const rowDay = parseDateToDayStart(updateDate);
-  if (rowDay !== null) {
-    if (rowDay < todayStart) return '已完成';
-    if (rowDay === todayStart) return '进行中';
-  }
-  return (fallbackNode || '-').trim() || '-';
-}
-
 export default function DashboardHome() {
   const isMobile = useIsMobile();
   const [activeModule, setActiveModule] = useState<string | null>(() => {
     if (typeof window === 'undefined') return null;
     return sessionStorage.getItem('dashboard_active_module') || null;
   });
-  const [dbProjects, setDbProjects] = useState<any[]>([]);
+  const [dbProjects, setDbProjects] = useState<ProjectData[]>([]);
   const [loading, setLoading] = useState(true);
   const [localProjects, setLocalProjects] = useState<ProjectData[]>([]);
   const [progressEntriesByMold, setProgressEntriesByMold] = useState<Record<string, ProgressEntry[]>>({});
   const [previewImageUrl, setPreviewImageUrl] = useState<string>('');
   const [activeTab, setActiveTab] = useState('overview');
+  const [defectMaterial, setDefectMaterial] = useState<MaterialType>('PC/ABS');
+  const [defectVDI, setDefectVDI] = useState<number>(24);
+  const [productModuleRows, setProductModuleRows] = useState<ProductModuleRecord[]>([]);
 
   const loadProjects = useCallback(async () => {
     const startedAt = Date.now();
@@ -184,7 +240,7 @@ export default function DashboardHome() {
 
   const sourceProjects = useMemo(() => {
     if (localProjects.length > 0) return localProjects;
-    return dbProjects.map((p: any, i: number) => transformProjectToData(p, i));
+    return dbProjects;
   }, [dbProjects, localProjects]);
 
   const allProjects = useMemo(() => sourceProjects, [sourceProjects]);
@@ -196,13 +252,14 @@ export default function DashboardHome() {
       const name = p.identity?.projectName?.trim() || '';
       if (name && !seen.has(name)) { seen.add(name); names.push(name); }
     }
-    return names;
+    return orderModuleNamesForDisplay(names);
   }, [allProjects]);
 
   const moduleTheme = useMemo(
-    () => activeModule ? getModuleTheme(activeModule, uniqueModuleNames) : { key: 'cyan' as const, hex: '#06b6d4', rgb: '6,182,212' },
+    () => activeModule ? getModuleTheme(activeModule, uniqueModuleNames) : getModuleTheme('default'),
     [activeModule, uniqueModuleNames],
   );
+  const themeGlow = useMemo(() => getThemeGlowClass(moduleTheme.shadowGlow), [moduleTheme.shadowGlow]);
 
   // Absolute data interception: every detail-page data source must derive from active module.
   const currentModuleData = useMemo(() => {
@@ -227,7 +284,53 @@ export default function DashboardHome() {
     return latestIso;
   }, [currentModuleData]);
 
+  const currentModuleMoldIds = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          currentModuleData
+            .map((project) => project.identity?.moldNumber?.trim() || '')
+            .filter((mold) => mold && mold !== '-'),
+        ),
+      ),
+    [currentModuleData],
+  );
+
+  const currentModuleMoldSetCount = useMemo(
+    () =>
+      currentModuleData.reduce((maxCount, project) => {
+        const parsedCount = parseMoldSetCount(project.identity?.moldSets);
+        return Math.max(maxCount, parsedCount);
+      }, 0),
+    [currentModuleData],
+  );
+
+  const currentModuleTrialPanels = useMemo(() => {
+    const fallbackMoldId = currentModuleData[0]?.identity?.moldNumber?.trim() || currentModuleMoldIds[0] || 'LA26006';
+    const panelCount = Math.max(currentModuleMoldIds.length, currentModuleMoldSetCount, 1);
+
+    return Array.from({ length: panelCount }, (_, index) => ({
+      moldId: currentModuleMoldIds[index] || fallbackMoldId,
+      moldNo: `NO. ${index + 1}`,
+    }));
+  }, [currentModuleData, currentModuleMoldIds, currentModuleMoldSetCount]);
+
+  const productModuleSequenceByMold = useMemo(() => {
+    const sequenceMap: Record<string, string> = {};
+    currentModuleTrialPanels.forEach((panel) => {
+      const moldKey = normalizeMoldLookupKey(panel.moldId);
+      if (!moldKey) return;
+      sequenceMap[moldKey] = formatProductSequenceLabel(panel.moldNo);
+    });
+    return sequenceMap;
+  }, [currentModuleTrialPanels]);
+
   useEffect(() => {
+    if (activeTab !== 'logs') {
+      setProgressEntriesByMold({});
+      return;
+    }
+
     const moldNumbers = Array.from(new Set(
       currentModuleData
         .map((p) => p?.identity?.moldNumber?.trim())
@@ -242,57 +345,32 @@ export default function DashboardHome() {
     let cancelled = false;
 
     (async () => {
-      const settled = await Promise.allSettled(
-        moldNumbers.map(async (mold) => {
-          try {
-            const res = await apiFetch(`/api/dashboard/progress-notes/${encodeURIComponent(mold)}`);
-            if (!res.ok) return { mold, entries: [] as ProgressEntry[] };
-            const rows = await res.json();
-            const entries: ProgressEntry[] = (Array.isArray(rows) ? rows : [])
-              .map((r: any) => ({
-                id: String(r?.id || ''),
-                date: String(r?.date || ''),
-                content: String(r?.content || ''),
-                imageUrl: typeof r?.imageUrl === 'string' ? r.imageUrl : undefined,
-                assignee: typeof r?.assignee === 'string' ? r.assignee : undefined,
-                estimatedNodeCompletion: typeof r?.estimatedNodeCompletion === 'string' ? r.estimatedNodeCompletion : undefined,
-              }))
-              .sort((a, b) => b.date.localeCompare(a.date));
-            return { mold, entries };
-          } catch {
-            return { mold, entries: [] as ProgressEntry[] };
-          }
-        })
-      );
-
+      const next = await loadProgressEntriesByMoldLimited(moldNumbers, 3);
       if (cancelled) return;
-
-      const next: Record<string, ProgressEntry[]> = {};
-      for (const item of settled) {
-        if (item.status !== 'fulfilled') continue;
-        next[item.value.mold] = item.value.entries;
-      }
-
       setProgressEntriesByMold(next);
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [currentModuleData]);
+  }, [activeTab, currentModuleData]);
 
   const hasData = currentModuleData.length > 0;
   const isAdmin = () => new URLSearchParams(window.location.search).get('mode') === 'admin';
 
   const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
+  const [isProductAdminModalOpen, setIsProductAdminModalOpen] = useState(false);
   const [isInitialLoading, setIsInitialLoading] = useState(false);
   const [showDuplicateUploadConfirm, setShowDuplicateUploadConfirm] = useState(false);
   const [pendingUploadData, setPendingUploadData] = useState<ProjectData[] | null>(null);
   const [searchProjectName, setSearchProjectName] = useState('');
   const [searchMoldId, setSearchMoldId] = useState('');
-  const [filterStatus, setFilterStatus] = useState<string>(() => {
+  const [filterStatus, setFilterStatus] = useState<DashboardFilter>(() => {
     const saved = sessionStorage.getItem('dashboard_filter');
-    if (saved) { sessionStorage.removeItem('dashboard_filter'); return saved; }
+    if (saved) {
+      sessionStorage.removeItem('dashboard_filter');
+      return normalizeDashboardFilter(saved);
+    }
     return 'ALL';
   });
 
@@ -300,20 +378,79 @@ export default function DashboardHome() {
     sessionStorage.setItem('dashboard_current_filter', filterStatus);
   }, [filterStatus]);
 
+  const loadProductModuleRows = useCallback(async () => {
+    try {
+      const response = await apiFetch('/api/dashboard/product-data');
+      if (!response.ok) return;
+      const payload = (await response.json()) as { rows?: Array<Record<string, unknown>> };
+      const rows = Array.isArray(payload.rows) ? payload.rows : [];
+      const mappedRows: ProductModuleRecord[] = rows
+        .map((row) => ({
+          moldNumber: normalizeMoldLookupKey(String(row.mold_number || '')),
+          serialNumber:
+            typeof row.serial_number === 'string' ? formatProductSequenceLabel(row.serial_number) : undefined,
+          productName: typeof row.product_name === 'string' ? row.product_name : undefined,
+          netWeight: typeof row.net_weight === 'string' ? row.net_weight : undefined,
+          runnerWeight: typeof row.runner_weight === 'string' ? row.runner_weight : undefined,
+          productSize: typeof row.product_size === 'string' ? row.product_size : undefined,
+          cavityNumber: typeof row.cavity_number === 'string' ? row.cavity_number : undefined,
+          material: typeof row.material === 'string' ? row.material : undefined,
+          materialErpName: typeof row.material_erp_name === 'string' ? row.material_erp_name : undefined,
+          materialErpCode: typeof row.material_erp_code === 'string' ? row.material_erp_code : undefined,
+          recycledMaterialErpCode:
+            typeof row.recycled_material_erp_code === 'string' ? row.recycled_material_erp_code : undefined,
+          recycledMaterialSpec:
+            typeof row.recycled_material_spec === 'string' ? row.recycled_material_spec : undefined,
+          rawMaterialName: typeof row.raw_material_name === 'string' ? row.raw_material_name : undefined,
+          rawMaterialSpec: typeof row.raw_material_spec === 'string' ? row.raw_material_spec : undefined,
+          finishedPartNumber: typeof row.finished_part_number === 'string' ? row.finished_part_number : undefined,
+          semiFinishedPartNumber:
+            typeof row.semi_finished_part_number === 'string' ? row.semi_finished_part_number : undefined,
+          internalFinishedErpCode:
+            typeof row.internal_finished_erp_code === 'string' ? row.internal_finished_erp_code : undefined,
+          internalSemiFinishedErpCode:
+            typeof row.internal_semi_finished_erp_code === 'string'
+              ? row.internal_semi_finished_erp_code
+              : undefined,
+          internalProductName:
+            typeof row.internal_product_name === 'string' ? row.internal_product_name : undefined,
+          moldSize: typeof row.mold_size === 'string' ? row.mold_size : undefined,
+          moldWeight: typeof row.mold_weight === 'string' ? row.mold_weight : undefined,
+          machineTonnage: typeof row.machine_tonnage === 'string' ? row.machine_tonnage : undefined,
+          moldMaterial: typeof row.mold_material === 'string' ? row.mold_material : undefined,
+          openMoldDate: typeof row.open_mold_date === 'string' ? row.open_mold_date : undefined,
+          t0Time: typeof row.t0_time === 'string' ? row.t0_time : undefined,
+          assetNumber: typeof row.asset_number === 'string' ? row.asset_number : undefined,
+          moldOwner: typeof row.mold_owner === 'string' ? row.mold_owner : undefined,
+          serviceLife: typeof row.service_life === 'string' ? row.service_life : undefined,
+          updatedAt: typeof row.updated_at === 'string' ? row.updated_at : undefined,
+        }))
+        .filter((row) => row.moldNumber);
+      setProductModuleRows(mappedRows);
+    } catch {
+      // Keep fallback display values if product module data is unavailable.
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadProductModuleRows();
+  }, [loadProductModuleRows]);
+
   const handleFileSelect = async (_file: File) => {
     setIsInitialLoading(true);
     try { toast.success('文件上传成功'); } finally { setIsInitialLoading(false); }
   };
 
   const handleDataUpdate = async (data: ProjectData[]) => {
-    const incomingSignature = buildBatchSignature(data);
+    const normalizedData = data.map(normalizeProjectDataEnums);
+    const incomingSignature = buildBatchSignature(normalizedData);
     const currentSignature = buildBatchSignature(sourceProjects);
     if (incomingSignature && incomingSignature === currentSignature) {
-      setPendingUploadData(data);
+      setPendingUploadData(normalizedData);
       setShowDuplicateUploadConfirm(true);
       return;
     }
-    await executeDataUpdate(data);
+    await executeDataUpdate(normalizedData);
   };
 
   const executeDataUpdate = async (data: ProjectData[]) => {
@@ -357,7 +494,7 @@ export default function DashboardHome() {
       toast.success(`已加载 ${DEMO_PROJECTS.length} 个演示项目`);
       loadProjects();
     } catch {
-      setLocalProjects(DEMO_PROJECTS);
+      setLocalProjects(DEMO_PROJECTS.map(normalizeProjectDataEnums));
       toast.warning('服务不可用,已加载本地演示数据');
     } finally { setIsInitialLoading(false); }
   };
@@ -374,7 +511,7 @@ export default function DashboardHome() {
       filtered = filtered.filter(p => p.identity.moldNumber?.toLowerCase().includes(s));
     }
     if (filterStatus !== 'ALL') {
-      filtered = filtered.filter(p => (p.milestones?.currentNode?.trim() || '') === filterStatus);
+      filtered = filtered.filter((p) => normalizeProjectStatus(p.milestones?.currentNode) === filterStatus);
     }
     return filtered;
   }, [currentModuleData, hasData, searchProjectName, searchMoldId, filterStatus]);
@@ -441,7 +578,7 @@ export default function DashboardHome() {
     document.getElementById('root')?.scrollTo({ top: 0 });
   }, [isMobile]);
 
-  const handleFilterChange = useCallback((status: string) => {
+  const handleFilterChange = useCallback((status: DashboardFilter) => {
     setFilterStatus(status);
     scrollToTopIfMobile();
   }, [scrollToTopIfMobile]);
@@ -474,6 +611,25 @@ export default function DashboardHome() {
 
   const stats = useMemo(() => calculateStats(scopedProjects), [scopedProjects]);
   const visibleGroupCount = useMemo(() => visibleGroupNames.size, [visibleGroupNames]);
+  const productModuleDataByLookup = useMemo(() => {
+    const map: Record<string, ProductModuleRecord> = {};
+    productModuleRows.forEach((row) => {
+      const key = buildProductModuleLookupKey(row.moldNumber, row.serialNumber);
+      if (key) map[key] = row;
+    });
+    return map;
+  }, [productModuleRows]);
+  const productModuleLastUpdated = useMemo(() => {
+    const latest = currentModuleMoldIds
+      .map((moldId) => {
+        const sequenceLabel = productModuleSequenceByMold[normalizeMoldLookupKey(moldId)];
+        const key = buildProductModuleLookupKey(moldId, sequenceLabel);
+        return productModuleDataByLookup[key]?.updatedAt || '';
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.localeCompare(a))[0];
+    return latest ? formatDateTimeLabel(latest) : '-';
+  }, [currentModuleMoldIds, productModuleDataByLookup, productModuleSequenceByMold]);
 
   // ── 大厅拦截：未选中项目时显示大厅 ──
   if (!activeModule) {
@@ -492,7 +648,7 @@ export default function DashboardHome() {
           <span className="text-white/60">请稍后...</span>
         </h1>
         <div className="flex items-center gap-2.5 text-white/35 text-sm">
-          <span className="inline-block w-4 h-4 border-2 border-white/15 border-t-cyan-400 rounded-full animate-spin" />
+          <span className="inline-block w-4 h-4 border-2 border-white/15 rounded-full animate-spin" style={{ borderTopColor: moduleTheme.hex }} />
           正在加载项目数据…
         </div>
       </div>
@@ -504,10 +660,10 @@ export default function DashboardHome() {
       <div className="min-h-screen bg-[#000000] flex items-center justify-center p-4">
         <div className="max-w-2xl w-full">
           <div className="text-center mb-8">
-            <div className="inline-flex items-center justify-center w-16 h-16 bg-white/[0.03] border border-white/[0.06] rounded-2xl mb-4">
-              <FileSpreadsheet className="w-8 h-8 text-amber-400/80" />
+            <div className={`inline-flex items-center justify-center w-16 h-16 border border-white/[0.06] rounded-2xl mb-4 ${moduleTheme.iconBg}`}>
+              <FileSpreadsheet className={`w-8 h-8 ${moduleTheme.text}`} />
             </div>
-            <h1 className="text-3xl font-bold text-white mb-2" style={{ fontFamily: 'var(--font-display)' }}><span className="text-amber-400">罗技</span>项目进度看板</h1>
+            <h1 className="text-3xl font-bold text-white mb-2" style={{ fontFamily: 'var(--font-display)' }}><span className={moduleTheme.text}>罗技</span>项目进度看板</h1>
             <p className="text-sm text-white/30">项目状态可视化管理系统</p>
           </div>
           <div className="bg-[#080808] rounded-2xl border border-white/[0.06] p-8">
@@ -529,106 +685,93 @@ export default function DashboardHome() {
       className="w-full min-h-screen h-auto bg-slate-950 pb-40"
       style={{ '--accent': moduleTheme.hex, '--accent-rgb': moduleTheme.rgb } as React.CSSProperties}
     >
-      {/* ── 区块一：全局头部 ── */}
-      <div className="bg-slate-900/60 border-b border-slate-800/60">
-        <div className="mx-auto w-full max-w-7xl px-4 md:px-8 pt-9 pb-6 md:pt-11 md:pb-6">
-          <div className="flex items-center gap-6">
-            <button
-              onClick={() => { setActiveModule(null); setSearchProjectName(''); setSearchMoldId(''); setFilterStatus('ALL'); }}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-700 bg-slate-800/50 hover:bg-slate-700 hover:border-slate-500 transition-all text-sm font-medium text-slate-200 shrink-0"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              返回项目大厅
-            </button>
-            <div className="flex flex-col min-w-0">
-              <h1 className="text-2xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-white to-slate-400">{activeModule} 系列主看板</h1>
-              <p className="text-[11px] uppercase tracking-widest text-slate-500 font-semibold mt-0.5">项目状态可视化管理系统</p>
-            </div>
-            <span className="ml-auto text-xs text-slate-600 font-mono tracking-tight whitespace-nowrap hidden md:block">
-              当前更新节点时间: {formatBatchLabel(latestBatch || undefined)}
-            </span>
+      <div className="mx-auto w-full max-w-7xl px-4 md:px-8 pt-9 md:pt-11">
+        <div className="mt-2 mb-8 flex w-full items-end justify-between px-1">
+          <div className="flex flex-col gap-1.5">
+            <h1 className="text-3xl font-extrabold tracking-tight text-white">{activeModule} 系列主看板</h1>
+            <p className="text-sm font-medium text-slate-400">项目状态可视化管理系统</p>
           </div>
+          <button
+            onClick={() => { setActiveModule(null); setSearchProjectName(''); setSearchMoldId(''); setFilterStatus('ALL'); }}
+            className="mb-1 flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-800 px-4 py-2.5 text-slate-300 shadow-sm transition-all hover:bg-slate-700 hover:text-white"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            返回项目大厅
+          </button>
         </div>
       </div>
 
-      {/* ── 区块二：统计卡片区 ── */}
-      <div ref={statsPanelRef} className="mx-auto w-full max-w-7xl px-4 md:px-8 pt-6 pb-2 md:pb-4">
-        <StatsPanel stats={stats} onFilterChange={handleFilterChange} activeFilter={filterStatus} />
+      <div ref={statsPanelRef} className="mx-auto w-full max-w-7xl px-4 pt-6 pb-2 md:px-8 md:pb-4">
+        <StatsPanel stats={stats} theme={moduleTheme} onFilterChange={handleFilterChange} activeFilter={filterStatus} />
       </div>
 
-      {/* ── 区块三：Tab 导航栏 ── */}
       <div className="mx-auto w-full max-w-7xl px-4 md:px-8">
-        <div className="flex items-center gap-2 border-b border-slate-800 pb-px mb-6">
-          {(['overview', 'logs', 'process', 'fmea', 'product'] as const).map((tab) => {
-            const labels: Record<string, string> = { overview: '项目总览', logs: '推进日志', process: '工艺模块', fmea: 'FMEA', product: '产品模块' };
+        <div className="mb-8 flex flex-nowrap items-center gap-4 overflow-x-auto border-b border-slate-800/40 px-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:gap-8 md:overflow-visible">
+          {(['overview', 'logs', 'mold-trial-database', 'process', 'fmea', 'product', 'spc-calculator', 'defect-library', 'injection-clinic', 'mold-reliability', 'mass-production-monitoring', 'macro-stage-gate'] as const).map((tab) => {
+            const labels: Record<string, string> = {
+              'spc-calculator': 'SPC计算器',
+              'mass-production-monitoring': '量产监控',
+              'macro-stage-gate': '宏观流程视图',
+              overview: '项目总览',
+              logs: '推进日志',
+              process: '工艺模块',
+              fmea: 'FMEA知识库',
+              product: '产品模块',
+              'defect-library': 'VDI 3400 对照库',
+              'injection-clinic': '注塑诊所',
+              'mold-reliability': '模具可靠性',
+              'mold-trial-database': '试模数据库',
+            };
+            const isActive = activeTab === tab;
             return (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
-                className={`px-6 py-3 text-sm font-medium transition-colors border-b-2 ${activeTab === tab ? 'text-white' : 'border-transparent text-slate-400 hover:text-slate-200'}`}
-                style={activeTab === tab ? { borderColor: moduleTheme.hex } : undefined}
+                className={`relative flex-shrink-0 whitespace-nowrap pb-4 text-[15px] font-medium transition-all ${isActive ? moduleTheme.text : 'text-slate-500 hover:text-slate-300'}`}
               >
                 {labels[tab]}
+                {isActive && (
+                  <span
+                    className={`absolute bottom-[-1px] left-0 h-[2px] w-full ${moduleTheme.bg} ${themeGlow}`}
+                  />
+                )}
               </button>
             );
           })}
         </div>
       </div>
 
-      {/* ── 区块四：动态内容装载区 ── */}
       <main ref={mainRef} className="mx-auto w-full max-w-7xl px-4 md:px-8 pb-8" style={{ overflowAnchor: 'none' }}>
 
-        {/* ── Tab: 推进日志 ── */}
         {activeTab === 'logs' && (
         <div className="w-full mb-8">
           <Accordion type="multiple" className="w-full space-y-4" value={openGroups} onValueChange={setOpenGroups}>
             {Object.entries(allGroupedProjects).map(([groupKey, group]) => {
               const isGroupVisible = visibleGroupNames.has(groupKey);
               const firstProject = group[0];
-              const projectName = firstProject.identity.projectName || '未命名项目';
+              const projectName = firstProject.identity.projectName || '-';
               const productName = firstProject.identity.productName || '-';
               const moldNo = firstProject.identity.moldNumber || '-';
-              const batchLabel = formatBatchLabel(firstProject.uploadBatch);
-              const baseMoldNo = firstProject.identity.moldNumber || '-';
-              const noteEntries = (baseMoldNo && baseMoldNo !== '-') ? (progressEntriesByMold[baseMoldNo] || []) : [];
+              const noteEntries = (moldNo && moldNo !== '-') ? (progressEntriesByMold[moldNo] || []) : [];
               const detailRows = noteEntries.length > 0
                 ? noteEntries.map((entry, idx) => ({
-                    key: entry.id || `${baseMoldNo}-${idx}`,
-                    moldNo: baseMoldNo,
+                    key: entry.id || `${moldNo}-${idx}`,
                     updateDate: entry.date || '-',
+                    uploadedAt: entry.updatedAt || entry.createdAt || '',
                     detail: entry.content?.trim() || '暂无推进细节',
                     detailImageUrl: entry.imageUrl?.trim() || null,
                     estimated: entry.estimatedNodeCompletion || firstProject?.milestones?.estimatedCompletion || '-',
                     assignee: entry.assignee || '-',
-                    currentNode: (firstProject?.milestones?.currentNode || '').trim() || '-',
                   }))
                 : [{
-                    key: `${baseMoldNo}-fallback`,
-                    moldNo: baseMoldNo,
+                    key: `${moldNo}-fallback`,
                     updateDate: firstProject?.details?.detailDate || '-',
+                    uploadedAt: '',
                     detail: firstProject?.details?.detailProgress || '暂无推进细节',
                     detailImageUrl: null,
                     estimated: firstProject?.milestones?.estimatedCompletion || '-',
                     assignee: '-',
-                    currentNode: (firstProject?.milestones?.currentNode || '').trim() || '-',
                   }];
-              // Filter the visible items within this group
-              const visibleGroup = isGroupVisible
-                ? group.filter(p => {
-                    if (searchProjectName.trim()) {
-                      const s = searchProjectName.toLowerCase().trim();
-                      if (!p.identity.projectName?.toLowerCase().includes(s)) return false;
-                    }
-                    if (searchMoldId.trim()) {
-                      const s = searchMoldId.toLowerCase().trim();
-                      if (!p.identity.moldNumber?.toLowerCase().includes(s)) return false;
-                    }
-                    if (filterStatus !== 'ALL') {
-                      if ((p.milestones?.currentNode?.trim() || '') !== filterStatus) return false;
-                    }
-                    return true;
-                  })
-                : [];
               return (
                 <AccordionItem
                   value={groupKey}
@@ -636,97 +779,36 @@ export default function DashboardHome() {
                   className="project-group-card overflow-hidden"
                   style={{ display: isGroupVisible ? undefined : 'none' }}
                 >
-                  <AccordionTrigger className="group-card__header px-6 py-3.5 hover:no-underline">
-                    <div className="flex items-center w-full pr-4 gap-3">
-                      <span className="w-2 h-2 rounded-full shrink-0" style={{ background: moduleTheme.hex }} />
-                      <span className="text-base font-bold text-slate-200">{projectName}</span>
-                      <span className="text-slate-600">·</span>
-                      <span className="text-sm text-slate-400">{productName}</span>
-                      <span className="text-slate-600">·</span>
-                      <span className="text-sm font-mono text-slate-500">{moldNo}</span>
-                      <span className="ml-auto text-xs text-slate-600 font-mono">{batchLabel}</span>
+                  <AccordionTrigger className="p-0 hover:no-underline">
+                    <div className="flex justify-between items-center w-full px-4 py-3 bg-slate-800/40 border-b border-slate-800/50 hover:bg-slate-800/60 transition-colors">
+                      <div className="flex items-center gap-3 text-sm font-medium text-slate-200 min-w-0">
+                        <span className={`w-2 h-2 rounded-full ${moduleTheme.bg} ${themeGlow}`} />
+                        <span className="truncate">{projectName}</span>
+                        <span className="text-slate-600">·</span>
+                        <span className="truncate">{productName}</span>
+                        <span className="text-slate-600">·</span>
+                        <span className="shrink-0">{moldNo}</span>
+                      </div>
                     </div>
                   </AccordionTrigger>
                   <AccordionContent className="group-card__body px-0 pb-0">
-                    {isMobile ? (
-                      <div className="divide-y divide-slate-800/50">
-                        {(expandedNoteGroups.has(groupKey) ? detailRows : detailRows.slice(0, 6)).map((row) => {
-                          const node = resolveDetailNodeByDate(row.updateDate, row.currentNode);
-                          const moldNo = row.moldNo || '-';
-                          const updateDate = row.updateDate || '-';
-                          const detail = row.detail || '';
-                          const detailImageUrl = row.detailImageUrl;
-                          const estimated = row.estimated || '-';
-                          const hasDetail = detail.trim() && detail !== '暂无推进细节';
-                          return (
-                            <div key={row.key} className="px-4 py-3 bg-slate-950/50">
-                              <div className="flex items-center justify-between gap-2 min-w-0">
-                                <div className="font-bold text-[15px] text-slate-200 truncate">{moldNo}</div>
-                                <div className="flex-none flex items-center gap-1.5 text-[12px] font-semibold text-slate-400">
-                                  <span className="w-2 h-2 rounded-full" style={{ background: moduleTheme.hex, boxShadow: `0 0 6px ${moduleTheme.hex}` }} />
-                                  {(node || '-')}
-                                </div>
-                              </div>
-                              {hasDetail && (
-                                <div className="mt-1.5 flex items-start gap-3">
-                                  {detailImageUrl && (
-                                    <button
-                                      type="button"
-                                      className="w-12 h-8 rounded-lg overflow-hidden ring-1 ring-slate-700/50 shadow-md shrink-0 cursor-zoom-in"
-                                      title="查看推进图片"
-                                      onClick={() => setPreviewImageUrl(detailImageUrl)}
-                                    >
-                                      <img src={detailImageUrl} alt="推进缩略图" className="w-full h-full object-cover opacity-90 hover:opacity-100 transition-opacity" />
-                                    </button>
-                                  )}
-                                  {!detailImageUrl && (
-                                    <div className="w-12 h-8 rounded-lg shrink-0 flex items-center justify-center bg-slate-800/60 ring-1 ring-slate-700/50 shadow-md" title="暂无图片">
-                                      <ImageIcon className="w-3.5 h-3.5 text-slate-600" />
-                                    </div>
-                                  )}
-                                  <p className="text-[13px] leading-[1.45] text-slate-400 break-words whitespace-normal line-clamp-2 min-w-0">{detail}</p>
-                                </div>
-                              )}
-                              <div className="mt-2 flex items-center gap-4 text-[11px] text-slate-600">
-                                <span className="inline-flex items-center gap-1 font-mono tracking-tight"><Clock size={12} />{updateDate}</span>
-                                <span className="inline-flex items-center gap-1 font-mono tracking-tight"><Calendar size={12} />{estimated}</span>
-                              </div>
-                            </div>
-                          );
-                        })}
-                        {detailRows.length > 6 && (
-                          <div className="flex justify-end px-4 py-2">
-                            <button
-                              type="button"
-                              onClick={() => toggleNoteExpand(groupKey)}
-                              className="text-xs text-slate-500 transition-colors flex items-center gap-1"
-                              onMouseEnter={(e) => (e.currentTarget.style.color = moduleTheme.hex)}
-                              onMouseLeave={(e) => (e.currentTarget.style.color = '')}
-                            >
-                              {expandedNoteGroups.has(groupKey) ? '收起' : `更多 (${detailRows.length - 6}条)`}
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <>
-                    <div className="group-card-header text-[10px] font-semibold text-slate-500 uppercase tracking-widest">
-                      <div className="flex items-center gap-1.5"><Clock size={12} className="text-slate-600" /><span>日期</span></div>
+                    <div className="hidden md:grid md:grid-cols-[168px_136px_minmax(0,1fr)_156px_120px] gap-6 px-5 py-3 border-b border-slate-800/50 text-[11px] font-medium uppercase tracking-widest text-slate-500">
+                      <div className="text-center">节点更新时间</div>
                       <div className="text-center">附图</div>
-                      <div className="flex items-center gap-1.5"><FileText size={12} className="text-slate-600" /><span>推进细节</span></div>
-                      <div className="flex items-center gap-1.5"><Calendar size={12} className="text-slate-600" /><span>预估完成</span></div>
-                      <div className="flex items-center gap-1.5"><User size={12} className="text-slate-600" /><span>负责人</span></div>
+                      <div className="text-center">推进细节</div>
+                      <div className="text-center">节点预估完成时间</div>
+                      <div className="text-center">节点负责人</div>
                     </div>
-                    <div className="flex flex-col">
+                    <div className="divide-y divide-slate-800/50">
                       {(expandedNoteGroups.has(groupKey) ? detailRows : detailRows.slice(0, 6)).map((row) => {
-                        const updateDate = row.updateDate || '-';
+                        const updateDate = resolveProgressUpdateLabel(row.uploadedAt, row.updateDate);
                         const detail = row.detail || '暂无推进细节';
                         const detailImageUrl = row.detailImageUrl;
                         const estimated = row.estimated || '-';
                         return (
-                          <div key={row.key} className="group-card-row last:border-0 font-sans">
-                            <div className="flex items-center text-sm font-mono text-slate-400 tabular-nums">{updateDate}</div>
-                            <div className="row-cell-image flex justify-center items-center">
+                          <div key={row.key} className="grid grid-cols-1 gap-4 px-4 py-4 md:grid-cols-[168px_136px_minmax(0,1fr)_156px_120px] md:gap-6 md:px-5 md:items-center">
+                            <div className="pr-2 text-sm font-mono text-slate-400 tabular-nums">{updateDate}</div>
+                            <div className="flex items-center md:justify-center">
                               {detailImageUrl ? (
                                 <button
                                   type="button"
@@ -742,11 +824,11 @@ export default function DashboardHome() {
                                 </div>
                               )}
                             </div>
-                            <div className="row-cell-detail">
-                              <div className="text-left project-detail-cell min-w-0 !max-w-none text-slate-300 text-sm leading-relaxed">{detail}</div>
+                            <div className="min-w-0 px-2 text-left text-sm leading-7 whitespace-normal break-words [overflow-wrap:anywhere] text-slate-300">
+                              {detail}
                             </div>
-                            <div className="flex items-center text-sm font-mono tracking-tight text-slate-400 tabular-nums">{estimated}</div>
-                            <div className="flex items-center text-sm text-slate-200 font-medium">{row.assignee && row.assignee !== '-' ? row.assignee : '-'}</div>
+                            <div className="text-center text-sm font-mono tracking-tight text-slate-400 tabular-nums">{estimated}</div>
+                            <div className="text-center text-sm font-medium text-slate-200">{row.assignee && row.assignee !== '-' ? row.assignee : '-'}</div>
                           </div>
                         );
                       })}
@@ -756,18 +838,11 @@ export default function DashboardHome() {
                         <button
                           type="button"
                           onClick={() => toggleNoteExpand(groupKey)}
-                          className="text-xs text-slate-500 transition-colors flex items-center gap-1.5"
-                          style={{ '--hover-color': moduleTheme.hex } as React.CSSProperties}
-                          onMouseEnter={(e) => (e.currentTarget.style.color = moduleTheme.hex)}
-                          onMouseLeave={(e) => (e.currentTarget.style.color = '')}
+                          className="text-xs text-slate-500 transition-colors hover:text-slate-200"
                         >
-                          {expandedNoteGroups.has(groupKey)
-                            ? '收起'
-                            : `更多 (${detailRows.length - 6} 条)`}
+                          {expandedNoteGroups.has(groupKey) ? '收起' : `更多 (${detailRows.length - 6} 条)`}
                         </button>
                       </div>
-                    )}
-                      </>
                     )}
                   </AccordionContent>
                 </AccordionItem>
@@ -789,7 +864,7 @@ export default function DashboardHome() {
                 当前更新节点时间: {formatBatchLabel(latestBatch || undefined)}
               </span>
               {filterStatus !== 'ALL' && (
-                <button onClick={handleShowAll} className="px-3 md:px-4 py-1.5 md:py-2 bg-[#151B23] border border-white/[0.06] rounded-lg hover:bg-[#1B222C] text-xs md:text-sm font-medium text-[#8B949E] transition-all duration-200 hover:shadow-[0_0_8px_rgba(0,180,255,0.15)] flex items-center gap-2">
+                <button onClick={handleShowAll} className={`px-3 md:px-4 py-1.5 md:py-2 bg-[#151B23] border border-white/[0.06] rounded-lg hover:bg-[#1B222C] text-xs md:text-sm font-medium text-[#8B949E] transition-all duration-200 ${moduleTheme.shadowGlow} flex items-center gap-2`}>
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
                   显示所有项目
                 </button>
@@ -808,7 +883,7 @@ export default function DashboardHome() {
                 当前更新节点时间: {formatBatchLabel(latestBatch || undefined)}
               </span>
               {filterStatus !== 'ALL' && (
-                <button onClick={handleShowAll} className="px-3 py-1.5 bg-[#151B23] border border-white/[0.06] rounded-lg hover:bg-[#1B222C] text-xs font-medium text-[#8B949E] transition-all duration-200 flex items-center gap-1.5">
+                <button onClick={handleShowAll} className={`px-3 py-1.5 bg-[#151B23] border border-white/[0.06] rounded-lg hover:bg-[#1B222C] text-xs font-medium text-[#8B949E] transition-all duration-200 ${moduleTheme.shadowGlow} flex items-center gap-1.5`}>
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
                   显示所有项目
                 </button>
@@ -821,11 +896,11 @@ export default function DashboardHome() {
             <p className="text-sm md:text-lg text-[#8B949E]">{hasActiveFilters ? '未找到匹配的项目，请尝试其他搜索条件' : '暂无项目数据'}</p>
           </div>
         ) : (
-          <div className="project-list-scope relative z-0 grid grid-cols-1 xl:grid-cols-2 gap-6">
+          <div className="project-list-scope relative z-0 grid grid-cols-1 items-start gap-6 xl:grid-cols-2">
             {filteredProjects.map((project, index) => {
               return (
-                <div key={index}>
-                  <ProjectCard project={project} />
+                <div key={index} className="self-start">
+                  <ProjectCard project={project} theme={moduleTheme} />
                 </div>
               );
             })}
@@ -834,14 +909,83 @@ export default function DashboardHome() {
         </>
         )}
 
+        {activeTab === 'macro-stage-gate' && (
+          <MacroStageGateDrawerWorkspace panels={currentModuleTrialPanels} />
+        )}
+
+        {activeTab === 'fmea' && (
+          <FmeaIssueWorkspace
+            projectName={activeModule || ''}
+            projectIds={currentModuleMoldIds}
+            defaultProductName={currentModuleData[0]?.identity?.productName?.trim() || ''}
+          />
+        )}
+
         {/* ── Tab: 占位模块 ── */}
-        {['process', 'fmea', 'product'].includes(activeTab) && (
-          <div className="flex items-center justify-center py-20 text-lg text-slate-500">模块建设中...</div>
+        {activeTab === 'product' && (
+          <ProductDataDrawerWorkspace
+            panels={currentModuleTrialPanels}
+            projects={currentModuleData}
+            theme={moduleTheme}
+            productDataByMold={productModuleDataByLookup}
+            productSequenceByMold={productModuleSequenceByMold}
+          />
+        )}
+
+        {activeTab === 'process' && (
+          <ProcessDrawerWorkspace panels={currentModuleTrialPanels} />
+        )}
+
+        {activeTab === 'spc-calculator' && (
+          <SpcCalculatorDrawerWorkspace panels={currentModuleTrialPanels} />
+        )}
+
+        {activeTab === 'mold-reliability' && <ReliabilityDrawerWorkspace panels={currentModuleTrialPanels} />}
+
+        {activeTab === 'mass-production-monitoring' && <SpcRadarDrawerWorkspace panels={currentModuleTrialPanels} />}
+
+        {activeTab === 'mold-trial-database' && (
+          <MoldTrialDrawerWorkspace panels={currentModuleTrialPanels} />
         )}
       </main>
 
-      {isAdmin() && <AdminButton onClick={() => setIsAdminModalOpen(true)} />}
+      {activeTab === 'defect-library' && (
+        <VDISurfaceGrid
+          onClose={() => setActiveTab('overview')}
+          selectedMat={defectMaterial}
+          onMatChange={setDefectMaterial}
+          currentVDI={defectVDI}
+          onVDIChange={setDefectVDI}
+        />
+      )}
+
+      {activeTab === 'injection-clinic' && (
+        <DefectLab
+          onClose={() => setActiveTab('overview')}
+          material={defectMaterial}
+          vdi={defectVDI}
+          assetId={currentModuleData[0]?.identity?.moldNumber?.trim() || currentModuleMoldIds[0] || 'LA26006'}
+        />
+      )}
+
+      {isAdmin() && (
+        <AdminButton
+          onClick={() => {
+            if (activeTab === 'product') {
+              setIsProductAdminModalOpen(true);
+              return;
+            }
+            setIsAdminModalOpen(true);
+          }}
+        />
+      )}
       <AdminModal open={isAdminModalOpen} onOpenChange={setIsAdminModalOpen} onDataUpdate={handleDataUpdate} onDataClear={handleClearData} lastUpdated={new Date().toLocaleDateString('zh-CN')} />
+      <ProductModuleAdminModal
+        open={isProductAdminModalOpen}
+        onOpenChange={setIsProductAdminModalOpen}
+        lastUpdated={productModuleLastUpdated}
+        onUploadSuccess={loadProductModuleRows}
+      />
 
       {previewImageUrl && createPortal(
         <div className="fixed inset-0 z-[10000] bg-black/85 flex items-center justify-center p-4" onClick={() => setPreviewImageUrl('')}>

@@ -8,17 +8,15 @@ import { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Plus, Trash2, Pencil, Check, X, Image as ImageIcon, History } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
+import {
+  fetchDashboardProgressEntries,
+  normalizeDashboardProgressSaveResult,
+  type DashboardProgressEntry,
+} from '../lib/dashboardApi';
 import { toast } from 'sonner';
 import CyberConfirmDialog from '@/components/ui/CyberConfirmDialog';
 
-interface ProgressEntry {
-  id: string;
-  date: string;
-  content: string;
-  imageUrl?: string;
-  assignee?: string;
-  estimatedNodeCompletion?: string;
-}
+type ProgressEntry = DashboardProgressEntry;
 
 interface ProgressAuditLog {
   id: number;
@@ -41,14 +39,7 @@ interface ProgressDetailModalProps {
 const API_BASE = '/api/dashboard/progress-notes';
 
 async function loadEntries(moldNumber: string): Promise<ProgressEntry[]> {
-  try {
-    const res = await apiFetch(`${API_BASE}/${encodeURIComponent(moldNumber)}`);
-    if (!res.ok) throw new Error('fetch failed');
-    const rows = await res.json();
-    return rows.map((r: any) => ({ id: r.id, date: r.date, content: r.content, imageUrl: r.imageUrl, assignee: r.assignee, estimatedNodeCompletion: r.estimatedNodeCompletion }));
-  } catch {
-    return [];
-  }
+  return fetchDashboardProgressEntries(moldNumber);
 }
 
 async function saveEntries(moldNumber: string, entries: ProgressEntry[]) {
@@ -61,11 +52,7 @@ async function saveEntries(moldNumber: string, entries: ProgressEntry[]) {
     const text = await res.text().catch(() => '');
     throw new Error(text || `保存失败(${res.status})`);
   }
-  const data = await res.json().catch(() => ({}));
-  return {
-    backupCreated: Boolean(data?.backupCreated),
-    backupAt: typeof data?.backupAt === 'string' ? data.backupAt : '',
-  };
+  return normalizeDashboardProgressSaveResult(await res.json().catch(() => null));
 }
 
 async function loadAuditLogs(moldNumber: string): Promise<ProgressAuditLog[]> {
@@ -229,23 +216,31 @@ export default function ProgressDetailModal({
   }, []);
 
   useEffect(() => {
-    if (open) {
-      setEditingId(null);
-      setNewContent('');
-      setNewDate(new Date().toISOString().slice(0, 10));
-      setNewImageUrl('');
-      setNewImageSizeKB(null);
-      setNewAssignee('');
-      setNewEstimatedNodeCompletion('');
-      setPreviewImageUrl('');
-      setShowAuditPanel(false);
-      setAuditLogs([]);
-      setLoading(true);
-      loadEntries(moldNumber).then(data => {
-        setEntries(data.sort((a, b) => b.date.localeCompare(a.date)));
-        setLoading(false);
-      });
-    }
+    if (!open) return;
+
+    let cancelled = false;
+    setEditingId(null);
+    setNewContent('');
+    setNewDate(new Date().toISOString().slice(0, 10));
+    setNewImageUrl('');
+    setNewImageSizeKB(null);
+    setNewAssignee('');
+    setNewEstimatedNodeCompletion('');
+    setPreviewImageUrl('');
+    setShowAuditPanel(false);
+    setAuditLogs([]);
+    setLoading(true);
+
+    void (async () => {
+      const data = await loadEntries(moldNumber);
+      if (cancelled) return;
+      setEntries(data);
+      setLoading(false);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [open, moldNumber]);
 
   const refreshAuditLogs = useCallback(async () => {

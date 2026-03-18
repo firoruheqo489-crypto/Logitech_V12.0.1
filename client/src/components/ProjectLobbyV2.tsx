@@ -1,7 +1,13 @@
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
-import { apiFetch } from '@/lib/api'
+import type { DashboardProjectViewData } from '@/pages/dashboard/lib/dashboardApi'
+import {
+  getProjectStatusLabel,
+  isProjectStatusDelayed,
+  normalizeProjectStatus,
+} from '@/lib/dashboardProjectState'
+import { fetchDashboardProjectData } from '@/pages/dashboard/lib/dashboardApi'
 import {
   FolderKanban,
   ArrowLeft,
@@ -38,11 +44,11 @@ interface ProjectModule {
 const getStatusConfig = (status: ProjectModule["status"]) => {
   switch (status) {
     case "active":
-      return { label: "进行中", dotColor: "bg-emerald-400", textColor: "text-emerald-400" }
+      return { label: getProjectStatusLabel('ongoing'), dotColor: "bg-emerald-400", textColor: "text-emerald-400" }
     case "completed":
-      return { label: "已完成", dotColor: "bg-blue-400", textColor: "text-blue-400" }
+      return { label: getProjectStatusLabel('completed'), dotColor: "bg-blue-400", textColor: "text-blue-400" }
     case "delayed":
-      return { label: "已延期", dotColor: "bg-rose-400", textColor: "text-rose-400" }
+      return { label: getProjectStatusLabel('delayed'), dotColor: "bg-rose-400", textColor: "text-rose-400" }
     case "archived":
       return { label: "已归档", dotColor: "bg-slate-400", textColor: "text-slate-400" }
   }
@@ -310,7 +316,7 @@ function DetailView({
 
 // ==================== 主组件 ====================
 export default function ProjectLobbyV2() {
-  const [dbProjects, setDbProjects] = useState<any[]>([])
+  const [dbProjects, setDbProjects] = useState<DashboardProjectViewData[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedModule, setSelectedModule] = useState<ProjectModule | null>(null)
 
@@ -319,10 +325,8 @@ export default function ProjectLobbyV2() {
     let cancelled = false
     ;(async () => {
       try {
-        const res = await apiFetch("/api/dashboard/projects")
-        const data = res.ok ? await res.json() : []
         if (cancelled) return
-        setDbProjects(Array.isArray(data) ? data : [])
+        setDbProjects(await fetchDashboardProjectData())
       } catch {
         if (cancelled) return
         setDbProjects([])
@@ -340,9 +344,9 @@ export default function ProjectLobbyV2() {
     if (!dbProjects.length) return []
 
     // 按 projectName 分组
-    const groups: Record<string, any[]> = {}
+    const groups: Record<string, DashboardProjectViewData[]> = {}
     for (const row of dbProjects) {
-      const projectName = (row.projectName || '').trim()
+      const projectName = (row.identity.projectName || '').trim()
       if (!projectName) continue
       if (!groups[projectName]) groups[projectName] = []
       groups[projectName].push(row)
@@ -356,8 +360,8 @@ export default function ProjectLobbyV2() {
       let latestDate = ''
 
       for (const item of items) {
-        const currentNode = (item.currentNode || '').trim()
-        const detailDate = (item.detailDate || '').trim()
+        const currentNode = normalizeProjectStatus(item.milestones.currentNode)
+        const detailDate = (item.details.detailDate || '').trim()
 
         // 更新最新日期
         if (detailDate && (!latestDate || detailDate > latestDate)) {
@@ -365,9 +369,9 @@ export default function ProjectLobbyV2() {
         }
 
         // 计算完成/延期数量
-        if (currentNode === '已完成') {
+        if (currentNode === 'completed') {
           completedCount++
-        } else if (currentNode === '已超时' || currentNode === '已延期') {
+        } else if (isProjectStatusDelayed(currentNode)) {
           delayedCount++
         }
       }
@@ -385,12 +389,12 @@ export default function ProjectLobbyV2() {
 
       // 将每行数据转换为 ProjectItem
       const projectItems: ProjectItem[] = items.map((row, idx) => ({
-        id: String(row.id || row.moldNumber || `item-${idx}`),
+        id: row.identity.moldNumber || `item-${idx}`,
         partName: row.productName || row.moldNumber || '未命名',
-        projectCode: row.moldNumber || '-',
-        description: row.detailProgress || row.projectEngineer || undefined,
-        lastUpdated: row.detailDate || row.uploadBatch || undefined,
-        assignee: row.projectManager || undefined,
+        projectCode: row.identity.moldNumber || '-',
+        description: row.details.detailProgress || row.identity.projectEngineer || undefined,
+        lastUpdated: row.details.detailDate || row.uploadBatch || undefined,
+        assignee: row.identity.projectManager || undefined,
       }))
 
       return {

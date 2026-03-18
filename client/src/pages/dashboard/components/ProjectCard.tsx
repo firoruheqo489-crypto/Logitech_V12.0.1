@@ -1,78 +1,143 @@
 /**
- * ProjectCard - Enterprise SaaS Style (Linear/Notion inspired)
- * 
- * Visual Design:
- * - Modern typography with Microsoft YaHei optimization
- * - Soft shadows and generous spacing
- * - Clean section headers with decorative accents
- * - Traffic light system for FAI values
+ * ProjectCard - V0 shell merged onto live dashboard logic.
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { ProjectData } from '../types/project';
-import { 
-  formatDate, 
+import {
+  formatDate,
   getDisplayValue,
   parseFAIValue,
-  getFAIColorClass,
-  getCardVisualState
+  getCardVisualState,
+  getRiskColor,
 } from '../lib/projectUtils';
-import { Target, FlaskConical, CheckCircle2, X } from 'lucide-react';
+import {
+  getProjectQualifiedFlagLabel,
+  getProjectRiskLevelLabel,
+  getProjectStatusLabel,
+} from '@/lib/dashboardProjectState';
+import {
+  Building2,
+  Boxes,
+  ChartGantt,
+  Factory,
+  FlaskConical,
+  Gauge,
+  Hash,
+  Layers,
+  MapPin,
+  PenTool,
+  RotateCcw,
+  Ruler,
+  Save,
+  ShieldAlert,
+  TableProperties,
+  User,
+  Wrench,
+  X,
+} from 'lucide-react';
 import { apiFetch } from '@/lib/api';
+import {
+  fetchDashboardProgressEntries,
+  normalizeDashboardLatestBackupAt,
+  type DashboardProgressEntry,
+} from '../lib/dashboardApi';
 import ProgressDetailModal from './ProgressDetailModal';
+import type { ModuleTheme } from '@/lib/theme';
+import { getThemeBorderClass, getThemeGlowClass } from '@/lib/theme';
 
 interface ProjectCardProps {
   project: ProjectData;
+  theme: ModuleTheme;
 }
 
-export default function ProjectCard({ project }: ProjectCardProps) {
+const cardFontStyle: CSSProperties = {
+  fontFamily: '"Geist", "Geist Fallback", "Plus Jakarta Sans", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif',
+};
+
+const cardMonoStyle: CSSProperties = {
+  fontFamily: '"Geist Mono", "Geist Mono Fallback", "JetBrains Mono", ui-monospace, monospace',
+};
+
+function MoldIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+    >
+      <rect x="2" y="3" width="20" height="18" rx="1.5" />
+      <line x1="2" y1="12" x2="22" y2="12" />
+      <path d="M7 12 C7 9 9 7.5 12 7.5 C15 7.5 17 9 17 12" />
+      <line x1="9" y1="12" x2="9" y2="17" />
+      <line x1="12" y1="12" x2="12" y2="17" />
+      <line x1="15" y1="12" x2="15" y2="17" />
+      <line x1="7" y1="17" x2="17" y2="17" />
+    </svg>
+  );
+}
+
+export default function ProjectCard({ project, theme }: ProjectCardProps) {
   const { no, identity, milestones, details } = project;
-  
+
   const visualState = getCardVisualState(milestones.currentNode);
-  
+  const themeBorder = getThemeBorderClass(theme.borderFocus);
+  const themeGlow = getThemeGlowClass(theme.shadowGlow);
+
   const [detailModalOpen, setDetailModalOpen] = useState(false);
-  const [localEntries, setLocalEntries] = useState<Array<{id:string;date:string;content:string;imageUrl?:string}>>([]);
+  const [localEntries, setLocalEntries] = useState<DashboardProgressEntry[]>([]);
   const [previewImageUrl, setPreviewImageUrl] = useState<string>('');
   const [restoringBackup, setRestoringBackup] = useState(false);
   const [creatingBackup, setCreatingBackup] = useState(false);
   const [latestBackupAt, setLatestBackupAt] = useState<string>('');
   const [nowTs, setNowTs] = useState<number>(Date.now());
   const [isMobile, setIsMobile] = useState<boolean>(() => window.innerWidth <= 767);
+  const detailModalOpenedRef = useRef(false);
+  const progressPrefetchedRef = useRef(false);
 
-  // Fetch entries from API
-  const fetchEntries = useCallback(() => {
+  const fetchEntries = useCallback(async () => {
     const mold = identity.moldNumber || '';
     if (!mold) return;
-    apiFetch(`/api/dashboard/progress-notes/${encodeURIComponent(mold)}`)
-      .then(r => r.ok ? r.json() : [])
-      .then(rows => setLocalEntries(
-        rows.map((r: any) => ({ id: r.id, date: r.date, content: r.content, imageUrl: r.imageUrl }))
-          .sort((a: any, b: any) => b.date.localeCompare(a.date))
-      ))
-      .catch(() => {});
+    try {
+      setLocalEntries(await fetchDashboardProgressEntries(mold));
+    } catch {
+      // Ignore silent refresh failures on overview cards.
+    }
   }, [identity.moldNumber]);
 
-  const fetchLatestBackupTime = useCallback(() => {
+  const fetchLatestBackupTime = useCallback(async () => {
     const mold = identity.moldNumber || '';
     if (!mold) return;
-    apiFetch(`/api/dashboard/progress-notes/${encodeURIComponent(mold)}/latest-backup`)
-      .then(r => r.ok ? r.json() : { backupAt: null })
-      .then((data) => setLatestBackupAt(data?.backupAt ? String(data.backupAt) : ''))
-      .catch(() => setLatestBackupAt(''));
+    try {
+      const response = await apiFetch(`/api/dashboard/progress-notes/${encodeURIComponent(mold)}/latest-backup`);
+      setLatestBackupAt(
+        response.ok ? normalizeDashboardLatestBackupAt(await response.json()) : '',
+      );
+    } catch {
+      setLatestBackupAt('');
+    }
   }, [identity.moldNumber]);
 
-  // Load on mount
-  useEffect(() => {
-    fetchEntries();
-    fetchLatestBackupTime();
+  const prefetchProgressCardData = useCallback(() => {
+    if (progressPrefetchedRef.current) return;
+    progressPrefetchedRef.current = true;
+    void fetchEntries();
+    void fetchLatestBackupTime();
   }, [fetchEntries, fetchLatestBackupTime]);
 
-  // Refresh when modal closes
   useEffect(() => {
-    if (!detailModalOpen) {
-      fetchEntries();
-      fetchLatestBackupTime();
+    if (detailModalOpen) {
+      detailModalOpenedRef.current = true;
+      return;
+    }
+    if (detailModalOpenedRef.current) {
+      void fetchEntries();
+      void fetchLatestBackupTime();
     }
   }, [detailModalOpen, fetchEntries, fetchLatestBackupTime]);
 
@@ -130,7 +195,7 @@ export default function ProjectCard({ project }: ProjectCardProps) {
         return;
       }
       fetchLatestBackupTime();
-      window.alert(data?.created ? '备份成功' : '内容未变化，已沿用最近备份');
+      window.alert(data?.created ? '备份成功' : '内容未变化，已复用最近备份');
     } catch {
       window.alert('备份失败，请稍后重试');
     } finally {
@@ -138,13 +203,11 @@ export default function ProjectCard({ project }: ProjectCardProps) {
     }
   };
 
-  // Navigate to V3 Gantt view for this project
   const handleDrillDown = () => {
     if (detailModalOpen) return;
     if (window.innerWidth <= 767) return;
     const projectId = identity.moldNumber && identity.moldNumber !== '-' ? identity.moldNumber : '';
     if (projectId) {
-      // 记住当前滚动位置，返回时恢复
       sessionStorage.setItem('dashboard_scroll_y', String(document.getElementById('root')?.scrollTop || window.scrollY));
       sessionStorage.setItem('dashboard_filter', sessionStorage.getItem('dashboard_current_filter') || 'ALL');
       sessionStorage.setItem('dashboard_active_module', identity.projectName || '');
@@ -170,6 +233,7 @@ export default function ProjectCard({ project }: ProjectCardProps) {
     }
     return relative;
   })();
+
   const latestBackupDisplay = (() => {
     if (!latestBackupAt) return '暂无';
     const backupDate = new Date(latestBackupAt);
@@ -179,6 +243,7 @@ export default function ProjectCard({ project }: ProjectCardProps) {
     const full = `${backupRelativeLabel} (${absolute})`;
     return full.length > 26 ? `${full.slice(0, 26)}...` : full;
   })();
+
   const latestBackupFull = (() => {
     if (!latestBackupAt) return '暂无';
     const backupDate = new Date(latestBackupAt);
@@ -187,218 +252,307 @@ export default function ProjectCard({ project }: ProjectCardProps) {
     return `${backupRelativeLabel} (${absolute})`;
   })();
 
+  const accentWash = { background: `linear-gradient(to bottom, rgba(${theme.rgb},0.18), transparent)` };
+  const heroWash = {
+    background: `linear-gradient(to right, rgba(${theme.rgb},0.14), rgba(${theme.rgb},0.05) 45%, transparent 100%)`,
+    boxShadow: `0 0 30px rgba(${theme.rgb},0.14)`,
+  };
+  const iconPanel = { backgroundColor: `rgba(${theme.rgb},0.2)` };
+  const cavityWash = { background: `linear-gradient(to right, rgba(${theme.rgb},0.10), rgba(${theme.rgb},0.03))` };
+  const statusGlow = { backgroundColor: `rgba(${theme.rgb},0.08)` };
+  const detailScrollStyle = {
+    ['--detail-scroll-track' as string]: `rgba(${theme.rgb},0.08)`,
+    ['--detail-scroll-thumb' as string]: `rgba(${theme.rgb},0.28)`,
+    ['--detail-scroll-thumb-hover' as string]: `rgba(${theme.rgb},0.42)`,
+    scrollbarColor: `rgba(${theme.rgb},0.28) rgba(${theme.rgb},0.08)`,
+    scrollbarWidth: 'auto',
+  } as CSSProperties;
+
   return (
-    <div className="project-card group/card">
-      {/* Card Header */}
-      <div className="pc-header px-8 py-5">
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex-1 min-w-0">
-            <h3 className="text-2xl font-extrabold tracking-tight leading-tight text-transparent bg-clip-text bg-gradient-to-r from-white to-slate-400">
-              {getDisplayValue(identity.projectName, 'N/A')}
-            </h3>
-            <p className="text-sm text-slate-500 mt-1.5 font-medium">
-              {getDisplayValue(identity.productName, 'N/A')} <span className="text-slate-700 mx-2">·</span> <span className="font-mono tracking-tight">NO. {getDisplayValue(no, 'N/A')}</span>
-            </p>
+    <div
+      className={`group relative overflow-hidden rounded-2xl border bg-slate-900/40 shadow-2xl backdrop-blur-2xl transition-all duration-500 hover:-translate-y-1 ${themeBorder} ${themeGlow}`}
+      style={cardFontStyle}
+    >
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-32" style={accentWash} />
+
+      <div className="relative p-4 md:p-8">
+        <div className="mb-8 flex items-start justify-between gap-3 md:items-center md:gap-4">
+          <div className="min-w-0 flex items-baseline gap-2 md:gap-3">
+            <h1 className="bg-gradient-to-r from-white to-slate-400 bg-clip-text text-2xl font-black text-transparent">
+              {getDisplayValue(identity.productName, 'N/A')}
+            </h1>
+            <span className="shrink-0 text-xs font-mono font-medium tracking-tight text-slate-500" style={cardMonoStyle}>
+              NO. {getDisplayValue(no, 'N/A')}
+            </span>
           </div>
-          <div className="flex items-center gap-2">
-            {/* Status Badge - Only show if valid currentNode */}
-            {visualState.showBadge && (
-              <span className={`pc-badge px-4 py-1.5 rounded-full text-sm font-semibold whitespace-nowrap ${visualState.badgeClass}`}>
-                {visualState.badgeLabel}
-              </span>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Section 1: 项目基本信息 — 三层分区 */}
-      <div className="pc-section px-8 py-6">
-        {/* 核心参数区 */}
-        <div className="grid grid-cols-4 gap-4 mb-5">
-          <InfoField label="客户" value={identity.customerName} tier="primary" />
-          <InfoField label="料号" value={identity.partNumber} tier="primary" />
-          <InfoField label="模具编号" value={identity.moldNumber} tier="primary" />
-          <InfoField label="穴号" value={identity.cavityNumber} tier="primary" />
-        </div>
-
-        {/* 干系人暗盒 */}
-        <div className="bg-slate-950/80 rounded-xl p-4 shadow-inner ring-1 ring-inset ring-slate-800/50 grid grid-cols-4 gap-4 mb-5">
-          <PersonField label="项目经理" value={identity.projectManager} />
-          <PersonField label="项目工程师" value={identity.projectEngineer} />
-          <PersonField label="项目QE" value={identity.qe} />
-          <PersonField label="钳工组" value={identity.fitterGroup} />
-        </div>
-
-        {/* 补充信息区 */}
-        <div className="grid grid-cols-5 gap-4">
-          <InfoField label="客户基地" value={identity.customerBase} tier="secondary" />
-          <InfoField label="落地工厂" value={identity.factory} tier="secondary" />
-          <InfoField label="模具套数" value={identity.moldSets} tier="secondary" />
-          <InfoField label="设计工程" value={identity.designEngineer} tier="secondary" />
-          <InfoField label="风险等级" value={identity.riskLevel} tier="secondary" />
-        </div>
-      </div>
-
-      {/* Section 2: 内部节点 */}
-      <div className="pc-section px-8 py-6">
-        <h4 className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest mb-5 -mt-1">
-          内部节点
-        </h4>
-        
-        {/* Timeline Visual - CSS Grid for Perfect Alignment */}
-        <div className="mb-6">
-          <div className="relative w-full -ml-2">
-            {/* The Grey Line - Perfectly centered start-to-end */}
-            <div className="absolute top-4 sm:top-5 left-[10%] right-[12%] h-[2px] pc-timeline-line -z-10" />
-            
-            {/* The Nodes - Grid System (5 equal columns) */}
-            <div className="grid grid-cols-5 w-full">
-              <TimelineNode label="KICK OFF" date={formatDate(milestones.projectStart)} />
-              <TimelineNode label="G/L" date={formatDate(milestones.glTime)} />
-              <TimelineNode label="VMP" date={formatDate(milestones.vmp)} />
-              <TimelineNode label="MP" date={formatDate(milestones.mp)} />
-              <TimelineNode label="T1" date={formatDate(milestones.t1)} />
-            </div>
-          </div>
-        </div>
-
-        {/* Status Indicators Grid */}
-        <div className="grid grid-cols-3 gap-2 sm:gap-4">
-          <StatusField 
-            icon={<Target className="w-4 h-4" />}
-            label="当前阶段" 
-            value={milestones.currentStage} 
-          />
-          <StatusField 
-            icon={<FlaskConical className="w-4 h-4" />}
-            label="试模次数" 
-            value={milestones.trialCount} 
-          />
-          <StatusField 
-            icon={<CheckCircle2 className="w-4 h-4" />}
-            label="T1尺寸达标" 
-            value={milestones.t1SizeQualified} 
-          />
-          
-          {/* FAI Fields with Traffic Light Logic */}
-          <FAIField 
-            label="Tooling FAI" 
-            value={milestones.toolingFAI} 
-          />
-          <FAIField 
-            label="Part FAI" 
-            value={milestones.partFAI} 
-          />
-          <div
-            className="pc-capsule flex items-center p-3 rounded-lg cursor-pointer bg-slate-800/30 backdrop-blur-sm border border-slate-700/50 hover:bg-slate-700/50 transition-all duration-200 active:scale-95"
-            onClick={(e) => { e.stopPropagation(); handleDrillDown(); }}
+          <span
+            className={`relative flex flex-shrink-0 items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-bold whitespace-nowrap ${themeBorder} ${theme.text}`}
+            style={statusGlow}
           >
-            <div className="grid grid-cols-[0.9rem_minmax(0,1fr)] sm:grid-cols-[1rem_minmax(0,1fr)] items-center justify-center gap-0.5 sm:gap-1 w-full">
-              <span className="flex items-center justify-center w-4 h-4 text-[#8B949E]">
-                <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="3" y="4" width="18" height="16" rx="2" />
-                  <line x1="3" y1="9" x2="21" y2="9" />
-                  <line x1="7" y1="4" x2="7" y2="9" />
-                  <rect x="6" y="12" width="4" height="3" rx="0.5" fill="currentColor" stroke="none" />
-                  <rect x="11" y="12" width="6" height="2" rx="0.5" fill="currentColor" stroke="none" />
-                  <rect x="11" y="15" width="4" height="1.5" rx="0.5" fill="currentColor" stroke="none" />
-                </svg>
+            <span className="relative flex h-2 w-2">
+              <span className={`absolute inline-flex h-full w-full animate-ping rounded-full ${theme.bg} opacity-60`} />
+              <span className={`relative inline-flex h-2 w-2 rounded-full ${theme.bg}`} />
+            </span>
+            {visualState.showBadge ? visualState.badgeLabel : getProjectStatusLabel('ongoing')}
+            <span className="pointer-events-none absolute inset-0 rounded-full animate-pulse" style={statusGlow} />
+          </span>
+        </div>
+
+        <div className={`relative mb-0 rounded-xl border p-4 md:p-4 ${themeBorder}`} style={heroWash}>
+          <div className="flex items-start gap-3 md:flex-row md:items-center md:gap-4">
+            <div className={`ml-1.5 flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-xl ring-1 md:ml-0 ${themeBorder}`} style={iconPanel}>
+              <MoldIcon className={`h-7 w-7 ${theme.text}`} />
+            </div>
+            <div className="min-w-0 flex flex-wrap items-baseline gap-x-3 gap-y-1 md:block">
+              <span className="mb-0 shrink-0 text-[10px] uppercase tracking-widest text-slate-400 md:mb-1 md:block">模具编号 / MOLD ID</span>
+              <span className={`inline-block break-all text-xl font-mono font-black tracking-tight md:block md:text-2xl ${theme.text}`} style={cardMonoStyle}>
+                {getDisplayValue(identity.moldNumber, '-')}
               </span>
-              <div className="min-w-0 text-center">
-                <div className="gantt-text-breathe text-sm sm:text-base font-bold whitespace-nowrap tracking-wide text-center">项目甘特图</div>
+            </div>
+            <div className="flex w-full items-center justify-end gap-3 pr-0 md:ml-auto md:w-auto md:gap-6 md:pr-2">
+              <div className="flex flex-col items-center justify-center gap-0.5 rounded-lg px-4 py-2" style={cavityWash}>
+                <span className="text-[9px] uppercase tracking-widest text-slate-500">模具穴号</span>
+                <span className={`text-base font-mono font-bold tracking-tight ${theme.text} opacity-80`} style={cardMonoStyle}>
+                  {getDisplayValue(identity.cavityNumber, '-')}
+                </span>
               </div>
             </div>
           </div>
-          
-          {/* Status is now shown in header badge */}
         </div>
-      </div>
 
-      {/* Section 3: 项目推进细节 */}
-      <div className="pc-section pc-section-last px-8 py-6" onClick={(e) => { e.stopPropagation(); if (window.innerWidth <= 767) return; setDetailModalOpen(true); }} style={{ cursor: 'pointer' }}>
-        <div className="detail-section detail-section-clickable">
-          <div className="detail-header">
-            <span className="detail-title">项目推进细节</span>
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, minWidth: 0 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div className="my-6 h-px bg-gradient-to-r from-transparent via-slate-800/40 to-transparent" />
+
+        <div className="flex flex-col">
+          <div className="grid grid-cols-2 gap-x-2 gap-y-4 border-b border-slate-800/50 py-5 md:grid-cols-4 md:gap-x-4 md:gap-y-6">
+            <DetailInfoItem
+              icon={<Building2 className={`h-3.5 w-3.5 flex-shrink-0 opacity-70 md:h-4 md:w-4 ${theme.text}`} />}
+              label="客户"
+              value={identity.customerName}
+            />
+            <DetailInfoItem
+              icon={<Hash className={`h-3.5 w-3.5 flex-shrink-0 opacity-70 md:h-4 md:w-4 ${theme.text}`} />}
+              label="料号"
+              value={identity.partNumber}
+              valueClassName="text-[13px] leading-tight font-mono font-semibold tracking-tight text-slate-200 md:whitespace-nowrap md:leading-none"
+              valueStyle={cardMonoStyle}
+            />
+            <DetailInfoItem
+              icon={<Layers className={`h-3.5 w-3.5 flex-shrink-0 opacity-70 md:h-4 md:w-4 ${theme.text}`} />}
+              label="模具套数"
+              value={identity.moldSets}
+              valueClassName="text-[18px] leading-none font-mono font-bold text-slate-200"
+              valueStyle={cardMonoStyle}
+            />
+            <DetailInfoItem
+              icon={<ShieldAlert className={`h-3.5 w-3.5 flex-shrink-0 opacity-70 md:h-4 md:w-4 ${theme.text}`} />}
+              label="风险等级"
+              value={getProjectRiskLevelLabel(identity.riskLevel)}
+              valueClassName="text-[15px] leading-none font-semibold"
+              valueStyle={{ color: getRiskColor(identity.riskLevel) }}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-x-2 gap-y-4 border-b border-slate-800/50 py-5 md:grid-cols-4 md:gap-x-4 md:gap-y-6">
+            <DetailInfoItem
+              icon={<User className={`h-3.5 w-3.5 flex-shrink-0 opacity-70 md:h-4 md:w-4 ${theme.text}`} />}
+              label="项目经理"
+              value={identity.projectManager}
+              valueClassName="text-[15px] leading-none font-semibold text-slate-300"
+            />
+            <DetailInfoItem
+              icon={<User className={`h-3.5 w-3.5 flex-shrink-0 opacity-70 md:h-4 md:w-4 ${theme.text}`} />}
+              label="项目工程"
+              value={identity.projectEngineer}
+              valueClassName="text-[15px] leading-none font-semibold text-slate-300"
+            />
+            <DetailInfoItem
+              icon={<User className={`h-3.5 w-3.5 flex-shrink-0 opacity-70 md:h-4 md:w-4 ${theme.text}`} />}
+              label="项目QE"
+              value={identity.qe}
+              valueClassName="text-[15px] leading-none font-semibold text-slate-300"
+            />
+            <DetailInfoItem
+              icon={<Wrench className={`h-3.5 w-3.5 flex-shrink-0 opacity-70 md:h-4 md:w-4 ${theme.text}`} />}
+              label="钳工组"
+              value={identity.fitterGroup}
+              valueClassName="text-[15px] leading-none font-semibold text-slate-300"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-x-2 gap-y-4 pb-3 pt-5 md:grid-cols-4 md:gap-x-4 md:gap-y-6">
+            <DetailInfoItem
+              icon={<MapPin className={`h-3.5 w-3.5 flex-shrink-0 opacity-70 md:h-4 md:w-4 ${theme.text}`} />}
+              label="客户基地"
+              value={identity.customerBase}
+            />
+            <DetailInfoItem
+              icon={<Factory className={`h-3.5 w-3.5 flex-shrink-0 opacity-70 md:h-4 md:w-4 ${theme.text}`} />}
+              label="落地工厂"
+              value={identity.factory}
+            />
+            <DetailInfoItem
+              icon={<PenTool className={`h-3.5 w-3.5 flex-shrink-0 opacity-70 md:h-4 md:w-4 ${theme.text}`} />}
+              label="设计工程"
+              value={identity.designEngineer}
+            />
+            <DetailInfoItem
+              icon={<Boxes className={`h-3.5 w-3.5 flex-shrink-0 opacity-70 md:h-4 md:w-4 ${theme.text}`} />}
+              label="模具工程"
+              value={identity.moldProject}
+            />
+          </div>
+        </div>
+
+        <div className="mt-6 border-t border-slate-800/50 pt-6">
+          <span className="mb-6 block text-[10px] font-bold uppercase tracking-widest text-slate-500">内部节点</span>
+          <div className="relative">
+            <div className="absolute left-0 right-0 top-2 h-0.5 rounded-full bg-slate-800" />
+            <div className="relative flex w-full items-center justify-between px-1 md:px-0">
+              <TimelineNode label="KICK OFF" date={formatDate(milestones.projectStart)} theme={theme} />
+              <TimelineNode label="G/L" date={formatDate(milestones.glTime)} theme={theme} />
+              <TimelineNode label="VMP" date={formatDate(milestones.vmp)} theme={theme} />
+              <TimelineNode label="MP" date={formatDate(milestones.mp)} theme={theme} />
+              <TimelineNode label="T1" date={formatDate(milestones.t1)} theme={theme} />
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-14 grid w-full grid-cols-2 gap-3 md:block">
+          <div className="contents md:grid md:grid-cols-3 md:gap-6">
+          <MetricPanelCard
+            icon={<Gauge className={`mb-2.5 h-5 w-5 opacity-70 transition-opacity group-hover:opacity-100 ${theme.text}`} />}
+            label="当前阶段"
+            value={milestones.currentStage}
+          />
+          <MetricPanelCard
+            icon={<FlaskConical className={`mb-2.5 h-5 w-5 opacity-70 transition-opacity group-hover:opacity-100 ${theme.text}`} />}
+            label="试模次数"
+            value={milestones.trialCount}
+          />
+          <MetricPanelCard
+            icon={<Ruler className={`mb-2.5 h-5 w-5 opacity-70 transition-opacity group-hover:opacity-100 ${theme.text}`} />}
+            label="T1尺寸达标"
+            value={getProjectQualifiedFlagLabel(milestones.t1SizeQualified)}
+          />
+        </div>
+
+          <div className="contents md:mb-2 md:mt-4 md:grid md:grid-cols-3 md:gap-6">
+          <MetricPanelCard
+            icon={<TableProperties className={`mb-2.5 h-5 w-5 opacity-70 transition-opacity group-hover:opacity-100 ${theme.text}`} />}
+            label="TOOLING FAI"
+            value={parseFAIValue(milestones.toolingFAI)}
+            valueClassName={buildFaiValueClass(milestones.toolingFAI)}
+          />
+          <MetricPanelCard
+            icon={<TableProperties className={`mb-2.5 h-5 w-5 opacity-70 transition-opacity group-hover:opacity-100 ${theme.text}`} />}
+            label="PART FAI"
+            value={parseFAIValue(milestones.partFAI)}
+            valueClassName={buildFaiValueClass(milestones.partFAI)}
+          />
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleDrillDown();
+            }}
+            className={`group relative col-span-2 flex min-h-[85px] cursor-pointer flex-col items-center justify-center rounded-xl border bg-slate-900/50 p-3 text-center backdrop-blur-md transition-all hover:bg-slate-800/50 md:col-span-1 md:min-h-[120px] md:p-6 ${themeBorder}`}
+          >
+            <div className={`absolute right-2 top-2 h-1.5 w-1.5 rounded-full ${theme.bg} opacity-60`} />
+            <ChartGantt className={`mb-2.5 h-5 w-5 transition-transform group-hover:scale-110 ${theme.text}`} />
+            <span className={`text-sm font-mono font-medium tracking-tight ${theme.text}`} style={cardMonoStyle}>项目甘特图</span>
+            <span className="mt-1 text-[9px] uppercase tracking-wider text-slate-600">点击查看</span>
+          </button>
+          </div>
+        </div>
+
+        <div
+          className="relative mt-8 border-t border-slate-800/50 pt-6"
+          onMouseEnter={prefetchProgressCardData}
+          onTouchStart={prefetchProgressCardData}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (window.innerWidth <= 767) return;
+            setDetailModalOpen(true);
+          }}
+          style={{ cursor: 'pointer' }}
+        >
+          <div className="mb-4 flex items-start justify-between gap-4">
+            <div className="flex items-center gap-2">
+              <div className={`h-5 w-1 rounded-full ${theme.bg}`} />
+              <span className="text-sm font-bold text-slate-300">项目推进细节</span>
+            </div>
+            <div className="flex min-w-0 flex-col items-end gap-2">
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={handleCreateBackup}
                   disabled={creatingBackup}
-                  style={{
-                    fontSize: 11,
-                    padding: '2px 8px',
-                    borderRadius: 999,
-                    border: '1px solid rgba(148,163,184,0.35)',
-                    color: 'rgba(230,237,243,0.88)',
-                    background: 'rgba(15,23,42,0.35)',
-                    whiteSpace: 'nowrap',
-                    cursor: creatingBackup ? 'not-allowed' : 'pointer',
-                    opacity: creatingBackup ? 0.6 : 1,
-                  }}
+                  className="flex items-center gap-1.5 rounded-lg border border-slate-600 bg-slate-800/40 px-3 py-1.5 text-xs text-slate-300 transition-colors hover:border-slate-500 hover:bg-slate-700/60 hover:text-slate-200 disabled:cursor-not-allowed disabled:opacity-60"
                 >
+                  <Save className="h-3 w-3" />
                   {creatingBackup ? '备份中...' : '立即备份'}
                 </button>
                 <button
                   type="button"
                   onClick={handleRestoreLatestBackup}
                   disabled={restoringBackup}
-                  style={{
-                    fontSize: 11,
-                    padding: '2px 8px',
-                    borderRadius: 999,
-                    border: '1px solid rgba(148,163,184,0.35)',
-                    color: 'rgba(230,237,243,0.88)',
-                    background: 'rgba(15,23,42,0.35)',
-                    whiteSpace: 'nowrap',
-                    cursor: restoringBackup ? 'not-allowed' : 'pointer',
-                    opacity: restoringBackup ? 0.6 : 1,
-                  }}
+                  className="flex items-center gap-1.5 rounded-lg border border-slate-600 bg-slate-800/40 px-3 py-1.5 text-xs text-slate-300 transition-colors hover:border-slate-500 hover:bg-slate-700/60 hover:text-slate-200 disabled:cursor-not-allowed disabled:opacity-60"
                 >
+                  <RotateCcw className="h-3 w-3" />
                   {restoringBackup ? '恢复中...' : '恢复最近备份'}
                 </button>
               </div>
-              <span
-                className="detail-updated"
-                title={`最近备份: ${latestBackupFull}`}
-                style={{
-                  color: 'var(--accent)',
-                  maxWidth: isMobile ? 160 : 280,
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  textAlign: 'right',
-                }}
-              >
-                最近备份: {latestBackupDisplay}
-              </span>
-              <span className="detail-updated">更新时间: {localEntries.length > 0 ? localEntries.reduce((max, e) => e.date > max ? e.date : max, localEntries[0].date) : formatDate(details.detailDate)}</span>
+              <div className="text-right text-[11px]">
+                <span className="text-slate-500">最近备份 </span>
+                <span className={theme.text} title={`最近备份 ${latestBackupFull}`}>
+                  {latestBackupDisplay}
+                </span>
+              </div>
+              <div className="text-right text-[11px] text-slate-500">
+                更新时间:{' '}
+                <span className="font-mono">
+                  {localEntries.length > 0
+                    ? localEntries.reduce((max, entry) => (entry.date > max ? entry.date : max), localEntries[0].date)
+                    : formatDate(details.detailDate)}
+                </span>
+              </div>
             </div>
           </div>
-          <div className="detail-content detail-scroll-area">
-            {/* All entries: local (newest first) + Excel imported (oldest) */}
+
+          <div className="mt-4 rounded-xl border border-dashed border-slate-700/50 transition-colors hover:border-slate-600">
             {localEntries.length === 0 ? (
-              <p style={{ color: 'rgba(148,163,184,0.25)', fontSize: 12, textAlign: 'center', padding: '4px 0' }}>点击添加推进细节</p>
-            ) : localEntries.map((entry) => (
-              <div key={entry.id} style={{ marginBottom: 8 }}>
-                <p>
-                  <span style={{ fontSize: 12, color: 'rgba(148,163,184,0.7)', marginRight: 8, fontFamily: 'monospace' }}>{entry.date}</span>
-                  {entry.content}
-                </p>
-                {entry.imageUrl && (
-                  <div
-                    style={{ marginTop: 6, width: 140, height: 84, borderRadius: 8, overflow: 'hidden', border: '1px solid rgba(148,163,184,0.2)', cursor: 'zoom-in' }}
-                    onClick={(e) => { e.stopPropagation(); setPreviewImageUrl(entry.imageUrl || ''); }}
-                  >
-                    <img src={entry.imageUrl} alt="推进图片" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                  </div>
-                )}
+              <div className="py-8 text-center">
+                <span className="text-sm text-slate-600 transition-colors hover:text-slate-500">点击添加推进细节</span>
               </div>
-            ))}
+            ) : (
+              <div className="progress-log-scrollbar max-h-[220px] space-y-3 overflow-auto px-4 py-4" style={detailScrollStyle}>
+                {localEntries.map((entry) => (
+                  <div key={entry.id} className="space-y-2">
+                    <p className="text-sm text-slate-300">
+                      <span className="mr-2 font-mono text-xs text-slate-400">{entry.date}</span>
+                      {entry.content}
+                    </p>
+                    {entry.imageUrl && (
+                      <div
+                        className="h-[84px] w-[140px] cursor-zoom-in overflow-hidden rounded-lg border border-slate-700/60"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setPreviewImageUrl(entry.imageUrl || '');
+                        }}
+                      >
+                        <img src={entry.imageUrl} alt="进度图片" className="h-full w-full object-cover" />
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
+
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 rounded-b-2xl bg-gradient-to-t from-slate-900/60 to-transparent" />
         </div>
       </div>
-      {/* Progress Detail Modal */}
+
       <ProgressDetailModal
         open={detailModalOpen}
         onClose={() => setDetailModalOpen(false)}
@@ -406,143 +560,121 @@ export default function ProjectCard({ project }: ProjectCardProps) {
         currentDetail={details.detailProgress}
         currentDate={formatDate(details.detailDate)}
       />
-      {previewImageUrl && createPortal(
-        <div className="fixed inset-0 z-[10000] bg-black/85 flex items-center justify-center p-4" onClick={() => setPreviewImageUrl('')}>
-          <button
-            className="absolute top-4 right-4 w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center"
-            onClick={(e) => { e.stopPropagation(); setPreviewImageUrl(''); }}
-          >
-            <X className="w-4 h-4 text-white/80" />
-          </button>
-          <img
-            src={previewImageUrl}
-            alt="图片预览"
-            className="max-w-[92vw] max-h-[88vh] object-contain rounded-lg border border-white/10"
-            onClick={(e) => e.stopPropagation()}
-          />
-        </div>,
-        document.body
-      )}
+
+      {previewImageUrl &&
+        createPortal(
+          <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/85 p-4" onClick={() => setPreviewImageUrl('')}>
+            <button
+              className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-full bg-white/10 hover:bg-white/20"
+              onClick={(e) => {
+                e.stopPropagation();
+                setPreviewImageUrl('');
+              }}
+            >
+              <X className="h-4 w-4 text-white/80" />
+            </button>
+            <img
+              src={previewImageUrl}
+              alt="图片预览"
+              className="max-h-[88vh] max-w-[92vw] rounded-lg border border-white/10 object-contain"
+              onClick={(e) => e.stopPropagation()}
+            />
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }
 
-function InfoField({
+function DetailInfoItem({
+  icon,
   label,
   value,
-  tier = 'primary',
+  valueClassName,
+  valueStyle,
+  contentClassName,
 }: {
+  icon: React.ReactNode;
   label: string;
   value: string;
-  tier?: 'primary' | 'secondary';
+  valueClassName?: string;
+  valueStyle?: CSSProperties;
+  contentClassName?: string;
 }) {
-  const isDanger = value?.trim() === '危险';
-  const valueColor = isDanger
-    ? 'text-[#FF3B3B]'
-    : tier === 'primary' ? 'text-slate-200' : 'text-slate-500';
   return (
-    <div>
-      <span className="text-[10px] uppercase tracking-widest text-slate-500 font-semibold block mb-1">{label}</span>
-      <span className={`text-sm font-bold font-mono tracking-tight truncate block ${valueColor}`}>
-        {getDisplayValue(value, '-')}
-      </span>
-    </div>
-  );
-}
-
-function PersonField({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center gap-2 min-w-0">
-      <span className="shrink-0 w-5 h-5 rounded-full bg-slate-800 ring-1 ring-slate-700/50 flex items-center justify-center text-slate-500">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3">
-          <path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM12.7 14c.1 0 .2-.1.3-.2.2-.5.3-1.1.3-1.8 0-2.2-2.4-4-5.3-4S2.7 9.8 2.7 12c0 .7.1 1.3.3 1.8.1.1.2.2.3.2h9.4Z"/>
-        </svg>
-      </span>
-      <div className="min-w-0">
-        <span className="text-[10px] uppercase tracking-widest text-slate-500 font-semibold block leading-tight">{label}</span>
-        <span className="text-sm text-slate-300 font-medium truncate block">{getDisplayValue(value, '-')}</span>
+    <div className="flex min-w-0 items-center gap-2 md:gap-3">
+      <div>{icon}</div>
+      <div className={`min-w-0 ${contentClassName || ''}`}>
+        <span className="mb-1 block text-[10px] font-bold uppercase tracking-widest text-slate-500">{label}</span>
+        <span className={`block break-words text-[15px] leading-snug font-semibold text-slate-200 md:truncate md:leading-none ${valueClassName || ''}`} style={valueStyle}>
+          {getDisplayValue(value, '-')}
+        </span>
       </div>
     </div>
   );
 }
 
-// Helper component for timeline nodes in Section 2
-function TimelineNode({ label, date }: { label: string; date: string }) {
+function TimelineNode({ label, date, theme }: { label: string; date: string; theme: ModuleTheme }) {
+  const isActive = date !== '-';
+  const displayDate = date === '-' ? '\u00A0' : date;
+
   return (
-    <div className="relative flex flex-col items-center">
-      <div className="pc-timeline-node w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center mb-1.5 sm:mb-2">
-        <div className="pc-timeline-dot w-3 h-3 sm:w-4 sm:h-4 rounded-full" />
-      </div>
-      <div className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-widest mb-0.5 whitespace-nowrap text-center">{label}</div>
-      <div className="text-[9px] sm:text-[10px] text-slate-600 font-mono tracking-tight whitespace-nowrap text-center">{date}</div>
+    <div className="flex min-w-0 flex-col items-center">
+      <div
+        className={`relative z-10 h-4 w-4 rounded-full ring-4 ring-slate-900 ${isActive ? theme.bg : 'bg-slate-700'}`}
+        style={isActive ? { boxShadow: `0 0 12px rgba(${theme.rgb},0.65)` } : undefined}
+      />
+      <span className="mt-3 px-1 text-[8px] font-bold uppercase tracking-[0.18em] text-slate-500 md:text-[10px] md:tracking-widest">{label}</span>
+      <span
+        className={`mt-1 min-h-[14px] text-center text-[9px] font-mono font-medium tracking-tighter md:text-[10px] md:tracking-normal ${isActive ? 'text-slate-400' : 'text-slate-700'}`}
+        style={cardMonoStyle}
+      >
+        {displayDate}
+      </span>
     </div>
   );
 }
 
-// Helper component for status fields in Section 2
-function StatusField({ 
-  icon, 
-  label, 
+function MetricPanelCard({
+  icon,
+  label,
   value,
   valueClassName,
-  iconClassName
-}: { 
-  icon?: React.ReactNode;
-  label: string; 
+}: {
+  icon: React.ReactNode;
+  label: string;
   value: string;
   valueClassName?: string;
-  iconClassName?: string;
 }) {
-  const labelLines = label.split('\n');
-  const isLongLabel = labelLines.length > 1;
+  const displayValue = getDisplayValue(value, '-');
+  const typographyValueClassName = buildMetricTypographyClass(displayValue);
+  const defaultToneClassName = displayValue === '-' ? 'text-slate-500' : 'text-slate-100';
+
   return (
-    <div className="pc-capsule flex items-center p-3 rounded-lg bg-slate-800/30 backdrop-blur-sm border border-slate-700/50 hover:bg-slate-700/50 transition-colors">
-      <div className="grid grid-cols-[0.9rem_minmax(0,1fr)] sm:grid-cols-[1rem_minmax(0,1fr)] items-center justify-center gap-0.5 sm:gap-1 w-full">
-        {icon && <span className={`flex items-center justify-center w-4 h-4 ${iconClassName || 'text-slate-500'}`}>{icon}</span>}
-        <div className="min-w-0 text-center">
-          <div className={`text-[9px] sm:text-[10px] font-semibold text-slate-500 uppercase tracking-widest mb-1 text-center ${isLongLabel ? 'whitespace-normal leading-[1.15]' : 'whitespace-nowrap'}`}>
-            {isLongLabel
-              ? labelLines.map((line, idx) => (
-                  <span key={`${line}-${idx}`} className="block">{line}</span>
-                ))
-              : label}
-          </div>
-          <div className={`pc-metric-value text-[10px] sm:text-sm font-bold font-mono tracking-tight whitespace-nowrap text-center ${valueClassName || 'text-slate-200'}`}>
-            {getDisplayValue(value, '-')}
-          </div>
-        </div>
-      </div>
+    <div className="group flex min-h-[85px] flex-col items-center justify-center rounded-xl border border-slate-700/50 bg-slate-900/50 p-3 text-center backdrop-blur-md transition-colors hover:border-slate-600/50 hover:bg-slate-800/50 md:min-h-[120px] md:p-6">
+      {icon}
+      <span className="block text-[10px] font-bold uppercase tracking-widest text-slate-500">{label}</span>
+      <span className={`${typographyValueClassName} ${valueClassName || defaultToneClassName}`}>
+        {displayValue}
+      </span>
     </div>
   );
 }
 
-// Helper component for FAI fields with traffic light logic
-function FAIField({ 
-  label, 
-  value 
-}: { 
-  label: string; 
-  value: string;
-}) {
-  const displayValue = parseFAIValue(value);
-  const colorClass = getFAIColorClass(value);
-  const numericMatch = displayValue.match(/\d+/);
-  const numericValue = numericMatch ? parseInt(numericMatch[0], 10) : NaN;
-  const isQualified = numericValue === 100;
-  
-  return (
-    <div className="pc-capsule flex items-center p-3 rounded-lg bg-slate-800/30 backdrop-blur-sm border border-slate-700/50 hover:bg-slate-700/50 transition-colors">
-      <div className="grid grid-cols-[0.9rem_minmax(0,1fr)] sm:grid-cols-[1rem_minmax(0,1fr)] items-center justify-center gap-0.5 sm:gap-1 w-full">
-        <span className="flex items-center justify-center w-4 h-4 shrink-0 text-slate-500">
-          {isQualified ? <CheckCircle2 className="w-4 h-4" /> : <X className="w-4 h-4" />}
-        </span>
-        <div className="min-w-0 text-center">
-          <div className="text-[9px] sm:text-[10px] font-semibold text-slate-500 uppercase tracking-widest whitespace-nowrap mb-1 text-center">{label}</div>
-          <div className={`pc-metric-value text-sm font-bold font-mono tracking-tight truncate text-center w-full ${colorClass}`}>
-            {displayValue}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
+function buildMetricTypographyClass(value: string): string {
+  if (value === '是' || value === '否') {
+    return 'text-base md:text-lg font-sans font-medium tracking-widest mt-1';
+  }
+
+  if (value === '-') {
+    return 'text-lg md:text-xl font-display tabular-nums font-semibold tracking-tight mt-1';
+  }
+
+  return 'text-lg md:text-xl font-display tabular-nums font-semibold tracking-tight mt-1';
+}
+
+function buildFaiValueClass(value: string | undefined | null): string {
+  const parsed = parseFAIValue(value);
+  if (parsed === '-') return '';
+  return 'text-slate-100';
 }
