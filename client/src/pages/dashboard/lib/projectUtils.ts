@@ -4,6 +4,11 @@
  */
 
 import { ProjectData, ProjectStats, DEFAULT_COLUMN_MAPPING } from '../types/project';
+import {
+  getProjectStatusLabel,
+  normalizeProjectRiskLevel,
+  normalizeProjectStatus,
+} from '@/lib/dashboardProjectState';
 
 function parseExcelSerialDate(serial: number): { y: number; m: number; d: number } | null {
   if (!Number.isFinite(serial)) return null;
@@ -295,14 +300,14 @@ export function parseExcelFile(file: File): Promise<ProjectData[]> {
  * Get risk level color based on risk level text
  */
 export function getRiskColor(riskLevel: string): string {
-  const level = riskLevel?.trim() || '';
-  
-  if (level === '高' || level.includes('高')) {
+  const level = normalizeProjectRiskLevel(riskLevel);
+
+  if (level === 'high') {
     return 'rgb(220, 38, 38)'; // Red for high risk
-  } else if (level === '中' || level.includes('中')) {
-    return 'rgb(234, 179, 8)'; // Yellow for medium risk
+  } else if (level === 'medium') {
+    return 'rgb(14, 165, 233)'; // Blue for medium risk
   } else {
-    return 'rgb(34, 197, 94)'; // Green for low/normal risk
+    return 'rgb(148, 163, 184)'; // Slate for low/normal risk
   }
 }
 
@@ -310,14 +315,14 @@ export function getRiskColor(riskLevel: string): string {
  * Get risk level badge variant
  */
 export function getRiskBadgeClass(riskLevel: string): string {
-  const level = riskLevel?.trim() || '';
-  
-  if (level === '高' || level.includes('高')) {
+  const level = normalizeProjectRiskLevel(riskLevel);
+
+  if (level === 'high') {
     return 'bg-[#FF3B3B]/10 text-[#FF3B3B] border-[#FF3B3B]/20';
-  } else if (level === '中' || level.includes('中')) {
-    return 'bg-[#FACC15]/10 text-[#FACC15] border-[#FACC15]/20';
+  } else if (level === 'medium') {
+    return 'bg-sky-400/10 text-sky-400 border-sky-400/20';
   } else {
-    return 'bg-[#00FFA3]/10 text-[#00FFA3] border-[#00FFA3]/20';
+    return 'bg-slate-400/10 text-slate-300 border-slate-400/20';
   }
 }
 
@@ -325,13 +330,13 @@ export function getRiskBadgeClass(riskLevel: string): string {
  * Get status badge class
  */
 export function getStatusBadgeClass(status: string): string {
-  const statusText = status?.trim() || '';
-  
-  if (statusText === '已完成' || statusText.includes('完成')) {
+  const normalized = normalizeProjectStatus(status);
+
+  if (normalized === 'completed') {
     return 'bg-[#00FFA3]/10 text-[#00FFA3] border-[#00FFA3]/20';
-  } else if (statusText === '进行中' || statusText.includes('进行')) {
+  } else if (normalized === 'ongoing') {
     return 'bg-[#00B4FF]/10 text-[#00B4FF] border-[#00B4FF]/20';
-  } else if (statusText === '已超时' || statusText.includes('超时')) {
+  } else if (normalized === 'overdue' || normalized === 'delayed') {
     return 'bg-[#FF3B3B]/10 text-[#FF3B3B] border-[#FF3B3B]/20';
   } else {
     return 'bg-white/5 text-[#8B949E] border-white/10';
@@ -357,14 +362,13 @@ export function calculateStats(projects: ProjectData[]): ProjectStats {
   };
   
   projects.forEach(project => {
-    const currentNode = project.milestones?.currentNode?.trim() || ''; // No default, treat empty as null
-    
-    // Strict matching - only count exact matches
-    if (currentNode === '已完成') {
+    const currentNode = normalizeProjectStatus(project.milestones?.currentNode);
+
+    if (currentNode === 'completed') {
       stats.completed++;
-    } else if (currentNode === '已超时') {
+    } else if (currentNode === 'overdue') {
       stats.highRisk++;
-    } else if (currentNode === '进行中') {
+    } else if (currentNode === 'ongoing') {
       stats.inProgress++;
     }
     // Anything else: do NOT count in any category
@@ -414,8 +418,7 @@ export function getDisplayValue(value: string | undefined | null, fallback: stri
  * @deprecated Use getCardVisualState instead
  */
 export function isHighRisk(riskLevel: string): boolean {
-  const level = riskLevel?.trim() || '';
-  return level === '高' || level.includes('高');
+  return normalizeProjectRiskLevel(riskLevel) === 'high';
 }
 
 /**
@@ -429,40 +432,37 @@ export function isHighRisk(riskLevel: string): boolean {
  * - Anything else → Neutral style, no badge
  */
 export function getCardVisualState(currentNode: string | undefined) {
-  const node = currentNode?.trim() || ''; // No default, treat empty as null
-  
-  // Case A: 已完成 (Completed) - Green Theme
-  if (node === '已完成') {
+  const node = normalizeProjectStatus(currentNode);
+
+  if (node === 'completed') {
     return {
       type: 'completed' as const,
       borderClass: 'border border-[#00FFA3]/30',
       bgClass: 'bg-[#151B23]',
       badgeClass: 'bg-[#00FFA3]/10 text-[#00FFA3] border-[#00FFA3]/20',
-      badgeLabel: '已完成',
+      badgeLabel: getProjectStatusLabel('completed'),
       showBadge: true
     };
   }
-  
-  // Case B: 已超时 (Overdue) - Red Theme
-  if (node === '已超时') {
+
+  if (node === 'overdue' || node === 'delayed') {
     return {
       type: 'overdue' as const,
       borderClass: 'border border-[#FF3B3B]/30',
       bgClass: 'bg-[#151B23]',
       badgeClass: 'bg-[#FF3B3B]/10 text-[#FF3B3B] border-[#FF3B3B]/20',
-      badgeLabel: '已超时',
+      badgeLabel: getProjectStatusLabel(node),
       showBadge: true
     };
   }
-  
-  // Case C: 进行中 (Ongoing) - Yellow Theme
-  if (node === '进行中') {
+
+  if (node === 'ongoing') {
     return {
       type: 'ongoing' as const,
-      borderClass: 'border border-[#FACC15]/30',
+      borderClass: 'border border-sky-400/30',
       bgClass: 'bg-[#151B23]',
-      badgeClass: 'bg-[#FACC15]/10 text-[#FACC15] border-[#FACC15]/20',
-      badgeLabel: '进行中',
+      badgeClass: 'bg-amber-400/12 text-amber-300 border-amber-400/20',
+      badgeLabel: getProjectStatusLabel('ongoing'),
       showBadge: true
     };
   }
@@ -526,15 +526,15 @@ export function getFAIColorClass(value: string | undefined | null): string {
   // Extract numeric value from percentage string
   const numericMatch = parsed.match(/\d+/);
   if (!numericMatch) {
-    return 'text-[#FF3B3B] font-bold';
+    return 'text-slate-500';
   }
   
   const numValue = parseInt(numericMatch[0], 10);
   
   if (numValue === 100) {
-    return 'text-[#00FFA3] font-bold'; // Green for 100%
+    return 'text-slate-100'; // Neutral high-contrast for full pass
   } else {
-    return 'text-[#FF3B3B] font-bold'; // Red for < 100%
+    return 'text-rose-400'; // Soft warning for < 100%
   }
 }
 

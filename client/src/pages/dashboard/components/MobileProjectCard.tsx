@@ -9,24 +9,27 @@ import {
   getDisplayValue,
   parseFAIValue,
   getFAIColorClass,
-  getCardVisualState,
 } from '../lib/projectUtils';
 import { ChevronDown, Clock, Calendar, Wrench } from 'lucide-react';
+import {
+  getProjectStatusLabel,
+  normalizeProjectStatus,
+} from '@/lib/dashboardProjectState';
 
 interface Props { project: ProjectData; }
 
 export default function MobileProjectCard({ project }: Props) {
   const [expanded, setExpanded] = useState(false);
   const { no, identity, milestones, details } = project;
-  const vs = getCardVisualState(milestones.currentNode);
-  const node = (milestones?.currentNode || '').trim();
+  const node = normalizeProjectStatus(milestones?.currentNode);
+  const nodeLabel = getProjectStatusLabel(node);
 
   let dotCls = 'bg-[#6E7681]';
   let nodeCls = 'text-[#8B949E]';
   let borderAccent = 'border-l-[#6E7681]';
-  if (node.includes('已超时')) { dotCls = 'bg-[#FF3B3B]'; nodeCls = 'text-[#FF3B3B]'; borderAccent = 'border-l-[#FF3B3B]'; }
-  else if (node.includes('已完成')) { dotCls = 'bg-[#00FFA3]'; nodeCls = 'text-[#00FFA3]'; borderAccent = 'border-l-[#00FFA3]'; }
-  else if (node === '进行中') { dotCls = 'bg-[#FACC15]'; nodeCls = 'text-[#FACC15]'; borderAccent = 'border-l-[#FACC15]'; }
+  if (node === 'overdue' || node === 'delayed') { dotCls = 'bg-[#FF3B3B]'; nodeCls = 'text-[#FF3B3B]'; borderAccent = 'border-l-[#FF3B3B]'; }
+  else if (node === 'completed') { dotCls = 'bg-[#00FFA3]'; nodeCls = 'text-[#00FFA3]'; borderAccent = 'border-l-[#00FFA3]'; }
+  else if (node === 'ongoing') { dotCls = 'bg-[#FACC15]'; nodeCls = 'text-[#FACC15]'; borderAccent = 'border-l-[#FACC15]'; }
 
   const est = milestones.estimatedCompletion ? formatDate(milestones.estimatedCompletion) : '-';
   const faiT = parseFAIValue(milestones.toolingFAI);
@@ -50,7 +53,7 @@ export default function MobileProjectCard({ project }: Props) {
             <span className="text-[15px] font-bold text-[#E6EDF3] truncate">{getDisplayValue(identity.moldNumber, '-')}</span>
             <span className={`flex-none inline-flex items-center gap-1 text-[11px] font-bold ${nodeCls}`}>
               <span className={`w-1.5 h-1.5 rounded-full ${dotCls}`} />
-              {node || '-'}
+              {nodeLabel}
             </span>
           </div>
           <div className="flex items-center gap-2 text-[11px] text-[#6E7681]">

@@ -1,119 +1,109 @@
-/**
- * StatsPanel - Industrial Control Console
- * SINGLE SOURCE OF TRUTH: Only displays stats based on 当前节点 (Current Node)
- * 4 Cards: 全部项目 | 超时项目 | 进行中 | 已完成
- */
-
 import React from 'react';
-import { ProjectStats } from '../types/project';
-import { AlertTriangle, Clock, CheckCircle2, FolderOpen } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Clock, FolderOpen } from 'lucide-react';
+import type { ProjectStats } from '../types/project';
+import type { ModuleTheme } from '@/lib/theme';
+import { getThemeGlowClass } from '@/lib/theme';
+import type { DashboardFilter } from '@/lib/dashboardProjectState';
+import { getProjectStatusLabel } from '@/lib/dashboardProjectState';
 
 interface StatsPanelProps {
   stats: ProjectStats;
-  onFilterChange?: (status: string) => void;
-  activeFilter?: string;
+  theme: ModuleTheme;
+  onFilterChange?: (status: DashboardFilter) => void;
+  activeFilter?: DashboardFilter;
 }
 
-export default function StatsPanel({ stats, onFilterChange, activeFilter = 'ALL' }: StatsPanelProps) {
+export default function StatsPanel({ stats, theme, onFilterChange, activeFilter = 'ALL' }: StatsPanelProps) {
+  const themeGlow = getThemeGlowClass(theme.shadowGlow);
+
   const statCards = [
     {
       label: '全部项目',
       value: stats.total,
       icon: FolderOpen,
-      filterValue: 'ALL',
-      variant: 'is-all',
-      style: { '--accent': '0,180,255', '--accent-hex': '#00B4FF' } as React.CSSProperties,
+      filterValue: 'ALL' as const,
     },
     {
       label: '超时项目',
       value: stats.highRisk,
       icon: AlertTriangle,
-      filterValue: '已超时',
-      variant: 'is-risk',
-      style: { '--accent': '255,59,59', '--accent-hex': '#FF3B3B' } as React.CSSProperties,
+      filterValue: 'overdue' as const,
     },
     {
-      label: '进行中',
+      label: getProjectStatusLabel('ongoing'),
       value: stats.inProgress,
       icon: Clock,
-      filterValue: '进行中',
-      variant: 'is-progress',
-      style: { '--accent': '255,204,0', '--accent-hex': '#FFCC00' } as React.CSSProperties,
+      filterValue: 'ongoing' as const,
     },
     {
-      label: '已完成',
+      label: getProjectStatusLabel('completed'),
       value: stats.completed,
       icon: CheckCircle2,
-      filterValue: '已完成',
-      variant: 'is-done',
-      style: { '--accent': '0,255,163', '--accent-hex': '#00FFA3' } as React.CSSProperties,
+      filterValue: 'completed' as const,
     },
-  ];
+  ] as const;
 
   return (
     <>
-      {/* ── PC: Grid layout ── */}
-      <div className="hidden md:grid md:grid-cols-2 xl:grid-cols-4 gap-4">
+      <div className="mb-10 hidden gap-6 px-1 md:grid md:grid-cols-2 xl:grid-cols-4">
         {statCards.map((stat, index) => {
           const Icon = stat.icon;
           const isActive = activeFilter === stat.filterValue;
+
           return (
             <button
               key={index}
               type="button"
-              className={`stat-card ${stat.variant}${isActive ? ' is-active' : ''} group relative cursor-pointer text-left touch-manipulation select-none`}
-              style={stat.style}
+              className={`group relative overflow-hidden rounded-2xl border border-slate-700/50 bg-slate-900/40 p-6 text-left shadow-2xl backdrop-blur-xl transition-all duration-500 ${
+                isActive ? `${theme.glassBorder} ${themeGlow}` : `${theme.glassBorder} hover:shadow-xl`
+              }`}
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 onFilterChange?.(stat.filterValue);
               }}
             >
-              <div className="stat-card-inner relative z-[1] p-7 flex items-start justify-between">
-                <div className="space-y-2.5 min-w-0">
-                  <p className="stat-label text-[13px] font-semibold tracking-widest uppercase whitespace-nowrap">
-                    {stat.label}
-                  </p>
-                  <p className="stat-value text-[42px] font-extrabold tabular-nums whitespace-nowrap leading-none">
-                    {stat.value}
-                  </p>
+              <div className={`absolute -right-10 -top-10 h-32 w-32 rounded-full blur-[50px] opacity-20 transition-opacity duration-700 group-hover:opacity-40 ${theme.ambientGlow}`} />
+              <div className="relative z-10 mb-6 flex items-start justify-between">
+                <span className="text-sm font-medium tracking-wide text-slate-400">{stat.label}</span>
+                <div className={`rounded-xl p-2.5 ${theme.iconBg} ${theme.text}`}>
+                  <Icon className="h-5 w-5" />
                 </div>
-                <div className="stat-icon-wrap relative">
-                  <div className="stat-icon-glow absolute inset-0 rounded-full blur-xl opacity-15 group-hover:opacity-30 transition-opacity duration-300" />
-                  <div className="stat-icon relative w-12 h-12 rounded-xl flex items-center justify-center">
-                    <Icon className="w-6 h-6" strokeWidth={1.8} />
-                  </div>
-                </div>
+              </div>
+              <div className={`relative z-10 bg-gradient-to-br bg-clip-text text-4xl font-mono font-extrabold tracking-tighter text-transparent ${theme.textGradient}`}>
+                {stat.value}
               </div>
             </button>
           );
         })}
       </div>
 
-      {/* ── Mobile: Horizontal scrollable pill bar ── */}
-      <div className="md:hidden flex gap-2.5 overflow-x-auto pb-3 mb-4 scrollbar-none" style={{ WebkitOverflowScrolling: 'touch' }}>
+      <div className="mb-4 flex gap-2.5 overflow-x-auto pb-3 scrollbar-none md:hidden" style={{ WebkitOverflowScrolling: 'touch' }}>
         {statCards.map((stat, index) => {
           const Icon = stat.icon;
           const isActive = activeFilter === stat.filterValue;
+
           return (
             <button
               key={index}
               type="button"
-              className={`flex-none flex items-center gap-2 min-h-[44px] px-4 py-2 rounded-full border transition-all duration-200 touch-manipulation select-none ${
+              className={`group relative flex-none overflow-hidden rounded-full border border-slate-700/50 bg-slate-900/40 px-4 py-2 backdrop-blur-xl transition-all duration-500 ${
                 isActive
-                  ? 'border-[var(--accent-hex)] bg-[var(--accent-hex)]/15 text-[var(--accent-hex)] shadow-[0_0_12px_var(--accent-hex)/20]'
-                  : 'border-white/[0.08] bg-[#151B23] text-[#8B949E]'
+                  ? `${theme.glassBorder} ${themeGlow}`
+                  : `${theme.glassBorder} text-[#8B949E]`
               }`}
-              style={stat.style as React.CSSProperties}
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 onFilterChange?.(stat.filterValue);
               }}
             >
-              <Icon className="w-4 h-4 shrink-0" strokeWidth={2} />
-              <span className="text-[13px] font-semibold whitespace-nowrap">{stat.label}</span>
-              <span className={`text-[15px] font-extrabold tabular-nums ${isActive ? '' : 'text-[#E6EDF3]'}`}>{stat.value}</span>
+              <div className={`absolute -right-8 -top-8 h-20 w-20 rounded-full blur-[36px] opacity-15 transition-opacity duration-700 group-hover:opacity-30 ${theme.ambientGlow}`} />
+              <div className="relative z-10 flex min-h-[44px] touch-manipulation select-none items-center gap-2">
+                <Icon className={`h-4 w-4 shrink-0 ${isActive ? theme.text : ''}`} strokeWidth={2} />
+                <span className="whitespace-nowrap text-[13px] font-semibold">{stat.label}</span>
+                <span className={`bg-gradient-to-br bg-clip-text text-[15px] font-extrabold tabular-nums text-transparent ${isActive ? theme.textGradient : 'from-[#E6EDF3] to-[#94A3B8]'}`}>{stat.value}</span>
+              </div>
             </button>
           );
         })}

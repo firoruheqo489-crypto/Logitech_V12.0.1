@@ -3,7 +3,7 @@
  * 支持材质联动、实时计算、CSS 纹理模拟
  */
 import { useState } from 'react';
-import { Search, AlertTriangle, X, Zap, Fingerprint, Flame } from 'lucide-react';
+import { Search, AlertTriangle, Zap, Fingerprint, Flame, ArrowLeft } from 'lucide-react';
 
 /* ─── CSS Texture Swatch ─── */
 function TextureSwatch({ vdi }: { vdi: number }) {
@@ -288,21 +288,25 @@ export default function VDISurfaceGrid({ onClose, selectedMat, onMatChange, curr
 
   return (
     <div className="fixed inset-0 z-[9998] bg-[#0B0F14] overflow-y-auto">
-      {/* Close */}
-      <button onClick={onClose}
-        className="fixed top-5 right-5 z-[9999] w-10 h-10 bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.1] rounded-full flex items-center justify-center transition-all cursor-pointer">
-        <X className="w-5 h-5 text-[#E6EDF3]" />
-      </button>
-
       <div className="p-6 md:p-12 text-white">
         {/* Header */}
         <header className="max-w-7xl mx-auto mb-10">
           <div className="flex flex-col gap-5">
-            <div>
+            <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+              <div>
               <h1 className="text-3xl md:text-4xl font-bold mb-2 bg-gradient-to-r from-white via-blue-100 to-blue-200 bg-clip-text text-transparent">
                 VDI 3400 表面物理特征对照库
               </h1>
               <p className="text-sm text-[#6E7681]">基于 Ra 粗糙度与脱模斜度的安全阈值参考 · 动态工程计算器</p>
+              </div>
+              <button
+                type="button"
+                onClick={onClose}
+                className="inline-flex items-center gap-2 self-start rounded-lg border border-white/[0.08] bg-white/[0.03] px-4 py-2 text-sm font-medium text-slate-300 transition-all hover:border-[#3b82f6]/40 hover:bg-[#3b82f6]/10 hover:text-white"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                返回项目
+              </button>
             </div>
             <div className="flex flex-col md:flex-row gap-4 items-start md:items-center">
               {/* Search — dynamic calculator */}

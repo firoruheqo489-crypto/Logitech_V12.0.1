@@ -3,6 +3,12 @@
  * Each project is divided into 3 distinct modules
  */
 
+import type {
+  ProjectQualifiedFlag,
+  ProjectRiskLevel,
+  ProjectStatus,
+} from '@/lib/dashboardProjectState';
+
 // Module 1: Project Identity (The "Facts")
 export interface ProjectIdentity {
   customerName: string;      // 客户名称
@@ -18,7 +24,7 @@ export interface ProjectIdentity {
   projectEngineer: string;    // 项目工程师
   moldProject: string;        // 模具项目
   qe: string;                 // 项目QE
-  riskLevel: string;          // 风险等级
+  riskLevel: ProjectRiskLevel | '-'; // 风险等级
   fitterGroup: string;        // 钳工组
   designEngineer: string;     // 设计工程
 }
@@ -35,11 +41,11 @@ export interface InternalMilestones {
   
   // Status indicators
   currentStage: string;       // 当前阶段
-  t1SizeQualified: string;    // T1尺寸是否达标
+  t1SizeQualified: ProjectQualifiedFlag | '-'; // T1尺寸是否达标
   trialCount: string;         // 试模次数
   toolingFAI: string;         // Tooling FAI
   partFAI: string;            // Part FAI
-  currentNode: string;        // 当前节点 (已完成/进行中/已超时)
+  currentNode: ProjectStatus | '-'; // 当前节点
 }
 
 // Module 3: Progression Details (The "Narrative")
@@ -84,7 +90,9 @@ export const DEFAULT_COLUMN_MAPPING: Record<string, string> = {
   '模具编号': 'identity.moldNumber',
   '项目经理': 'identity.projectManager',
   '项目工程师': 'identity.projectEngineer',
+  '项目工程': 'identity.projectEngineer',
   '模具项目': 'identity.moldProject',
+  '模具工程': 'identity.moldProject',
   'QE': 'identity.qe',
   '项目QE': 'identity.qe',
   '风险等级': 'identity.riskLevel',

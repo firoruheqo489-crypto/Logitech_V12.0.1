@@ -4,6 +4,8 @@
  */
 import { useState } from 'react';
 import { X, CheckCircle2, Settings, Thermometer, Package } from 'lucide-react';
+import EmpiricalKnowledgeBase from './EmpiricalKnowledgeBase';
+import type { KnowledgeRecord } from './knowledge-base-types';
 
 type MaterialType = 'PC/ABS' | 'POM/PA' | 'PP/PE';
 type DefectType = 'sink-mark' | 'flash' | 'short-shot' | 'burn-mark' | 'weld-line' | 'warpage' | 'splay-marks' | 'ejector-whitening';
@@ -14,6 +16,36 @@ interface DefectData {
   id: DefectType; name: string; nameCN: string; severity: number; cause: string;
   mold: Solution[]; process: Solution[]; material: Solution[];
 }
+
+const mockKnowledgeRecords: KnowledgeRecord[] = [
+  {
+    id: '1',
+    date: '2026-03-12',
+    defectIndex: '披锋 FLASH',
+    defectType: 'MOLD',
+    countermeasure: '排气槽深度从 0.04mm 降至 0.02mm，重新研磨分型面，披锋彻底消除。',
+    hasAttachment: true,
+    submittedBy: '张工 / Mold Tech',
+  },
+  {
+    id: '2',
+    date: '2026-02-18',
+    defectIndex: '缩水 SINK MARK',
+    defectType: 'PROCESS',
+    countermeasure: '保压压力提升 15%，保压时间延长 2.5s，冷却水路切换为冰水机 (12℃)。',
+    hasAttachment: false,
+    submittedBy: '王师傅 / Process',
+  },
+  {
+    id: '3',
+    date: '2026-01-05',
+    defectIndex: '烧焦 BURN MARK',
+    defectType: 'MATERIAL',
+    countermeasure: '降低末段注射速度至 25%，增加末端排气间隙，解决死角困气高温。',
+    hasAttachment: true,
+    submittedBy: '刘工 / QE',
+  },
+];
 
 /* ════════════════════════════════════════════════
    物理计算引擎
@@ -358,7 +390,17 @@ function SectionHeader({ label, color }: { label: string; color: 'cyan' | 'green
 /* ════════════════════════════════════════════════
    MAIN COMPONENT — Context-Aware
    ════════════════════════════════════════════════ */
-export default function DefectLab({ onClose, material, vdi }: { onClose: () => void; material: MaterialType; vdi: number }) {
+export default function DefectLab({
+  onClose,
+  material,
+  vdi,
+  assetId = 'LA26006',
+}: {
+  onClose: () => void;
+  material: MaterialType;
+  vdi: number;
+  assetId?: string;
+}) {
   const [selectedDefect, setSelectedDefect] = useState<DefectType | null>(null);
   const [activeTab, setActiveTab] = useState<TabType>('mold');
 
@@ -399,7 +441,7 @@ export default function DefectLab({ onClose, material, vdi }: { onClose: () => v
           {/* Header — 显示当前上下文 */}
           <div className="mb-8">
             <h1 className="text-3xl font-bold mb-2 text-white" style={{ animation: 'chromatic-aberration 3s ease-in-out infinite' }}>
-              注塑缺陷数字诊断实验室
+              注塑诊所
             </h1>
             <div className="flex items-center gap-4">
               <p className="text-cyan-400/60 text-sm font-mono tracking-wider">INJECTION MOLDING DEFECT DIAGNOSTIC LAB</p>
@@ -511,6 +553,10 @@ export default function DefectLab({ onClose, material, vdi }: { onClose: () => v
                 )}
               </div>
             </div>
+          </div>
+
+          <div className="mt-6">
+            <EmpiricalKnowledgeBase assetId={assetId} knowledgeRecords={mockKnowledgeRecords} />
           </div>
         </div>
       </div>
