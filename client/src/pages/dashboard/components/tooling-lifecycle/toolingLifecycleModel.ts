@@ -4,11 +4,16 @@ export interface WeibullParameters {
   etaDegraded: number;
 }
 
+export type MaintenanceEventLabelKey =
+  | "routine_pm"
+  | "slider_jam"
+  | "ejector_pin_break";
+
 export interface MaintenanceEvent {
   id: string;
   shots: number;
   type: "PM" | "CM";
-  label: string;
+  labelKey: MaintenanceEventLabelKey;
 }
 
 export interface ToolingLifecycleState {
@@ -24,9 +29,9 @@ export const DEFAULT_WEIBULL_PARAMETERS: WeibullParameters = {
 };
 
 export const DEFAULT_MAINTENANCE_EVENTS: MaintenanceEvent[] = [
-  { id: "evt-1", shots: 120_000, type: "PM", label: "常规保养 (PM)" },
-  { id: "evt-2", shots: 280_500, type: "CM", label: "滑块卡滞 (CM)" },
-  { id: "evt-3", shots: 420_000, type: "CM", label: "顶针断裂 (CM)" },
+  { id: "evt-1", shots: 120_000, type: "PM", labelKey: "routine_pm" },
+  { id: "evt-2", shots: 280_500, type: "CM", labelKey: "slider_jam" },
+  { id: "evt-3", shots: 420_000, type: "CM", labelKey: "ejector_pin_break" },
 ];
 
 export const DEFAULT_TOOLING_LIFECYCLE_STATE: ToolingLifecycleState = {

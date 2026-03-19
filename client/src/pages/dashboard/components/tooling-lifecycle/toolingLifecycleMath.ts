@@ -5,6 +5,17 @@ export const ZONE_2_END = 0.85;
 export const SVG_WIDTH = 1000;
 export const SVG_HEIGHT = 256;
 
+export type ToolingLifecycleZoneId =
+  | "early_failure"
+  | "useful_life"
+  | "wear_out";
+
+export interface ToolingLifecycleZoneMeta {
+  zone: 1 | 2 | 3;
+  zoneId: ToolingLifecycleZoneId;
+  color: string;
+}
+
 export function getActiveEta(
   parameters: WeibullParameters,
   isCalibrated: boolean
@@ -94,13 +105,16 @@ export function getXAxisLabels(isCalibrated: boolean): string[] {
   return ["0", "250K", "500K", "750K", "1,000K"];
 }
 
-export function getZoneMeta(shots: number, maxShots: number) {
+export function getZoneMeta(
+  shots: number,
+  maxShots: number
+): ToolingLifecycleZoneMeta {
   const pct = shots / maxShots;
   if (pct < ZONE_1_END) {
-    return { zone: 1, label: "早期失效期", color: "text-cyan-400" };
+    return { zone: 1, zoneId: "early_failure", color: "text-cyan-400" };
   }
   if (pct < ZONE_2_END) {
-    return { zone: 2, label: "偶然失效期", color: "text-emerald-400" };
+    return { zone: 2, zoneId: "useful_life", color: "text-emerald-400" };
   }
-  return { zone: 3, label: "耗损失效期", color: "text-rose-400" };
+  return { zone: 3, zoneId: "wear_out", color: "text-rose-400" };
 }

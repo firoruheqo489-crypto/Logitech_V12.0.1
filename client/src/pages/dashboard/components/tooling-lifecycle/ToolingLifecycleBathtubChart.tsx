@@ -1,7 +1,10 @@
 "use client";
 
 import { useCallback, useId, useMemo, useState, type ChangeEvent } from "react";
-import type { MaintenanceEvent } from "./toolingLifecycleModel";
+import type {
+  MaintenanceEvent,
+  MaintenanceEventLabelKey,
+} from "./toolingLifecycleModel";
 import {
   SVG_HEIGHT,
   SVG_WIDTH,
@@ -11,6 +14,7 @@ import {
   getXAxisLabels,
   getZoneMeta,
   hazardRate,
+  type ToolingLifecycleZoneId,
 } from "./toolingLifecycleMath";
 
 interface ToolingLifecycleBathtubChartProps {
@@ -20,6 +24,18 @@ interface ToolingLifecycleBathtubChartProps {
   isCalibrated: boolean;
   events: MaintenanceEvent[];
 }
+
+const ZONE_SUMMARY_LABELS: Record<ToolingLifecycleZoneId, string> = {
+  early_failure: "早期失效期",
+  useful_life: "偶然失效期",
+  wear_out: "耗损失效期",
+};
+
+const MAINTENANCE_EVENT_LABELS: Record<MaintenanceEventLabelKey, string> = {
+  routine_pm: "常规保养 (PM)",
+  slider_jam: "滑块卡滞 (CM)",
+  ejector_pin_break: "顶针断裂 (CM)",
+};
 
 export function ToolingLifecycleBathtubChart({
   currentShots,
@@ -90,7 +106,9 @@ export function ToolingLifecycleBathtubChart({
             ZONE {zoneInfo.zone}
           </span>
           <span className="text-[10px] text-slate-600">|</span>
-          <span className="text-[11px] text-slate-400">{zoneInfo.label}</span>
+          <span className="text-[11px] text-slate-400">
+            {ZONE_SUMMARY_LABELS[zoneInfo.zoneId]}
+          </span>
         </div>
       </div>
 
@@ -371,7 +389,7 @@ export function ToolingLifecycleBathtubChart({
                       : "border-rose-700/40 bg-rose-950/90 text-rose-300"
                   }`}
                 >
-                  {eventItem.label}
+                  {MAINTENANCE_EVENT_LABELS[eventItem.labelKey]}
                 </div>
               )}
             </div>
