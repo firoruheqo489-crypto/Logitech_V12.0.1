@@ -1126,7 +1126,7 @@ export default function MoldTrialDatabase({
         };
       });
     } catch (error) {
-      window.alert(error instanceof Error ? error.message : "图片处理失败");
+      window.alert("图片处理失败，请稍后重试");
     }
   };
 
