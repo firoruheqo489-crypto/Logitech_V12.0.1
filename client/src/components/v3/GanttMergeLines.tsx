@@ -41,9 +41,7 @@ export default function GanttMergeLines({
     // ═════════════════════════════════════════════════════════════════════════
     
     // Identify Target: "模具FaiCpk报告"
-    const targetRow = rows.find(
-      (r) => r.task.id === 'mold_fai_cpk' || r.task.nameCn.includes('模具Fai')
-    );
+    const targetRow = rows.find((r) => r.task.id === 'mold_fai_cpk');
 
     if (targetRow) {
       // Target coordinates (Left edge of Mold FAI/CPK capsule)
@@ -98,7 +96,7 @@ export default function GanttMergeLines({
     // ═════════════════════════════════════════════════════════════════════════
 
     // Identify Source: "MTD" (stage='mtd')
-    const mtdRow = rows.find((r) => r.task.stage === 'mtd' || r.task.nameCn === 'MTD');
+    const mtdRow = rows.find((r) => r.task.stage === 'mtd');
 
     if (mtdRow) {
       // Source coordinates (Right edge of MTD capsule)
@@ -123,11 +121,8 @@ export default function GanttMergeLines({
         
         if (trackRows.length === 0) return;
 
-        // Find "milling" task or the first one if milling not found
-        // Usually stage='milling' or nameCn='铣床'
-        const millingRow = trackRows.find(
-          (r) => r.task.stage === 'milling' || r.task.nameCn === '铣床'
-        );
+        // Find the canonical milling stage or fall back to the earliest task.
+        const millingRow = trackRows.find((r) => r.task.stage === 'milling');
         
         // Fallback to earliest task if milling specifically not found
         const targetTaskRow = millingRow || trackRows.reduce((prev, curr) => {
