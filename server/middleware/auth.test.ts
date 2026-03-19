@@ -100,6 +100,28 @@ describe('apiKeyAuth', () => {
     expect(state.statusCode).toBeNull();
   });
 
+  it('allows same-origin browser write requests in production without a manual API key', async () => {
+    const { apiKeyAuth } = await loadAuthModule({
+      API_SECRET_KEY: 'expected-key',
+      NODE_ENV: 'production',
+    });
+    const req = createMockRequest({
+      method: 'POST',
+      headers: {
+        host: '120.27.153.140:3000',
+        origin: 'http://120.27.153.140:3000',
+      },
+      hostname: '120.27.153.140',
+    });
+    const { res, state } = createMockResponse();
+    const next = vi.fn<NextFunction>();
+
+    apiKeyAuth(req, res, next);
+
+    expect(next).toHaveBeenCalledOnce();
+    expect(state.statusCode).toBeNull();
+  });
+
   it('returns a machine-readable 503 when the write API key is not configured', async () => {
     const { apiKeyAuth } = await loadAuthModule({ NODE_ENV: 'production' });
     const req = createMockRequest({ method: 'POST' });

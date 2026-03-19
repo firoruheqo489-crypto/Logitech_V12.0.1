@@ -193,6 +193,30 @@ describe('api access policy pipeline', () => {
     expect(state.headers['Access-Control-Allow-Origin']).toBe('http://localhost:3000');
     expect(state.headers['Access-Control-Allow-Credentials']).toBe('true');
   });
+
+  it('keeps same-origin production dashboard writes working without a manual API key prompt', async () => {
+    const { apiKeyAuth } = await loadAuthModule({
+      API_SECRET_KEY: 'expected-key',
+      NODE_ENV: 'production',
+    });
+    const req = createMockRequest({
+      method: 'POST',
+      headers: {
+        host: '120.27.153.140:3000',
+        origin: 'http://120.27.153.140:3000',
+      },
+      hostname: '120.27.153.140',
+    });
+    const { res, state } = createMockResponse();
+    const done = vi.fn<NextFunction>();
+
+    runMiddlewarePipeline([apiCors, apiKeyAuth], req, res, done);
+
+    expect(done).toHaveBeenCalledOnce();
+    expect(state.statusCode).toBeNull();
+    expect(state.headers['Access-Control-Allow-Origin']).toBe('http://120.27.153.140:3000');
+    expect(state.headers['Access-Control-Allow-Credentials']).toBe('true');
+  });
 });
 
 describe('registerApiAccessPolicy', () => {

@@ -50,6 +50,35 @@ function isLocalDevelopmentRequest(req: Request): boolean {
   return candidates.some((hostname) => LOCAL_HOSTS.has(hostname));
 }
 
+function isSameOriginBrowserWriteRequest(req: Request): boolean {
+  const requestHosts = [
+    req.headers['x-forwarded-host'],
+    req.headers.host,
+    req.hostname,
+  ]
+    .filter((value): value is string => typeof value === 'string')
+    .map(extractHostname)
+    .filter(Boolean);
+
+  if (requestHosts.length === 0) {
+    return false;
+  }
+
+  const browserHosts = [
+    req.headers.origin,
+    req.headers.referer,
+  ]
+    .filter((value): value is string => typeof value === 'string')
+    .map(extractHostname)
+    .filter(Boolean);
+
+  if (browserHosts.length === 0) {
+    return false;
+  }
+
+  return browserHosts.some((hostname) => requestHosts.includes(hostname));
+}
+
 function sendAuthError(res: Response, status: number, code: AuthErrorCode): void {
   res.status(status).json({
     error: AUTH_ERROR_MESSAGES[code],
@@ -65,6 +94,12 @@ export function apiKeyAuth(req: Request, res: Response, next: NextFunction): voi
 
   // Keep localhost validation friction-free during local development sessions.
   if (isLocalDevelopmentRequest(req)) {
+    next();
+    return;
+  }
+
+  // Allow same-origin browser writes while still rejecting cross-origin and direct scripted writes.
+  if (isSameOriginBrowserWriteRequest(req)) {
     next();
     return;
   }
