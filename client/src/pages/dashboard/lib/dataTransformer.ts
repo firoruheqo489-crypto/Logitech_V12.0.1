@@ -1,12 +1,12 @@
 import { ProjectData } from '../types/project';
 import type { DashboardProject } from '@shared/schema';
 import {
-  denormalizeProjectQualifiedFlag,
-  denormalizeProjectRiskLevel,
-  denormalizeProjectStatus,
   normalizeProjectQualifiedFlag,
   normalizeProjectRiskLevel,
   normalizeProjectStatus,
+  toProjectQualifiedFlagMachineValue,
+  toProjectRiskLevelMachineValue,
+  toProjectStatusMachineValue,
 } from '@/lib/dashboardProjectState';
 
 type DashboardProjectLike = Omit<DashboardProject, 'createdAt' | 'updatedAt'> & {
@@ -85,7 +85,7 @@ export function transformDataToProject(data: ProjectData): Record<string, string
     peName: data.identity.projectEngineer === '-' ? undefined : data.identity.projectEngineer,
     moldLead: data.identity.moldProject === '-' ? undefined : data.identity.moldProject,
     pqeName: data.identity.qe === '-' ? undefined : data.identity.qe,
-    riskLevel: denormalizeProjectRiskLevel(data.identity.riskLevel),
+    riskLevel: toProjectRiskLevelMachineValue(data.identity.riskLevel),
     fitterGroup: data.identity.fitterGroup === '-' ? undefined : data.identity.fitterGroup,
     designEngineer: data.identity.designEngineer === '-' ? undefined : data.identity.designEngineer,
     kickoffDate: data.milestones.projectStart === '-' ? undefined : data.milestones.projectStart,
@@ -94,11 +94,11 @@ export function transformDataToProject(data: ProjectData): Record<string, string
     vmpDate: data.milestones.vmp === '-' ? undefined : data.milestones.vmp,
     mpDate: data.milestones.mp === '-' ? undefined : data.milestones.mp,
     currentStage: data.milestones.currentStage === '-' ? undefined : data.milestones.currentStage,
-    t1DimensionOk: denormalizeProjectQualifiedFlag(data.milestones.t1SizeQualified),
+    t1DimensionOk: toProjectQualifiedFlagMachineValue(data.milestones.t1SizeQualified),
     trialCount: data.milestones.trialCount === '-' ? undefined : data.milestones.trialCount,
     toolingFai: data.milestones.toolingFAI === '-' ? undefined : data.milestones.toolingFAI,
     partFai: data.milestones.partFAI === '-' ? undefined : data.milestones.partFAI,
-    currentNode: denormalizeProjectStatus(data.milestones.currentNode),
+    currentNode: toProjectStatusMachineValue(data.milestones.currentNode),
     estimatedCompletion: data.milestones.estimatedCompletion === '-' ? undefined : data.milestones.estimatedCompletion,
     progressDetails: data.details.detailProgress === '-' ? undefined : data.details.detailProgress,
     updateDate: data.details.detailDate === '-' ? undefined : data.details.detailDate,

@@ -12,47 +12,47 @@ type KnownDashboardFilter = Exclude<DashboardFilter, 'ALL'>;
 
 const EMPTY_TOKEN = '-';
 
-const PROJECT_STATUS_INPUT_ALIASES: Record<KnownProjectStatus, readonly string[]> = {
-  completed: ['completed', 'done', '已完成', '完成'],
-  overdue: ['overdue', '已超时', '超时'],
-  delayed: ['delayed', '已延期', '延期'],
-  ongoing: ['ongoing', 'active', '进行中', '进行'],
-};
+const PROJECT_STATUS_INPUT_ALIASES = {
+  completed: ['completed', 'done', '\u5df2\u5b8c\u6210', '\u5b8c\u6210'],
+  overdue: ['overdue', '\u9879\u76ee\u5df2\u8d85\u65f6', '\u8d85\u65f6'],
+  delayed: ['delayed', '\u5df2\u5ef6\u671f', '\u5ef6\u671f'],
+  ongoing: ['ongoing', 'active', '\u8fdb\u884c\u4e2d', '\u8fdb\u884c'],
+} satisfies Record<KnownProjectStatus, readonly string[]>;
 
-const PROJECT_RISK_INPUT_ALIASES: Record<KnownProjectRiskLevel, readonly string[]> = {
-  high: ['high', '高'],
-  medium: ['medium', '中'],
-  low: ['low', '低', '正常', 'normal'],
-};
+const PROJECT_RISK_INPUT_ALIASES = {
+  high: ['high', '\u9ad8\u98ce\u9669', '\u9ad8'],
+  medium: ['medium', '\u4e2d'],
+  low: ['low', '\u4f4e', '\u6b63\u5e38', 'normal'],
+} satisfies Record<KnownProjectRiskLevel, readonly string[]>;
 
-const PROJECT_QUALIFIED_INPUT_ALIASES: Record<KnownProjectQualifiedFlag, readonly string[]> = {
-  yes: ['yes', 'true', '是'],
-  no: ['no', 'false', '否'],
-};
+const PROJECT_QUALIFIED_INPUT_ALIASES = {
+  yes: ['yes', 'true', '\u662f'],
+  no: ['no', 'false', '\u5426'],
+} satisfies Record<KnownProjectQualifiedFlag, readonly string[]>;
 
-const DASHBOARD_FILTER_INPUT_ALIASES: Record<KnownDashboardFilter, readonly string[]> = {
-  completed: ['completed', '已完成'],
-  overdue: ['overdue', '已超时', '超时'],
-  ongoing: ['ongoing', 'active', '进行中', '进行'],
-};
+const DASHBOARD_FILTER_INPUT_ALIASES = {
+  completed: ['completed', '\u5df2\u5b8c\u6210'],
+  overdue: ['overdue', '\u9879\u76ee\u5df2\u8d85\u65f6', '\u8d85\u65f6'],
+  ongoing: ['ongoing', 'active', '\u8fdb\u884c\u4e2d', '\u8fdb\u884c'],
+} satisfies Record<KnownDashboardFilter, readonly string[]>;
 
-const PROJECT_STATUS_LABELS: Record<KnownProjectStatus, string> = {
-  completed: '已完成',
-  overdue: '已超时',
-  delayed: '已延期',
-  ongoing: '进行中',
-};
+const PROJECT_STATUS_LABELS = {
+  completed: '\u5df2\u5b8c\u6210',
+  overdue: '\u9879\u76ee\u5df2\u8d85\u65f6',
+  delayed: '\u5df2\u5ef6\u671f',
+  ongoing: '\u8fdb\u884c\u4e2d',
+} satisfies Record<KnownProjectStatus, string>;
 
-const PROJECT_RISK_LABELS: Record<KnownProjectRiskLevel, string> = {
-  high: '高',
-  medium: '中',
-  low: '正常',
-};
+const PROJECT_RISK_LABELS = {
+  high: '\u9ad8\u98ce\u9669',
+  medium: '\u4e2d',
+  low: '\u6b63\u5e38',
+} satisfies Record<KnownProjectRiskLevel, string>;
 
-const PROJECT_QUALIFIED_LABELS: Record<KnownProjectQualifiedFlag, string> = {
-  yes: '是',
-  no: '否',
-};
+const PROJECT_QUALIFIED_LABELS = {
+  yes: '\u662f',
+  no: '\u5426',
+} satisfies Record<KnownProjectQualifiedFlag, string>;
 
 function normalizeToken(value: string | null | undefined): string {
   return String(value ?? '')
@@ -76,6 +76,19 @@ function normalizeByAliases<T extends string>(
   }
 
   return undefined;
+}
+
+function canonicalizeByAliases<T extends string>(
+  value: string | null | undefined,
+  aliasesByValue: Record<T, readonly string[]>,
+): string | undefined {
+  const normalized = normalizeByAliases(value, aliasesByValue);
+  if (normalized) {
+    return normalized;
+  }
+
+  const raw = String(value ?? '').trim();
+  return raw && raw !== EMPTY_TOKEN ? raw : undefined;
 }
 
 export function normalizeProjectStatus(value: string | null | undefined): ProjectStatus {
@@ -118,34 +131,16 @@ export function isProjectStatusDelayed(status: string | null | undefined): boole
   return normalized === 'overdue' || normalized === 'delayed';
 }
 
-export function denormalizeProjectStatus(status: string | null | undefined): string | undefined {
-  const normalized = normalizeProjectStatus(status);
-  if (normalized === 'unknown') {
-    const raw = String(status ?? '').trim();
-    return raw && raw !== EMPTY_TOKEN ? raw : undefined;
-  }
-
-  return PROJECT_STATUS_LABELS[normalized];
+export function toProjectStatusMachineValue(status: string | null | undefined): string | undefined {
+  return canonicalizeByAliases(status, PROJECT_STATUS_INPUT_ALIASES);
 }
 
-export function denormalizeProjectRiskLevel(level: string | null | undefined): string | undefined {
-  const normalized = normalizeProjectRiskLevel(level);
-  if (normalized === 'unknown') {
-    const raw = String(level ?? '').trim();
-    return raw && raw !== EMPTY_TOKEN ? raw : undefined;
-  }
-
-  return PROJECT_RISK_LABELS[normalized];
+export function toProjectRiskLevelMachineValue(level: string | null | undefined): string | undefined {
+  return canonicalizeByAliases(level, PROJECT_RISK_INPUT_ALIASES);
 }
 
-export function denormalizeProjectQualifiedFlag(flag: string | null | undefined): string | undefined {
-  const normalized = normalizeProjectQualifiedFlag(flag);
-  if (normalized === 'unknown') {
-    const raw = String(flag ?? '').trim();
-    return raw && raw !== EMPTY_TOKEN ? raw : undefined;
-  }
-
-  return PROJECT_QUALIFIED_LABELS[normalized];
+export function toProjectQualifiedFlagMachineValue(flag: string | null | undefined): string | undefined {
+  return canonicalizeByAliases(flag, PROJECT_QUALIFIED_INPUT_ALIASES);
 }
 
 export function normalizeProjectDataEnums(project: ProjectData): ProjectData {

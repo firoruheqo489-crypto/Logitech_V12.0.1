@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  denormalizeProjectQualifiedFlag,
-  denormalizeProjectRiskLevel,
-  denormalizeProjectStatus,
   getProjectQualifiedFlagLabel,
   getProjectRiskLevelLabel,
   getProjectStatusLabel,
@@ -12,40 +9,44 @@ import {
   normalizeProjectQualifiedFlag,
   normalizeProjectRiskLevel,
   normalizeProjectStatus,
+  toProjectQualifiedFlagMachineValue,
+  toProjectRiskLevelMachineValue,
+  toProjectStatusMachineValue,
 } from './dashboardProjectState';
 
 describe('dashboardProjectState', () => {
   it('normalizes legacy Chinese and English project status tokens to English enums', () => {
-    expect(normalizeProjectStatus('已完成')).toBe('completed');
-    expect(normalizeProjectStatus('项目已超时')).toBe('overdue');
-    expect(normalizeProjectStatus('已延期')).toBe('delayed');
-    expect(normalizeProjectStatus('进行中')).toBe('ongoing');
+    expect(normalizeProjectStatus('\u5df2\u5b8c\u6210')).toBe('completed');
+    expect(normalizeProjectStatus('\u9879\u76ee\u5df2\u8d85\u65f6')).toBe('overdue');
+    expect(normalizeProjectStatus('\u5df2\u5ef6\u671f')).toBe('delayed');
+    expect(normalizeProjectStatus('\u8fdb\u884c\u4e2d')).toBe('ongoing');
     expect(normalizeProjectStatus('active')).toBe('ongoing');
     expect(normalizeProjectStatus('-')).toBe('unknown');
   });
 
   it('normalizes risk levels and qualified flags through the adapter layer', () => {
-    expect(normalizeProjectRiskLevel('高风险')).toBe('high');
+    expect(normalizeProjectRiskLevel('\u9ad8\u98ce\u9669')).toBe('high');
     expect(normalizeProjectRiskLevel('medium')).toBe('medium');
-    expect(normalizeProjectRiskLevel('正常')).toBe('low');
-    expect(normalizeProjectQualifiedFlag('是')).toBe('yes');
+    expect(normalizeProjectRiskLevel('\u6b63\u5e38')).toBe('low');
+    expect(normalizeProjectQualifiedFlag('\u662f')).toBe('yes');
     expect(normalizeProjectQualifiedFlag('false')).toBe('no');
   });
 
-  it('keeps Chinese output isolated to label helpers and denormalizers', () => {
-    expect(getProjectStatusLabel('completed')).toBe('已完成');
-    expect(getProjectRiskLevelLabel('high')).toBe('高');
-    expect(getProjectQualifiedFlagLabel('yes')).toBe('是');
-    expect(denormalizeProjectStatus('completed')).toBe('已完成');
-    expect(denormalizeProjectRiskLevel('medium')).toBe('中');
-    expect(denormalizeProjectQualifiedFlag('no')).toBe('否');
-    expect(denormalizeProjectStatus('custom-status')).toBe('custom-status');
+  it('keeps Chinese isolated to label helpers while storage values stay in English', () => {
+    expect(getProjectStatusLabel('completed')).toBe('\u5df2\u5b8c\u6210');
+    expect(getProjectRiskLevelLabel('high')).toBe('\u9ad8\u98ce\u9669');
+    expect(getProjectQualifiedFlagLabel('yes')).toBe('\u662f');
+
+    expect(toProjectStatusMachineValue('\u5df2\u5b8c\u6210')).toBe('completed');
+    expect(toProjectRiskLevelMachineValue('\u4e2d')).toBe('medium');
+    expect(toProjectQualifiedFlagMachineValue('\u5426')).toBe('no');
+    expect(toProjectStatusMachineValue('custom-status')).toBe('custom-status');
   });
 
   it('normalizes dashboard filter tokens without exposing delayed as a filter state', () => {
-    expect(normalizeDashboardFilter('已完成')).toBe('completed');
-    expect(normalizeDashboardFilter('超时')).toBe('overdue');
-    expect(normalizeDashboardFilter('进行中')).toBe('ongoing');
+    expect(normalizeDashboardFilter('\u5df2\u5b8c\u6210')).toBe('completed');
+    expect(normalizeDashboardFilter('\u8d85\u65f6')).toBe('overdue');
+    expect(normalizeDashboardFilter('\u8fdb\u884c\u4e2d')).toBe('ongoing');
     expect(normalizeDashboardFilter('delayed')).toBe('ALL');
   });
 
@@ -66,7 +67,7 @@ describe('dashboardProjectState', () => {
         projectEngineer: '',
         moldProject: '',
         qe: '',
-        riskLevel: '高风险',
+        riskLevel: '\u9ad8\u98ce\u9669',
         fitterGroup: '',
         designEngineer: '',
       },
@@ -78,11 +79,11 @@ describe('dashboardProjectState', () => {
         mp: '',
         estimatedCompletion: '',
         currentStage: '',
-        t1SizeQualified: '是',
+        t1SizeQualified: '\u662f',
         trialCount: '',
         toolingFAI: '',
         partFAI: '',
-        currentNode: '进行中',
+        currentNode: '\u8fdb\u884c\u4e2d',
       },
       details: {
         detailSequence: '',
