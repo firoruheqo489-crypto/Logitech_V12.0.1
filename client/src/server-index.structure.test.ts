@@ -93,6 +93,26 @@ describe('server/index.ts structure', () => {
     expect(healthCheckIndex).toBeGreaterThan(clearProjectsIndex);
   });
 
+  it('registers the granular progress note write route before backup and restore tools', async () => {
+    const source = await loadServerIndexSource();
+    const entryRouteIndex = findMatchIndex(
+      source,
+      /app\.post\(["']\/api\/dashboard\/progress-notes\/:moldNumber\/entry["'],\s*upsertProgressNote\);/,
+    );
+    const createBackupIndex = findMatchIndex(
+      source,
+      /app\.post\(["']\/api\/dashboard\/progress-notes\/:moldNumber\/create-backup["'],\s*createProgressBackup\);/,
+    );
+    const restoreLatestIndex = findMatchIndex(
+      source,
+      /app\.post\(["']\/api\/dashboard\/progress-notes\/:moldNumber\/restore-latest["'],\s*restoreLatestProgressNotes\);/,
+    );
+
+    expect(entryRouteIndex).toBeGreaterThanOrEqual(0);
+    expect(createBackupIndex).toBeGreaterThan(entryRouteIndex);
+    expect(restoreLatestIndex).toBeGreaterThan(createBackupIndex);
+  });
+
   it('keeps the dev-api-only fallback on a machine-readable error payload', async () => {
     const source = await loadServerIndexSource();
 

@@ -4,6 +4,7 @@
  * GET    /api/dashboard/progress-notes/:moldNumber — 获取某模具的所有推进记录
  * GET    /api/dashboard/progress-notes/:moldNumber/latest-backup — 获取最近一次备份时间
  * POST   /api/dashboard/progress-notes/:moldNumber — 保存（全量替换）某模具的推进记录
+ * POST   /api/dashboard/progress-notes/:moldNumber/entry — 单条新增/更新推进记录
  * POST   /api/dashboard/progress-notes/:moldNumber/create-backup — 手动创建一次备份
  * POST   /api/dashboard/progress-notes/:moldNumber/restore-latest — 恢复到最近一次备份
  * DELETE /api/dashboard/progress-notes/:moldNumber/:noteId — 删除单条记录
@@ -43,6 +44,7 @@ type ProgressNotesErrorCode =
   | 'DATABASE_NOT_CONFIGURED'
   | 'INTERNAL_ERROR'
   | 'MOLD_NUMBER_REQUIRED'
+  | 'NOTE_ID_REQUIRED'
   | 'SNAPSHOT_DESTRUCTIVE_CONFIRMATION_REQUIRED';
 
 const BACKUP_KEEP_LIMIT_PER_MOLD = 30;
@@ -52,6 +54,7 @@ const PROGRESS_NOTES_ERROR_MESSAGES: Record<ProgressNotesErrorCode, string> = {
   DATABASE_NOT_CONFIGURED: 'database not configured',
   INTERNAL_ERROR: 'internal server error',
   MOLD_NUMBER_REQUIRED: 'moldNumber required',
+  NOTE_ID_REQUIRED: 'noteId required',
   SNAPSHOT_DESTRUCTIVE_CONFIRMATION_REQUIRED: 'destructive snapshot confirmation required',
 };
 
@@ -71,6 +74,18 @@ export type SnapshotMutationRisk = {
   deletedCount: number;
   reason: SnapshotMutationRiskReason;
   requiresConfirmation: boolean;
+};
+
+type BackupSnapshotRow = {
+  id?: number | string | null;
+  snapshot?: BackupEntry[] | string | null;
+  created_at?: string | Date | null;
+};
+
+export type RestorableBackup = {
+  id: number;
+  backupAt: string;
+  snapshot: BackupEntry[];
 };
 
 let progressBackupTableReady: Promise<void> | null = null;
@@ -161,6 +176,10 @@ function toDateObject(value: unknown): Date | undefined {
 
   const parsed = new Date(iso);
   return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+}
+
+function isProgressNotePayload(value: unknown): value is ProgressNotePayload {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
 }
 
 function readSnapshotConfirmation(req: Request): string {
@@ -335,6 +354,88 @@ function normalizeEntryPayload(entry: ProgressNotePayload | BackupEntry): Backup
   };
 }
 
+function normalizeBackupSnapshot(snapshot: unknown): BackupEntry[] | null {
+  let parsed = snapshot;
+  if (typeof snapshot === 'string') {
+    try {
+      parsed = JSON.parse(snapshot || '[]');
+    } catch {
+      return null;
+    }
+  }
+
+  if (!Array.isArray(parsed)) {
+    return null;
+  }
+
+  const normalized: BackupEntry[] = [];
+  for (const entry of parsed) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+      return null;
+    }
+    normalized.push(normalizeEntryPayload(entry as BackupEntry));
+  }
+
+  return normalized;
+}
+
+function countDeletedSnapshotEntries(beforeEntries: BackupEntry[], afterEntries: BackupEntry[]): number {
+  const afterIds = new Set(
+    afterEntries
+      .map((entry) => entry.id)
+      .filter((id): id is string => typeof id === 'string' && id.trim().length > 0),
+  );
+
+  return beforeEntries.reduce((count, entry) => (
+    afterIds.has(entry.id) ? count : count + 1
+  ), 0);
+}
+
+export function selectLatestRestorableBackup(rows: BackupSnapshotRow[]): RestorableBackup | null {
+  for (let index = 0; index < rows.length; index += 1) {
+    const candidateRow = rows[index];
+    const candidateSnapshot = normalizeBackupSnapshot(candidateRow?.snapshot);
+    if (!candidateSnapshot || candidateSnapshot.length === 0) {
+      continue;
+    }
+
+    let olderSnapshot: BackupEntry[] | null = null;
+    for (let olderIndex = index + 1; olderIndex < rows.length; olderIndex += 1) {
+      const parsedOlderSnapshot = normalizeBackupSnapshot(rows[olderIndex]?.snapshot);
+      if (parsedOlderSnapshot && parsedOlderSnapshot.length > 0) {
+        olderSnapshot = parsedOlderSnapshot;
+        break;
+      }
+    }
+
+    if (olderSnapshot) {
+      const deletedCount = countDeletedSnapshotEntries(olderSnapshot, candidateSnapshot);
+      const risk = assessProgressSnapshotRisk({
+        beforeCount: olderSnapshot.length,
+        afterCount: candidateSnapshot.length,
+        deletedCount,
+      });
+
+      if (risk.requiresConfirmation) {
+        continue;
+      }
+    }
+
+    const backupId = Number(candidateRow?.id);
+    if (!Number.isFinite(backupId)) {
+      continue;
+    }
+
+    return {
+      id: Math.trunc(backupId),
+      backupAt: toIsoTimestamp(candidateRow?.created_at),
+      snapshot: candidateSnapshot,
+    };
+  }
+
+  return null;
+}
+
 function entriesEqual(a: BackupEntry, b: BackupEntry): boolean {
   return a.id === b.id
     && a.date === b.date
@@ -369,7 +470,7 @@ async function backupCurrentNotes(moldNumber: string): Promise<boolean> {
   });
 
   const latestRows = await dbSql.unsafe(
-    'SELECT snapshot FROM progress_note_backups WHERE mold_number = $1 ORDER BY created_at DESC LIMIT 1',
+    'SELECT snapshot FROM progress_note_backups WHERE mold_number = $1 ORDER BY created_at DESC, id DESC LIMIT 1',
     [moldNumber]
   );
   const latestRaw = latestRows?.[0] as { snapshot?: BackupEntry[] | string } | undefined;
@@ -402,6 +503,34 @@ async function backupCurrentNotes(moldNumber: string): Promise<boolean> {
   );
 
   return true;
+}
+
+async function getLatestBackupTimestamp(moldNumber: string): Promise<string | null> {
+  if (!dbSql) return null;
+
+  const rows = await dbSql.unsafe(
+    'SELECT created_at FROM progress_note_backups WHERE mold_number = $1 ORDER BY created_at DESC, id DESC LIMIT 1',
+    [moldNumber],
+  );
+  const latest = rows?.[0] as { created_at?: string } | undefined;
+  return latest?.created_at || null;
+}
+
+async function getLatestRestorableBackup(moldNumber: string): Promise<RestorableBackup | null> {
+  if (!dbSql) return null;
+
+  const rows = await dbSql.unsafe(
+    `
+      SELECT id, snapshot, created_at
+      FROM progress_note_backups
+      WHERE mold_number = $1
+      ORDER BY created_at DESC, id DESC
+      LIMIT ${BACKUP_KEEP_LIMIT_PER_MOLD}
+    `,
+    [moldNumber],
+  );
+
+  return selectLatestRestorableBackup(rows as BackupSnapshotRow[]);
 }
 
 type NoteAuditTimestamps = {
@@ -455,12 +584,8 @@ export async function getLatestProgressBackup(req: Request, res: Response): Prom
   if (!moldNumber) { sendProgressNotesError(res, 400, 'MOLD_NUMBER_REQUIRED'); return; }
   try {
     await ensureBackupTable();
-    const rows = await dbSql.unsafe(
-      'SELECT created_at FROM progress_note_backups WHERE mold_number = $1 ORDER BY created_at DESC LIMIT 1',
-      [moldNumber]
-    );
-    const latest = rows?.[0] as { created_at?: string } | undefined;
-    res.json({ backupAt: latest?.created_at ? toIsoTimestamp(latest.created_at) : null });
+    const latest = await getLatestRestorableBackup(moldNumber);
+    res.json({ backupAt: latest?.backupAt || null, backupId: latest?.id ?? null });
   } catch (err) {
     console.error('GET latest-backup progress-notes error:', err);
     sendProgressNotesError(res, 500, 'INTERNAL_ERROR');
@@ -539,11 +664,7 @@ export async function saveProgressNotes(req: Request, res: Response): Promise<vo
     }
 
     const backupCreated = await backupCurrentNotes(moldNumber);
-    const backupRows = await dbSql?.unsafe(
-      'SELECT created_at FROM progress_note_backups WHERE mold_number = $1 ORDER BY created_at DESC LIMIT 1',
-      [moldNumber],
-    );
-    const latestBackupAt = (backupRows?.[0] as { created_at?: string } | undefined)?.created_at || null;
+    const latestBackupAt = await getLatestBackupTimestamp(moldNumber);
 
     await db.transaction(async (tx) => {
       if (incomingIds.length === 0) {
@@ -639,6 +760,88 @@ export async function saveProgressNotes(req: Request, res: Response): Promise<vo
   }
 }
 
+/** POST /api/dashboard/progress-notes/:moldNumber/entry — single entry upsert */
+export async function upsertProgressNote(req: Request, res: Response): Promise<void> {
+  if (!db) { sendProgressNotesError(res, 503, 'DATABASE_NOT_CONFIGURED'); return; }
+  const { moldNumber } = req.params;
+  if (!moldNumber) { sendProgressNotesError(res, 400, 'MOLD_NUMBER_REQUIRED'); return; }
+
+  const entry = normalizeEntryPayload(
+    isProgressNotePayload(req.body)
+      ? req.body
+      : { id: '', date: '', content: '' },
+  );
+  if (!entry.id) { sendProgressNotesError(res, 400, 'NOTE_ID_REQUIRED'); return; }
+
+  try {
+    await ensureBackupTable();
+    const backupCreated = await backupCurrentNotes(moldNumber);
+    const latestBackupAt = await getLatestBackupTimestamp(moldNumber);
+
+    const beforeRows = await db.select().from(progressNotes).where(
+      and(eq(progressNotes.id, entry.id), eq(progressNotes.moldNumber, moldNumber)),
+    ).limit(1);
+    const before = beforeRows[0];
+    const row = buildProgressNoteRow(
+      moldNumber,
+      entry,
+      before?.createdAt ?? toDateObject(entry.createdAt),
+    );
+
+    await db.insert(progressNotes).values(row).onConflictDoUpdate({
+      target: progressNotes.id,
+      set: {
+        moldNumber: row.moldNumber,
+        date: row.date,
+        content: row.content,
+      },
+    });
+
+    const operator = getOperator(req);
+    const ipAddress = getClientIp(req);
+
+    if (!before) {
+      await writeProgressAuditLog({
+        moldNumber,
+        noteId: entry.id,
+        action: 'create-entry',
+        operator,
+        ipAddress,
+        oldPayload: null,
+        newPayload: entry,
+      });
+    } else {
+      const decoded = decodeNoteContent(before.content);
+      const beforeEntry = normalizeEntryPayload({
+        id: before.id,
+        date: before.date,
+        content: decoded.content,
+        imageUrl: decoded.imageUrl,
+        assignee: decoded.assignee,
+        estimatedNodeCompletion: decoded.estimatedNodeCompletion,
+        createdAt: before.createdAt instanceof Date ? before.createdAt.toISOString() : String(before.createdAt || ''),
+      });
+
+      if (!entriesEqual(beforeEntry, entry)) {
+        await writeProgressAuditLog({
+          moldNumber,
+          noteId: entry.id,
+          action: classifyUpdateAction(beforeEntry, entry),
+          operator,
+          ipAddress,
+          oldPayload: beforeEntry,
+          newPayload: entry,
+        });
+      }
+    }
+
+    res.json({ success: true, backupCreated, backupAt: latestBackupAt, entry });
+  } catch (err) {
+    console.error('POST upsert progress-note error:', err);
+    sendProgressNotesError(res, 500, 'INTERNAL_ERROR');
+  }
+}
+
 /** POST /api/dashboard/progress-notes/:moldNumber/create-backup */
 export async function createProgressBackup(req: Request, res: Response): Promise<void> {
   if (!dbSql) { sendProgressNotesError(res, 503, 'DATABASE_NOT_CONFIGURED'); return; }
@@ -667,21 +870,13 @@ export async function restoreLatestProgressNotes(req: Request, res: Response): P
 
   try {
     await ensureBackupTable();
-    const backups = await dbSql.unsafe(
-      'SELECT snapshot, created_at FROM progress_note_backups WHERE mold_number = $1 ORDER BY created_at DESC LIMIT 1',
-      [moldNumber]
-    );
-
-    if (!backups.length) {
+    const backup = await getLatestRestorableBackup(moldNumber);
+    if (!backup) {
       sendProgressNotesError(res, 404, 'BACKUP_NOT_FOUND');
       return;
     }
 
-    const latest = backups[0] as unknown as { snapshot: BackupEntry[] | string; created_at: string };
-    const snapshot: BackupEntry[] = Array.isArray(latest.snapshot)
-      ? latest.snapshot
-      : JSON.parse(String(latest.snapshot || '[]'));
-    const normalizedSnapshot = snapshot.map((entry) => normalizeEntryPayload(entry));
+    const normalizedSnapshot = backup.snapshot.map((entry) => normalizeEntryPayload(entry));
     const incomingIds = normalizedSnapshot
       .map((entry) => entry.id)
       .filter((id): id is string => typeof id === 'string' && id.trim().length > 0);
@@ -725,10 +920,10 @@ export async function restoreLatestProgressNotes(req: Request, res: Response): P
       operator: getOperator(req),
       ipAddress: getClientIp(req),
       oldPayload: null,
-      newPayload: { restoredCount: snapshot.length, backupAt: latest.created_at },
+      newPayload: { restoredCount: normalizedSnapshot.length, backupAt: backup.backupAt, backupId: backup.id },
     });
 
-    res.json({ success: true, restoredCount: snapshot.length, backupAt: toIsoTimestamp(latest.created_at) });
+    res.json({ success: true, restoredCount: normalizedSnapshot.length, backupAt: backup.backupAt, backupId: backup.id });
   } catch (err) {
     console.error('POST restore-latest progress-notes error:', err);
     sendProgressNotesError(res, 500, 'INTERNAL_ERROR');
@@ -739,9 +934,12 @@ export async function restoreLatestProgressNotes(req: Request, res: Response): P
 export async function deleteProgressNote(req: Request, res: Response): Promise<void> {
   if (!db) { sendProgressNotesError(res, 503, 'DATABASE_NOT_CONFIGURED'); return; }
   const { moldNumber, noteId } = req.params;
+  if (!moldNumber) { sendProgressNotesError(res, 400, 'MOLD_NUMBER_REQUIRED'); return; }
+  if (!noteId) { sendProgressNotesError(res, 400, 'NOTE_ID_REQUIRED'); return; }
   try {
     await ensureBackupTable();
-    await backupCurrentNotes(moldNumber);
+    const backupCreated = await backupCurrentNotes(moldNumber);
+    const latestBackupAt = await getLatestBackupTimestamp(moldNumber);
 
     const beforeRows = await db.select().from(progressNotes).where(
       and(eq(progressNotes.id, noteId), eq(progressNotes.moldNumber, moldNumber))
@@ -770,7 +968,7 @@ export async function deleteProgressNote(req: Request, res: Response): Promise<v
       });
     }
 
-    res.json({ success: true });
+    res.json({ success: true, backupCreated, backupAt: latestBackupAt });
   } catch (err) {
     console.error('DELETE progress-note error:', err);
     sendProgressNotesError(res, 500, 'INTERNAL_ERROR');

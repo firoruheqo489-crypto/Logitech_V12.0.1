@@ -14,7 +14,7 @@ import { getGanttDataHandler, postGanttImportHandler, patchProjectImageHandler, 
 import { listDashboardProjects, getDashboardProject, batchReplaceDashboardProjects, clearDashboardProjects, getDashboardHealthCheck, getLatestDashboardHealthCheck, runDashboardHealthCheck, ensureDashboardHealthTable, ensureDashboardModuleOrderTable } from "./routes/dashboard.js";
 import { listDashboardProjectAssets, upsertDashboardProjectAsset, deleteDashboardProjectAsset, ensureDashboardProjectAssetsTable } from "./routes/dashboard-assets.js";
 import { listDashboardProductData, batchUpsertDashboardProductData, ensureDashboardProductDataTable } from "./routes/dashboard-product-data.js";
-import { getProgressNotes, getLatestProgressBackup, saveProgressNotes, createProgressBackup, restoreLatestProgressNotes, deleteProgressNote, getProgressNoteAuditLogs, ensureBackupTable, ensureProgressAuditTable } from "./routes/progress-notes.js";
+import { getProgressNotes, getLatestProgressBackup, saveProgressNotes, upsertProgressNote, createProgressBackup, restoreLatestProgressNotes, deleteProgressNote, getProgressNoteAuditLogs, ensureBackupTable, ensureProgressAuditTable } from "./routes/progress-notes.js";
 import { getTasksForSCurve } from "./routes/tasks.js";
 import { db, sql } from "./db.js";
 
@@ -85,6 +85,7 @@ async function startServer() {
   app.get("/api/dashboard/progress-notes/:moldNumber", getProgressNotes);
   app.get("/api/dashboard/progress-notes/:moldNumber/latest-backup", getLatestProgressBackup);
   app.post("/api/dashboard/progress-notes/:moldNumber", saveProgressNotes);
+  app.post("/api/dashboard/progress-notes/:moldNumber/entry", upsertProgressNote);
   app.post("/api/dashboard/progress-notes/:moldNumber/create-backup", createProgressBackup);
   app.post("/api/dashboard/progress-notes/:moldNumber/restore-latest", restoreLatestProgressNotes);
   app.delete("/api/dashboard/progress-notes/:moldNumber/:noteId", deleteProgressNote);

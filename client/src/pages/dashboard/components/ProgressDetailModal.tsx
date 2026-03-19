@@ -44,11 +44,22 @@ async function loadEntries(moldNumber: string): Promise<ProgressEntry[]> {
   return fetchDashboardProgressEntries(moldNumber);
 }
 
-async function saveEntries(moldNumber: string, entries: ProgressEntry[]) {
-  const res = await apiFetch(`${API_BASE}/${encodeURIComponent(moldNumber)}`, {
+async function upsertEntry(moldNumber: string, entry: ProgressEntry) {
+  const res = await apiFetch(`${API_BASE}/${encodeURIComponent(moldNumber)}/entry`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(entries),
+    body: JSON.stringify(entry),
+  });
+  if (!res.ok) {
+    const payload = await res.json().catch(() => null);
+    throw normalizeDashboardApiError(payload, res.status, 'INTERNAL_ERROR');
+  }
+  return normalizeDashboardProgressSaveResult(await res.json().catch(() => null));
+}
+
+async function deleteEntry(moldNumber: string, entryId: string) {
+  const res = await apiFetch(`${API_BASE}/${encodeURIComponent(moldNumber)}/${encodeURIComponent(entryId)}`, {
+    method: 'DELETE',
   });
   if (!res.ok) {
     const payload = await res.json().catch(() => null);
@@ -271,11 +282,17 @@ export default function ProgressDetailModal({
     setNewAssignee('');
     setNewEstimatedNodeCompletion('');
     try {
-      const result = await saveEntries(moldNumber, updated);
+      const result = await upsertEntry(moldNumber, entry);
       toast.success(result.backupCreated ? '保存成功（已自动创建回滚快照）' : '保存成功（已复用最近快照）');
       if (showAuditPanel) await refreshAuditLogs();
     } catch (err) {
       setEntries(entries);
+      setNewContent(entry.content);
+      setNewDate(entry.date);
+      setNewImageUrl(entry.imageUrl || '');
+      setNewImageSizeKB(entry.imageUrl ? estimateDataUrlSizeKB(entry.imageUrl) : null);
+      setNewAssignee(entry.assignee || '');
+      setNewEstimatedNodeCompletion(entry.estimatedNodeCompletion || '');
       toast.error(getDashboardApiErrorDisplayMessage(err, '保存失败'));
     }
   }, [entries, moldNumber, newContent, newDate, newImageUrl, newAssignee, newEstimatedNodeCompletion, showAuditPanel, refreshAuditLogs]);
@@ -284,7 +301,7 @@ export default function ProgressDetailModal({
     const updated = entries.filter(e => e.id !== id);
     setEntries(updated);
     try {
-      const result = await saveEntries(moldNumber, updated);
+      const result = await deleteEntry(moldNumber, id);
       toast.success(result.backupCreated ? '删除成功（已自动创建回滚快照）' : '删除成功（已复用最近快照）');
       if (showAuditPanel) await refreshAuditLogs();
     } catch (err) {
@@ -294,10 +311,13 @@ export default function ProgressDetailModal({
   }, [entries, moldNumber, showAuditPanel, refreshAuditLogs]);
 
   const handleRemoveImage = useCallback(async (id: string) => {
-    const updated = entries.map(e => (e.id === id ? { ...e, imageUrl: undefined } : e));
+    const targetEntry = entries.find((entry) => entry.id === id);
+    if (!targetEntry) return;
+    const updatedEntry = { ...targetEntry, imageUrl: undefined };
+    const updated = entries.map(e => (e.id === id ? updatedEntry : e));
     setEntries(updated);
     try {
-      const result = await saveEntries(moldNumber, updated);
+      const result = await upsertEntry(moldNumber, updatedEntry);
       toast.success(result.backupCreated ? '删除图片成功（已自动创建回滚快照）' : '删除图片成功（已复用最近快照）');
       if (showAuditPanel) await refreshAuditLogs();
     } catch (err) {
@@ -318,13 +338,23 @@ export default function ProgressDetailModal({
 
   const handleEditSave = useCallback(async () => {
     if (!editingId || !editContent.trim()) return;
+    const existingEntry = entries.find((entry) => entry.id === editingId);
+    if (!existingEntry) return;
+    const updatedEntry: ProgressEntry = {
+      ...existingEntry,
+      content: editContent.trim(),
+      date: editDate,
+      imageUrl: editImageUrl || undefined,
+      assignee: editAssignee.trim() || undefined,
+      estimatedNodeCompletion: editEstimatedNodeCompletion || undefined,
+    };
     const updated = entries.map(e =>
-      e.id === editingId ? { ...e, content: editContent.trim(), date: editDate, imageUrl: editImageUrl || undefined, assignee: editAssignee.trim() || undefined, estimatedNodeCompletion: editEstimatedNodeCompletion || undefined } : e
+      e.id === editingId ? updatedEntry : e
     ).sort((a, b) => b.date.localeCompare(a.date));
     setEntries(updated);
-    setEditingId(null);
     try {
-      const result = await saveEntries(moldNumber, updated);
+      const result = await upsertEntry(moldNumber, updatedEntry);
+      setEditingId(null);
       toast.success(result.backupCreated ? '更新成功（已自动创建回滚快照）' : '更新成功（已复用最近快照）');
       if (showAuditPanel) await refreshAuditLogs();
     } catch (err) {

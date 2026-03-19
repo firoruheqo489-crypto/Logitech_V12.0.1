@@ -29,4 +29,16 @@ describe('dashboard asset api errors', () => {
 
     expect(getDashboardApiErrorDisplayMessage(error, 'fallback')).toBe('Missing mold number or slot type for delete');
   });
+
+  it('maps destructive snapshot blocks to a safe display message', () => {
+    const error = new DashboardApiError(
+      'destructive snapshot confirmation required',
+      'SNAPSHOT_DESTRUCTIVE_CONFIRMATION_REQUIRED',
+      409,
+    );
+
+    expect(getDashboardApiErrorDisplayMessage(error, 'fallback')).toBe(
+      'The server blocked this snapshot because it would remove too many progress notes at once',
+    );
+  });
 });

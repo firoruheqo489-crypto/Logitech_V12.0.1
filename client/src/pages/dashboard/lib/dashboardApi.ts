@@ -60,6 +60,7 @@ export type DashboardApiErrorCode =
   | 'PROJECT_ASSET_DELETE_FAILED'
   | 'PROJECT_ASSET_SAVE_FAILED'
   | 'PROJECT_ASSETS_LOAD_FAILED'
+  | 'SNAPSHOT_DESTRUCTIVE_CONFIRMATION_REQUIRED'
   | 'UNKNOWN_ERROR';
 
 const DASHBOARD_API_ERROR_CODES = new Set<DashboardApiErrorCode>([
@@ -76,6 +77,7 @@ const DASHBOARD_API_ERROR_CODES = new Set<DashboardApiErrorCode>([
   'PROJECT_ASSET_DELETE_FAILED',
   'PROJECT_ASSET_SAVE_FAILED',
   'PROJECT_ASSETS_LOAD_FAILED',
+  'SNAPSHOT_DESTRUCTIVE_CONFIRMATION_REQUIRED',
   'UNKNOWN_ERROR',
 ]);
 
@@ -277,6 +279,8 @@ export function getDashboardApiErrorDisplayMessage(error: unknown, fallbackMessa
         return 'Image save failed, please retry';
       case 'PROJECT_ASSETS_LOAD_FAILED':
         return 'Image load failed, please retry';
+      case 'SNAPSHOT_DESTRUCTIVE_CONFIRMATION_REQUIRED':
+        return 'The server blocked this snapshot because it would remove too many progress notes at once';
       case 'UNKNOWN_ERROR':
         break;
     }
