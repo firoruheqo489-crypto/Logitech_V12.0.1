@@ -25,6 +25,14 @@ describe('server/index.ts structure', () => {
     );
   });
 
+  it('imports the release metadata handler from the shared server module', async () => {
+    const source = await loadServerIndexSource();
+
+    expect(source).toMatch(
+      /import\s*\{\s*getReleaseInfoHandler\s*\}\s*from\s*["']\.\/release\.js["'];/,
+    );
+  });
+
   it('registers the shared api access policy before api routes are declared', async () => {
     const source = await loadServerIndexSource();
     const securityHeadersIndex = findMatchIndex(source, /app\.use\(securityHeaders\);/);
@@ -51,6 +59,18 @@ describe('server/index.ts structure', () => {
     expect(source).not.toContain('Access-Control-Allow-Headers');
     expect(source).not.toContain('Access-Control-Allow-Credentials');
     expect(source).not.toContain('CORS origin denied');
+  });
+
+  it('registers the release metadata route before the health route', async () => {
+    const source = await loadServerIndexSource();
+    const releaseRouteIndex = findMatchIndex(
+      source,
+      /app\.get\(["']\/api\/release["'],\s*getReleaseInfoHandler\);/,
+    );
+    const healthRouteIndex = findMatchIndex(source, /app\.get\(["']\/api\/health["']/);
+
+    expect(releaseRouteIndex).toBeGreaterThanOrEqual(0);
+    expect(healthRouteIndex).toBeGreaterThan(releaseRouteIndex);
   });
 
   it('keeps the dashboard clear route in the verified route cluster order', async () => {

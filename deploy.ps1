@@ -112,6 +112,30 @@ function RequireCleanGitWorkspace() {
     }
 }
 
+function Fail-DeploymentWithRollback([string]$FailureMessage) {
+    Warn "$FailureMessage Attempting rollback..."
+    $primaryApp = $PM2_APPS[0]
+    $rollbackCmd = @(
+        "if [ -d /var/www/logitech/dist.prev ]; then rm -rf /var/www/logitech/dist && mv /var/www/logitech/dist.prev /var/www/logitech/dist && pm2 restart ${primaryApp} --update-env && echo ROLLED_BACK; else echo NO_BACKUP; fi",
+        "pm2 logs ${primaryApp} --lines 30 --nostream || true"
+    ) -join " ; "
+    ssh $DEST $rollbackCmd
+    Err "$FailureMessage Rollback was attempted."
+}
+
+function Read-RemoteJson([string]$RemoteCommand, [string]$FailureMessage) {
+    $response = ssh $DEST $RemoteCommand
+    if ($LASTEXITCODE -ne 0 -or -not $response) {
+        Fail-DeploymentWithRollback $FailureMessage
+    }
+
+    try {
+        return ($response | ConvertFrom-Json)
+    } catch {
+        Fail-DeploymentWithRollback "$FailureMessage Raw response: $response"
+    }
+}
+
 $ResolvedDeployRoot = Resolve-DeployRoot
 Sync-DeployRootCommit $ResolvedDeployRoot
 Log "Deploy root: $ResolvedDeployRoot"
@@ -126,6 +150,8 @@ try {
         Err "Version bump during deploy is disabled for release safety. Commit the bumped version first, then redeploy with -VersionBump none."
     }
 
+    $DEPLOY_COMMIT_FULL = (git rev-parse HEAD).Trim()
+    if ($LASTEXITCODE -ne 0 -or -not $DEPLOY_COMMIT_FULL) { Err "Failed to resolve the full deploy commit" }
     $DEPLOY_COMMIT = (git rev-parse --short HEAD).Trim()
     if ($LASTEXITCODE -ne 0 -or -not $DEPLOY_COMMIT) { Err "Failed to resolve the deploy commit" }
     Log "Deploying committed tree at ${DEPLOY_COMMIT}"
@@ -133,8 +159,11 @@ try {
     # ======================== Step 1: local verification and build ========================
     Invoke-ReleaseCommand "Running TypeScript verification..." { pnpm exec tsc --noEmit } "TypeScript verification failed"
     Invoke-ReleaseCommand "Running client release structure guard tests..." { pnpm exec vitest run client/src/server-index.structure.test.ts client/src/server-error-payload.structure.test.ts } "Client release structure guard tests failed"
-    Invoke-ReleaseCommand "Running server access policy guard tests..." { pnpm exec vitest run --root . server/middleware/apiCors.test.ts server/middleware/apiAccessPolicy.test.ts } "Server access policy guard tests failed"
+    Invoke-ReleaseCommand "Running server release guard tests..." { pnpm exec vitest run --root . server/middleware/apiCors.test.ts server/middleware/apiAccessPolicy.test.ts server/release.test.ts server/routes/progress-notes-guard.test.ts } "Server release guard tests failed"
     Invoke-ReleaseCommand "Starting local build..." { pnpm build } "Build failed"
+    if (-not (Test-Path "dist\\release.json")) {
+        Err "Build did not produce dist/release.json"
+    }
     Log "Build complete -> dist/"
 
     # ======================== Step 2: upload files ========================
@@ -210,15 +239,28 @@ try {
     }
 
     if (-not $healthOk) {
-        Warn "Health check failed, attempting rollback..."
-        $primaryApp = $PM2_APPS[0]
-        $rollbackCmd = @(
-            "if [ -d /var/www/logitech/dist.prev ]; then rm -rf /var/www/logitech/dist && mv /var/www/logitech/dist.prev /var/www/logitech/dist && pm2 restart ${primaryApp} --update-env && echo ROLLED_BACK; else echo NO_BACKUP; fi",
-            "pm2 logs ${primaryApp} --lines 30 --nostream || true"
-        ) -join " ; "
-        ssh $DEST $rollbackCmd
-        Err "Deployment failed and rollback was attempted"
+        Fail-DeploymentWithRollback "Deployment health check failed."
     }
+
+    Log "Verifying remote release metadata..."
+    $remoteRelease = Read-RemoteJson "curl -fsS http://127.0.0.1:3000/api/release" "Failed to read remote /api/release."
+    $remoteCommit = [string]$remoteRelease.commit
+    if (-not $remoteCommit) {
+        Fail-DeploymentWithRollback "Remote /api/release did not include a commit hash."
+    }
+    if ($remoteCommit -ne $DEPLOY_COMMIT_FULL) {
+        Write-Host "Expected commit: $DEPLOY_COMMIT_FULL" -ForegroundColor Yellow
+        Write-Host "Remote commit:   $remoteCommit" -ForegroundColor Yellow
+        Fail-DeploymentWithRollback "Remote running version does not match the deployed commit."
+    }
+    Log "Remote release verified: $($remoteRelease.commitShort)"
+
+    Log "Running same-origin write smoke test..."
+    $sameOriginSmoke = Read-RemoteJson "curl -fsS -X POST 'http://127.0.0.1:3000/api/dashboard/progress-notes/CODEX_DEPLOY_PROBE/create-backup' -H 'Host: 120.27.153.140' -H 'Origin: http://120.27.153.140' -H 'Referer: http://120.27.153.140/dashboard'" "Same-origin write smoke test failed."
+    if (-not $sameOriginSmoke.success) {
+        Fail-DeploymentWithRollback "Same-origin write smoke test returned a non-success payload."
+    }
+    Log "Same-origin write smoke test passed"
 
     # ======================== Done ========================
     Write-Host ""

@@ -42,7 +42,8 @@ type ProgressNotesErrorCode =
   | 'BODY_MUST_BE_ARRAY'
   | 'DATABASE_NOT_CONFIGURED'
   | 'INTERNAL_ERROR'
-  | 'MOLD_NUMBER_REQUIRED';
+  | 'MOLD_NUMBER_REQUIRED'
+  | 'SNAPSHOT_DESTRUCTIVE_CONFIRMATION_REQUIRED';
 
 const BACKUP_KEEP_LIMIT_PER_MOLD = 30;
 const PROGRESS_NOTES_ERROR_MESSAGES: Record<ProgressNotesErrorCode, string> = {
@@ -51,6 +52,25 @@ const PROGRESS_NOTES_ERROR_MESSAGES: Record<ProgressNotesErrorCode, string> = {
   DATABASE_NOT_CONFIGURED: 'database not configured',
   INTERNAL_ERROR: 'internal server error',
   MOLD_NUMBER_REQUIRED: 'moldNumber required',
+  SNAPSHOT_DESTRUCTIVE_CONFIRMATION_REQUIRED: 'destructive snapshot confirmation required',
+};
+
+export const SNAPSHOT_DESTRUCTIVE_CONFIRMATION_HEADER = 'x-snapshot-confirmation';
+export const SNAPSHOT_DESTRUCTIVE_CONFIRMATION_VALUE = 'allow-destructive';
+
+const SNAPSHOT_CLEAR_ALL_MIN_COUNT = 2;
+const SNAPSHOT_MAJORITY_DELETE_MIN_BASELINE = 4;
+const SNAPSHOT_MAJORITY_DELETE_MIN_COUNT = 3;
+const SNAPSHOT_MAJORITY_DELETE_RATIO = 0.5;
+
+type SnapshotMutationRiskReason = 'none' | 'clear-all' | 'majority-delete';
+
+export type SnapshotMutationRisk = {
+  beforeCount: number;
+  afterCount: number;
+  deletedCount: number;
+  reason: SnapshotMutationRiskReason;
+  requiresConfirmation: boolean;
 };
 
 let progressBackupTableReady: Promise<void> | null = null;
@@ -60,6 +80,21 @@ function sendProgressNotesError(res: Response, status: number, code: ProgressNot
   res.status(status).json({
     error: PROGRESS_NOTES_ERROR_MESSAGES[code],
     code,
+  });
+}
+
+function sendSnapshotDestructiveConfirmationRequired(res: Response, risk: SnapshotMutationRisk): void {
+  res.status(409).json({
+    error: PROGRESS_NOTES_ERROR_MESSAGES.SNAPSHOT_DESTRUCTIVE_CONFIRMATION_REQUIRED,
+    code: 'SNAPSHOT_DESTRUCTIVE_CONFIRMATION_REQUIRED',
+    beforeCount: risk.beforeCount,
+    afterCount: risk.afterCount,
+    deletedCount: risk.deletedCount,
+    reason: risk.reason,
+    confirmation: {
+      header: SNAPSHOT_DESTRUCTIVE_CONFIRMATION_HEADER,
+      value: SNAPSHOT_DESTRUCTIVE_CONFIRMATION_VALUE,
+    },
   });
 }
 
@@ -126,6 +161,64 @@ function toDateObject(value: unknown): Date | undefined {
 
   const parsed = new Date(iso);
   return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+}
+
+function readSnapshotConfirmation(req: Request): string {
+  const rawValue = req.headers[SNAPSHOT_DESTRUCTIVE_CONFIRMATION_HEADER];
+  if (typeof rawValue === 'string') {
+    return rawValue.trim();
+  }
+  if (Array.isArray(rawValue)) {
+    return String(rawValue[0] || '').trim();
+  }
+  return '';
+}
+
+function hasDestructiveSnapshotConfirmation(req: Request): boolean {
+  return readSnapshotConfirmation(req) === SNAPSHOT_DESTRUCTIVE_CONFIRMATION_VALUE;
+}
+
+export function assessProgressSnapshotRisk(input: {
+  beforeCount: number;
+  afterCount: number;
+  deletedCount: number;
+}): SnapshotMutationRisk {
+  const beforeCount = Math.max(0, Math.trunc(input.beforeCount));
+  const afterCount = Math.max(0, Math.trunc(input.afterCount));
+  const deletedCount = Math.max(0, Math.trunc(input.deletedCount));
+
+  if (beforeCount >= SNAPSHOT_CLEAR_ALL_MIN_COUNT && afterCount === 0 && deletedCount >= beforeCount) {
+    return {
+      beforeCount,
+      afterCount,
+      deletedCount,
+      reason: 'clear-all',
+      requiresConfirmation: true,
+    };
+  }
+
+  const deleteRatio = beforeCount > 0 ? deletedCount / beforeCount : 0;
+  if (
+    beforeCount >= SNAPSHOT_MAJORITY_DELETE_MIN_BASELINE
+    && deletedCount >= SNAPSHOT_MAJORITY_DELETE_MIN_COUNT
+    && deleteRatio >= SNAPSHOT_MAJORITY_DELETE_RATIO
+  ) {
+    return {
+      beforeCount,
+      afterCount,
+      deletedCount,
+      reason: 'majority-delete',
+      requiresConfirmation: true,
+    };
+  }
+
+  return {
+    beforeCount,
+    afterCount,
+    deletedCount,
+    reason: 'none',
+    requiresConfirmation: false,
+  };
 }
 
 function buildProgressNoteRow(
@@ -430,6 +523,20 @@ export async function saveProgressNotes(req: Request, res: Response): Promise<vo
     const incomingIds = normalizedEntries
       .map((entry) => entry.id)
       .filter((id): id is string => typeof id === 'string' && id.trim().length > 0);
+    const incomingIdSet = new Set(incomingIds);
+    const deletedCount = beforeRows.reduce((count, row) => (
+      incomingIdSet.has(row.id) ? count : count + 1
+    ), 0);
+    const snapshotRisk = assessProgressSnapshotRisk({
+      beforeCount: beforeRows.length,
+      afterCount: normalizedEntries.length,
+      deletedCount,
+    });
+
+    if (snapshotRisk.requiresConfirmation && !hasDestructiveSnapshotConfirmation(req)) {
+      sendSnapshotDestructiveConfirmationRequired(res, snapshotRisk);
+      return;
+    }
 
     const backupCreated = await backupCurrentNotes(moldNumber);
     const backupRows = await dbSql?.unsafe(

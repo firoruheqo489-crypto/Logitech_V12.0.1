@@ -9,6 +9,7 @@ import express from "express";
 import { createServer } from "http";
 import { registerApiAccessPolicy } from "./middleware/apiAccessPolicy.js";
 import { securityHeaders } from "./middleware/security.js";
+import { getReleaseInfoHandler } from "./release.js";
 import { getGanttDataHandler, postGanttImportHandler, patchProjectImageHandler, checkProjectExistsHandler, deleteGanttProject, getTaskEvidenceHandler, postTaskEvidenceHandler, deleteEvidenceHandler, getProjectEvidenceCountsHandler } from "./routes/gantt.js";
 import { listDashboardProjects, getDashboardProject, batchReplaceDashboardProjects, clearDashboardProjects, getDashboardHealthCheck, getLatestDashboardHealthCheck, runDashboardHealthCheck, ensureDashboardHealthTable, ensureDashboardModuleOrderTable } from "./routes/dashboard.js";
 import { listDashboardProjectAssets, upsertDashboardProjectAsset, deleteDashboardProjectAsset, ensureDashboardProjectAssetsTable } from "./routes/dashboard-assets.js";
@@ -34,6 +35,7 @@ async function startServer() {
   registerApiAccessPolicy(app);
 
   // 健康检查：用于确认后端与数据库是否可用
+  app.get("/api/release", getReleaseInfoHandler);
   app.get("/api/health", async (_req, res) => {
     if (!db || !sql) {
       res.status(200).json({ ok: true, api: true, db: "missing" });
