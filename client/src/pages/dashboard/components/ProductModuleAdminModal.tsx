@@ -74,7 +74,7 @@ function resolveUploadErrorMessage(error: unknown): string {
     return DATABASE_UPLOAD_ERROR_MESSAGE;
   }
 
-  return normalized;
+  return DEFAULT_UPLOAD_ERROR_MESSAGE;
 }
 
 export function ProductModuleAdminModal({
