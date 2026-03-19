@@ -25,7 +25,6 @@ import {
 import type { TaskNode, TrackGroup, PhaseType } from '@shared/ganttEngine';
 import { PHASE_COLORS } from '@shared/ganttEngine';
 import { calcTaskPerformance } from '@shared/workdays';
-import { getGanttTaskStatusColor, isGanttTaskDone } from '@/lib/ganttTaskStatus';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Hierarchy Types
@@ -305,6 +304,13 @@ function isVisible(item: HierarchyItem, collapsed: Set<string>): boolean {
 // Visual Constants
 // ═══════════════════════════════════════════════════════════════════════════════
 
+const STATUS_COLORS: Record<string, string> = {
+  Done: '#00B894',
+  InProgress: '#FDCB6E',
+  Blocked: '#D63031',
+  NotStart: '#4A5568',
+};
+
 const L2_ICONS: Record<string, React.ReactNode> = {
   'l2:project_prep': <FileText className="w-3.5 h-3.5" />,
   'l2:kaimo': <Wrench className="w-3.5 h-3.5" />,
@@ -498,9 +504,9 @@ export default function GanttV3Sidebar({
           const localIdx = taskRowIdx++;
           const isSelected = task.id === selectedTaskId;
           const isHovered = task.id === hoveredTaskId;
-          const statusColor = getGanttTaskStatusColor(task.status);
+          const statusColor = STATUS_COLORS[task.status] || STATUS_COLORS.NotStart;
           const isOverdue =
-            !isGanttTaskDone(task.status) &&
+            task.status !== 'Done' &&
             new Date(task.baselineEnd) < new Date() &&
             task.progress < 100;
           const isMerge = task.isMergePoint;

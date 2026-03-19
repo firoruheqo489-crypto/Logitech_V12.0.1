@@ -8,17 +8,9 @@
  * - Status & progress visualization
  */
 
-import type { ReactNode } from 'react';
 import type { TaskNode, DependencyEdge, PhaseType } from '@shared/ganttEngine';
 import { PHASE_COLORS } from '@shared/ganttEngine';
 import { formatDateCn, formatDateOrEmpty, calcDelayIntensity } from '@shared/workdays';
-import {
-  getGanttTaskStatusLabel,
-  getGanttTaskStatusTone,
-  isGanttTaskDone,
-  normalizeGanttTaskStatus,
-  type NormalizedGanttTaskStatus,
-} from '@/lib/ganttTaskStatus';
 import EvidenceUpload from './EvidenceUpload';
 import {
   X,
@@ -41,14 +33,6 @@ interface DrawerProps {
   dependencies: DependencyEdge[];
   onClose: () => void;
 }
-
-const STATUS_ICONS: Record<NormalizedGanttTaskStatus, ReactNode> = {
-  completed: <CheckCircle2 className="w-3.5 h-3.5" />,
-  in_progress: <Clock className="w-3.5 h-3.5" />,
-  delayed: <AlertTriangle className="w-3.5 h-3.5" />,
-  blocked: <AlertTriangle className="w-3.5 h-3.5" />,
-  not_started: <Calendar className="w-3.5 h-3.5" />,
-};
 
 const STATUS_CONFIG: Record<
   string,
@@ -88,13 +72,7 @@ export default function GanttV3Drawer({ task, allTasks, dependencies, onClose }:
   if (!task) return null;
 
   const colors = PHASE_COLORS[task.phase as PhaseType] || PHASE_COLORS.physical;
-  const normalizedStatus = normalizeGanttTaskStatus(task.status);
-  const statusTone = getGanttTaskStatusTone(normalizedStatus);
-  const sc = {
-    ...statusTone,
-    label: getGanttTaskStatusLabel(normalizedStatus),
-    icon: STATUS_ICONS[normalizedStatus],
-  };
+  const sc = STATUS_CONFIG[task.status] || STATUS_CONFIG.NotStart;
 
   // Find predecessor tasks
   const predecessorDeps = dependencies.filter((d) => d.taskId === task.id);
@@ -111,7 +89,7 @@ export default function GanttV3Drawer({ task, allTasks, dependencies, onClose }:
     .map((dep) => allTasks.find((t) => t.id === dep.taskId))
     .filter(Boolean) as TaskNode[];
 
-  const isOverdue = !isGanttTaskDone(task.status) && new Date(task.baselineEnd) < new Date() && task.progress < 100;
+  const isOverdue = task.status !== 'Done' && new Date(task.baselineEnd) < new Date() && task.progress < 100;
 
   const getDelayDays = (t: TaskNode): number => {
     if (!t.actualEnd) return 0;
@@ -389,7 +367,7 @@ export default function GanttV3Drawer({ task, allTasks, dependencies, onClose }:
                           {succ.nameCn}
                         </span>
                         <span className="text-[10px] text-white/20" style={{ fontFamily: 'var(--font-mono)' }}>
-                          {getGanttTaskStatusLabel(succ.status)}
+                          {succ.status}
                         </span>
                       </div>
                     );
@@ -404,7 +382,7 @@ export default function GanttV3Drawer({ task, allTasks, dependencies, onClose }:
   );
 }
 
-function SectionTitle({ icon, title }: { icon: ReactNode; title: string }) {
+function SectionTitle({ icon, title }: { icon: React.ReactNode; title: string }) {
   return (
     <div className="flex items-center gap-2">
       <span className="text-white/15">{icon}</span>

@@ -1,6 +1,5 @@
 import type { Request, Response } from 'express';
 import { sql as dbSql } from '../db.js';
-import { deleteAssetFromOssUrl } from '../lib/oss.js';
 
 const SLOT_TYPES = new Set(['product3d', 'product2d', 'productPhoto', 'mold3d', 'moldPhoto']);
 
@@ -38,10 +37,6 @@ function sendDashboardAssetsRouteError(
     error: DASHBOARD_ASSETS_ROUTE_ERROR_MESSAGES[code],
     code,
   });
-}
-
-function logDashboardAssetCleanupWarning(scope: string, error: unknown): void {
-  console.warn(`[dashboard-assets] ${scope} cleanup failed:`, error);
 }
 
 export function ensureDashboardProjectAssetsTable(): Promise<void> {
@@ -114,28 +109,12 @@ export async function upsertDashboardProjectAsset(req: Request, res: Response): 
 
   try {
     await ensureDashboardProjectAssetsTable();
-    const previousRows = (await dbSql`
-      SELECT image_url
-      FROM dashboard_project_assets
-      WHERE mold_number = ${moldNumber} AND slot_type = ${slotType}
-      LIMIT 1
-    `) as Array<{ image_url: string }>;
-    const previousImageUrl = String(previousRows[0]?.image_url || '').trim();
-
     await dbSql`
       INSERT INTO dashboard_project_assets (mold_number, slot_type, image_url, created_at, updated_at)
       VALUES (${moldNumber}, ${slotType}, ${imageUrl.slice(0, 2048)}, NOW(), NOW())
       ON CONFLICT (mold_number, slot_type)
       DO UPDATE SET image_url = EXCLUDED.image_url, updated_at = NOW()
     `;
-
-    if (previousImageUrl && previousImageUrl !== imageUrl) {
-      try {
-        await deleteAssetFromOssUrl(previousImageUrl);
-      } catch (error) {
-        logDashboardAssetCleanupWarning(`${moldNumber}:${slotType}`, error);
-      }
-    }
 
     res.status(200).json({ success: true });
   } catch (err) {
@@ -160,20 +139,10 @@ export async function deleteDashboardProjectAsset(req: Request, res: Response): 
 
   try {
     await ensureDashboardProjectAssetsTable();
-    const deletedRows = (await dbSql`
+    await dbSql`
       DELETE FROM dashboard_project_assets
       WHERE mold_number = ${moldNumber} AND slot_type = ${slotType}
-      RETURNING image_url
-    `) as Array<{ image_url: string }>;
-
-    const deletedUrl = String(deletedRows[0]?.image_url || '').trim();
-    if (deletedUrl) {
-      try {
-        await deleteAssetFromOssUrl(deletedUrl);
-      } catch (error) {
-        logDashboardAssetCleanupWarning(`${moldNumber}:${slotType}`, error);
-      }
-    }
+    `;
 
     res.status(200).json({ success: true });
   } catch (err) {
