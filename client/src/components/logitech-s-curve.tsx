@@ -51,8 +51,8 @@ interface TaskRow {
   is_merge_point?: boolean
 }
 
-/** S 曲线的 5 个里程碑节点定义 */
-interface MilestoneNode {
+// Legacy localized milestone shell retained during handoff cleanup.
+interface LegacyLocalizedMilestoneShell {
   /** Canonical stage IDs used by the engine/import pipeline */
   stageIds: string[]
   /** 对应的进度百分比 */
@@ -63,14 +63,14 @@ interface MilestoneNode {
   shortLabel: string
 }
 
-/** 5 key milestones matched by canonical stage IDs */
-const MILESTONE_NODES: MilestoneNode[] = [
+/* Legacy localized milestone values removed from runtime path.
+const legacyLocalizedMilestoneValues = [
   { stageIds: ['project_launch'], progress: 0, label: '项目立项', shortLabel: 'KO' },
   { stageIds: ['mold_fai_cpk'], progress: 25, label: '模具FAI/CPK', shortLabel: 'FAI' },
   { stageIds: ['t0_summary'], progress: 50, label: 'T0综合报告', shortLabel: 'T0' },
   { stageIds: ['t0_closure_report'], progress: 75, label: 'T0问题闭环', shortLabel: 'T1' },
   { stageIds: ['spc_inspection'], progress: 100, label: '巡检SPC数据', shortLabel: 'SPC' },
-]
+] */
 
 /** A single data point on the S-curve time axis (weekly) */
 interface SCurvePoint {
