@@ -104,6 +104,7 @@ export default function EvidenceUpload({ taskId }: EvidenceUploadProps) {
       });
 
       if (!res.ok) {
+        throw new Error('Evidence save failed');
         const j = await res.json().catch(() => ({}));
         throw new Error(j.error ?? '保存证据记录失败');
       }

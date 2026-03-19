@@ -153,11 +153,15 @@ export default function GanttV3() {
         setImportedData(null);
         toast.success('数据已清除');
       } else {
+        toast.error('Clear failed, please retry');
+        return;
         const err = await res.json().catch(() => ({}));
         toast.error('清除失败: ' + (err.error || res.statusText));
       }
     } catch (e) {
-      toast.error('清除失败: ' + (e instanceof Error ? e.message : '网络错误'));
+      toast.error('Clear failed, please retry');
+      return;
+      toast.error('Clear failed, please retry');
     }
   }, [data, projectIdFromUrl]);
 

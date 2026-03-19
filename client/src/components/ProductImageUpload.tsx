@@ -89,6 +89,7 @@ export default function ProductImageUpload({
           body: JSON.stringify({ productImageUrl: publicUrl }),
         });
         if (!res.ok) {
+          throw new Error('Project image update failed');
           const j = await res.json().catch(() => ({}));
           throw new Error(j.error ?? '更新项目图片失败');
         }
