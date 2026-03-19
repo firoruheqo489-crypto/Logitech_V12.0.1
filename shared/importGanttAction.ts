@@ -22,6 +22,24 @@
 
 import type { TaskNode, TrackId, PhaseType, TaskStatusType } from './ganttEngine';
 
+type ImportDebugGlobal = typeof globalThis & { __GANTT_IMPORT_DEBUG__?: boolean };
+
+const ENABLE_IMPORT_DEBUG_LOGS =
+  typeof globalThis !== 'undefined' &&
+  Boolean((globalThis as ImportDebugGlobal).__GANTT_IMPORT_DEBUG__);
+
+function importDebugLog(...args: unknown[]): void {
+  if (ENABLE_IMPORT_DEBUG_LOGS && typeof console !== 'undefined') {
+    console.log(...args);
+  }
+}
+
+function importDebugWarn(...args: unknown[]): void {
+  if (ENABLE_IMPORT_DEBUG_LOGS && typeof console !== 'undefined') {
+    console.warn(...args);
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // Column Mapping — Excel 列名 → 内部字段
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -798,15 +816,15 @@ export function parseVerticalWBS(
   if (colMilestone < 0) colMilestone = 0;
 
   // 调试日志：输出列检测结果和表头原始内容
-  if (typeof console !== 'undefined') {
+  if (ENABLE_IMPORT_DEBUG_LOGS && typeof console !== 'undefined') {
     const headerRow = rawRows[headerIdx] as unknown[];
-    console.warn(`[Gantt列检测] headerIdx=${headerIdx}, colWbs=${colWbs}, colName=${colName}, colBaselineStart=${colBaselineStart}(文字匹配=${colBaselineStartFromText}), colBaselineEnd=${colBaselineEnd}(文字匹配=${colBaselineEndFromText}), colActual=${colActual}(文字匹配=${colActualFromText}), colMilestone=${colMilestone}`);
-    console.warn(`[Gantt列检测] 表头内容:`, headerRow?.map((c, i) => `[${i}]="${String(c ?? '').trim()}"`).join(', '));
+    importDebugWarn(`[Gantt列检测] headerIdx=${headerIdx}, colWbs=${colWbs}, colName=${colName}, colBaselineStart=${colBaselineStart}(文字匹配=${colBaselineStartFromText}), colBaselineEnd=${colBaselineEnd}(文字匹配=${colBaselineEndFromText}), colActual=${colActual}(文字匹配=${colActualFromText}), colMilestone=${colMilestone}`);
+    importDebugWarn(`[Gantt列检测] 表头内容:`, headerRow?.map((c, i) => `[${i}]="${String(c ?? '').trim()}"`).join(', '));
     // 完整 dump 前5个数据行的所有列
     for (let dbg = 0; dbg <= Math.min(headerIdx + 5, rawRows.length - 1); dbg++) {
       const dbgRow = rawRows[dbg] as unknown[];
       if (dbgRow) {
-        console.warn(`[Gantt行dump] 行${dbg}: ${dbgRow.map((c, ci) => `[${ci}]=${JSON.stringify(c)}`).join(' | ')}`);
+        importDebugWarn(`[Gantt行dump] 行${dbg}: ${dbgRow.map((c, ci) => `[${ci}]=${JSON.stringify(c)}`).join(' | ')}`);
       }
     }
     // 关键对比：前3个数据行的 baseline vs actual 原始值
@@ -817,7 +835,7 @@ export function parseVerticalWBS(
         const bEndVal = dbgRow[colBaselineEnd];
         const aVal = dbgRow[colActual];
         const rowLen = dbgRow.length;
-        console.warn(`[Gantt列对比] 行${dbg}: rowLength=${rowLen}, col[${colBaselineStart}]=${JSON.stringify(bStartVal)}, col[${colBaselineEnd}]=${JSON.stringify(bEndVal)}, col[${colActual}]=${JSON.stringify(aVal)}`);
+        importDebugWarn(`[Gantt列对比] 行${dbg}: rowLength=${rowLen}, col[${colBaselineStart}]=${JSON.stringify(bStartVal)}, col[${colBaselineEnd}]=${JSON.stringify(bEndVal)}, col[${colActual}]=${JSON.stringify(aVal)}`);
       }
     }
   }
@@ -842,8 +860,8 @@ export function parseVerticalWBS(
     const rawActual = row[colActual];
 
     // 调试日志：前10个有日期的行
-    if (typeof console !== 'undefined' && tasks.length < 10) {
-      console.log(`[Gantt解析] 行${i + 1} WBS="${wbsRaw}" name="${nameRaw}" rawBaselineStart=${JSON.stringify(rawBaselineStart)} rawBaselineEnd=${JSON.stringify(rawBaselineEnd)} rawActual=${JSON.stringify(rawActual)}`);
+    if (ENABLE_IMPORT_DEBUG_LOGS && typeof console !== 'undefined' && tasks.length < 10) {
+      importDebugLog(`[Gantt解析] 行${i + 1} WBS="${wbsRaw}" name="${nameRaw}" rawBaselineStart=${JSON.stringify(rawBaselineStart)} rawBaselineEnd=${JSON.stringify(rawBaselineEnd)} rawActual=${JSON.stringify(rawActual)}`);
     }
     const milestoneCell = String(row[colMilestone] ?? '').trim();
 
@@ -920,8 +938,8 @@ export function parseVerticalWBS(
       : 1;
 
     // 写入前核验
-    if (typeof console !== 'undefined' && console.log) {
-      console.log(`[Gantt导入] wbs_id=${wbsRaw} baselineStart=${baselineStartDate} baselineEnd=${baselineEndDate} actual=${actualDate ?? '(空)'}${isOverdue ? ' ⚠️延期' : ''}`);
+    if (ENABLE_IMPORT_DEBUG_LOGS) {
+      importDebugLog(`[Gantt导入] wbs_id=${wbsRaw} baselineStart=${baselineStartDate} baselineEnd=${baselineEndDate} actual=${actualDate ?? '(空)'}${isOverdue ? ' ⚠️延期' : ''}`);
     }
 
     // 任务创建：使用计划开始和计划结束日期

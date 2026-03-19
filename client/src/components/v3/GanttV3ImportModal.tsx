@@ -6,7 +6,7 @@
  * 2. 用户点击"确认同步" → 写入 Supabase
  */
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { Upload, FileSpreadsheet, AlertCircle, CheckCircle2, Loader2, Eye, Database } from 'lucide-react';
 import {
   Dialog,
@@ -17,17 +17,19 @@ import {
 } from '@/components/ui/dialog';
 import type { GanttData, ProjectInfo } from '@shared/ganttEngine';
 import type { TaskNode } from '@shared/ganttEngine';
-import {
-  parseExcelRows,
-  parseVerticalWBS,
-  transformMatrixToFlatRows,
-  extractAllProjectCards,
-  buildPreviewFromTasks,
-} from '@shared/importGanttAction';
-import type { ExcelRow, ProjectCard, PreviewProject } from '@shared/importGanttAction';
+import type { ProjectCard, PreviewProject } from '@shared/importGanttAction';
 import { apiFetch } from '@/lib/api';
+import type {
+  GanttImportWorkerInspectRequest,
+  GanttImportWorkerInspectResultResponse,
+  GanttImportWorkerParseRequest,
+  GanttImportWorkerParseResultResponse,
+  GanttImportWorkerRequest,
+  GanttImportWorkerResponse,
+} from './ganttImport.worker.types';
 
 const IMPORT_FETCH_TIMEOUT_MS = 90_000;
+const WORKER_DISPOSED_MESSAGE = 'Excel 解析已取消';
 
 async function persistGanttAndReturnData(tasks: TaskNode[], projectInfo: ProjectInfo): Promise<GanttData> {
   const ac = new AbortController();
@@ -88,10 +90,14 @@ interface ParsedData {
 
 /** 暂存解析中间数据，用于用户选择项目后继续 */
 interface PendingParse {
-  rawRows: unknown[][];
+  sessionId: string;
   allCards: ProjectCard[];
-  XLSX: typeof import('xlsx');
-  sheet: import('xlsx').WorkSheet;
+}
+
+interface PendingWorkerCall {
+  resolve: (value: GanttImportWorkerInspectResultResponse | GanttImportWorkerParseResultResponse) => void;
+  reject: (error: Error & { details?: string[] }) => void;
+  onProgress?: (message: string) => void;
 }
 
 interface ImportModalProps {
@@ -112,20 +118,199 @@ export default function GanttV3ImportModal({ open, onOpenChange, onImportSuccess
   const [pendingParse, setPendingParse] = useState<PendingParse | null>(null);
   const [selectedCardIdx, setSelectedCardIdx] = useState<number>(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const workerRef = useRef<Worker | null>(null);
+  const workerRequestIdRef = useRef(0);
+  const pendingWorkerCallsRef = useRef(new Map<number, PendingWorkerCall>());
+
+  const reset = useCallback(() => {
+    setFile(null);
+    setPhase('upload');
+    setMessage('');
+    setDetails([]);
+    setParsedData(null);
+    setPendingParse(null);
+    setSelectedCardIdx(0);
+  }, []);
+
+  const setErrorState = useCallback((nextMessage: string, nextDetails: string[] = []) => {
+    setPhase('error');
+    setMessage(nextMessage);
+    setDetails(nextDetails.length > 0 ? nextDetails : [nextMessage]);
+  }, []);
+
+  const disposeWorker = useCallback(() => {
+    workerRef.current?.terminate();
+    workerRef.current = null;
+
+    pendingWorkerCallsRef.current.forEach(({ reject }) => {
+      const error = new Error(WORKER_DISPOSED_MESSAGE) as Error & { details?: string[] };
+      reject(error);
+    });
+    pendingWorkerCallsRef.current.clear();
+  }, []);
+
+  useEffect(() => () => {
+    disposeWorker();
+  }, [disposeWorker]);
+
+  const ensureWorker = useCallback((): Worker => {
+    if (workerRef.current) {
+      return workerRef.current;
+    }
+
+    const worker = new Worker(new URL('./ganttImport.worker.ts', import.meta.url), { type: 'module' });
+
+    worker.onmessage = (event: MessageEvent<GanttImportWorkerResponse>) => {
+      const payload = event.data;
+      const pendingCall = pendingWorkerCallsRef.current.get(payload.requestId);
+      if (!pendingCall) return;
+
+      if (payload.type === 'progress') {
+        pendingCall.onProgress?.(payload.message);
+        return;
+      }
+
+      pendingWorkerCallsRef.current.delete(payload.requestId);
+
+      if (payload.type === 'error') {
+        const error = new Error(payload.message) as Error & { details?: string[] };
+        error.details = payload.details;
+        pendingCall.reject(error);
+        return;
+      }
+
+      pendingCall.resolve(payload);
+    };
+
+    worker.onerror = (event) => {
+      const error = new Error(event.message || 'Excel 解析工作线程异常') as Error & { details?: string[] };
+      pendingWorkerCallsRef.current.forEach(({ reject }) => reject(error));
+      pendingWorkerCallsRef.current.clear();
+      workerRef.current = null;
+    };
+
+    workerRef.current = worker;
+    return worker;
+  }, []);
+
+  const runWorkerRequest = useCallback(
+    async <TResponse extends GanttImportWorkerInspectResultResponse | GanttImportWorkerParseResultResponse>(
+      request:
+        | Omit<GanttImportWorkerInspectRequest, 'requestId'>
+        | Omit<GanttImportWorkerParseRequest, 'requestId'>,
+      onProgress?: (nextMessage: string) => void,
+    ): Promise<TResponse> => {
+      const requestId = ++workerRequestIdRef.current;
+      const nextRequest = { ...request, requestId } as GanttImportWorkerRequest;
+      const worker = ensureWorker();
+
+      return new Promise<TResponse>((resolve, reject) => {
+        pendingWorkerCallsRef.current.set(requestId, {
+          resolve: (value) => resolve(value as TResponse),
+          reject,
+          onProgress,
+        });
+
+        if (nextRequest.type === 'inspect') {
+          worker.postMessage(nextRequest, [nextRequest.arrayBuffer]);
+        } else {
+          worker.postMessage(nextRequest);
+        }
+      });
+    },
+    [ensureWorker],
+  );
+
+  const handleModalOpenChange = useCallback((nextOpen: boolean) => {
+    if (!nextOpen) {
+      disposeWorker();
+      reset();
+    }
+    onOpenChange(nextOpen);
+  }, [disposeWorker, onOpenChange, reset]);
+
+  const validateProjectBinding = useCallback((projectId: string): boolean => {
+    if (currentProjectId && projectId && projectId !== currentProjectId) {
+      setErrorState(
+        `⛔ 安全拦截：Excel 中的项目编号 [${projectId}] 与当前看板 [${currentProjectId}] 不符！`,
+        [
+          `上传文件中的项目编号: ${projectId}`,
+          `当前看板绑定编号: ${currentProjectId}`,
+          '请检查文件是否正确，或切换到对应项目的看板后再上传。',
+        ],
+      );
+      return false;
+    }
+
+    return true;
+  }, [currentProjectId, setErrorState]);
+
+  const applyParsedPayload = useCallback(async (payload: GanttImportWorkerParseResultResponse['payload']) => {
+    const preview = {
+      ...payload.preview,
+      isExisting: await checkProjectExists(payload.projectInfo.id),
+    };
+
+    setParsedData({
+      tasks: payload.tasks,
+      projectInfo: payload.projectInfo,
+      preview,
+      warnings: payload.warnings,
+    });
+    setPhase('preview');
+
+    if (payload.mode === 'vertical_wbs') {
+      setMessage(`✓ 垂直WBS格式，解析 ${payload.tasks.length} 个任务`);
+      setDetails([
+        `模具编号: ${preview.moldNumber}`,
+        `No.: ${payload.projectInfo.index_no ?? '(未提取)'}`,
+        `项目名称: ${payload.projectInfo.project_name ?? '(未提取)'}`,
+        `产品名称: ${preview.productName || '(未提取)'}`,
+        `钳工组: ${payload.projectInfo.fitter_group ?? '(未提取)'}`,
+        ...payload.warnings,
+      ]);
+      return;
+    }
+
+    setMessage(`✓ 成功解析 ${payload.tasks.length} 个任务`);
+    setDetails(payload.warnings);
+  }, []);
+
+  const parseWithSelectedCard = useCallback(async (sessionId: string, card: ProjectCard) => {
+    const projectId = card.moldNumber || 'LA26006';
+    if (!validateProjectBinding(projectId)) {
+      return;
+    }
+
+    const response = await runWorkerRequest<GanttImportWorkerParseResultResponse>(
+      {
+        type: 'parse',
+        sessionId,
+        card,
+      },
+      (nextMessage) => setMessage(nextMessage),
+    );
+
+    await applyParsedPayload(response.payload);
+  }, [applyParsedPayload, runWorkerRequest, validateProjectBinding]);
 
   const handleFile = useCallback((f: File) => {
     const ext = f.name.split('.').pop()?.toLowerCase();
     if (!ext || !['xlsx', 'xls', 'csv'].includes(ext)) {
       setPhase('error');
       setMessage('请上传 .xlsx / .xls / .csv 格式的文件');
+      setDetails([]);
       return;
     }
+    disposeWorker();
     setFile(f);
     setPhase('upload');
     setMessage(`✓ 文件 "${f.name}" 已选择，点击"解析预览"开始`);
     setDetails([]);
     setParsedData(null);
-  }, []);
+    setPendingParse(null);
+    setSelectedCardIdx(0);
+  }, [disposeWorker]);
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
@@ -153,210 +338,28 @@ export default function GanttV3ImportModal({ open, onOpenChange, onImportSuccess
   );
 
   // ═══════════════════════════════════════════════════════════════════
-  // 读取 Excel → 提取所有项目组 → 多项目则让用户选择
-  // ═══════════════════════════════════════════════════════════════════
-  const readExcelAndDetectProjects = useCallback(async (): Promise<{
-    rawRows: unknown[][];
-    allCards: ProjectCard[];
-    XLSX: typeof import('xlsx');
-    sheet: import('xlsx').WorkSheet;
-  } | null> => {
-    if (!file) return null;
-    const arrayBuffer = await file.arrayBuffer();
-    const XLSX = await import('xlsx');
-    const workbook = XLSX.read(arrayBuffer, { type: 'array' });
-
-    let sheetName = workbook.SheetNames.find((n) =>
-      n.includes('项目') || n.includes('甘特') || n.includes('Gantt'),
-    );
-    if (!sheetName) {
-      sheetName = workbook.SheetNames[workbook.SheetNames.length - 1];
-    }
-    const sheet = workbook.Sheets[sheetName];
-    if (!sheet) {
-      setPhase('error');
-      setMessage('找不到有效的工作表');
-      return null;
-    }
-
-    const rawRows: unknown[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
-    console.log(`[Import] 选中 Sheet: "${sheetName}", 共 ${rawRows.length} 行`);
-
-    const allCards = extractAllProjectCards(rawRows);
-    console.log(`[Import] 检测到 ${allCards.length} 个项目组:`, JSON.stringify(allCards));
-
-    return { rawRows, allCards, XLSX, sheet };
-  }, [file]);
-
-  // ═══════════════════════════════════════════════════════════════════
-  // 核心解析逻辑：用指定的 ProjectCard 解析 Excel 数据
-  // （必须定义在 handleParse / handleSelectProject 之前）
-  // ═══════════════════════════════════════════════════════════════════
-  const parseWithSelectedCard = useCallback(async (
-    rawRows: unknown[][],
-    card: ProjectCard,
-    XLSX: typeof import('xlsx'),
-    sheet: import('xlsx').WorkSheet,
-  ) => {
-    const projectId = card.moldNumber || 'LA26006';
-    console.log(`[Import] 使用项目: ${projectId}, card:`, JSON.stringify(card));
-    console.log(`[Import] currentProjectId (URL绑定): ${currentProjectId}`);
-
-    // ═══ 前置校验：解析阶段即拦截项目编号不匹配 ═══
-    if (currentProjectId && projectId && projectId !== currentProjectId) {
-      setPhase('error');
-      setMessage(`⛔ 安全拦截：Excel 中的项目编号 [${projectId}] 与当前看板 [${currentProjectId}] 不符！`);
-      setDetails([
-        `上传文件中的项目编号: ${projectId}`,
-        `当前看板绑定编号: ${currentProjectId}`,
-        '请检查文件是否正确，或切换到对应项目的看板后再上传。',
-      ]);
-      return; // 硬阻断，不进入预览
-    }
-
-    // ── 1. 尝试垂直 WBS 格式 ──
-    const verticalResult = parseVerticalWBS(rawRows, projectId);
-    if (verticalResult && verticalResult.tasks.length > 0) {
-      if (verticalResult.errors.length > 0) {
-        setPhase('error');
-        setMessage(`解析出错 (${verticalResult.errors.length} 个错误)`);
-        setDetails([...verticalResult.errors, ...verticalResult.warnings]);
-        return;
-      }
-      // 合并：垂直解析器自己也提取了 projectCard，用用户选择的 card 覆盖
-      const mergedCard = verticalResult.projectCard ?? { moldNumber: projectId };
-      if (!mergedCard.moldNumber || mergedCard.moldNumber !== projectId) mergedCard.moldNumber = card.moldNumber;
-      if (card.project_name) mergedCard.project_name = card.project_name;
-      if (card.product_name) mergedCard.product_name = card.product_name;
-      if (card.index_no) mergedCard.index_no = card.index_no;
-      if (card.fitter_group) mergedCard.fitter_group = card.fitter_group;
-
-      const pid = mergedCard.moldNumber ?? projectId;
-      const projectInfo: ProjectInfo = {
-        id: pid,
-        brand: 'Logitech',
-        productName: mergedCard.product_name ?? '',
-        moldNumber: pid,
-        startDate: verticalResult.tasks[0]?.baselineStart || '',
-        endDate: verticalResult.tasks[verticalResult.tasks.length - 1]?.baselineEnd || '',
-        index_no: mergedCard.index_no,
-        project_name: mergedCard.project_name,
-        fitter_group: mergedCard.fitter_group,
-      };
-      const preview = buildPreviewFromTasks(verticalResult.tasks, mergedCard);
-      preview.isExisting = await checkProjectExists(pid);
-
-      setParsedData({ tasks: verticalResult.tasks, projectInfo, preview, warnings: verticalResult.warnings });
-      setPhase('preview');
-      setMessage(`✓ 垂直WBS格式，解析 ${verticalResult.tasks.length} 个任务`);
-      setDetails([
-        `模具编号: ${mergedCard.moldNumber}`,
-        `No.: ${mergedCard.index_no ?? '(未提取)'}`,
-        `项目名称: ${mergedCard.project_name ?? '(未提取)'}`,
-        `产品名称: ${mergedCard.product_name ?? '(未提取)'}`,
-        `钳工组: ${mergedCard.fitter_group ?? '(未提取)'}`,
-        ...verticalResult.warnings,
-      ]);
-      return;
-    }
-
-    // ── 2. 尝试矩阵/传统格式 ──
-    let headerRowIdx = -1;
-    for (let i = 0; i < Math.min(rawRows.length, 10); i++) {
-      const rowStr = rawRows[i].map(String).join('|');
-      if (rowStr.includes('铣床') || rowStr.includes('CNC') || rowStr.includes('FIT模')) {
-        headerRowIdx = i;
-        break;
-      }
-    }
-
-    let rows: ExcelRow[];
-
-    if (headerRowIdx < 0) {
-      rows = XLSX.utils.sheet_to_json<ExcelRow>(sheet, { defval: '' });
-      if (rows.length === 0) {
-        setPhase('error');
-        setMessage('Excel 文件中没有找到有效的数据行');
-        return;
-      }
-    } else {
-      const matrixRows = transformMatrixToFlatRows(rawRows, headerRowIdx);
-      if (matrixRows && matrixRows.length > 0) {
-        rows = matrixRows;
-      } else {
-        const headers = rawRows[headerRowIdx].map((h) => String(h).trim());
-        const dataRows: ExcelRow[] = [];
-        for (let i = headerRowIdx + 1; i < rawRows.length; i++) {
-          const row = rawRows[i];
-          if (!row || row.every((c) => c === '' || c === null || c === undefined)) continue;
-          const obj: ExcelRow = {};
-          headers.forEach((h, j) => {
-            if (h) obj[h] = row[j] !== undefined && row[j] !== null ? row[j] as string | number : '';
-          });
-          dataRows.push(obj);
-        }
-        if (dataRows.length === 0) {
-          setPhase('error');
-          setMessage('Excel 文件中没有找到数据行（表头后无数据）');
-          return;
-        }
-        rows = dataRows;
-      }
-    }
-
-    const result = parseExcelRows(rows, projectId);
-    if (result.errors.length > 0) {
-      setPhase('error');
-      setMessage(`解析出错 (${result.errors.length} 个错误)`);
-      setDetails([...result.errors, ...result.warnings]);
-      return;
-    }
-    if (result.tasks.length === 0) {
-      setPhase('error');
-      setMessage('未能从 Excel 中解析出任何有效任务');
-      setDetails(result.warnings);
-      return;
-    }
-
-    const pid = projectId;
-    const projectInfo: ProjectInfo = {
-      id: pid,
-      brand: 'Logitech',
-      productName: card.product_name ?? '',
-      moldNumber: pid,
-      startDate: result.tasks[0]?.baselineStart || '',
-      endDate: result.tasks[result.tasks.length - 1]?.baselineEnd || '',
-      index_no: card.index_no,
-      project_name: card.project_name,
-      fitter_group: card.fitter_group,
-    };
-    const preview = buildPreviewFromTasks(result.tasks, card);
-    preview.isExisting = await checkProjectExists(pid);
-
-    setParsedData({ tasks: result.tasks, projectInfo, preview, warnings: result.warnings });
-    setPhase('preview');
-    setMessage(`✓ 成功解析 ${result.tasks.length} 个任务`);
-    setDetails(result.warnings);
-  }, [currentProjectId]);
-
-  // ═══════════════════════════════════════════════════════════════════
   // Phase 1: 解析 Excel → 检测项目组 → 多项目则进入选择阶段
   // ═══════════════════════════════════════════════════════════════════
   const handleParse = useCallback(async () => {
     if (!file) return;
     setPhase('syncing');
-    setMessage('正在解析 Excel 文件...');
+    setMessage('正在后台读取 Excel 文件...');
     setDetails([]);
 
     try {
-      const excelData = await readExcelAndDetectProjects();
-      if (!excelData) return;
-
-      const { rawRows, allCards, XLSX, sheet } = excelData;
+      const arrayBuffer = await file.arrayBuffer();
+      const response = await runWorkerRequest<GanttImportWorkerInspectResultResponse>(
+        {
+          type: 'inspect',
+          arrayBuffer,
+        },
+        (nextMessage) => setMessage(nextMessage),
+      );
+      const { allCards, sessionId } = response;
 
       // 多个项目组 → 让用户选择
       if (allCards.length > 1) {
-        setPendingParse({ rawRows, allCards, XLSX, sheet });
+        setPendingParse({ sessionId, allCards });
         setSelectedCardIdx(0);
         setPhase('select');
         setMessage(`检测到 ${allCards.length} 个项目，请选择要导入的项目：`);
@@ -366,13 +369,19 @@ export default function GanttV3ImportModal({ open, onOpenChange, onImportSuccess
 
       // 单个或零个项目组 → 直接解析
       const card = allCards[0] ?? { moldNumber: 'LA26006' };
-      await parseWithSelectedCard(rawRows, card, XLSX, sheet);
+      await parseWithSelectedCard(sessionId, card);
     } catch (err) {
+      if (err instanceof Error && err.message === WORKER_DISPOSED_MESSAGE) {
+        return;
+      }
       console.error('Parse error:', err);
-      setPhase('error');
-      setMessage(`解析失败: ${err instanceof Error ? err.message : String(err)}`);
+      const nextDetails =
+        err instanceof Error && 'details' in err && Array.isArray((err as Error & { details?: string[] }).details)
+          ? (err as Error & { details?: string[] }).details
+          : [];
+      setErrorState(`解析失败: ${err instanceof Error ? err.message : String(err)}`, nextDetails);
     }
-  }, [file, readExcelAndDetectProjects, parseWithSelectedCard]);
+  }, [file, parseWithSelectedCard, runWorkerRequest, setErrorState]);
 
   // ═══════════════════════════════════════════════════════════════════
   // 用户选择项目后 → 用选中的 card 继续解析
@@ -380,22 +389,24 @@ export default function GanttV3ImportModal({ open, onOpenChange, onImportSuccess
   const handleSelectProject = useCallback(async (cardIdx: number) => {
     if (!pendingParse) return;
     setPhase('syncing');
-    setMessage('正在解析选中的项目...');
+    setMessage('正在后台解析选中的项目...');
+    setDetails([]);
 
     try {
       const card = pendingParse.allCards[cardIdx];
-      await parseWithSelectedCard(
-        pendingParse.rawRows,
-        card,
-        pendingParse.XLSX,
-        pendingParse.sheet,
-      );
+      await parseWithSelectedCard(pendingParse.sessionId, card);
     } catch (err) {
+      if (err instanceof Error && err.message === WORKER_DISPOSED_MESSAGE) {
+        return;
+      }
       console.error('Parse error:', err);
-      setPhase('error');
-      setMessage(`解析失败: ${err instanceof Error ? err.message : String(err)}`);
+      const nextDetails =
+        err instanceof Error && 'details' in err && Array.isArray((err as Error & { details?: string[] }).details)
+          ? (err as Error & { details?: string[] }).details
+          : [];
+      setErrorState(`解析失败: ${err instanceof Error ? err.message : String(err)}`, nextDetails);
     }
-  }, [pendingParse, parseWithSelectedCard]);
+  }, [parseWithSelectedCard, pendingParse, setErrorState]);
 
   // ═══════════════════════════════════════════════════════════════════
   // Phase 2: 确认同步 → 写入 Supabase
@@ -430,28 +441,18 @@ export default function GanttV3ImportModal({ open, onOpenChange, onImportSuccess
         '✓ 已保存到数据库',
       ]);
       if (onImportSuccess) onImportSuccess(ganttData);
-      setTimeout(() => onOpenChange(false), 1500);
+      setTimeout(() => handleModalOpenChange(false), 1500);
     } catch (err) {
       setPhase('error');
       setMessage(err instanceof Error ? err.message : '同步失败');
       setDetails([err instanceof Error ? err.message : String(err)]);
     }
-  }, [parsedData, onImportSuccess, onOpenChange, currentProjectId]);
-
-  const reset = useCallback(() => {
-    setFile(null);
-    setPhase('upload');
-    setMessage('');
-    setDetails([]);
-    setParsedData(null);
-    setPendingParse(null);
-    setSelectedCardIdx(0);
-  }, []);
+  }, [parsedData, onImportSuccess, handleModalOpenChange, currentProjectId]);
 
   const isLoading = phase === 'syncing';
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleModalOpenChange}>
       <DialogContent className="sm:max-w-lg bg-[#0F0F0F] border-white/[0.08] text-white">
         <DialogHeader>
           <DialogTitle className="text-white/90 flex items-center gap-2" style={{ fontFamily: 'var(--font-display)' }}>
@@ -669,14 +670,14 @@ export default function GanttV3ImportModal({ open, onOpenChange, onImportSuccess
         <div className="flex items-center justify-end gap-3 mt-2">
           {(file || phase === 'preview' || phase === 'select') && (
             <button
-              onClick={(e) => { e.stopPropagation(); reset(); }}
+              onClick={(e) => { e.stopPropagation(); disposeWorker(); reset(); }}
               className="px-3 py-1.5 text-xs text-white/40 hover:text-white/60 transition-colors"
             >
               {phase === 'preview' || phase === 'select' ? '重新选择' : '清除'}
             </button>
           )}
           <button
-            onClick={() => onOpenChange(false)}
+            onClick={() => handleModalOpenChange(false)}
             className="px-4 py-2 text-xs text-white/50 hover:text-white/70 rounded-lg border border-white/[0.06] hover:bg-white/[0.04] transition-all"
           >
             取消

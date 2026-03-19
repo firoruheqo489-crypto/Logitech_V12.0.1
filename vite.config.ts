@@ -32,6 +32,9 @@ export default defineConfig({
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
   },
+  worker: {
+    format: "es",
+  },
   server: {
     port: 3000,
     strictPort: false, // Will find next available port if 3000 is busy
