@@ -112,7 +112,7 @@ export default function EvidenceUpload({ taskId }: EvidenceUploadProps) {
       const newItem = await res.json();
       setItems(prev => [...prev, newItem]);
     } catch (e) {
-      setError(e instanceof Error ? e.message : '上传失败');
+      setError('证据上传失败，请稍后重试');
     } finally {
       setLoading(false);
     }

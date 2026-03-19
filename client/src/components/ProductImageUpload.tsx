@@ -97,7 +97,7 @@ export default function ProductImageUpload({
         setUrl(publicUrl);
         onUploadSuccess?.(publicUrl);
       } catch (e) {
-        setError(e instanceof Error ? e.message : '上传失败');
+        setError('项目图片更新失败，请稍后重试');
       } finally {
         setLoading(false);
       }

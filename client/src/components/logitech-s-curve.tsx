@@ -806,15 +806,12 @@ export function LogitechSCurve({ projectId, moldNumber, className = '' }: Logite
       try {
         const res = await apiFetch(`/api/tasks?projectId=${encodeURIComponent(projectId)}`)
         if (!res.ok) {
-          const body = await res.json().catch(() => null)
-          const record = asRecord(body)
-          const message = typeof record?.error === 'string' ? record.error : `HTTP ${res.status}`
-          throw new Error(message)
+          throw new Error('S-curve data load failed')
         }
         const taskRows = normalizeTaskRows(await res.json())
         if (!cancelled) setTasks(taskRows)
       } catch (error: unknown) {
-        if (!cancelled) setError(error instanceof Error ? error.message : '数据加载失败')
+        if (!cancelled) setError('数据加载失败，请稍后重试')
       } finally {
         if (!cancelled) setLoading(false)
       }

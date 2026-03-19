@@ -237,7 +237,7 @@ export default function ProjectLobby({ onSelect }: ProjectLobbyProps) {
       try {
         const response = await apiFetch("/api/dashboard/projects");
         if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
+          throw new Error("Project list load failed");
         }
 
         const data = (await response.json()) as DashboardProjectRow[];
@@ -250,7 +250,7 @@ export default function ProjectLobby({ onSelect }: ProjectLobbyProps) {
         if (cancelled) {
           return;
         }
-        setError(err instanceof Error ? err.message : "数据加载失败");
+        setError("项目列表加载失败，请稍后重试");
       } finally {
         if (!cancelled) {
           setLoading(false);
