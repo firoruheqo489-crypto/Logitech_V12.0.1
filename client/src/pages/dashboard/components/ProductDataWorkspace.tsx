@@ -15,7 +15,7 @@ import {
   X,
 } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
-import { supabase } from '@/lib/supabase';
+import { deleteAssetViaServer, uploadAssetViaServer } from '@/lib/ossUpload';
 import type { ModuleTheme } from '@/lib/theme';
 import {
   getDashboardApiErrorDisplayMessage,
@@ -53,8 +53,6 @@ const DATA_MATRIX_VALUE_CLASS =
   'font-mono tabular-nums font-semibold tracking-tight text-slate-100 whitespace-normal break-all leading-tight';
 const MAX_UPLOAD_SIZE_BYTES = 2 * 1024 * 1024;
 const MAX_IMAGE_DIMENSION = 2000;
-const STORAGE_BUCKET = 'project-assets';
-const STORAGE_PREFIX = 'dashboard-pdm-assets';
 
 const UPLOAD_SLOTS: UploadSlot[] = [
   { id: 'product3d', label: '产品3D图', icon: Box },
@@ -93,14 +91,6 @@ function readAnchor(project: ProjectData, paths: string[]): string {
 
 function buildSlotKey(projectKey: string, slotId: SlotId): string {
   return `${projectKey}::${slotId}`;
-}
-
-function sanitizeMoldNumber(moldNumber: string): string {
-  return moldNumber.replace(/[^a-zA-Z0-9_-]/g, '_');
-}
-
-function buildStoragePath(moldNumber: string, slotId: SlotId): string {
-  return `${STORAGE_PREFIX}/${sanitizeMoldNumber(moldNumber)}/${slotId}.webp`;
 }
 
 function normalizeT0DisplayValue(value: string): string {
@@ -348,44 +338,39 @@ export default function ProductDataWorkspace({
 
   const uploadToServer = useCallback(
     async (moldNumber: string, compressedFile: File, type: SlotId): Promise<string> => {
-      if (!supabase) {
-        throw new Error('Supabase 未配置，无法保存图片');
+      let uploadedUrl = '';
+
+      try {
+        const uploadResult = await uploadAssetViaServer({
+          file: compressedFile,
+          category: 'dashboard-product-asset',
+          entityId: moldNumber,
+          slot: type,
+        });
+        uploadedUrl = uploadResult.url;
+
+        const response = await apiFetch(`/api/dashboard/project-assets/${encodeURIComponent(moldNumber)}/${type}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ imageUrl: uploadResult.url }),
+        });
+        if (!response.ok) {
+          const normalizedPayload = await response.json().catch(() => null);
+          throw normalizeDashboardApiError(normalizedPayload, response.status, 'PROJECT_ASSET_SAVE_FAILED');
+        }
+
+        return uploadResult.url;
+      } catch (error) {
+        if (uploadedUrl) {
+          await deleteAssetViaServer(uploadedUrl).catch(() => undefined);
+        }
+        throw error;
       }
-
-      const storagePath = buildStoragePath(moldNumber, type);
-      const { error: uploadError } = await supabase.storage.from(STORAGE_BUCKET).upload(storagePath, compressedFile, {
-        contentType: 'image/webp',
-        upsert: true,
-      });
-
-      if (uploadError) {
-        throw uploadError;
-      }
-
-      const { data: urlData } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(storagePath);
-      const persistedUrl = `${urlData.publicUrl}?v=${Date.now()}`;
-
-      const response = await apiFetch(`/api/dashboard/project-assets/${encodeURIComponent(moldNumber)}/${type}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageUrl: persistedUrl }),
-      });
-      if (!response.ok) {
-        const normalizedPayload = await response.json().catch(() => null);
-        throw normalizeDashboardApiError(normalizedPayload, response.status, 'PROJECT_ASSET_SAVE_FAILED');
-      }
-
-      return persistedUrl;
     },
     [],
   );
 
   const deleteFromServer = useCallback(async (moldNumber: string, type: SlotId): Promise<void> => {
-    if (supabase) {
-      const storagePath = buildStoragePath(moldNumber, type);
-      await supabase.storage.from(STORAGE_BUCKET).remove([storagePath]).catch(() => undefined);
-    }
-
     const response = await apiFetch(`/api/dashboard/project-assets/${encodeURIComponent(moldNumber)}/${type}`, {
       method: 'DELETE',
     });

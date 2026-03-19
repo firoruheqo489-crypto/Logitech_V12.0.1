@@ -5,11 +5,12 @@
  */
 
 import type { Request, Response } from 'express';
-import { and, eq, notInArray, sql as dsql } from 'drizzle-orm';
+import { and, eq, inArray, notInArray, sql as dsql } from 'drizzle-orm';
 import { db } from '../db.js';
 import { tasks, projects, evidence } from '../../shared/schema.js';
 import { getGanttData } from '../../shared/ganttEngine.js';
 import type { TaskNode, ProjectInfo, GanttData } from '../../shared/ganttEngine.js';
+import { deleteAssetFromOssUrl, deleteAssetsFromOssUrls } from '../lib/oss.js';
 import {
   normalizeEvidencePayload,
   normalizeGanttImportPayload,
@@ -71,6 +72,10 @@ function sendGanttRouteError(
     error: errorMessage ?? GANTT_ROUTE_ERROR_MESSAGES[code],
     code,
   });
+}
+
+function logGanttAssetCleanupWarning(scope: string, error: unknown): void {
+  console.warn(`[gantt-assets] ${scope} cleanup failed:`, error);
 }
 
 export async function getGanttDataHandler(req: Request, res: Response): Promise<void> {
@@ -255,6 +260,12 @@ export async function patchProjectImageHandler(req: Request, res: Response): Pro
   }
 
   try {
+    const [existingProject] = await db
+      .select({ productImageUrl: projects.productImageUrl })
+      .from(projects)
+      .where(eq(projects.id, projectId))
+      .limit(1);
+
     await db
       .update(projects)
       .set({
@@ -262,6 +273,17 @@ export async function patchProjectImageHandler(req: Request, res: Response): Pro
         updatedAt: new Date(),
       })
       .where(eq(projects.id, projectId));
+
+    if (
+      existingProject?.productImageUrl &&
+      existingProject.productImageUrl !== payload.productImageUrl
+    ) {
+      try {
+        await deleteAssetFromOssUrl(existingProject.productImageUrl);
+      } catch (error) {
+        logGanttAssetCleanupWarning(`project:${projectId}`, error);
+      }
+    }
 
     res.status(200).json({ success: true });
   } catch (err) {
@@ -282,8 +304,33 @@ export async function deleteGanttProject(req: Request, res: Response): Promise<v
     return;
   }
   try {
+    const [projectRow] = await db
+      .select({ productImageUrl: projects.productImageUrl })
+      .from(projects)
+      .where(eq(projects.id, projectId))
+      .limit(1);
+    const taskRows = await db.select({ id: tasks.id }).from(tasks).where(eq(tasks.projectId, projectId));
+    const taskIds = taskRows.map((row) => row.id);
+    const evidenceRows =
+      taskIds.length > 0
+        ? await db
+            .select({ url: evidence.url })
+            .from(evidence)
+            .where(inArray(evidence.taskId, taskIds))
+        : [];
+
     await db.delete(tasks).where(eq(tasks.projectId, projectId));
     await db.delete(projects).where(eq(projects.id, projectId));
+
+    try {
+      await deleteAssetsFromOssUrls([
+        projectRow?.productImageUrl ?? null,
+        ...evidenceRows.map((row) => row.url),
+      ]);
+    } catch (error) {
+      logGanttAssetCleanupWarning(`project:${projectId}`, error);
+    }
+
     res.status(200).json({ success: true, projectId });
   } catch (err) {
     console.error('DELETE /api/gantt/project error:', err);
@@ -337,7 +384,19 @@ export async function deleteEvidenceHandler(req: Request, res: Response): Promis
   const evidenceId = readTrimmedString(req.params.evidenceId, 64);
   if (!evidenceId) { sendGanttRouteError(res, 400, 'EVIDENCE_ID_REQUIRED'); return; }
   try {
-    await db.delete(evidence).where(eq(evidence.id, evidenceId));
+    const [deletedRow] = await db
+      .delete(evidence)
+      .where(eq(evidence.id, evidenceId))
+      .returning({ url: evidence.url });
+
+    if (deletedRow?.url) {
+      try {
+        await deleteAssetFromOssUrl(deletedRow.url);
+      } catch (error) {
+        logGanttAssetCleanupWarning(`evidence:${evidenceId}`, error);
+      }
+    }
+
     res.status(200).json({ success: true });
   } catch (err) {
     console.error('DELETE /api/gantt/evidence/:evidenceId error:', err);

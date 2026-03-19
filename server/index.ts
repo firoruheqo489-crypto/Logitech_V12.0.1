@@ -16,6 +16,7 @@ import { listDashboardProjectAssets, upsertDashboardProjectAsset, deleteDashboar
 import { listDashboardProductData, batchUpsertDashboardProductData, ensureDashboardProductDataTable } from "./routes/dashboard-product-data.js";
 import { getProgressNotes, getLatestProgressBackup, saveProgressNotes, upsertProgressNote, createProgressBackup, restoreLatestProgressNotes, deleteProgressNote, getProgressNoteAuditLogs, ensureBackupTable, ensureProgressAuditTable } from "./routes/progress-notes.js";
 import { getTasksForSCurve } from "./routes/tasks.js";
+import { uploadsRouter } from "./routes/uploads.js";
 import { db, sql } from "./db.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -67,6 +68,7 @@ async function startServer() {
   app.post("/api/gantt/task/:taskId/evidence", postTaskEvidenceHandler);
   app.delete("/api/gantt/evidence/:evidenceId", deleteEvidenceHandler);
   app.get("/api/gantt/project/:projectId/evidence-counts", getProjectEvidenceCountsHandler);
+  app.use("/api/uploads", uploadsRouter);
 
   // API — 看板项目数据 (V1 Dashboard)
   app.get("/api/dashboard/projects", listDashboardProjects);
