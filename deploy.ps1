@@ -26,6 +26,52 @@ function Log($msg) { Write-Host "[OK] $msg" -ForegroundColor Green }
 function Warn($msg) { Write-Host "[!!] $msg" -ForegroundColor Yellow }
 function Err($msg) { Write-Host "[ERR] $msg" -ForegroundColor Red; exit 1 }
 
+$HANDOFF_ROOT = Join-Path $PSScriptRoot ".codex-release-handoff-ready"
+$HANDOFF_DEPLOY_SCRIPT = Join-Path $HANDOFF_ROOT "deploy.ps1"
+
+function Resolve-OptionalPath([string]$PathValue) {
+    if (-not $PathValue) {
+        return $null
+    }
+
+    try {
+        return (Resolve-Path $PathValue).Path
+    } catch {
+        return $null
+    }
+}
+
+function Maybe-DelegateToHandoff() {
+    if (-not (Test-Path $HANDOFF_DEPLOY_SCRIPT)) {
+        return
+    }
+
+    $currentScriptPath = (Resolve-Path $PSCommandPath).Path
+    $handoffScriptPath = (Resolve-Path $HANDOFF_DEPLOY_SCRIPT).Path
+    if ($currentScriptPath -eq $handoffScriptPath) {
+        return
+    }
+
+    $resolvedHandoffRoot = (Resolve-Path $HANDOFF_ROOT).Path
+    $resolvedDeployRoot = Resolve-OptionalPath $DeployRoot
+    $shouldDelegate = (-not $DeployRoot) -or ($resolvedDeployRoot -eq $resolvedHandoffRoot)
+
+    if (-not $shouldDelegate) {
+        return
+    }
+
+    Log "Delegating deploy to verified handoff worktree at ${resolvedHandoffRoot}"
+    & $handoffScriptPath -VersionBump $VersionBump
+    $delegatedExitCode = $LASTEXITCODE
+    if ($delegatedExitCode -ne 0) {
+        exit $delegatedExitCode
+    }
+
+    exit 0
+}
+
+Maybe-DelegateToHandoff
+
 function Invoke-ReleaseCommand([string]$Label, [scriptblock]$Command, [string]$FailureMessage) {
     Log $Label
     & $Command
@@ -158,7 +204,7 @@ try {
 
     # ======================== Step 1: local verification and build ========================
     Invoke-ReleaseCommand "Running TypeScript verification..." { pnpm exec tsc --noEmit } "TypeScript verification failed"
-    Invoke-ReleaseCommand "Running client release structure guard tests..." { pnpm exec vitest run client/src/server-index.structure.test.ts client/src/server-error-payload.structure.test.ts } "Client release structure guard tests failed"
+    Invoke-ReleaseCommand "Running client release structure guard tests..." { pnpm exec vitest run client/src/server-index.structure.test.ts client/src/server-error-payload.structure.test.ts client/src/pages/dashboard/lib/dashboardApi.test.ts } "Client release structure guard tests failed"
     Invoke-ReleaseCommand "Running server release guard tests..." { pnpm exec vitest run --root . server/middleware/apiCors.test.ts server/middleware/apiAccessPolicy.test.ts server/release.test.ts server/routes/progress-notes-guard.test.ts } "Server release guard tests failed"
     Invoke-ReleaseCommand "Starting local build..." { pnpm build } "Build failed"
     if (-not (Test-Path "dist\\release.json")) {
