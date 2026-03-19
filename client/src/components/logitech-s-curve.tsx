@@ -14,6 +14,18 @@ import {
 import { Activity, TrendingUp, AlertTriangle, Clock, Target } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { apiFetch } from '@/lib/api'
+import {
+  FORECAST_COMPLETION_MILESTONE_ID,
+  SCURVE_MILESTONES,
+  getNextSCurveMilestoneId,
+  type SCurveMilestoneId,
+  type SCurvePointMilestoneId,
+} from './logitech-s-curve-machine'
+import {
+  formatSCurveCurrentStageLabel,
+  getSCurveMilestoneBadgeLabel,
+  getSCurveMilestoneLabel,
+} from './logitech-s-curve-labels'
 
 // ═══════════════════════════════════════════════════════════════
 // Types
@@ -74,8 +86,10 @@ interface SCurvePoint {
   actual: number | null
   /** Forecast line (null until actual line ends) */
   forecast: number | null
-  /** Milestone label if this week aligns with one */
-  milestone?: string
+  /** Milestone machine id if this week aligns with one */
+  milestoneId?: SCurvePointMilestoneId
+  /** Render-only short label for milestone reference lines */
+  milestoneShortLabel?: string
   /** True when the milestone comes from the forecast overlay, not a canonical stage */
   isForecastMilestone?: boolean
 }
@@ -94,12 +108,22 @@ interface SCurveMetrics {
   /** 全案达成率：所有有 actual_end 的任务 / 总数（不受 today 门控） */
   totalCompletion: number
   /** 当前阶段标签 */
-  currentStage: string
+  currentStageId: SCurveMilestoneId | 'unknown'
+  currentStageComplete: boolean
   /** 任务完成数（gated by today） / 总数 */
   doneCount: number
   taskCount: number
   /** 项目目标完工日期（最后一个里程碑的 baselineStart） */
   targetDate: Date | null
+}
+
+type ExtractedMilestone = {
+  date: Date
+  actualDate: Date | null
+  progress: number
+  milestoneId: SCurveMilestoneId
+  shortLabel: string
+  task: TaskRow
 }
 
 export interface LogitechSCurveProps {
@@ -268,10 +292,10 @@ const fmtShort = (d: Date): string =>
 /** 从 tasks 数组中模糊匹配出 5 个里程碑节点 */
 function extractMilestonesFromTasks(
   tasks: TaskRow[],
-): { date: Date; actualDate: Date | null; progress: number; label: string; shortLabel: string; task: TaskRow }[] {
-  const results: { date: Date; actualDate: Date | null; progress: number; label: string; shortLabel: string; task: TaskRow }[] = []
+): ExtractedMilestone[] {
+  const results: ExtractedMilestone[] = []
 
-  for (const node of MILESTONE_NODES) {
+  for (const node of SCURVE_MILESTONES) {
     const matched = tasks.find((t) => {
       const canonicalId = (t.stage || t.id || '').replace(/\s+/g, '')
       return node.stageIds.includes(canonicalId)
@@ -285,7 +309,7 @@ function extractMilestonesFromTasks(
           date: baselineDate,
           actualDate,
           progress: node.progress,
-          label: node.label,
+          milestoneId: node.id,
           shortLabel: node.shortLabel,
           task: matched,
         })
@@ -315,7 +339,7 @@ function buildSCurveData(
   const emptyMetrics: SCurveMetrics = {
     deltaQ: 0, deltaT: 0, predictedMpDate: null,
     actualProgress: 0, plannedProgress: 0, totalCompletion: 0,
-    currentStage: 'N/A', doneCount: 0, taskCount: 0,
+    currentStageId: 'unknown', currentStageComplete: false, doneCount: 0, taskCount: 0,
     targetDate: null,
   }
 
@@ -420,9 +444,14 @@ function buildSCurveData(
     const rawActual = actualByWeek(w)
     const actual = rawActual >= 0 ? Math.round(rawActual * 100) / 100 : null
 
-    let milestone: string | undefined
+    let milestoneId: SCurveMilestoneId | undefined
+    let milestoneShortLabel: string | undefined
     for (const m of milestones) {
-      if (diffWeeks(m.date, weekStart0) === w) { milestone = m.shortLabel; break }
+      if (diffWeeks(m.date, weekStart0) === w) {
+        milestoneId = m.milestoneId
+        milestoneShortLabel = m.shortLabel
+        break
+      }
     }
 
     if (actual !== null) actuals.push({ week: w, value: actual })
@@ -434,7 +463,8 @@ function buildSCurveData(
       planned,
       actual,
       forecast: null,
-      milestone,
+      milestoneId,
+      milestoneShortLabel,
       isForecastMilestone: false,
     })
   }
@@ -456,7 +486,8 @@ function buildSCurveData(
       planned: Math.round(plannedAtToday * 100) / 100,
       actual: Math.round(actualAtToday * 100) / 100,
       forecast: null,
-      milestone: undefined,
+      milestoneId: undefined,
+      milestoneShortLabel: undefined,
       isForecastMilestone: false,
     })
     actuals.push({ week: todayFractionalWeek, value: Math.round(actualAtToday * 100) / 100 })
@@ -672,7 +703,7 @@ function buildSCurveData(
                 planned: 100,
                 actual: null,
                 forecast: Math.round(pct * 100) / 100,
-                milestone: pct >= 100 ? 'FORECAST' : undefined,
+                milestoneId: pct >= 100 ? FORECAST_COMPLETION_MILESTONE_ID : undefined,
                 isForecastMilestone: pct >= 100,
               })
             }
@@ -698,11 +729,13 @@ function buildSCurveData(
   points.sort((a, b) => a.week - b.week)
 
   // ── Current stage ──
-  let currentStage = milestones[0]?.label || 'N/A'
+  let currentStageId: SCurveMilestoneId | 'unknown' = milestones[0]?.milestoneId ?? 'unknown'
+  let currentStageComplete = false
   for (const ms of milestones) {
     if (ms.actualDate) {
-      const nextIdx = milestones.indexOf(ms) + 1
-      currentStage = nextIdx < milestones.length ? milestones[nextIdx].label : ms.label + ' ✓'
+      const nextStageId = getNextSCurveMilestoneId(ms.milestoneId)
+      currentStageId = nextStageId ?? ms.milestoneId
+      currentStageComplete = nextStageId === null
     }
   }
 
@@ -715,7 +748,8 @@ function buildSCurveData(
       actualProgress: Math.round(actualToday * 100) / 100,
       plannedProgress: Math.round(plannedToday * 100) / 100,
       totalCompletion: Math.round(totalCompletion * 100) / 100,
-      currentStage,
+      currentStageId,
+      currentStageComplete,
       doneCount,
       taskCount: totalTasks,
       targetDate: lastMs.date,
@@ -735,9 +769,8 @@ function SCurveTooltip({ active, payload, label }: SCurveTooltipProps) {
   const planned = readTooltipValue(payload, 'planned')
   const actual = readTooltipValue(payload, 'actual')
   const forecast = readTooltipValue(payload, 'forecast')
-  const milestone = payload[0]?.payload?.milestone
-  const milestoneLabel =
-    milestone && payload[0]?.payload?.isForecastMilestone ? '预测完工' : milestone
+  const milestoneId = payload[0]?.payload?.milestoneId
+  const milestoneLabel = milestoneId ? getSCurveMilestoneBadgeLabel(milestoneId) : undefined
 
   return (
     <div className="bg-gray-900/95 border border-white/10 rounded-xl p-4 backdrop-blur-xl shadow-[0_8px_32px_rgba(0,0,0,0.5)]">
@@ -843,7 +876,7 @@ export function LogitechSCurve({ projectId, moldNumber, className = '' }: Logite
       const ms = extractMilestonesFromTasks(tasks)
       const leaves = filterLeafTasks(tasks)
       console.log(`[S曲线] projectId=${projectId}, 总行=${tasks.length}, 叶子工序=${leaves.length}, 里程碑=${ms.length}:`,
-        ms.map((m) => `${m.label}(${m.task.name_cn} → ${m.date.toISOString().slice(0, 10)})`))
+        ms.map((m) => `${getSCurveMilestoneLabel(m.milestoneId)}(${m.task.name_cn} → ${m.date.toISOString().slice(0, 10)})`))
     }
   }, [tasks, projectId])
 
@@ -1056,15 +1089,15 @@ export function LogitechSCurve({ projectId, moldNumber, className = '' }: Logite
 
             {/* Milestone reference lines */}
             {points
-              .filter((p: SCurvePoint) => p.milestone && !p.isForecastMilestone)
+              .filter((p: SCurvePoint) => p.milestoneId && !p.isForecastMilestone)
               .map((p: SCurvePoint) => (
                 <ReferenceLine
-                  key={p.milestone}
+                  key={`${p.milestoneId}-${p.week}`}
                   x={p.dateLabel}
                   stroke="rgba(255,255,255,0.15)"
                   strokeDasharray="2 4"
                   label={{
-                    value: p.milestone!,
+                    value: p.milestoneShortLabel!,
                     position: 'insideTopRight',
                     fill: '#6b7280',
                     fontSize: 9,
@@ -1151,7 +1184,7 @@ export function LogitechSCurve({ projectId, moldNumber, className = '' }: Logite
             <span className="text-[10px] text-gray-400 uppercase tracking-wider">当前阶段</span>
           </div>
           <div className="mt-1 text-sm font-semibold text-cyan-400 truncate">
-            {metrics.currentStage}
+            {formatSCurveCurrentStageLabel(metrics.currentStageId, metrics.currentStageComplete)}
           </div>
         </div>
 
