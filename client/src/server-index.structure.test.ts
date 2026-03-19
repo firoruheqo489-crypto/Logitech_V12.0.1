@@ -42,6 +42,37 @@ describe('server/index.ts structure', () => {
     expect(source).not.toMatch(/app\.use\(['"]\/api['"],\s*\(req,\s*res,\s*next\)\s*=>/);
   });
 
+  it('keeps trusted origin and access-control header details inside shared middleware modules', async () => {
+    const source = await loadServerIndexSource();
+
+    expect(source).not.toContain('TRUSTED_ORIGINS');
+    expect(source).not.toContain('Access-Control-Allow-Origin');
+    expect(source).not.toContain('Access-Control-Allow-Methods');
+    expect(source).not.toContain('Access-Control-Allow-Headers');
+    expect(source).not.toContain('Access-Control-Allow-Credentials');
+    expect(source).not.toContain('CORS origin denied');
+  });
+
+  it('keeps the dashboard clear route in the verified route cluster order', async () => {
+    const source = await loadServerIndexSource();
+    const batchUpsertIndex = findMatchIndex(
+      source,
+      /app\.post\(["']\/api\/dashboard\/product-data\/batch-upsert["'],\s*batchUpsertDashboardProductData\);/,
+    );
+    const clearProjectsIndex = findMatchIndex(
+      source,
+      /app\.delete\(["']\/api\/dashboard\/projects["'],\s*clearDashboardProjects\);/,
+    );
+    const healthCheckIndex = findMatchIndex(
+      source,
+      /app\.get\(["']\/api\/dashboard\/health-check["'],\s*getDashboardHealthCheck\);/,
+    );
+
+    expect(batchUpsertIndex).toBeGreaterThanOrEqual(0);
+    expect(clearProjectsIndex).toBeGreaterThan(batchUpsertIndex);
+    expect(healthCheckIndex).toBeGreaterThan(clearProjectsIndex);
+  });
+
   it('keeps the dev-api-only fallback on a machine-readable error payload', async () => {
     const source = await loadServerIndexSource();
 
