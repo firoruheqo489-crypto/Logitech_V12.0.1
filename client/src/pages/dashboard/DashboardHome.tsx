@@ -138,6 +138,26 @@ function parseMoldSetCount(value?: string): number {
 
 type ProgressEntry = DashboardProgressEntry;
 
+const DASHBOARD_TABS = [
+  'overview',
+  'logs',
+  'product',
+  'mold-trial-database',
+  'mold-reliability',
+  'spc-calculator',
+  'fmea',
+  'process',
+  'defect-library',
+  'injection-clinic',
+  'mass-production-monitoring',
+  'macro-stage-gate',
+] as const;
+
+type DashboardTab = typeof DASHBOARD_TABS[number];
+
+const PUBLIC_DASHBOARD_TABS: DashboardTab[] = [...DASHBOARD_TABS.slice(0, 7)];
+const ADMIN_ONLY_DASHBOARD_TABS: DashboardTab[] = [...DASHBOARD_TABS.slice(7)];
+
 async function fetchProgressEntriesForMold(mold: string): Promise<{ mold: string; entries: ProgressEntry[] }> {
   return {
     mold,
@@ -204,6 +224,17 @@ export default function DashboardHome() {
   const [defectMaterial, setDefectMaterial] = useState<MaterialType>('PC/ABS');
   const [defectVDI, setDefectVDI] = useState<number>(24);
   const [productModuleRows, setProductModuleRows] = useState<ProductModuleRecord[]>([]);
+  const isAdminMode = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('mode') === 'admin';
+  const visibleTabs = isAdminMode ? DASHBOARD_TABS : PUBLIC_DASHBOARD_TABS;
+  const selectedTab = useMemo<DashboardTab>(() => {
+    const currentTab = DASHBOARD_TABS.includes(activeTab as DashboardTab)
+      ? (activeTab as DashboardTab)
+      : 'overview';
+    if (!isAdminMode && ADMIN_ONLY_DASHBOARD_TABS.includes(currentTab)) {
+      return 'overview';
+    }
+    return currentTab;
+  }, [activeTab, isAdminMode]);
 
   const loadProjects = useCallback(async () => {
     const startedAt = Date.now();
@@ -223,6 +254,12 @@ export default function DashboardHome() {
     if (typeof window === 'undefined') return;
     sessionStorage.removeItem('dashboard_active_module');
   }, []);
+
+  useEffect(() => {
+    if (selectedTab !== activeTab) {
+      setActiveTab(selectedTab);
+    }
+  }, [activeTab, selectedTab]);
 
   // Scroll restoration - use mobile-scroll on mobile, #root on PC
   useEffect(() => {
@@ -356,7 +393,6 @@ export default function DashboardHome() {
   }, [activeTab, currentModuleData]);
 
   const hasData = currentModuleData.length > 0;
-  const isAdmin = () => new URLSearchParams(window.location.search).get('mode') === 'admin';
 
   const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
   const [isProductAdminModalOpen, setIsProductAdminModalOpen] = useState(false);
@@ -707,7 +743,7 @@ export default function DashboardHome() {
 
       <div className="mx-auto w-full max-w-7xl px-4 md:px-8">
         <div className="mb-8 flex flex-nowrap items-center gap-4 overflow-x-auto border-b border-slate-800/40 px-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:gap-8 md:overflow-visible">
-          {(['overview', 'logs', 'mold-trial-database', 'process', 'fmea', 'product', 'spc-calculator', 'defect-library', 'injection-clinic', 'mold-reliability', 'mass-production-monitoring', 'macro-stage-gate'] as const).map((tab) => {
+          {visibleTabs.map((tab) => {
             const labels: Record<string, string> = {
               'spc-calculator': 'SPC计算器',
               'mass-production-monitoring': '量产监控',
@@ -722,7 +758,7 @@ export default function DashboardHome() {
               'mold-reliability': '模具可靠性',
               'mold-trial-database': '试模数据库',
             };
-            const isActive = activeTab === tab;
+            const isActive = selectedTab === tab;
             return (
               <button
                 key={tab}
@@ -743,7 +779,7 @@ export default function DashboardHome() {
 
       <main ref={mainRef} className="mx-auto w-full max-w-7xl px-4 md:px-8 pb-8" style={{ overflowAnchor: 'none' }}>
 
-        {activeTab === 'logs' && (
+        {selectedTab === 'logs' && (
         <div className="w-full mb-8">
           <Accordion type="multiple" className="w-full space-y-4" value={openGroups} onValueChange={setOpenGroups}>
             {Object.entries(allGroupedProjects).map(([groupKey, group]) => {
@@ -853,7 +889,7 @@ export default function DashboardHome() {
         )}
 
         {/* ── Tab: 项目总览 ── */}
-        {activeTab === 'overview' && (
+        {selectedTab === 'overview' && (
         <>
         <SearchBar projectName={searchProjectName} moldId={searchMoldId} onProjectNameChange={handleProjectNameChange} onMoldIdChange={handleMoldIdChange} onClear={handleClearSearch} hasActiveFilters={hasActiveFilters} />
         <div className="mb-6">
@@ -909,11 +945,11 @@ export default function DashboardHome() {
         </>
         )}
 
-        {activeTab === 'macro-stage-gate' && (
+        {isAdminMode && selectedTab === 'macro-stage-gate' && (
           <MacroStageGateDrawerWorkspace panels={currentModuleTrialPanels} />
         )}
 
-        {activeTab === 'fmea' && (
+        {selectedTab === 'fmea' && (
           <FmeaIssueWorkspace
             projectName={activeModule || ''}
             projectIds={currentModuleMoldIds}
@@ -922,7 +958,7 @@ export default function DashboardHome() {
         )}
 
         {/* ── Tab: 占位模块 ── */}
-        {activeTab === 'product' && (
+        {selectedTab === 'product' && (
           <ProductDataDrawerWorkspace
             panels={currentModuleTrialPanels}
             projects={currentModuleData}
@@ -932,24 +968,24 @@ export default function DashboardHome() {
           />
         )}
 
-        {activeTab === 'process' && (
+        {isAdminMode && selectedTab === 'process' && (
           <ProcessDrawerWorkspace panels={currentModuleTrialPanels} />
         )}
 
-        {activeTab === 'spc-calculator' && (
+        {selectedTab === 'spc-calculator' && (
           <SpcCalculatorDrawerWorkspace panels={currentModuleTrialPanels} />
         )}
 
-        {activeTab === 'mold-reliability' && <ReliabilityDrawerWorkspace panels={currentModuleTrialPanels} />}
+        {selectedTab === 'mold-reliability' && <ReliabilityDrawerWorkspace panels={currentModuleTrialPanels} />}
 
-        {activeTab === 'mass-production-monitoring' && <SpcRadarDrawerWorkspace panels={currentModuleTrialPanels} />}
+        {isAdminMode && selectedTab === 'mass-production-monitoring' && <SpcRadarDrawerWorkspace panels={currentModuleTrialPanels} />}
 
-        {activeTab === 'mold-trial-database' && (
+        {selectedTab === 'mold-trial-database' && (
           <MoldTrialDrawerWorkspace panels={currentModuleTrialPanels} />
         )}
       </main>
 
-      {activeTab === 'defect-library' && (
+      {isAdminMode && selectedTab === 'defect-library' && (
         <VDISurfaceGrid
           onClose={() => setActiveTab('overview')}
           selectedMat={defectMaterial}
@@ -959,7 +995,7 @@ export default function DashboardHome() {
         />
       )}
 
-      {activeTab === 'injection-clinic' && (
+      {isAdminMode && selectedTab === 'injection-clinic' && (
         <DefectLab
           onClose={() => setActiveTab('overview')}
           material={defectMaterial}
@@ -968,10 +1004,10 @@ export default function DashboardHome() {
         />
       )}
 
-      {isAdmin() && (
+      {isAdminMode && (
         <AdminButton
           onClick={() => {
-            if (activeTab === 'product') {
+            if (selectedTab === 'product') {
               setIsProductAdminModalOpen(true);
               return;
             }
