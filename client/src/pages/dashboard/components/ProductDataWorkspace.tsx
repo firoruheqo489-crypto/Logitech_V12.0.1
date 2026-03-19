@@ -375,11 +375,6 @@ export default function ProductDataWorkspace({
         throw normalizeDashboardApiError(normalizedPayload, response.status, 'PROJECT_ASSET_SAVE_FAILED');
       }
 
-      if (!response.ok) {
-        const payload = await response.json().catch(() => ({}));
-        throw new Error((payload as { error?: string }).error || '数据库保存失败');
-      }
-
       return persistedUrl;
     },
     [],
@@ -397,11 +392,6 @@ export default function ProductDataWorkspace({
     if (!response.ok) {
       const normalizedPayload = await response.json().catch(() => null);
       throw normalizeDashboardApiError(normalizedPayload, response.status, 'PROJECT_ASSET_DELETE_FAILED');
-    }
-
-    if (!response.ok) {
-      const payload = await response.json().catch(() => ({}));
-      throw new Error((payload as { error?: string }).error || '数据库删除失败');
     }
   }, []);
 
@@ -453,8 +443,6 @@ export default function ProductDataWorkspace({
           closeLightbox();
         }
       } catch (error) {
-        const message = error instanceof Error ? error.message : '删除失败';
-        setSlotErrors((prev) => ({ ...prev, [slotKey]: message }));
         setSlotErrors((prev) => ({
           ...prev,
           [slotKey]: getDashboardApiErrorDisplayMessage(error, 'Delete failed'),
@@ -496,8 +484,6 @@ export default function ProductDataWorkspace({
         setPreviewUrlForSlot(persistedUrl, slotKey);
         selectSlotForViewport(projectKey, type);
       } catch (error) {
-        const message = error instanceof Error ? error.message : '上传失败';
-        setSlotErrors((prev) => ({ ...prev, [slotKey]: message }));
         setSlotErrors((prev) => ({
           ...prev,
           [slotKey]: getDashboardApiErrorDisplayMessage(error, 'Upload failed'),
