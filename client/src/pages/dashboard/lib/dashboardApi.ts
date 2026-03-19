@@ -52,9 +52,14 @@ export type DashboardApiErrorCode =
   | 'BACKUP_NOT_FOUND'
   | 'BODY_MUST_BE_ARRAY'
   | 'DATABASE_NOT_CONFIGURED'
+  | 'INVALID_ASSET_DELETE_REQUEST'
+  | 'INVALID_ASSET_UPSERT_REQUEST'
   | 'INTERNAL_ERROR'
   | 'MOLD_NUMBER_REQUIRED'
   | 'NOTE_ID_REQUIRED'
+  | 'PROJECT_ASSET_DELETE_FAILED'
+  | 'PROJECT_ASSET_SAVE_FAILED'
+  | 'PROJECT_ASSETS_LOAD_FAILED'
   | 'UNKNOWN_ERROR';
 
 const DASHBOARD_API_ERROR_CODES = new Set<DashboardApiErrorCode>([
@@ -63,9 +68,14 @@ const DASHBOARD_API_ERROR_CODES = new Set<DashboardApiErrorCode>([
   'BACKUP_NOT_FOUND',
   'BODY_MUST_BE_ARRAY',
   'DATABASE_NOT_CONFIGURED',
+  'INVALID_ASSET_DELETE_REQUEST',
+  'INVALID_ASSET_UPSERT_REQUEST',
   'INTERNAL_ERROR',
   'MOLD_NUMBER_REQUIRED',
   'NOTE_ID_REQUIRED',
+  'PROJECT_ASSET_DELETE_FAILED',
+  'PROJECT_ASSET_SAVE_FAILED',
+  'PROJECT_ASSETS_LOAD_FAILED',
   'UNKNOWN_ERROR',
 ]);
 
@@ -251,12 +261,22 @@ export function getDashboardApiErrorDisplayMessage(error: unknown, fallbackMessa
         return '提交数据格式无效，请刷新页面后重试';
       case 'DATABASE_NOT_CONFIGURED':
         return '服务端数据库未配置，暂时无法执行此操作';
+      case 'INVALID_ASSET_DELETE_REQUEST':
+        return 'Missing mold number or slot type for delete';
+      case 'INVALID_ASSET_UPSERT_REQUEST':
+        return 'Missing mold number or image payload for save';
       case 'INTERNAL_ERROR':
         return '服务暂时异常，请稍后重试';
       case 'MOLD_NUMBER_REQUIRED':
         return '缺少模具编号，无法继续操作';
       case 'NOTE_ID_REQUIRED':
         return '缺少记录标识，无法继续操作';
+      case 'PROJECT_ASSET_DELETE_FAILED':
+        return 'Image delete failed, please retry';
+      case 'PROJECT_ASSET_SAVE_FAILED':
+        return 'Image save failed, please retry';
+      case 'PROJECT_ASSETS_LOAD_FAILED':
+        return 'Image load failed, please retry';
       case 'UNKNOWN_ERROR':
         break;
     }

@@ -17,6 +17,10 @@ import {
 import { apiFetch } from '@/lib/api';
 import { supabase } from '@/lib/supabase';
 import type { ModuleTheme } from '@/lib/theme';
+import {
+  getDashboardApiErrorDisplayMessage,
+  normalizeDashboardApiError,
+} from '../lib/dashboardApi';
 import type { ProjectData } from '../types/project';
 import type { ProductModuleRecord } from '../types/product-module';
 import {
@@ -366,6 +370,10 @@ export default function ProductDataWorkspace({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ imageUrl: persistedUrl }),
       });
+      if (!response.ok) {
+        const normalizedPayload = await response.json().catch(() => null);
+        throw normalizeDashboardApiError(normalizedPayload, response.status, 'PROJECT_ASSET_SAVE_FAILED');
+      }
 
       if (!response.ok) {
         const payload = await response.json().catch(() => ({}));
@@ -386,6 +394,10 @@ export default function ProductDataWorkspace({
     const response = await apiFetch(`/api/dashboard/project-assets/${encodeURIComponent(moldNumber)}/${type}`, {
       method: 'DELETE',
     });
+    if (!response.ok) {
+      const normalizedPayload = await response.json().catch(() => null);
+      throw normalizeDashboardApiError(normalizedPayload, response.status, 'PROJECT_ASSET_DELETE_FAILED');
+    }
 
     if (!response.ok) {
       const payload = await response.json().catch(() => ({}));
@@ -443,6 +455,10 @@ export default function ProductDataWorkspace({
       } catch (error) {
         const message = error instanceof Error ? error.message : '删除失败';
         setSlotErrors((prev) => ({ ...prev, [slotKey]: message }));
+        setSlotErrors((prev) => ({
+          ...prev,
+          [slotKey]: getDashboardApiErrorDisplayMessage(error, 'Delete failed'),
+        }));
       } finally {
         setUploadingSlots((prev) => ({ ...prev, [slotKey]: false }));
         setUploadProgress((prev) => ({ ...prev, [slotKey]: 0 }));
@@ -482,6 +498,10 @@ export default function ProductDataWorkspace({
       } catch (error) {
         const message = error instanceof Error ? error.message : '上传失败';
         setSlotErrors((prev) => ({ ...prev, [slotKey]: message }));
+        setSlotErrors((prev) => ({
+          ...prev,
+          [slotKey]: getDashboardApiErrorDisplayMessage(error, 'Upload failed'),
+        }));
       } finally {
         setUploadingSlots((prev) => ({ ...prev, [slotKey]: false }));
         window.setTimeout(() => {
