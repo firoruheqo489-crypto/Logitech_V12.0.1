@@ -132,7 +132,8 @@ try {
 
     # ======================== Step 1: local verification and build ========================
     Invoke-ReleaseCommand "Running TypeScript verification..." { pnpm exec tsc --noEmit } "TypeScript verification failed"
-    Invoke-ReleaseCommand "Running release structure guard tests..." { pnpm exec vitest run client/src/server-index.structure.test.ts client/src/server-error-payload.structure.test.ts } "Release structure guard tests failed"
+    Invoke-ReleaseCommand "Running client release structure guard tests..." { pnpm exec vitest run client/src/server-index.structure.test.ts client/src/server-error-payload.structure.test.ts } "Client release structure guard tests failed"
+    Invoke-ReleaseCommand "Running server access policy guard tests..." { pnpm exec vitest run --root . server/middleware/apiCors.test.ts server/middleware/apiAccessPolicy.test.ts } "Server access policy guard tests failed"
     Invoke-ReleaseCommand "Starting local build..." { pnpm build } "Build failed"
     Log "Build complete -> dist/"
 
