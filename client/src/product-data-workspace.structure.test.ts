@@ -38,4 +38,11 @@ describe('product data workspace error boundaries', () => {
     expect(source).not.toContain("const message = error instanceof Error ? error.message : '上传失败';");
     expect(source).not.toContain("setSlotErrors((prev) => ({ ...prev, [slotKey]: message }));");
   });
+
+  it('keeps stored asset bootstrap failures silent instead of leaking raw HTTP status text', async () => {
+    const source = await loadSource('./pages/dashboard/components/ProductDataWorkspace.tsx');
+
+    expect(source).toMatch(/if \(!response\.ok\) \{\s*return;\s*\}/s);
+    expect(source).not.toContain('throw new Error(`HTTP ${response.status}`);');
+  });
 });

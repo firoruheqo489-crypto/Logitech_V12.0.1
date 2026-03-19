@@ -155,13 +155,10 @@ export default function GanttV3() {
       } else {
         toast.error('Clear failed, please retry');
         return;
-        const err = await res.json().catch(() => ({}));
-        toast.error('清除失败: ' + (err.error || res.statusText));
       }
-    } catch (e) {
+    } catch {
       toast.error('Clear failed, please retry');
       return;
-      toast.error('Clear failed, please retry');
     }
   }, [data, projectIdFromUrl]);
 

@@ -257,7 +257,7 @@ export default function ProductDataWorkspace({
       try {
         const response = await apiFetch('/api/dashboard/project-assets');
         if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
+          return;
         }
 
         const data = (await response.json()) as {

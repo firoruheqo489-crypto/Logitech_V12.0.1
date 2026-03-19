@@ -27,14 +27,15 @@ describe('gantt ui error boundaries', () => {
     );
   });
 
-  it('keeps gantt clear failures on a generic toast before legacy response text branches', async () => {
+  it('keeps gantt clear failures on a generic toast only', async () => {
     const source = await loadSource('./pages/GanttV3.tsx');
 
     expect(source).toMatch(
-      /\} else \{\s*toast\.error\('Clear failed, please retry'\);\s*return;\s*const err = await res\.json\(\)\.catch\(\(\) => \(\{\}\)\);/s,
+      /\} else \{\s*toast\.error\('Clear failed, please retry'\);\s*return;\s*\}/s,
     );
     expect(source).toMatch(
-      /\} catch \(e\) \{\s*toast\.error\('Clear failed, please retry'\);\s*return;\s*toast\.error\(/s,
+      /\} catch \{\s*toast\.error\('Clear failed, please retry'\);\s*return;\s*\}/s,
     );
+    expect(source).not.toContain('res.statusText');
   });
 });
