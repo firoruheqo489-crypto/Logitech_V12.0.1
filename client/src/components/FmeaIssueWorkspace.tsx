@@ -413,7 +413,6 @@ function ClosedLoopModule({
           name: file.name,
           size: compressed.size,
           compressed: compressed.size < file.size,
-          storagePath: result?.storagePath,
         };
 
         onChange({ ...data, images: [...data.images, newImg] });
@@ -429,8 +428,11 @@ function ClosedLoopModule({
   const handleRemoveImage = useCallback(
     async (id: string) => {
       const img = data.images.find((item) => item.id === id);
-      if (img?.storagePath) await deleteImage(img.storagePath);
-      if (img?.preview.startsWith('blob:')) URL.revokeObjectURL(img.preview);
+      if (img?.preview.startsWith('blob:')) {
+        URL.revokeObjectURL(img.preview);
+      } else if (img?.preview) {
+        await deleteImage(img.preview);
+      }
       onChange({ ...data, images: data.images.filter((item) => item.id !== id) });
     },
     [data, onChange],

@@ -18,7 +18,7 @@ import ReportView from './ReportView';
 import {
   type IssueRecord, type ImageItem, type ModuleData,
   fetchIssues, createIssue, updateIssue, deleteIssue,
-  uploadImage, deleteImage, isSupabaseReady,
+  uploadImage, deleteImage,
 } from '@/lib/issueService';
 import {
   getIssueProcessStepLabel,
@@ -256,7 +256,6 @@ function ClosedLoopModule({ issueId, config, data, onChange }: {
           id: `img-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
           file: compressed, preview, name: file.name, size: compressed.size,
           compressed: compressed.size < file.size,
-          storagePath: result?.storagePath,
         };
         nextImages = [...nextImages, newImg];
         onChange({ ...data, images: nextImages });
@@ -271,8 +270,11 @@ function ClosedLoopModule({ issueId, config, data, onChange }: {
   const handleRemoveImage = useCallback(async (id: string) => {
     const img = data.images.find(i => i.id === id);
     if (img) {
-      if (img.storagePath) await deleteImage(img.storagePath);
-      if (img.preview.startsWith('blob:')) URL.revokeObjectURL(img.preview);
+      if (img.preview.startsWith('blob:')) {
+        URL.revokeObjectURL(img.preview);
+      } else {
+        await deleteImage(img.preview);
+      }
     }
     onChange({ ...data, images: data.images.filter(i => i.id !== id) });
   }, [data, onChange]);
