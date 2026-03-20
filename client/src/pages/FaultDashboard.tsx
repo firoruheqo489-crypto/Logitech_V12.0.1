@@ -197,6 +197,7 @@ function ImageUploadZone({ images, maxImages, onAdd, onRemove }: {
 }) {
   const [dragOver, setDragOver] = useState(false);
   const [lightboxImg, setLightboxImg] = useState<ImageItem | null>(null);
+  const [pendingRemoveId, setPendingRemoveId] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const remaining = maxImages - images.length;
 
@@ -212,7 +213,7 @@ function ImageUploadZone({ images, maxImages, onAdd, onRemove }: {
             {images.map(img => (
               <div key={img.id} className="relative group rounded-lg overflow-hidden border border-white/[0.08] aspect-video bg-black/30 cursor-pointer" onClick={() => setLightboxImg(img)}>
                 <img src={img.preview} alt={img.name} className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" />
-                <button type="button" onClick={e => { e.stopPropagation(); onRemove(img.id); }}
+                <button type="button" onClick={e => { e.stopPropagation(); setPendingRemoveId(img.id); }}
                   className="absolute top-1 right-1 w-6 h-6 bg-black/70 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
                   <X className="w-3 h-3 text-white" />
                 </button>
@@ -233,6 +234,21 @@ function ImageUploadZone({ images, maxImages, onAdd, onRemove }: {
           </div>
         )}
       </div>
+
+      <CyberConfirmDialog
+        open={!!pendingRemoveId}
+        title="Delete confirmation"
+        message="Delete this image? This action cannot be undone."
+        onConfirm={() => {
+          const targetId = pendingRemoveId;
+          setPendingRemoveId(null);
+          if (!targetId) return;
+          onRemove(targetId);
+        }}
+        onCancel={() => setPendingRemoveId(null)}
+        confirmText="Delete"
+        cancelText="Cancel"
+      />
     </>
   );
 }

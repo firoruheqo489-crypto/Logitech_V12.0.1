@@ -23,6 +23,7 @@ import {
 } from '../lib/dashboardApi';
 import type { ProjectData } from '../types/project';
 import type { ProductModuleRecord } from '../types/product-module';
+import CyberConfirmDialog from '@/components/ui/CyberConfirmDialog';
 import {
   buildProductModuleLookupKey,
   formatProductSequenceLabel,
@@ -200,6 +201,11 @@ export default function ProductDataWorkspace({
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
   const [lightboxImageUrl, setLightboxImageUrl] = useState('');
   const [lightboxRotation, setLightboxRotation] = useState(0);
+  const [pendingDeleteSlot, setPendingDeleteSlot] = useState<{
+    projectKey: string;
+    moldNumber: string;
+    type: SlotId;
+  } | null>(null);
 
   const resolveProductSequenceLabel = useCallback(
     (moldNumber: string, fallbackValue: unknown) => {
@@ -798,10 +804,10 @@ export default function ProductDataWorkspace({
 
                           <button
                             type="button"
-                            onClick={async (event) => {
+                            onClick={(event) => {
                               event.stopPropagation();
                               if (!previewUrl || isUploading) return;
-                              await handleImageDelete(productKey, moldNumber, id);
+                              setPendingDeleteSlot({ projectKey: productKey, moldNumber, type: id });
                             }}
                             disabled={!previewUrl || isUploading}
                             className={`group/btn flex min-w-0 flex-1 flex-nowrap items-center justify-center gap-1.5 rounded-md px-3 py-1.5 transition-colors ${
@@ -896,6 +902,21 @@ export default function ProductDataWorkspace({
           </div>
         </div>
       )}
+
+      <CyberConfirmDialog
+        open={!!pendingDeleteSlot}
+        title="Delete confirmation"
+        message="Delete this image? This action cannot be undone."
+        onConfirm={() => {
+          const target = pendingDeleteSlot;
+          setPendingDeleteSlot(null);
+          if (!target) return;
+          void handleImageDelete(target.projectKey, target.moldNumber, target.type);
+        }}
+        onCancel={() => setPendingDeleteSlot(null)}
+        confirmText="Delete"
+        cancelText="Cancel"
+      />
     </>
   );
 }
