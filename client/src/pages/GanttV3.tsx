@@ -229,7 +229,10 @@ export default function GanttV3() {
       </div>
       {showConnectionBanner && (
         <div className="shrink-0 px-3 py-1.5 bg-amber-500/15 border-b border-amber-500/30 text-amber-400 text-sm text-center">
-          当前为演示数据，未连接服务器。请运行 <code className="px-1 rounded bg-white/10">pnpm dev</code>，并在项目根目录 <code className="px-1 rounded bg-white/10">.env</code> 中配置 <code className="px-1 rounded bg-white/10">DATABASE_URL</code>。详见 <code className="px-1 rounded bg-white/10">CONNECTION.md</code>
+          当前为演示数据，未连接到本地服务。请在项目根目录运行 <code className="px-1 rounded bg-white/10">pnpm dev</code>，
+          该命令会自动清理 3000/3001 端口残留并同时启动前后端。若仍无法连接，请检查项目根目录
+          <code className="px-1 rounded bg-white/10">.env</code> 中的 <code className="px-1 rounded bg-white/10">DATABASE_URL</code> 配置，
+          详见 <code className="px-1 rounded bg-white/10">CONNECTION.md</code>
         </div>
       )}
       {/* 唯一表头 — 项目名片 + 里程碑图例 + 导入 */}

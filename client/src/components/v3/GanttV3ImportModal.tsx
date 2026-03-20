@@ -57,8 +57,8 @@ async function persistGanttAndReturnData(tasks: TaskNode[], projectInfo: Project
       }
       if (e.message === 'Failed to fetch' || e.message.includes('NetworkError') || e.message.includes('Load failed')) {
         throw new Error(
-          '无法连接到后端服务。请确认已同时运行：pnpm dev（前端）与 pnpm dev:api（后端）。' +
-            '若已运行，请检查后端控制台是否有 Supabase 连接错误。',
+          '无法连接到后端服务。请先在项目根目录运行 pnpm dev。该命令会自动清理 3000/3001 端口残留并同时启动前后端。' +
+            '若已运行，请检查后端控制台是否有数据库连接错误。',
         );
       }
     }
