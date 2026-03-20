@@ -28,6 +28,7 @@
     "git-backup:prune": "node scripts/git-backup-manager.mjs prune",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
+    "migrate:legacy-assets": "tsx scripts/migrate-legacy-supabase-assets.ts",
     "format": "prettier --write ."
   },
   "dependencies": {

@@ -908,6 +908,8 @@ export default function MoldTrialDatabase({
     null
   );
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [pendingDeleteEvidenceSlotId, setPendingDeleteEvidenceSlotId] =
+    useState<string | null>(null);
   const [selectedEvidenceSlotId, setSelectedEvidenceSlotId] = useState<
     string | null
   >(null);
@@ -972,6 +974,7 @@ export default function MoldTrialDatabase({
     evidenceByTrialRef.current = fallbackEvidence;
     setPendingUploadSlotId(null);
     setShowClearConfirm(false);
+    setPendingDeleteEvidenceSlotId(null);
     slotInputRefs.current = {};
 
     void (async () => {
@@ -1459,7 +1462,7 @@ export default function MoldTrialDatabase({
                       </button>
                       <button
                         type="button"
-                        onClick={() => handleEvidenceDelete(slot.id)}
+                        onClick={() => setPendingDeleteEvidenceSlotId(slot.id)}
                         disabled={!slot.imageUrl}
                         className={`group/btn flex min-w-0 flex-1 flex-nowrap items-center justify-center gap-1.5 rounded-md px-3 py-1.5 transition-colors ${
                           slot.imageUrl
@@ -1514,11 +1517,29 @@ export default function MoldTrialDatabase({
         onChange={handleExcelUpload}
       />
       <CyberConfirmDialog
-        open={showClearConfirm}
-        title="删除轮次确认"
-        message={`确定要删除当前 ${activeTrial} 轮次页面吗？删除后该轮次的参数快照将被移除，此操作不可撤销。`}
-        onCancel={() => setShowClearConfirm(false)}
+        open={showClearConfirm || !!pendingDeleteEvidenceSlotId}
+        title={
+          pendingDeleteEvidenceSlotId ? "删除图片确认" : "删除轮次确认"
+        }
+        message={
+          pendingDeleteEvidenceSlotId
+            ? "确定要删除当前图片吗？删除后该图片将被移除，此操作不可撤销。"
+            : `确定要删除当前 ${activeTrial} 轮次页面吗？删除后该轮次的参数快照将被移除，此操作不可撤销。`
+        }
+        onCancel={() => {
+          if (pendingDeleteEvidenceSlotId) {
+            setPendingDeleteEvidenceSlotId(null);
+            return;
+          }
+          setShowClearConfirm(false);
+        }}
         onConfirm={() => {
+          if (pendingDeleteEvidenceSlotId) {
+            handleEvidenceDelete(pendingDeleteEvidenceSlotId);
+            setPendingDeleteEvidenceSlotId(null);
+            return;
+          }
+
           deleteCurrentTrialStage();
           console.log("删除当前轮次页面", activeTrial);
         }}

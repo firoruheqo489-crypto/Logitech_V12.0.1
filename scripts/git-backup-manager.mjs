@@ -362,5 +362,5 @@ async function main() {
 
 main().catch((error) => {
   console.error(`git backup manager failed: ${error.message}`);
-  process.exitCode = 1;
+  process.exit(1);
 });

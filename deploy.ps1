@@ -1,12 +1,13 @@
 # ============================================================================
 # deploy.ps1 - Windows PowerShell one-click deploy to Aliyun
-# Usage: .\deploy.ps1 [-VersionBump none|minor|major]
+# Usage: .\deploy.ps1 [-VersionBump none|minor|major] [-PreflightOnly]
 # ============================================================================
 
 param(
     [ValidateSet("none", "minor", "major")]
     [string]$VersionBump = "none",
-    [string]$DeployRoot = ""
+    [string]$DeployRoot = "",
+    [switch]$PreflightOnly
 )
 
 $ErrorActionPreference = "Stop"
@@ -41,6 +42,87 @@ function Resolve-OptionalPath([string]$PathValue) {
     }
 }
 
+function Get-GitHead([string]$RepoPath) {
+    $commit = (git -C $RepoPath rev-parse HEAD).Trim()
+    if ($LASTEXITCODE -ne 0 -or -not $commit) {
+        Err "Failed to resolve git HEAD for ${RepoPath}"
+    }
+
+    return $commit
+}
+
+function Get-GitStatus([string]$RepoPath, [string[]]$IgnoredStatusEntries = @()) {
+    $status = git -C $RepoPath status --porcelain=v1 --untracked-files=all 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        Err "Failed to read git working tree state for ${RepoPath}"
+    }
+
+    $statusLines = @($status | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    if ($IgnoredStatusEntries.Count -eq 0) {
+        return $statusLines
+    }
+
+    return @(
+        $statusLines | Where-Object {
+            $line = $_.TrimEnd()
+            -not ($IgnoredStatusEntries | Where-Object { $_ -eq $line })
+        }
+    )
+}
+
+function Assert-CleanGitWorkspace([string]$RepoPath, [string]$FailureMessage, [string[]]$IgnoredStatusEntries = @()) {
+    $status = Get-GitStatus $RepoPath $IgnoredStatusEntries
+    if ($status) {
+        Write-Host $status -ForegroundColor Yellow
+        Err $FailureMessage
+    }
+}
+
+function Sync-HandoffWorktreeToSource([string]$SourceRoot, [string]$HandoffRoot) {
+    $resolvedSourceRoot = (Resolve-Path $SourceRoot).Path.TrimEnd('\', '/')
+    $resolvedHandoffRoot = (Resolve-Path $HandoffRoot).Path
+    if ($resolvedHandoffRoot.StartsWith("${resolvedSourceRoot}\")) {
+        $handoffRelativePath = $resolvedHandoffRoot.Substring($resolvedSourceRoot.Length + 1).Replace('\', '/')
+    } else {
+        $handoffRelativePath = (Split-Path $resolvedHandoffRoot -Leaf).Replace('\', '/')
+    }
+    $sourceIgnoredEntries = @(
+        "?? ${handoffRelativePath}/",
+        "?? ${handoffRelativePath}"
+    )
+    $sourceStatus = Get-GitStatus $SourceRoot $sourceIgnoredEntries
+    if ($sourceStatus) {
+        Write-Host $sourceStatus -ForegroundColor Yellow
+        Err "Refusing to delegate deploy from a dirty source workspace. Commit or stash local changes before deploying so the uploaded version cannot drift from the code you just edited."
+    }
+
+    Assert-CleanGitWorkspace $HandoffRoot "Refusing to delegate deploy because ${HandoffRoot} is dirty. Clean the release handoff worktree first."
+
+    $sourceCommit = Get-GitHead $SourceRoot
+    $handoffCommit = Get-GitHead $HandoffRoot
+
+    if ($sourceCommit -eq $handoffCommit) {
+        Log "Release handoff worktree already matches source HEAD ${sourceCommit}"
+        return
+    }
+
+    Log "Auto-syncing release handoff worktree to source HEAD ${sourceCommit}"
+    git -C $HandoffRoot checkout --detach $sourceCommit | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        Err "Auto-sync failed while moving ${HandoffRoot} to ${sourceCommit}. Hard halt."
+    }
+
+    Assert-CleanGitWorkspace $HandoffRoot "Auto-sync halted because ${HandoffRoot} is not clean after checkout."
+    $verifiedHandoffCommit = Get-GitHead $HandoffRoot
+    if ($verifiedHandoffCommit -ne $sourceCommit) {
+        Write-Host "Expected handoff HEAD: $sourceCommit" -ForegroundColor Yellow
+        Write-Host "Actual handoff HEAD:   $verifiedHandoffCommit" -ForegroundColor Yellow
+        Err "Auto-sync verification failed. Hard halt."
+    }
+
+    Log "Release handoff worktree synced to ${verifiedHandoffCommit}"
+}
+
 function Maybe-DelegateToHandoff() {
     if (-not (Test-Path $HANDOFF_DEPLOY_SCRIPT)) {
         return
@@ -58,6 +140,12 @@ function Maybe-DelegateToHandoff() {
 
     if (-not $shouldDelegate) {
         return
+    }
+
+    Sync-HandoffWorktreeToSource $PSScriptRoot $resolvedHandoffRoot
+    if ($PreflightOnly) {
+        Log "Pre-flight sync check passed. Stopping before deployment because -PreflightOnly was requested."
+        exit 0
     }
 
     Log "Delegating deploy to verified handoff worktree at ${resolvedHandoffRoot}"

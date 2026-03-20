@@ -50,4 +50,7 @@ CREATE POLICY "Allow all access" ON issues FOR ALL USING (true) WITH CHECK (true
   console.log('No Supabase Storage bucket setup is required for issue images.');
 }
 
-setup().catch(console.error);
+setup().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});

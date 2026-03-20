@@ -22,6 +22,10 @@ if (typeof analyticsEndpoint === "string" && analyticsEndpoint && typeof analyti
 
 document.title = APP_TITLE;
 
+// Release any fade-out styles left by the previous page during hard reloads.
+document.documentElement.style.opacity = "1";
+document.documentElement.style.transition = "";
+
 createRoot(document.getElementById("root")!).render(<App />);
 
 const bootSplash = document.getElementById("app-boot-splash");

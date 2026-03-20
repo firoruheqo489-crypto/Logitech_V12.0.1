@@ -43,6 +43,8 @@ export type SurfaceParseResult = {
   colorSummary: SurfaceParseSummary;
 };
 
+export const COLOR_DIFFERENCE_MAX_OK = 1.2;
+
 const EMPTY_META_PLACEHOLDER: SurfaceSectionMeta = {
   title: '--',
   standard: '--',
@@ -135,6 +137,39 @@ function buildSummary<T extends { isNG: boolean }>(rows: T[]): SurfaceParseSumma
   };
 }
 
+export function isColorDifferenceNG(value: number | null): boolean {
+  return value !== null && value > COLOR_DIFFERENCE_MAX_OK;
+}
+
+export function deriveColorDifferenceJudge(value: number | null): string {
+  if (value === null) {
+    return '';
+  }
+
+  return isColorDifferenceNG(value) ? 'NG' : 'OK';
+}
+
+export function normalizeColorSectionMeta(meta: SurfaceSectionMeta): SurfaceSectionMeta {
+  return {
+    ...meta,
+    standard: '#标准： <=1.2',
+  };
+}
+
+export function normalizeColorDifferenceRows(rows: SurfaceValueRow[]): SurfaceValueRow[] {
+  return rows.map((row) => {
+    const frontJudge = deriveColorDifferenceJudge(row.frontVal);
+    const backJudge = deriveColorDifferenceJudge(row.backVal);
+
+    return {
+      ...row,
+      frontJudge,
+      backJudge,
+      isNG: frontJudge === 'NG' || backJudge === 'NG',
+    };
+  });
+}
+
 function extractBlockRows(
   rows: unknown[][],
   headerIndex: number,
@@ -195,6 +230,11 @@ function parseValueBlock(rows: unknown[][]): SurfaceValueRow[] {
     });
 }
 
+function parseColorValueBlock(rows: unknown[][]): SurfaceValueRow[] {
+  const parsedRows = parseValueBlock(rows);
+  return normalizeColorDifferenceRows(parsedRows);
+}
+
 export function parseSurfaceSheetRows(rows: unknown[][]): SurfaceParseResult {
   const anchorIndexes = findSurfaceAnchorIndexes(rows);
   const [roughnessAnchor, glossAnchor, colorAnchor] = anchorIndexes;
@@ -215,7 +255,7 @@ export function parseSurfaceSheetRows(rows: unknown[][]): SurfaceParseResult {
 
   const roughnessData = roughnessBlock.length > 0 ? parseRoughnessBlock(roughnessBlock) : [];
   const glossData = glossBlock.length > 0 ? parseValueBlock(glossBlock) : [];
-  const colorData = colorBlock.length > 0 ? parseValueBlock(colorBlock) : [];
+  const colorData = colorBlock.length > 0 ? parseColorValueBlock(colorBlock) : [];
 
   return {
     roughnessMeta: roughnessAnchor !== undefined ? buildSectionMeta(rows, roughnessAnchor, 0) : { ...EMPTY_META_PLACEHOLDER },
@@ -223,7 +263,7 @@ export function parseSurfaceSheetRows(rows: unknown[][]): SurfaceParseResult {
       ? buildSectionMeta(rows, glossAnchor, (roughnessAnchor ?? 0) + 1)
       : { ...EMPTY_META_PLACEHOLDER },
     colorMeta: colorAnchor !== undefined
-      ? buildSectionMeta(rows, colorAnchor, (glossAnchor ?? roughnessAnchor ?? 0) + 1)
+      ? normalizeColorSectionMeta(buildSectionMeta(rows, colorAnchor, (glossAnchor ?? roughnessAnchor ?? 0) + 1))
       : { ...EMPTY_META_PLACEHOLDER },
     roughnessData,
     glossData,

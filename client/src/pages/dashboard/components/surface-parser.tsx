@@ -6,6 +6,8 @@ import { AlertTriangle, CheckCircle2, FileSpreadsheet, Sparkles, Trash2, UploadC
 import CyberConfirmDialog from '@/components/ui/CyberConfirmDialog';
 
 import {
+  normalizeColorDifferenceRows,
+  normalizeColorSectionMeta,
   parseSurfaceSheetRows,
   type RoughnessRow,
   type SurfaceParseSummary,
@@ -56,6 +58,19 @@ function sanitizeSummary(value: unknown): SurfaceParseSummary {
     qualifiedRate: record.qualifiedRate === null || record.qualifiedRate === undefined
       ? null
       : Number(record.qualifiedRate),
+  };
+}
+
+function buildSummaryFromRows<T extends { isNG: boolean }>(rows: T[]): SurfaceParseSummary {
+  const totalRows = rows.length;
+  const ngRows = rows.filter((row) => row.isNG).length;
+  const qualifiedRows = totalRows - ngRows;
+
+  return {
+    totalRows,
+    ngRows,
+    qualifiedRows,
+    qualifiedRate: totalRows > 0 ? Number(((qualifiedRows / totalRows) * 100).toFixed(2)) : null,
   };
 }
 
@@ -150,17 +165,19 @@ function readStoredSurfaceState(storageKey: string): {
     }
 
     const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const normalizedColorData = normalizeColorDifferenceRows(sanitizeValueRows(parsed.colorData));
+
     return {
       fileName: String(parsed.fileName ?? ''),
       roughnessData: sanitizeRoughnessRows(parsed.roughnessData),
       glossData: sanitizeValueRows(parsed.glossData),
-      colorData: sanitizeValueRows(parsed.colorData),
+      colorData: normalizedColorData,
       roughnessMeta: sanitizeMeta(parsed.roughnessMeta),
       glossMeta: sanitizeMeta(parsed.glossMeta),
-      colorMeta: sanitizeMeta(parsed.colorMeta),
+      colorMeta: normalizeColorSectionMeta(sanitizeMeta(parsed.colorMeta)),
       roughnessSummary: sanitizeSummary(parsed.roughnessSummary),
       glossSummary: sanitizeSummary(parsed.glossSummary),
-      colorSummary: sanitizeSummary(parsed.colorSummary),
+      colorSummary: buildSummaryFromRows(normalizedColorData),
     };
   } catch {
     return null;

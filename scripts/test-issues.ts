@@ -32,4 +32,7 @@ async function test() {
   console.log('Attachment uploads must be validated through the backend OSS API.');
 }
 
-test().catch(console.error);
+test().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});

@@ -99,6 +99,16 @@ jspm_packages/
 # Temporary folders
 tmp/
 temp/
+*.zip
+
+# Local release/deploy artifacts
+.rollback/
+.codex-local-*.err
+.codex-local-*.out
+.codex-smoke-upload.png
+.codex-sync-autosync-test-*/
+.codex-deploy-*/
+scripts/out/
 
 # Database
 *.db

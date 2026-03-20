@@ -357,5 +357,5 @@ async function main() {
 
 main().catch((error) => {
   console.error(`回滚工具执行失败: ${error.message}`);
-  process.exitCode = 1;
+  process.exit(1);
 });
