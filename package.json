@@ -33,6 +33,9 @@
     "migrate:legacy-assets": "tsx scripts/migrate-legacy-supabase-assets.ts",
     "verify:oss-api": "node scripts/verify-oss-http-smoke.mjs",
     "verify:oss-api:local": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-local-oss-smoke.ps1",
+    "release:build": "powershell -NoProfile -ExecutionPolicy Bypass -File deploy.ps1 -Mode build",
+    "release:deploy": "powershell -NoProfile -ExecutionPolicy Bypass -File deploy.ps1 -Mode deploy",
+    "release:all": "powershell -NoProfile -ExecutionPolicy Bypass -File deploy.ps1 -Mode all",
     "format": "prettier --write ."
   },
   "dependencies": {

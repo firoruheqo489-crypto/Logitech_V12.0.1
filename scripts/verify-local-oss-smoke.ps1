@@ -1,5 +1,7 @@
 param(
-  [int]$Port = 3301
+  [int]$Port = 3301,
+  [int]$Retries = 40,
+  [int]$RetryIntervalMs = 1000
 )
 
 Set-StrictMode -Version Latest
@@ -29,7 +31,8 @@ function Wait-ApiHealthy {
   param(
     [Parameter(Mandatory = $true)]
     [string]$BaseUrl,
-    [int]$Retries = 20
+    [int]$Retries = 40,
+    [int]$RetryIntervalMs = 1000
   )
 
   for ($attempt = 1; $attempt -le $Retries; $attempt += 1) {
@@ -40,7 +43,7 @@ function Wait-ApiHealthy {
         return
       }
     } catch {
-      Start-Sleep -Milliseconds 750
+      Start-Sleep -Milliseconds $RetryIntervalMs
     }
   }
 
@@ -86,7 +89,7 @@ try {
     -RedirectStandardError $stderrPath `
     -PassThru
 
-  Wait-ApiHealthy -BaseUrl "http://127.0.0.1:$Port"
+  Wait-ApiHealthy -BaseUrl "http://127.0.0.1:$Port" -Retries $Retries -RetryIntervalMs $RetryIntervalMs
 
   Invoke-Step -Label "Running isolated OSS upload/delete smoke" -Command {
     node scripts/verify-oss-http-smoke.mjs --base-url "http://127.0.0.1:$Port" --env-file .env --label local-predeploy

@@ -100,6 +100,7 @@ jspm_packages/
 tmp/
 temp/
 *.zip
+artifacts/
 
 # Local release/deploy artifacts
 .rollback/

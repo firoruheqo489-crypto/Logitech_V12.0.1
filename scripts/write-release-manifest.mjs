@@ -23,14 +23,31 @@ function tryRunGit(args) {
   }
 }
 
+function normalizeSemVer(value) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalized = value.trim().replace(/^v/i, "");
+  return /^\d+\.\d+\.\d+$/.test(normalized) ? normalized : null;
+}
+
 const packageJson = readJson(packageJsonPath);
 const commit = tryRunGit(["rev-parse", "HEAD"]) || null;
 const commitShort = tryRunGit(["rev-parse", "--short", "HEAD"]) || (commit ? commit.slice(0, 7) : null);
 const statusOutput = commit ? tryRunGit(["status", "--porcelain=v1", "--untracked-files=all"]) : "";
+const packageVersion = typeof packageJson.version === "string" ? packageJson.version : "0.0.0";
+const overrideVersionRaw = process.env.RELEASE_VERSION_OVERRIDE ?? "";
+const overrideVersion = normalizeSemVer(overrideVersionRaw);
+const resolvedVersion = overrideVersion ?? packageVersion;
+
+if (overrideVersionRaw && !overrideVersion) {
+  console.warn(`ignored invalid RELEASE_VERSION_OVERRIDE: ${overrideVersionRaw}`);
+}
 
 const releaseManifest = {
   name: typeof packageJson.name === "string" ? packageJson.name : "mold-gantt-v3",
-  version: typeof packageJson.version === "string" ? packageJson.version : "0.0.0",
+  version: resolvedVersion,
   commit,
   commitShort,
   builtAt: new Date().toISOString(),

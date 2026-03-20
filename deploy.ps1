@@ -1,85 +1,35 @@
 # ============================================================================
-# deploy.ps1 - Windows PowerShell one-click deploy to Aliyun
-# Usage: .\deploy.ps1 [-VersionBump none|minor|major] [-DeployRoot <path>] [-PreflightOnly]
+# deploy.ps1 - Release entrypoint (artifact-driven)
+# Usage:
+#   .\deploy.ps1 -Mode build  -VersionBump minor -ReleaseNote "fix xxx"
+#   .\deploy.ps1 -Mode deploy -ArtifactPath .\artifacts\releases\release-xxx.tar.gz
+#   .\deploy.ps1 -Mode all    -VersionBump major -ReleaseNote "add module yyy"
 # ============================================================================
 
 param(
-    [ValidateSet("none", "minor", "major")]
-    [string]$VersionBump = "none",
-    [string]$DeployRoot = "",
+    [ValidateSet("build", "deploy", "all")]
+    [string]$Mode = "all",
+    [ValidateSet("minor", "major")]
+    [string]$VersionBump = "minor",
+    [string]$ReleaseNote = "",
+    [string]$ArtifactPath = "",
+    [string]$MetadataPath = "",
+    [string]$OutputDir = "artifacts/releases",
+    [switch]$SkipVerification,
+    [switch]$SkipRemoteSmoke,
     [switch]$PreflightOnly
 )
 
 $ErrorActionPreference = "Stop"
 
-# ======================== Config ========================
-$SERVER_IP = "120.27.153.140"
-$SERVER_USER = "root"
-$SERVER_PORT = "22"
-$REMOTE_DIR = "/var/www/logitech"
-$PM2_APPS = @("logitech", "mold-gantt-v3")
-# =======================================================
-
-$SSH_HOST = "aliyun"
-$DEST = $SSH_HOST
-
 function Log($msg) { Write-Host "[OK] $msg" -ForegroundColor Green }
 function Warn($msg) { Write-Host "[!!] $msg" -ForegroundColor Yellow }
 function Err($msg) { Write-Host "[ERR] $msg" -ForegroundColor Red; exit 1 }
 
-$HANDOFF_ROOT = Join-Path $PSScriptRoot ".codex-release-handoff-ready"
-$HANDOFF_DEPLOY_SCRIPT = Join-Path $HANDOFF_ROOT "deploy.ps1"
-$REQUIRED_LOCAL_ENV_KEYS = @(
-    "ALIYUN_OSS_REGION",
-    "ALIYUN_OSS_BUCKET",
-    "ALIYUN_OSS_ACCESS_KEY_ID",
-    "ALIYUN_OSS_ACCESS_KEY_SECRET",
-    "API_SECRET_KEY"
-)
-
-function Test-DeployEnvReady([string]$RootPath) {
-    $envPath = Join-Path $RootPath ".env"
-    if (-not (Test-Path $envPath)) {
-        return $false
-    }
-
-    $envValues = @{}
-    foreach ($rawLine in (Get-Content $envPath)) {
-        if ($null -eq $rawLine) {
-            continue
-        }
-
-        $line = $rawLine.Trim()
-        if (-not $line -or $line.StartsWith("#")) {
-            continue
-        }
-
-        $separatorIndex = $line.IndexOf("=")
-        if ($separatorIndex -le 0) {
-            continue
-        }
-
-        $key = $line.Substring(0, $separatorIndex).Trim()
-        $value = $line.Substring($separatorIndex + 1).Trim()
-        if ($key) {
-            $envValues[$key] = $value
-        }
-    }
-
-    foreach ($requiredKey in $REQUIRED_LOCAL_ENV_KEYS) {
-        if (-not $envValues.ContainsKey($requiredKey) -or [string]::IsNullOrWhiteSpace($envValues[$requiredKey])) {
-            return $false
-        }
-    }
-
-    return $true
-}
-
-function Resolve-OptionalPath([string]$PathValue) {
+function Resolve-AbsolutePath([string]$PathValue) {
     if (-not $PathValue) {
         return $null
     }
-
     try {
         return (Resolve-Path $PathValue).Path
     } catch {
@@ -87,399 +37,115 @@ function Resolve-OptionalPath([string]$PathValue) {
     }
 }
 
-function Get-GitHead([string]$RepoPath) {
-    $commit = (git -C $RepoPath rev-parse HEAD).Trim()
-    if ($LASTEXITCODE -ne 0 -or -not $commit) {
-        Err "Failed to resolve git HEAD for ${RepoPath}"
+function Resolve-LatestMetadataPath([string]$RootPath) {
+    if (-not (Test-Path $RootPath)) {
+        return $null
     }
 
-    return $commit
+    $candidate = Get-ChildItem -Path $RootPath -Filter "*.metadata.json" -File |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -First 1
+
+    if (-not $candidate) {
+        return $null
+    }
+
+    return $candidate.FullName
 }
 
-function Get-GitStatus([string]$RepoPath, [string[]]$IgnoredStatusEntries = @()) {
-    $status = git -C $RepoPath status --porcelain=v1 --untracked-files=all 2>$null
+$scriptRoot = $PSScriptRoot
+$releaseBuildScript = Join-Path $scriptRoot "scripts/release-build.ps1"
+$releaseDeployScript = Join-Path $scriptRoot "scripts/deploy-release-artifact.ps1"
+
+if (-not (Test-Path $releaseBuildScript)) {
+    Err "Missing script: $releaseBuildScript"
+}
+if (-not (Test-Path $releaseDeployScript)) {
+    Err "Missing script: $releaseDeployScript"
+}
+
+if (($Mode -eq "build" -or $Mode -eq "all") -and [string]::IsNullOrWhiteSpace($ReleaseNote) -and -not $PreflightOnly) {
+    Err "ReleaseNote is required for build/all mode."
+}
+
+if ($Mode -eq "build") {
+    Log "Running artifact build mode..."
+    & $releaseBuildScript `
+        -VersionBump $VersionBump `
+        -ReleaseNote $ReleaseNote `
+        -OutputDir $OutputDir `
+        -SkipVerification:$SkipVerification `
+        -PreflightOnly:$PreflightOnly
+
     if ($LASTEXITCODE -ne 0) {
-        Err "Failed to read git working tree state for ${RepoPath}"
-    }
-
-    $statusLines = @($status | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
-    if ($IgnoredStatusEntries.Count -eq 0) {
-        return $statusLines
-    }
-
-    return @(
-        $statusLines | Where-Object {
-            $line = $_.TrimEnd()
-            -not ($IgnoredStatusEntries | Where-Object { $_ -eq $line })
-        }
-    )
-}
-
-function Assert-CleanGitWorkspace([string]$RepoPath, [string]$FailureMessage, [string[]]$IgnoredStatusEntries = @()) {
-    $status = Get-GitStatus $RepoPath $IgnoredStatusEntries
-    if ($status) {
-        Write-Host $status -ForegroundColor Yellow
-        Err $FailureMessage
-    }
-}
-
-function Sync-HandoffWorktreeToSource([string]$SourceRoot, [string]$HandoffRoot) {
-    $resolvedSourceRoot = (Resolve-Path $SourceRoot).Path.TrimEnd('\', '/')
-    $resolvedHandoffRoot = (Resolve-Path $HandoffRoot).Path
-    if ($resolvedHandoffRoot.StartsWith("${resolvedSourceRoot}\")) {
-        $handoffRelativePath = $resolvedHandoffRoot.Substring($resolvedSourceRoot.Length + 1).Replace('\', '/')
-    } else {
-        $handoffRelativePath = (Split-Path $resolvedHandoffRoot -Leaf).Replace('\', '/')
-    }
-    $sourceIgnoredEntries = @(
-        "?? ${handoffRelativePath}/",
-        "?? ${handoffRelativePath}"
-    )
-    $sourceStatus = Get-GitStatus $SourceRoot $sourceIgnoredEntries
-    if ($sourceStatus) {
-        Write-Host $sourceStatus -ForegroundColor Yellow
-        Err "Refusing to delegate deploy from a dirty source workspace. Commit or stash local changes before deploying so the uploaded version cannot drift from the code you just edited."
-    }
-
-    Assert-CleanGitWorkspace $HandoffRoot "Refusing to delegate deploy because ${HandoffRoot} is dirty. Clean the release handoff worktree first."
-
-    $sourceCommit = Get-GitHead $SourceRoot
-    $handoffCommit = Get-GitHead $HandoffRoot
-
-    if ($sourceCommit -eq $handoffCommit) {
-        Log "Release handoff worktree already matches source HEAD ${sourceCommit}"
-        return
-    }
-
-    Log "Auto-syncing release handoff worktree to source HEAD ${sourceCommit}"
-    git -C $HandoffRoot checkout --detach $sourceCommit | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-        Err "Auto-sync failed while moving ${HandoffRoot} to ${sourceCommit}. Hard halt."
-    }
-
-    Assert-CleanGitWorkspace $HandoffRoot "Auto-sync halted because ${HandoffRoot} is not clean after checkout."
-    $verifiedHandoffCommit = Get-GitHead $HandoffRoot
-    if ($verifiedHandoffCommit -ne $sourceCommit) {
-        Write-Host "Expected handoff HEAD: $sourceCommit" -ForegroundColor Yellow
-        Write-Host "Actual handoff HEAD:   $verifiedHandoffCommit" -ForegroundColor Yellow
-        Err "Auto-sync verification failed. Hard halt."
-    }
-
-    Log "Release handoff worktree synced to ${verifiedHandoffCommit}"
-}
-
-function Maybe-DelegateToHandoff() {
-    if (-not (Test-Path $HANDOFF_DEPLOY_SCRIPT)) {
-        return
-    }
-
-    $currentScriptPath = (Resolve-Path $PSCommandPath).Path
-    $handoffScriptPath = (Resolve-Path $HANDOFF_DEPLOY_SCRIPT).Path
-    if ($currentScriptPath -eq $handoffScriptPath) {
-        return
-    }
-
-    $resolvedHandoffRoot = (Resolve-Path $HANDOFF_ROOT).Path
-    $resolvedDeployRoot = Resolve-OptionalPath $DeployRoot
-    $shouldDelegate = (-not $DeployRoot) -or ($resolvedDeployRoot -eq $resolvedHandoffRoot)
-
-    if (-not $shouldDelegate) {
-        return
-    }
-
-    if (-not $DeployRoot) {
-        $sourceEnvReady = Test-DeployEnvReady $PSScriptRoot
-        $handoffEnvReady = Test-DeployEnvReady $resolvedHandoffRoot
-        if ($sourceEnvReady -and -not $handoffEnvReady) {
-            Warn "Handoff worktree is missing required .env keys for local OSS smoke. Falling back to source-root deploy context."
-            $script:DeployRoot = $PSScriptRoot
-            return
-        }
-    }
-
-    Sync-HandoffWorktreeToSource $PSScriptRoot $resolvedHandoffRoot
-    if ($PreflightOnly) {
-        Log "Pre-flight sync check passed. Stopping before deployment because -PreflightOnly was requested."
-        exit 0
-    }
-
-    Log "Delegating deploy to verified handoff worktree at ${resolvedHandoffRoot}"
-    & $handoffScriptPath -VersionBump $VersionBump
-    $delegatedExitCode = $LASTEXITCODE
-    if ($delegatedExitCode -ne 0) {
-        exit $delegatedExitCode
+        Err "Artifact build failed."
     }
 
     exit 0
 }
 
-Maybe-DelegateToHandoff
+if ($Mode -eq "deploy") {
+    if (-not $ArtifactPath) {
+        Err "ArtifactPath is required in deploy mode."
+    }
 
-function Invoke-ReleaseCommand([string]$Label, [scriptblock]$Command, [string]$FailureMessage) {
-    Log $Label
-    & $Command
+    Log "Running artifact deploy mode..."
+    & $releaseDeployScript `
+        -ArtifactPath $ArtifactPath `
+        -MetadataPath $MetadataPath `
+        -SkipRemoteSmoke:$SkipRemoteSmoke
+
     if ($LASTEXITCODE -ne 0) {
-        Err $FailureMessage
+        Err "Artifact deploy failed."
     }
+
+    exit 0
 }
 
-function Resolve-DeployRoot() {
-    if ($DeployRoot) {
-        return (Resolve-Path $DeployRoot).Path
-    }
+# Mode = all
+Log "Running artifact build+deploy mode..."
+& $releaseBuildScript `
+    -VersionBump $VersionBump `
+    -ReleaseNote $ReleaseNote `
+    -OutputDir $OutputDir `
+    -SkipVerification:$SkipVerification `
+    -PreflightOnly:$PreflightOnly
 
-    $scriptRoot = $PSScriptRoot
-    $scriptRootName = Split-Path $scriptRoot -Leaf
-    if ($scriptRootName -like ".codex-deploy-ready*") {
-        return $scriptRoot
-    }
-
-    $preferredRoot = Join-Path $scriptRoot ".codex-deploy-ready-current"
-    if (-not (Test-Path $preferredRoot)) {
-        $targetCommit = (git -C $scriptRoot rev-parse HEAD).Trim()
-        if ($LASTEXITCODE -ne 0 -or -not $targetCommit) {
-            Err "Failed to resolve the current HEAD for clean deploy root creation."
-        }
-
-        Log "Creating clean deploy root at ${preferredRoot} for ${targetCommit}"
-        git -C $scriptRoot worktree add --detach $preferredRoot $targetCommit | Out-Null
-        if ($LASTEXITCODE -ne 0) {
-            Err "Failed to create clean deploy root at ${preferredRoot}"
-        }
-    }
-
-    return (Resolve-Path $preferredRoot).Path
+if ($LASTEXITCODE -ne 0) {
+    Err "Artifact build failed."
 }
 
-function Sync-DeployRootCommit($resolvedRoot) {
-    if ($DeployRoot) {
-        return
-    }
-
-    $scriptRoot = $PSScriptRoot
-    $scriptRootName = Split-Path $scriptRoot -Leaf
-    if ($scriptRootName -like ".codex-deploy-ready*") {
-        return
-    }
-
-    $targetCommit = (git -C $scriptRoot rev-parse HEAD).Trim()
-    if ($LASTEXITCODE -ne 0 -or -not $targetCommit) {
-        Err "Failed to resolve the source HEAD for deploy root sync."
-    }
-
-    $deployStatus = git -C $resolvedRoot status --porcelain=v1 --untracked-files=all 2>$null
-    if ($LASTEXITCODE -ne 0) {
-        Err "Failed to read deploy root state"
-    }
-    if ($deployStatus) {
-        Write-Host $deployStatus -ForegroundColor Yellow
-        Err "Refusing to sync a dirty deploy root. Clean ${resolvedRoot} first."
-    }
-
-    $deployCommit = (git -C $resolvedRoot rev-parse HEAD).Trim()
-    if ($LASTEXITCODE -ne 0 -or -not $deployCommit) {
-        Err "Failed to resolve the deploy root commit"
-    }
-
-    if ($deployCommit -eq $targetCommit) {
-        return
-    }
-
-    Log "Syncing deploy root to ${targetCommit}"
-    git -C $resolvedRoot checkout --detach $targetCommit | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-        Err "Failed to sync deploy root to ${targetCommit}"
-    }
+if ($PreflightOnly) {
+    Log "Preflight finished. Skipping deploy because -PreflightOnly was requested."
+    exit 0
 }
 
-function RequireCleanGitWorkspace() {
-    $status = git status --porcelain=v1 --untracked-files=all 2>$null
-    if ($LASTEXITCODE -ne 0) { Err "Failed to read git working tree state" }
-    if ($status) {
-        Write-Host $status -ForegroundColor Yellow
-        Err "Refusing to deploy from a dirty workspace. Commit or stash changes first."
-    }
+$resolvedOutputDir = Resolve-AbsolutePath $OutputDir
+if (-not $resolvedOutputDir) {
+    Err "Failed to resolve output directory after build: $OutputDir"
 }
 
-function Fail-DeploymentWithRollback([string]$FailureMessage) {
-    Warn "$FailureMessage Attempting rollback..."
-    $primaryApp = $PM2_APPS[0]
-    $rollbackCmd = @(
-        "if [ -d /var/www/logitech/dist.prev ]; then rm -rf /var/www/logitech/dist && mv /var/www/logitech/dist.prev /var/www/logitech/dist && pm2 restart ${primaryApp} --update-env && echo ROLLED_BACK; else echo NO_BACKUP; fi",
-        "pm2 logs ${primaryApp} --lines 30 --nostream || true"
-    ) -join " ; "
-    ssh $DEST $rollbackCmd
-    Err "$FailureMessage Rollback was attempted."
+$latestMetadata = Resolve-LatestMetadataPath $resolvedOutputDir
+if (-not $latestMetadata) {
+    Err "Could not find release metadata file under $resolvedOutputDir"
 }
 
-function Read-RemoteJson([string]$RemoteCommand, [string]$FailureMessage) {
-    $response = ssh $DEST $RemoteCommand
-    if ($LASTEXITCODE -ne 0 -or -not $response) {
-        Fail-DeploymentWithRollback $FailureMessage
-    }
-
-    try {
-        return ($response | ConvertFrom-Json)
-    } catch {
-        Fail-DeploymentWithRollback "$FailureMessage Raw response: $response"
-    }
+$derivedArtifactPath = $latestMetadata -replace "\.metadata\.json$", ".tar.gz"
+if (-not (Test-Path $derivedArtifactPath)) {
+    Err "Derived artifact path not found: $derivedArtifactPath"
 }
 
-$ResolvedDeployRoot = Resolve-DeployRoot
-Sync-DeployRootCommit $ResolvedDeployRoot
-Log "Deploy root: $ResolvedDeployRoot"
+Log "Deploying latest artifact:"
+Write-Host "  Artifact: $derivedArtifactPath" -ForegroundColor Cyan
+Write-Host "  Metadata: $latestMetadata" -ForegroundColor Cyan
 
-Push-Location $ResolvedDeployRoot
-try {
-    # ======================== Step 0: release safety checks ========================
-    Log "Running release safety checks..."
-    RequireCleanGitWorkspace
+& $releaseDeployScript `
+    -ArtifactPath $derivedArtifactPath `
+    -MetadataPath $latestMetadata `
+    -SkipRemoteSmoke:$SkipRemoteSmoke
 
-    if ($VersionBump -ne "none") {
-        Err "Version bump during deploy is disabled for release safety. Commit the bumped version first, then redeploy with -VersionBump none."
-    }
-
-    $DEPLOY_COMMIT_FULL = (git rev-parse HEAD).Trim()
-    if ($LASTEXITCODE -ne 0 -or -not $DEPLOY_COMMIT_FULL) { Err "Failed to resolve the full deploy commit" }
-    $DEPLOY_COMMIT = (git rev-parse --short HEAD).Trim()
-    if ($LASTEXITCODE -ne 0 -or -not $DEPLOY_COMMIT) { Err "Failed to resolve the deploy commit" }
-    Log "Deploying committed tree at ${DEPLOY_COMMIT}"
-
-    # ======================== Step 1: local verification and build ========================
-    Invoke-ReleaseCommand "Running TypeScript verification..." { pnpm exec tsc --noEmit } "TypeScript verification failed"
-    Invoke-ReleaseCommand "Running client release structure guard tests..." { pnpm exec vitest run client/src/server-index.structure.test.ts client/src/server-error-payload.structure.test.ts client/src/pages/dashboard/lib/dashboardApi.test.ts } "Client release structure guard tests failed"
-    Invoke-ReleaseCommand "Running server release guard tests..." { pnpm exec vitest run --root . server/middleware/apiCors.test.ts server/middleware/apiAccessPolicy.test.ts server/release.test.ts server/routes/progress-notes-guard.test.ts } "Server release guard tests failed"
-    Invoke-ReleaseCommand "Running local OSS upload/delete smoke..." { powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-local-oss-smoke.ps1 -Port 3301 } "Local OSS upload/delete smoke failed"
-    Invoke-ReleaseCommand "Starting local build..." { pnpm build } "Build failed"
-    if (-not (Test-Path "dist\\release.json")) {
-        Err "Build did not produce dist/release.json"
-    }
-    Log "Build complete -> dist/"
-
-    if ($PreflightOnly) {
-        Log "Pre-flight checks passed. Stopping before deployment upload because -PreflightOnly was requested."
-        exit 0
-    }
-
-    # ======================== Step 2: upload files ========================
-    Log "Uploading files to ${DEST}:${REMOTE_DIR} ..."
-
-    ssh $DEST "mkdir -p $REMOTE_DIR"
-
-    # Backup current dist for rollback
-    ssh $DEST "if [ -d ${REMOTE_DIR}/dist ]; then rm -rf ${REMOTE_DIR}/dist.prev; cp -a ${REMOTE_DIR}/dist ${REMOTE_DIR}/dist.prev; fi"
-
-    Log "  Uploading dist/ ..."
-    scp -r dist/ "${DEST}:${REMOTE_DIR}/"
-
-    Log "  Uploading package.json, pnpm-lock.yaml ..."
-    scp package.json pnpm-lock.yaml "${DEST}:${REMOTE_DIR}/"
-
-    Log "  Uploading ecosystem.config.cjs ..."
-    scp ecosystem.config.cjs "${DEST}:${REMOTE_DIR}/"
-
-    Log "  Uploading OSS smoke verifier ..."
-    ssh $DEST "mkdir -p ${REMOTE_DIR}/scripts"
-    scp scripts/verify-oss-http-smoke.mjs "${DEST}:${REMOTE_DIR}/scripts/"
-
-    if (Test-Path patches) {
-        Log "  Uploading patches/ ..."
-        scp -r patches/ "${DEST}:${REMOTE_DIR}/"
-    }
-
-    if (Test-Path .env) {
-        Log "  Uploading .env ..."
-        scp .env "${DEST}:${REMOTE_DIR}/"
-    } else {
-        Warn ".env not found locally, skipping upload"
-    }
-
-    if (Test-Path drizzle) {
-        Log "  Uploading drizzle/ ..."
-        scp -r drizzle/ "${DEST}:${REMOTE_DIR}/"
-    }
-
-    Log "File upload complete"
-
-    # ======================== Step 3: install deps on server ========================
-    Log "Installing production dependencies on server..."
-    $installCmd = @(
-        "cd /var/www/logitech",
-        "if ! command -v pm2 > /dev/null 2>&1; then npm install -g pm2; fi",
-        "if command -v systemctl > /dev/null 2>&1; then if [ ! -f /etc/systemd/system/pm2-root.service ]; then pm2 startup systemd -u root --hp /root || true; fi; fi",
-        "pnpm install --prod",
-        "echo DEPS_DONE"
-    ) -join " && "
-    ssh $DEST $installCmd
-    Log "Dependency install complete"
-
-    # ======================== Step 4: restart PM2 ========================
-    Log "Restarting PM2 process..."
-    $restartCmd = @(
-        "cd /var/www/logitech",
-        "if pm2 describe logitech > /dev/null 2>&1; then pm2 restart logitech --update-env; elif pm2 describe mold-gantt-v3 > /dev/null 2>&1; then pm2 restart mold-gantt-v3 --update-env; else pm2 start ecosystem.config.cjs --only mold-gantt-v3 --env production && pm2 save; fi",
-        "pm2 status"
-    ) -join " && "
-    ssh $DEST $restartCmd
-    Log "PM2 restart complete"
-
-    # ======================== Step 5: health check ========================
-    Log "Running health check (up to 20 seconds)..."
-    $healthOk = $false
-    for ($i = 1; $i -le 10; $i++) {
-        $result = ssh $DEST "curl -fsS http://127.0.0.1:3000/api/health 2>/dev/null || echo FAIL"
-        if ($result -match '"ok":true') {
-            Log "Health check passed: $result"
-            $healthOk = $true
-            break
-        }
-        Write-Host "  Retry $i/10 ..." -ForegroundColor Yellow
-        Start-Sleep -Seconds 2
-    }
-
-    if (-not $healthOk) {
-        Fail-DeploymentWithRollback "Deployment health check failed."
-    }
-
-    Log "Verifying remote release metadata..."
-    $remoteRelease = Read-RemoteJson "curl -fsS http://127.0.0.1:3000/api/release" "Failed to read remote /api/release."
-    $remoteCommit = [string]$remoteRelease.commit
-    if (-not $remoteCommit) {
-        Fail-DeploymentWithRollback "Remote /api/release did not include a commit hash."
-    }
-    if ($remoteCommit -ne $DEPLOY_COMMIT_FULL) {
-        Write-Host "Expected commit: $DEPLOY_COMMIT_FULL" -ForegroundColor Yellow
-        Write-Host "Remote commit:   $remoteCommit" -ForegroundColor Yellow
-        Fail-DeploymentWithRollback "Remote running version does not match the deployed commit."
-    }
-    Log "Remote release verified: $($remoteRelease.commitShort)"
-
-    Log "Running same-origin write smoke test..."
-    $sameOriginSmoke = Read-RemoteJson "curl -fsS -X POST 'http://127.0.0.1:3000/api/dashboard/progress-notes/CODEX_DEPLOY_PROBE/create-backup' -H 'Host: 120.27.153.140' -H 'Origin: http://120.27.153.140' -H 'Referer: http://120.27.153.140/dashboard'" "Same-origin write smoke test failed."
-    if (-not $sameOriginSmoke.success) {
-        Fail-DeploymentWithRollback "Same-origin write smoke test returned a non-success payload."
-    }
-    Log "Same-origin write smoke test passed"
-
-    Log "Running remote OSS upload/delete smoke..."
-    $remoteOssSmokeCmd = @(
-        "cd /var/www/logitech",
-        "node scripts/verify-oss-http-smoke.mjs --base-url http://127.0.0.1:3000 --env-file .env --label remote-deploy"
-    ) -join " && "
-    ssh $DEST $remoteOssSmokeCmd
-    if ($LASTEXITCODE -ne 0) {
-        Fail-DeploymentWithRollback "Remote OSS upload/delete smoke failed."
-    }
-    Log "Remote OSS upload/delete smoke passed"
-
-    # ======================== Done ========================
-    Write-Host ""
-    Write-Host "========================================" -ForegroundColor Cyan
-    Log "Deployment succeeded!"
-    Write-Host "  URL: http://${SERVER_IP}:3000" -ForegroundColor Cyan
-    Write-Host "========================================" -ForegroundColor Cyan
-    Write-Host ""
+if ($LASTEXITCODE -ne 0) {
+    Err "Artifact deploy failed."
 }
-finally {
-    Pop-Location
-}
+
+Log "Build+deploy completed."
