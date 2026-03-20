@@ -1,6 +1,6 @@
 # ============================================================================
 # deploy.ps1 - Windows PowerShell one-click deploy to Aliyun
-# Usage: .\deploy.ps1 [-VersionBump none|minor|major] [-PreflightOnly]
+# Usage: .\deploy.ps1 [-VersionBump none|minor|major] [-DeployRoot <path>] [-PreflightOnly]
 # ============================================================================
 
 param(
@@ -29,6 +29,51 @@ function Err($msg) { Write-Host "[ERR] $msg" -ForegroundColor Red; exit 1 }
 
 $HANDOFF_ROOT = Join-Path $PSScriptRoot ".codex-release-handoff-ready"
 $HANDOFF_DEPLOY_SCRIPT = Join-Path $HANDOFF_ROOT "deploy.ps1"
+$REQUIRED_LOCAL_ENV_KEYS = @(
+    "ALIYUN_OSS_REGION",
+    "ALIYUN_OSS_BUCKET",
+    "ALIYUN_OSS_ACCESS_KEY_ID",
+    "ALIYUN_OSS_ACCESS_KEY_SECRET",
+    "API_SECRET_KEY"
+)
+
+function Test-DeployEnvReady([string]$RootPath) {
+    $envPath = Join-Path $RootPath ".env"
+    if (-not (Test-Path $envPath)) {
+        return $false
+    }
+
+    $envValues = @{}
+    foreach ($rawLine in (Get-Content $envPath)) {
+        if ($null -eq $rawLine) {
+            continue
+        }
+
+        $line = $rawLine.Trim()
+        if (-not $line -or $line.StartsWith("#")) {
+            continue
+        }
+
+        $separatorIndex = $line.IndexOf("=")
+        if ($separatorIndex -le 0) {
+            continue
+        }
+
+        $key = $line.Substring(0, $separatorIndex).Trim()
+        $value = $line.Substring($separatorIndex + 1).Trim()
+        if ($key) {
+            $envValues[$key] = $value
+        }
+    }
+
+    foreach ($requiredKey in $REQUIRED_LOCAL_ENV_KEYS) {
+        if (-not $envValues.ContainsKey($requiredKey) -or [string]::IsNullOrWhiteSpace($envValues[$requiredKey])) {
+            return $false
+        }
+    }
+
+    return $true
+}
 
 function Resolve-OptionalPath([string]$PathValue) {
     if (-not $PathValue) {
@@ -140,6 +185,16 @@ function Maybe-DelegateToHandoff() {
 
     if (-not $shouldDelegate) {
         return
+    }
+
+    if (-not $DeployRoot) {
+        $sourceEnvReady = Test-DeployEnvReady $PSScriptRoot
+        $handoffEnvReady = Test-DeployEnvReady $resolvedHandoffRoot
+        if ($sourceEnvReady -and -not $handoffEnvReady) {
+            Warn "Handoff worktree is missing required .env keys for local OSS smoke. Falling back to source-root deploy context."
+            $script:DeployRoot = $PSScriptRoot
+            return
+        }
     }
 
     Sync-HandoffWorktreeToSource $PSScriptRoot $resolvedHandoffRoot
@@ -300,6 +355,11 @@ try {
         Err "Build did not produce dist/release.json"
     }
     Log "Build complete -> dist/"
+
+    if ($PreflightOnly) {
+        Log "Pre-flight checks passed. Stopping before deployment upload because -PreflightOnly was requested."
+        exit 0
+    }
 
     # ======================== Step 2: upload files ========================
     Log "Uploading files to ${DEST}:${REMOTE_DIR} ..."
