@@ -4,6 +4,7 @@
 #   .\deploy.ps1 -Mode build  -VersionBump minor -ReleaseNote "fix xxx"
 #   .\deploy.ps1 -Mode deploy -ArtifactPath .\artifacts\releases\release-xxx.tar.gz
 #   .\deploy.ps1 -Mode all    -VersionBump major -ReleaseNote "add module yyy"
+#   .\deploy.ps1   # default mode: all (auto ReleaseNote if omitted)
 # ============================================================================
 
 param(
@@ -25,6 +26,34 @@ $ErrorActionPreference = "Stop"
 function Log($msg) { Write-Host "[OK] $msg" -ForegroundColor Green }
 function Warn($msg) { Write-Host "[!!] $msg" -ForegroundColor Yellow }
 function Err($msg) { Write-Host "[ERR] $msg" -ForegroundColor Red; exit 1 }
+
+function Normalize-SingleLine([string]$Value) {
+    if ($null -eq $Value) {
+        return ""
+    }
+    $singleLine = ($Value -replace "(\r\n|\n|\r)+", " ").Trim()
+    return ($singleLine -replace "\s{2,}", " ").Trim()
+}
+
+function Resolve-EntrypointReleaseNote([string]$RawNote, [string]$CurrentMode, [switch]$IsPreflightOnly) {
+    $normalized = Normalize-SingleLine $RawNote
+    if (-not [string]::IsNullOrWhiteSpace($normalized)) {
+        return $normalized
+    }
+
+    if ($CurrentMode -eq "deploy" -or $IsPreflightOnly) {
+        return ""
+    }
+
+    $commitShort = ((git -C $PSScriptRoot rev-parse --short HEAD 2>$null) | Out-String).Trim()
+    if (-not $commitShort) {
+        $commitShort = "unknown"
+    }
+
+    $autoNote = "auto-release-$commitShort"
+    Warn "ReleaseNote not provided. Using auto-generated note: $autoNote"
+    return $autoNote
+}
 
 function Resolve-AbsolutePath([string]$PathValue) {
     if (-not $PathValue) {
@@ -64,9 +93,7 @@ if (-not (Test-Path $releaseDeployScript)) {
     Err "Missing script: $releaseDeployScript"
 }
 
-if (($Mode -eq "build" -or $Mode -eq "all") -and [string]::IsNullOrWhiteSpace($ReleaseNote) -and -not $PreflightOnly) {
-    Err "ReleaseNote is required for build/all mode."
-}
+$ReleaseNote = Resolve-EntrypointReleaseNote -RawNote $ReleaseNote -CurrentMode $Mode -IsPreflightOnly:$PreflightOnly
 
 if ($Mode -eq "build") {
     Log "Running artifact build mode..."
