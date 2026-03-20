@@ -13,6 +13,8 @@ import postgres from 'postgres';
 import * as schema from '../shared/schema.js';
 
 const connectionString = process.env.DATABASE_URL;
+const parsedPoolMax = Number.parseInt(process.env.DB_POOL_MAX || '4', 10);
+const poolMax = Number.isFinite(parsedPoolMax) ? Math.min(Math.max(parsedPoolMax, 1), 10) : 4;
 
 if (!connectionString) {
   console.warn(
@@ -26,7 +28,7 @@ if (!connectionString) {
 // Supabase 强制要求 SSL 连接，不加 ssl: 'require' 会导致连接永远挂起
 const client = connectionString
   ? postgres(connectionString, {
-      max: 10,              // Max pool size
+      max: poolMax,         // Session mode 下收敛连接池，避免撞满数据库连接上限
       idle_timeout: 20,     // Close idle connections after 20s
       connect_timeout: 10,  // Connection timeout 10s
       ssl: 'require',       // ← Supabase 必须 SSL

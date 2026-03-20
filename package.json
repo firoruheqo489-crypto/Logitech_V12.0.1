@@ -1,6 +1,6 @@
 {
   "name": "mold-gantt-v3",
-  "version": "1.0.0",
+  "version": "11.2.0",
   "type": "module",
   "license": "MIT",
   "scripts": {
@@ -18,6 +18,14 @@
     "pm2:startup:global": "pm2 startup systemd -u root --hp /root && pm2 save",
     "preview": "vite preview --host",
     "check": "tsc --noEmit",
+    "rollback:create": "node scripts/rollback-manager.mjs create",
+    "rollback:list": "node scripts/rollback-manager.mjs list",
+    "rollback:restore": "node scripts/rollback-manager.mjs restore",
+    "rollback:prune": "node scripts/rollback-manager.mjs prune",
+    "git-backup:create": "node scripts/git-backup-manager.mjs create",
+    "git-backup:list": "node scripts/git-backup-manager.mjs list",
+    "git-backup:restore": "node scripts/git-backup-manager.mjs restore",
+    "git-backup:prune": "node scripts/git-backup-manager.mjs prune",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "format": "prettier --write ."

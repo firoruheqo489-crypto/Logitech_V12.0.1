@@ -35,6 +35,7 @@ async function startServer() {
   app.use(securityHeaders);
   registerApiAccessPolicy(app);
 
+  app.get("/api/release", getReleaseInfoHandler);
   // 健康检查：用于确认后端与数据库是否可用
   app.get("/api/release", getReleaseInfoHandler);
   app.get("/api/health", async (_req, res) => {
@@ -42,6 +43,7 @@ async function startServer() {
       res.status(200).json({ ok: true, api: true, db: "missing" });
       return;
     }
+
     try {
       await sql`SELECT 1`;
       res.status(200).json({ ok: true, api: true, db: "ok" });
