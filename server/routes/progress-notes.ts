@@ -47,7 +47,10 @@ type ProgressNotesErrorCode =
   | 'NOTE_ID_REQUIRED'
   | 'SNAPSHOT_DESTRUCTIVE_CONFIRMATION_REQUIRED';
 
-const BACKUP_KEEP_LIMIT_PER_MOLD = 30;
+const DEFAULT_AUDIT_CONTENT_PREVIEW_LENGTH = 160;
+const DEFAULT_BACKUP_KEEP_LIMIT_PER_MOLD = 1;
+const DEFAULT_BACKUP_RETENTION_DAYS = 30;
+const DEFAULT_AUDIT_RETENTION_DAYS = 3;
 const PROGRESS_NOTES_ERROR_MESSAGES: Record<ProgressNotesErrorCode, string> = {
   BACKUP_NOT_FOUND: 'latest backup not found',
   BODY_MUST_BE_ARRAY: 'request body must be an array',
@@ -90,6 +93,39 @@ export type RestorableBackup = {
 
 let progressBackupTableReady: Promise<void> | null = null;
 let progressAuditTableReady: Promise<void> | null = null;
+
+function readPositiveIntEnv(
+  name: string,
+  fallback: number,
+  min: number,
+  max: number,
+): number {
+  const parsed = Number.parseInt(process.env[name] || '', 10);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+
+  return Math.min(max, Math.max(min, parsed));
+}
+
+const PROGRESS_NOTES_BACKUP_KEEP_LIMIT = readPositiveIntEnv(
+  'PROGRESS_NOTES_BACKUP_KEEP_LIMIT',
+  DEFAULT_BACKUP_KEEP_LIMIT_PER_MOLD,
+  1,
+  10,
+);
+const PROGRESS_NOTES_BACKUP_RETENTION_DAYS = readPositiveIntEnv(
+  'PROGRESS_NOTES_BACKUP_RETENTION_DAYS',
+  DEFAULT_BACKUP_RETENTION_DAYS,
+  1,
+  90,
+);
+const PROGRESS_NOTES_AUDIT_RETENTION_DAYS = readPositiveIntEnv(
+  'PROGRESS_NOTES_AUDIT_RETENTION_DAYS',
+  DEFAULT_AUDIT_RETENTION_DAYS,
+  1,
+  30,
+);
 
 function sendProgressNotesError(res: Response, status: number, code: ProgressNotesErrorCode): void {
   res.status(status).json({
@@ -313,6 +349,84 @@ function getClientIp(req: Request): string {
   return req.ip || '';
 }
 
+function summarizeAuditPayload(
+  value: Record<string, unknown> | null | undefined,
+): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  const summary: Record<string, unknown> = {};
+  const copyStringField = (key: string) => {
+    const raw = record[key];
+    if (typeof raw !== 'string') return;
+    const trimmed = raw.trim();
+    if (!trimmed) return;
+    summary[key] = trimmed.slice(0, 255);
+  };
+
+  for (const key of ['id', 'date', 'imageUrl', 'assignee', 'estimatedNodeCompletion', 'createdAt', 'updatedAt', 'backupAt', 'reason']) {
+    copyStringField(key);
+  }
+
+  if (typeof record.content === 'string') {
+    const content = record.content;
+    summary.contentPreview = content.slice(0, DEFAULT_AUDIT_CONTENT_PREVIEW_LENGTH);
+    summary.contentLength = content.length;
+  }
+
+  if (typeof record.restoredCount === 'number' && Number.isFinite(record.restoredCount)) {
+    summary.restoredCount = record.restoredCount;
+  }
+
+  if (typeof record.backupId === 'number' && Number.isFinite(record.backupId)) {
+    summary.backupId = Math.trunc(record.backupId);
+  }
+
+  return Object.keys(summary).length > 0 ? summary : null;
+}
+
+async function pruneProgressBackups(moldNumber?: string): Promise<void> {
+  if (!dbSql) return;
+  await ensureBackupTable();
+
+  if (moldNumber) {
+    await dbSql.unsafe(
+      `
+        DELETE FROM progress_note_backups
+        WHERE mold_number = $1
+          AND id NOT IN (
+            SELECT id
+            FROM progress_note_backups
+            WHERE mold_number = $1
+            ORDER BY created_at DESC, id DESC
+            LIMIT ${PROGRESS_NOTES_BACKUP_KEEP_LIMIT}
+          )
+      `,
+      [moldNumber],
+    );
+  }
+
+  await dbSql.unsafe(
+    `
+      DELETE FROM progress_note_backups
+      WHERE created_at < NOW() - INTERVAL '${PROGRESS_NOTES_BACKUP_RETENTION_DAYS} days'
+    `,
+  );
+}
+
+async function pruneProgressAuditLogs(): Promise<void> {
+  if (!dbSql) return;
+  await ensureProgressAuditTable();
+  await dbSql.unsafe(
+    `
+      DELETE FROM progress_note_audit_logs
+      WHERE created_at < NOW() - INTERVAL '${PROGRESS_NOTES_AUDIT_RETENTION_DAYS} days'
+    `,
+  );
+}
+
 async function writeProgressAuditLog(params: {
   moldNumber: string;
   noteId?: string;
@@ -336,8 +450,8 @@ async function writeProgressAuditLog(params: {
       params.action,
       params.operator,
       params.ipAddress,
-      JSON.stringify(params.oldPayload ?? null),
-      JSON.stringify(params.newPayload ?? null),
+      JSON.stringify(summarizeAuditPayload(params.oldPayload)),
+      JSON.stringify(summarizeAuditPayload(params.newPayload)),
     ],
   );
 }
@@ -488,19 +602,7 @@ async function backupCurrentNotes(moldNumber: string): Promise<boolean> {
     [moldNumber, currentJson]
   );
 
-  await dbSql.unsafe(
-    `
-      DELETE FROM progress_note_backups
-      WHERE mold_number = $1
-        AND id NOT IN (
-          SELECT id FROM progress_note_backups
-          WHERE mold_number = $1
-          ORDER BY created_at DESC, id DESC
-          LIMIT ${BACKUP_KEEP_LIMIT_PER_MOLD}
-        )
-    `,
-    [moldNumber]
-  );
+  await pruneProgressBackups(moldNumber);
 
   return true;
 }
@@ -525,7 +627,7 @@ async function getLatestRestorableBackup(moldNumber: string): Promise<Restorable
       FROM progress_note_backups
       WHERE mold_number = $1
       ORDER BY created_at DESC, id DESC
-      LIMIT ${BACKUP_KEEP_LIMIT_PER_MOLD}
+      LIMIT ${PROGRESS_NOTES_BACKUP_KEEP_LIMIT}
     `,
     [moldNumber],
   );
@@ -753,6 +855,7 @@ export async function saveProgressNotes(req: Request, res: Response): Promise<vo
       });
     }
 
+    await pruneProgressAuditLogs();
     res.json({ success: true, count: entries.length, backupCreated, backupAt: latestBackupAt });
   } catch (err) {
     console.error('POST progress-notes error:', err);
@@ -835,6 +938,7 @@ export async function upsertProgressNote(req: Request, res: Response): Promise<v
       }
     }
 
+    await pruneProgressAuditLogs();
     res.json({ success: true, backupCreated, backupAt: latestBackupAt, entry });
   } catch (err) {
     console.error('POST upsert progress-note error:', err);
@@ -923,6 +1027,7 @@ export async function restoreLatestProgressNotes(req: Request, res: Response): P
       newPayload: { restoredCount: normalizedSnapshot.length, backupAt: backup.backupAt, backupId: backup.id },
     });
 
+    await pruneProgressAuditLogs();
     res.json({ success: true, restoredCount: normalizedSnapshot.length, backupAt: backup.backupAt, backupId: backup.id });
   } catch (err) {
     console.error('POST restore-latest progress-notes error:', err);
@@ -968,6 +1073,7 @@ export async function deleteProgressNote(req: Request, res: Response): Promise<v
       });
     }
 
+    await pruneProgressAuditLogs();
     res.json({ success: true, backupCreated, backupAt: latestBackupAt });
   } catch (err) {
     console.error('DELETE progress-note error:', err);
