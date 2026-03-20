@@ -5,8 +5,8 @@ import {
   type IssueProcessStepId,
   type IssueTypeId,
 } from './issueDomain';
+import { apiFetch } from './api';
 import { deleteAssetViaServer, uploadAssetViaServer } from './ossUpload';
-import { supabase } from './supabase';
 
 export interface ImageItem {
   id: string;
@@ -47,6 +47,8 @@ export interface IssueRecord {
   createdAt: string;
   updatedAt: string;
 }
+
+const ISSUES_API_ENDPOINT = '/api/issues';
 
 interface DbRow {
   id: string;
@@ -217,29 +219,34 @@ export async function deleteImage(imageUrl: string): Promise<void> {
 }
 
 export async function fetchIssues(projectId?: string): Promise<IssueRecord[]> {
-  if (!supabase) return [];
-
-  let query = supabase.from('issues').select('*').order('created_at', { ascending: false });
-  if (projectId) {
-    query = query.eq('project_id', projectId);
-  }
-
-  const { data, error } = await query;
-  if (error) {
-    console.error('Fetch issues error:', error);
+  const query = projectId ? `?projectId=${encodeURIComponent(projectId)}` : '';
+  const response = await apiFetch(`${ISSUES_API_ENDPOINT}${query}`);
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null);
+    console.error('Fetch issues error:', payload ?? response.statusText);
     return [];
   }
 
-  return (data || []).map(rowToRecord);
+  const payload = (await response.json().catch(() => null)) as DbRow[] | null;
+  if (!Array.isArray(payload)) {
+    return [];
+  }
+
+  return payload.map(rowToRecord);
 }
 
 export async function createIssue(record: IssueRecord): Promise<boolean> {
-  if (!supabase) return false;
-
   const row = recordToRow(record);
-  const { error } = await supabase.from('issues').insert({ ...row, created_at: record.createdAt });
-  if (error) {
-    console.error('Create issue error:', error);
+  const response = await apiFetch(ISSUES_API_ENDPOINT, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ ...row, created_at: record.createdAt }),
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null);
+    console.error('Create issue error:', payload ?? response.statusText);
     return false;
   }
 
@@ -247,12 +254,17 @@ export async function createIssue(record: IssueRecord): Promise<boolean> {
 }
 
 export async function updateIssue(record: IssueRecord): Promise<boolean> {
-  if (!supabase) return false;
-
   const row = recordToRow(record);
-  const { error } = await supabase.from('issues').update(row).eq('id', record.id);
-  if (error) {
-    console.error('Update issue error:', error);
+  const response = await apiFetch(`${ISSUES_API_ENDPOINT}/${encodeURIComponent(record.id)}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(row),
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null);
+    console.error('Update issue error:', payload ?? response.statusText);
     return false;
   }
 
@@ -260,16 +272,16 @@ export async function updateIssue(record: IssueRecord): Promise<boolean> {
 }
 
 export async function deleteIssue(id: string, modules: IssueRecord['modules']): Promise<boolean> {
-  if (!supabase) return false;
-
-  const allImageUrls = (Object.values(modules) as ModuleData[]).flatMap((moduleData) =>
-    moduleData.images.map((image) => image.preview),
-  );
-  await Promise.allSettled(allImageUrls.map((imageUrl) => deleteAssetViaServer(imageUrl)));
-
-  const { error } = await supabase.from('issues').delete().eq('id', id);
-  if (error) {
-    console.error('Delete issue error:', error);
+  const response = await apiFetch(`${ISSUES_API_ENDPOINT}/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ modules }),
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null);
+    console.error('Delete issue error:', payload ?? response.statusText);
     return false;
   }
 

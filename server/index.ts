@@ -15,6 +15,7 @@ import { listDashboardProjects, getDashboardProject, batchReplaceDashboardProjec
 import { listDashboardProjectAssets, upsertDashboardProjectAsset, deleteDashboardProjectAsset, ensureDashboardProjectAssetsTable } from "./routes/dashboard-assets.js";
 import { listDashboardProductData, batchUpsertDashboardProductData, ensureDashboardProductDataTable } from "./routes/dashboard-product-data.js";
 import { getProgressNotes, getLatestProgressBackup, saveProgressNotes, upsertProgressNote, createProgressBackup, restoreLatestProgressNotes, deleteProgressNote, getProgressNoteAuditLogs, ensureBackupTable, ensureProgressAuditTable } from "./routes/progress-notes.js";
+import { listIssues, createIssue, updateIssue, deleteIssue, ensureIssuesTable } from "./routes/issues.js";
 import { getTasksForSCurve } from "./routes/tasks.js";
 import { uploadsRouter } from "./routes/uploads.js";
 import { db, sql } from "./db.js";
@@ -97,6 +98,10 @@ async function startServer() {
 
   // API — S 曲线任务数据（替代前端直连 Supabase）
   app.get("/api/tasks", getTasksForSCurve);
+  app.get("/api/issues", listIssues);
+  app.post("/api/issues", createIssue);
+  app.patch("/api/issues/:id", updateIssue);
+  app.delete("/api/issues/:id", deleteIssue);
 
   if (!isDevApiOnly) {
     const staticPath =
@@ -138,6 +143,7 @@ async function startServer() {
     ensureDashboardModuleOrderTable(),
     ensureBackupTable(),
     ensureProgressAuditTable(),
+    ensureIssuesTable(),
   ]);
 
   warmupResults.forEach((result, index) => {
