@@ -27,6 +27,8 @@ import {
   getSCurveMilestoneLabel,
 } from './logitech-s-curve-labels'
 
+const SCURVE_RETRY_DELAY_MS = 3000
+
 // ═══════════════════════════════════════════════════════════════
 // Types
 // ═══════════════════════════════════════════════════════════════
@@ -834,24 +836,56 @@ export function LogitechSCurve({ projectId, moldNumber, className = '' }: Logite
   // ── Fetch ALL tasks for this project via local API (避免浏览器直连 Supabase 的跨域/网络问题) ──
   useEffect(() => {
     let cancelled = false
+    let retryTimer: number | null = null
 
-    async function fetchData() {
+    const clearRetry = () => {
+      if (retryTimer !== null) {
+        window.clearTimeout(retryTimer)
+        retryTimer = null
+      }
+    }
+
+    const scheduleRetry = () => {
+      if (cancelled || retryTimer !== null) {
+        return
+      }
+
+      retryTimer = window.setTimeout(() => {
+        retryTimer = null
+        void fetchData(false)
+      }, SCURVE_RETRY_DELAY_MS)
+    }
+
+    async function fetchData(showLoading: boolean) {
+      if (showLoading) {
+        setLoading(true)
+      }
       try {
         const res = await apiFetch(`/api/tasks?projectId=${encodeURIComponent(projectId)}`)
         if (!res.ok) {
           throw new Error('S-curve data load failed')
         }
         const taskRows = normalizeTaskRows(await res.json())
-        if (!cancelled) setTasks(taskRows)
+        if (!cancelled) {
+          setTasks(taskRows)
+          setError(null)
+          clearRetry()
+        }
       } catch (error: unknown) {
-        if (!cancelled) setError('数据加载失败，请稍后重试')
+        if (!cancelled) {
+          setError('数据加载失败，请稍后重试')
+          scheduleRetry()
+        }
       } finally {
         if (!cancelled) setLoading(false)
       }
     }
 
-    fetchData()
-    return () => { cancelled = true }
+    void fetchData(true)
+    return () => {
+      cancelled = true
+      clearRetry()
+    }
   }, [projectId])
 
   // ── Compute S-curve (purely from tasks) ──

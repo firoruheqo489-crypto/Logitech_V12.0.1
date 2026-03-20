@@ -294,6 +294,7 @@ try {
     Invoke-ReleaseCommand "Running TypeScript verification..." { pnpm exec tsc --noEmit } "TypeScript verification failed"
     Invoke-ReleaseCommand "Running client release structure guard tests..." { pnpm exec vitest run client/src/server-index.structure.test.ts client/src/server-error-payload.structure.test.ts client/src/pages/dashboard/lib/dashboardApi.test.ts } "Client release structure guard tests failed"
     Invoke-ReleaseCommand "Running server release guard tests..." { pnpm exec vitest run --root . server/middleware/apiCors.test.ts server/middleware/apiAccessPolicy.test.ts server/release.test.ts server/routes/progress-notes-guard.test.ts } "Server release guard tests failed"
+    Invoke-ReleaseCommand "Running local OSS upload/delete smoke..." { powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-local-oss-smoke.ps1 -Port 3301 } "Local OSS upload/delete smoke failed"
     Invoke-ReleaseCommand "Starting local build..." { pnpm build } "Build failed"
     if (-not (Test-Path "dist\\release.json")) {
         Err "Build did not produce dist/release.json"
@@ -316,6 +317,10 @@ try {
 
     Log "  Uploading ecosystem.config.cjs ..."
     scp ecosystem.config.cjs "${DEST}:${REMOTE_DIR}/"
+
+    Log "  Uploading OSS smoke verifier ..."
+    ssh $DEST "mkdir -p ${REMOTE_DIR}/scripts"
+    scp scripts/verify-oss-http-smoke.mjs "${DEST}:${REMOTE_DIR}/scripts/"
 
     if (Test-Path patches) {
         Log "  Uploading patches/ ..."
@@ -395,6 +400,17 @@ try {
         Fail-DeploymentWithRollback "Same-origin write smoke test returned a non-success payload."
     }
     Log "Same-origin write smoke test passed"
+
+    Log "Running remote OSS upload/delete smoke..."
+    $remoteOssSmokeCmd = @(
+        "cd /var/www/logitech",
+        "node scripts/verify-oss-http-smoke.mjs --base-url http://127.0.0.1:3000 --env-file .env --label remote-deploy"
+    ) -join " && "
+    ssh $DEST $remoteOssSmokeCmd
+    if ($LASTEXITCODE -ne 0) {
+        Fail-DeploymentWithRollback "Remote OSS upload/delete smoke failed."
+    }
+    Log "Remote OSS upload/delete smoke passed"
 
     # ======================== Done ========================
     Write-Host ""

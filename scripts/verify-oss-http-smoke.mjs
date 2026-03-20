@@ -1,0 +1,205 @@
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const projectRoot = path.resolve(__dirname, '..');
+
+const PNG_BYTES = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+c/aQAAAAASUVORK5CYII=',
+  'base64',
+);
+
+function parseArgs(argv) {
+  const args = {
+    baseUrl: 'http://127.0.0.1:3001',
+    envFile: '.env',
+    label: 'oss-smoke',
+    apiKey: '',
+  };
+
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+
+    if (arg === '--base-url') {
+      args.baseUrl = argv[index + 1];
+      index += 1;
+      continue;
+    }
+
+    if (arg === '--env-file') {
+      args.envFile = argv[index + 1];
+      index += 1;
+      continue;
+    }
+
+    if (arg === '--label') {
+      args.label = argv[index + 1];
+      index += 1;
+      continue;
+    }
+
+    if (arg === '--api-key') {
+      args.apiKey = argv[index + 1];
+      index += 1;
+      continue;
+    }
+
+    throw new Error(`Unknown argument: ${arg}`);
+  }
+
+  return args;
+}
+
+function parseEnvFile(filePath) {
+  if (!fs.existsSync(filePath)) {
+    return new Map();
+  }
+
+  const text = fs.readFileSync(filePath, 'utf8');
+  const lines = text.split(/\n/);
+  const map = new Map();
+
+  for (const rawLine of lines) {
+    const line = rawLine.replace(/\r$/, '');
+    if (!line || line.trimStart().startsWith('#')) {
+      continue;
+    }
+
+    const separatorIndex = line.indexOf('=');
+    if (separatorIndex <= 0) {
+      continue;
+    }
+
+    const key = line.slice(0, separatorIndex).trim();
+    const value = line.slice(separatorIndex + 1);
+    if (key) {
+      map.set(key, value);
+    }
+  }
+
+  return map;
+}
+
+async function readJson(response, step) {
+  const text = await response.text();
+  if (!response.ok) {
+    throw new Error(`${step} failed with status ${response.status}. Body: ${text}`);
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(`${step} returned non-JSON body: ${text}`);
+  }
+}
+
+async function assertHealth(baseUrl) {
+  const response = await fetch(`${baseUrl}/api/health`);
+  const payload = await readJson(response, 'Health check');
+
+  if (!payload?.ok || !payload?.api) {
+    throw new Error(`Health check payload was not healthy: ${JSON.stringify(payload)}`);
+  }
+
+  console.log(`[PASS] Health check ok at ${baseUrl}/api/health`);
+}
+
+async function main() {
+  const args = parseArgs(process.argv.slice(2));
+  const envPath = path.resolve(projectRoot, args.envFile);
+  const envMap = parseEnvFile(envPath);
+  const apiKey = args.apiKey || process.env.API_SECRET_KEY || envMap.get('API_SECRET_KEY')?.trim();
+
+  if (!apiKey) {
+    throw new Error(`API_SECRET_KEY is required for OSS smoke. Checked ${path.relative(projectRoot, envPath)}.`);
+  }
+
+  const baseUrl = args.baseUrl.replace(/\/+$/, '');
+  const smokeName = `${args.label}-${crypto.randomUUID()}`;
+  const uploadHeaders = {
+    'x-api-key': apiKey,
+  };
+
+  let uploadedUrl = '';
+  let deleted = false;
+
+  console.log(`[INFO] OSS smoke started. baseUrl=${baseUrl} label=${args.label}`);
+  await assertHealth(baseUrl);
+
+  try {
+    const formData = new FormData();
+    formData.set('file', new Blob([PNG_BYTES], { type: 'image/png' }), `${smokeName}.png`);
+    formData.set('category', args.label);
+    formData.set('entityId', 'smoke');
+    formData.set('slot', 'upload-delete');
+
+    const uploadResponse = await fetch(`${baseUrl}/api/uploads/assets`, {
+      method: 'POST',
+      headers: uploadHeaders,
+      body: formData,
+    });
+    const uploaded = await readJson(uploadResponse, 'OSS upload');
+
+    if (!uploaded?.url || !uploaded?.objectKey) {
+      throw new Error(`OSS upload response missing url/objectKey: ${JSON.stringify(uploaded)}`);
+    }
+
+    uploadedUrl = String(uploaded.url);
+    console.log(`[PASS] Upload ok. objectKey=${uploaded.objectKey}`);
+
+    const proxyResponse = await fetch(new URL(uploadedUrl, `${baseUrl}/`).toString(), {
+      redirect: 'manual',
+    });
+    const proxyLocation = proxyResponse.headers.get('location') || '';
+
+    if (proxyResponse.status !== 302 || !proxyLocation.includes('.aliyuncs.com/')) {
+      throw new Error(
+        `OSS proxy redirect check failed. status=${proxyResponse.status} location=${proxyLocation}`,
+      );
+    }
+
+    console.log('[PASS] Proxy redirect ok.');
+
+    const deleteResponse = await fetch(`${baseUrl}/api/uploads/assets`, {
+      method: 'DELETE',
+      headers: {
+        ...uploadHeaders,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ url: uploadedUrl }),
+    });
+    const deletePayload = await readJson(deleteResponse, 'OSS delete');
+
+    if (!deletePayload?.success || deletePayload.deleted !== true) {
+      throw new Error(`OSS delete did not confirm deletion: ${JSON.stringify(deletePayload)}`);
+    }
+
+    deleted = true;
+    console.log('[PASS] Delete ok.');
+
+    await assertHealth(baseUrl);
+    console.log('[SUCCESS] OSS smoke passed.');
+  } finally {
+    if (uploadedUrl && !deleted) {
+      try {
+        await fetch(`${baseUrl}/api/uploads/assets`, {
+          method: 'DELETE',
+          headers: {
+            ...uploadHeaders,
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({ url: uploadedUrl }),
+        });
+      } catch {
+        // Best-effort cleanup only.
+      }
+    }
+  }
+}
+
+main().catch((error) => {
+  console.error(`[FAIL] ${error instanceof Error ? error.message : String(error)}`);
+  process.exit(1);
+});

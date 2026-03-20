@@ -31,6 +31,8 @@
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "migrate:legacy-assets": "tsx scripts/migrate-legacy-supabase-assets.ts",
+    "verify:oss-api": "node scripts/verify-oss-http-smoke.mjs",
+    "verify:oss-api:local": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-local-oss-smoke.ps1",
     "format": "prettier --write ."
   },
   "dependencies": {

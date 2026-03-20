@@ -35,6 +35,7 @@ function useIsMobile(bp = 767) {
 }
 
 const DEFAULT_PROJECT_ID = 'LA26006';
+const CONNECTION_RETRY_DELAY_MS = 3000;
 
 type ConnectionStatus = 'ok' | 'missing' | 'error' | null;
 
@@ -68,35 +69,96 @@ export default function GanttV3() {
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    Promise.all([
-      apiFetch(`/api/health`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
-      apiFetch(`/api/gantt/data?projectId=${encodeURIComponent(projectIdFromUrl)}`)
-        .then((res) => (res.ok ? res.json() : null))
-        .catch(() => null),
-    ])
-      .then(([health, json]: [{ ok?: boolean; db?: string } | null, GanttData | null]) => {
+    let retryTimer: number | null = null;
+
+    const clearRetry = () => {
+      if (retryTimer !== null) {
+        window.clearTimeout(retryTimer);
+        retryTimer = null;
+      }
+    };
+
+    const scheduleRetry = () => {
+      if (cancelled || retryTimer !== null) {
+        return;
+      }
+
+      retryTimer = window.setTimeout(() => {
+        retryTimer = null;
+        void loadProjectData(false);
+      }, CONNECTION_RETRY_DELAY_MS);
+    };
+
+    const loadProjectData = async (showLoading: boolean) => {
+      if (showLoading) {
+        setLoading(true);
+      }
+
+      try {
+        const [health, projectResponse] = await Promise.all([
+          apiFetch(`/api/health`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
+          apiFetch(`/api/gantt/data?projectId=${encodeURIComponent(projectIdFromUrl)}`)
+            .then(async (res) => {
+              if (!res.ok) {
+                return { ok: false, data: null as GanttData | null };
+              }
+
+              return { ok: true, data: (await res.json()) as GanttData };
+            })
+            .catch(() => ({ ok: false, data: null as GanttData | null })),
+        ]);
+
         if (cancelled) return;
-        if (health?.ok && health.db === 'ok') setConnectionStatus('ok');
-        else if (health?.db === 'missing') setConnectionStatus('missing');
-        else setConnectionStatus('error');
-        if (json && Array.isArray(json.tasks) && json.tasks.length > 0) {
-          setServerData(json);
-        } else {
+
+        if (health?.ok && health.db === 'ok') {
+          if (projectResponse.ok) {
+            setConnectionStatus('ok');
+            if (projectResponse.data && Array.isArray(projectResponse.data.tasks) && projectResponse.data.tasks.length > 0) {
+              setServerData(projectResponse.data);
+            } else {
+              setServerData(null);
+            }
+            clearRetry();
+          } else {
+            setConnectionStatus('error');
+            setServerData(null);
+            scheduleRetry();
+          }
+        } else if (health?.db === 'missing') {
+          setConnectionStatus('missing');
           setServerData(null);
+          scheduleRetry();
+        } else {
+          setConnectionStatus('error');
+          setServerData(null);
+          scheduleRetry();
         }
-      })
-      .catch(() => {
+      } catch {
         if (!cancelled) {
           setConnectionStatus('error');
           setServerData(null);
+          scheduleRetry();
         }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+      } finally {
+        if (!cancelled && showLoading) {
+          setLoading(false);
+        }
+      }
+    };
+
+    const retryOnFocus = () => {
+      clearRetry();
+      void loadProjectData(false);
+    };
+
+    void loadProjectData(true);
+    window.addEventListener('focus', retryOnFocus);
+    window.addEventListener('online', retryOnFocus);
     return () => {
       cancelled = true;
+      clearRetry();
+      window.removeEventListener('focus', retryOnFocus);
+      window.removeEventListener('online', retryOnFocus);
     };
   }, [projectIdFromUrl]);
 
@@ -191,15 +253,6 @@ export default function GanttV3() {
           </a>
           <div className="w-px h-6 bg-white/[0.06]" />
           <span className="text-[15px] font-bold text-white">{projectIdFromUrl}</span>
-          <div className="w-px h-6 bg-white/[0.06]" />
-          <a
-            href={`/fault?id=${encodeURIComponent(projectIdFromUrl)}`}
-            className="flex items-center gap-2 text-white/60 hover:text-[#FF3B3B] transition-colors"
-            title="问题汇总库"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-            <span className="text-[13px] font-medium">问题汇总</span>
-          </a>
         </div>
         <EmptyProjectState projectId={projectIdFromUrl} onImportSuccess={handleImportSuccess} />
       </div>
