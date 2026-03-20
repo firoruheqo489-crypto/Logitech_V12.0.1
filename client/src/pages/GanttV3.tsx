@@ -253,6 +253,15 @@ export default function GanttV3() {
           </a>
           <div className="w-px h-6 bg-white/[0.06]" />
           <span className="text-[15px] font-bold text-white">{projectIdFromUrl}</span>
+          <div className="w-px h-6 bg-white/[0.06]" />
+          <a
+            href={`/fault?id=${encodeURIComponent(projectIdFromUrl)}`}
+            className="flex items-center gap-2 text-white/60 hover:text-[#FF3B3B] transition-colors"
+            title="问题汇总库"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+            <span className="text-[13px] font-medium">问题汇总</span>
+          </a>
         </div>
         <EmptyProjectState projectId={projectIdFromUrl} onImportSuccess={handleImportSuccess} />
       </div>

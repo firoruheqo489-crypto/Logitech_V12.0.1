@@ -7,7 +7,7 @@
  */
 
 import { useState, useRef, useCallback } from 'react';
-import { Upload, ArrowLeft, Trash2, Activity, Cpu, Zap } from 'lucide-react';
+import { Upload, ArrowLeft, Trash2, Activity, AlertTriangle, Cpu, Zap } from 'lucide-react';
 import type { MilestoneView, GanttData } from '@shared/ganttEngine';
 import { formatDateCn } from '@shared/workdays';
 import GanttV3ImportModal from './GanttV3ImportModal';
@@ -150,6 +150,14 @@ export default function GanttV3Milestones({
                 <svg className="absolute bottom-0 right-0 w-3.5 h-3.5 pointer-events-none rotate-180" viewBox="0 0 12 12" fill="none"><path d="M0 0 H8 M0 0 V8" stroke="oklch(0.82 0.18 195)" strokeWidth="1.5" /></svg>
                 <Upload className="w-5 h-5 shrink-0" /><span>导入</span>
               </button>
+              <a href={`/fault?id=${encodeURIComponent(projectId || moldNumber)}&project=${encodeURIComponent(projectName || '')}&product=${encodeURIComponent(productName || '')}`}
+                title="异常看板"
+                className="relative flex items-center gap-2.5 px-5 py-2.5 text-[15px] font-mono font-semibold tracking-widest uppercase rounded-sm transition-all duration-300 hover:shadow-[0_0_15px_rgba(244,63,94,0.3)]"
+                style={{ border: '1px solid oklch(0.55 0.22 15 / 0.4)', color: 'oklch(0.65 0.22 15)', background: 'oklch(0.55 0.22 15 / 0.04)' }}>
+                <svg className="absolute top-0 left-0 w-3.5 h-3.5 pointer-events-none" viewBox="0 0 12 12" fill="none"><path d="M0 0 H8 M0 0 V8" stroke="oklch(0.55 0.22 15)" strokeWidth="1.5" /></svg>
+                <svg className="absolute bottom-0 right-0 w-3.5 h-3.5 pointer-events-none rotate-180" viewBox="0 0 12 12" fill="none"><path d="M0 0 H8 M0 0 V8" stroke="oklch(0.55 0.22 15)" strokeWidth="1.5" /></svg>
+                <AlertTriangle className="w-5 h-5 shrink-0" /><span>异常</span>
+              </a>
               <a href="/" title="返回项目看板"
                 className="relative flex items-center gap-2.5 px-5 py-2.5 text-[15px] font-mono font-semibold tracking-widest uppercase rounded-sm transition-all duration-300 hover:shadow-[0_0_15px_rgba(34,211,238,0.3)]"
                 style={{ border: '1px solid oklch(0.82 0.18 195 / 0.4)', color: 'oklch(0.82 0.18 195)', background: 'oklch(0.82 0.18 195 / 0.04)' }}>
