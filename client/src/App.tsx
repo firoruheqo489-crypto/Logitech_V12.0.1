@@ -7,7 +7,6 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 import Home from "./pages/Home";
 import GanttV3 from "./pages/GanttV3";
 import DashboardHome from "./pages/dashboard/DashboardHome";
-import FaultDashboard from "./pages/FaultDashboard";
 
 
 function Router() {
@@ -15,7 +14,6 @@ function Router() {
     <Switch>
       <Route path={"/"} component={DashboardHome} />
       <Route path={"/dashboard"} component={DashboardHome} />
-      <Route path={"/fault"} component={FaultDashboard} />
       <Route path={"/gantt"} component={GanttV3} />
       <Route path={"/v3/gantt"} component={GanttV3} />
       <Route path={"/v2"} component={Home} />
