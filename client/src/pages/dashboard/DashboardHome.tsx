@@ -725,7 +725,7 @@ export default function DashboardHome() {
         <div className="mt-2 mb-8 flex w-full items-end justify-between px-1">
           <div className="flex flex-col gap-1.5">
             <h1 className="text-3xl font-extrabold tracking-tight text-white">{activeModule} 系列主看板</h1>
-            <p className="text-sm font-medium text-slate-400">项目状态可视化管理系统</p>
+            <p className="text-sm font-medium text-slate-400">项目状态可视化管理系统 · 部署链路验证</p>
           </div>
           <button
             onClick={() => { setActiveModule(null); setSearchProjectName(''); setSearchMoldId(''); setFilterStatus('ALL'); }}
