@@ -75,6 +75,7 @@ const EARLY_FAILURE_END_RATIO = 0.15;
 const USEFUL_LIFE_END_RATIO = 0.85;
 const CHART_WIDTH = 1_000;
 const CHART_HEIGHT = 256;
+const MOLD_MAINTENANCE_TABLE = 'mold_maintenance_logs_v2';
 
 let moldMaintenanceTableReady: Promise<void> | null = null;
 
@@ -535,7 +536,7 @@ async function listMoldMaintenanceRows(moldId: string): Promise<MoldMaintenanceL
         occurred_at,
         created_at,
         updated_at
-      FROM mold_maintenance_logs
+      FROM ${MOLD_MAINTENANCE_TABLE}
       WHERE mold_id = $1
       ORDER BY occurred_at DESC, current_shots DESC, created_at DESC
     `,
@@ -550,7 +551,7 @@ export function ensureMoldMaintenanceTable(): Promise<void> {
   if (!moldMaintenanceTableReady) {
     moldMaintenanceTableReady = (async () => {
       await dbSql.unsafe(`
-        CREATE TABLE IF NOT EXISTS mold_maintenance_logs (
+        CREATE TABLE IF NOT EXISTS ${MOLD_MAINTENANCE_TABLE} (
           id VARCHAR(80) PRIMARY KEY,
           mold_id VARCHAR(80) NOT NULL,
           mold_no VARCHAR(80),
@@ -574,7 +575,7 @@ export function ensureMoldMaintenanceTable(): Promise<void> {
       // Legacy deployments may already have this table with partial or different columns.
       // Normalize schema in-place so new reliability endpoints can work without manual DBA steps.
       await dbSql.unsafe(`
-        ALTER TABLE mold_maintenance_logs
+        ALTER TABLE ${MOLD_MAINTENANCE_TABLE}
           ADD COLUMN IF NOT EXISTS id VARCHAR(80),
           ADD COLUMN IF NOT EXISTS mold_id VARCHAR(80),
           ADD COLUMN IF NOT EXISTS mold_no VARCHAR(80),
@@ -595,7 +596,7 @@ export function ensureMoldMaintenanceTable(): Promise<void> {
           ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ
       `);
       await dbSql.unsafe(`
-        UPDATE mold_maintenance_logs
+        UPDATE ${MOLD_MAINTENANCE_TABLE}
         SET
           mold_id = COALESCE(NULLIF(TRIM(CAST(mold_id AS TEXT)), ''), NULLIF(TRIM(CAST(mold_no AS TEXT)), ''), 'UNKNOWN'),
           symptom = COALESCE(symptom, ''),
@@ -623,12 +624,12 @@ export function ensureMoldMaintenanceTable(): Promise<void> {
           OR updated_at IS NULL
       `);
       await dbSql.unsafe(`
-        CREATE INDEX IF NOT EXISTS mold_maintenance_logs_mold_id_idx
-        ON mold_maintenance_logs (mold_id)
+        CREATE INDEX IF NOT EXISTS mold_maintenance_logs_v2_mold_id_idx
+        ON ${MOLD_MAINTENANCE_TABLE} (mold_id)
       `);
       await dbSql.unsafe(`
-        CREATE INDEX IF NOT EXISTS mold_maintenance_logs_mold_id_occurred_at_idx
-        ON mold_maintenance_logs (mold_id, occurred_at DESC)
+        CREATE INDEX IF NOT EXISTS mold_maintenance_logs_v2_mold_id_occurred_at_idx
+        ON ${MOLD_MAINTENANCE_TABLE} (mold_id, occurred_at DESC)
       `);
     })();
   }
@@ -683,7 +684,7 @@ export async function createMoldMaintenanceLog(req: Request, res: Response): Pro
     const nowIso = new Date().toISOString();
     await dbSql.unsafe(
       `
-        INSERT INTO mold_maintenance_logs (
+        INSERT INTO ${MOLD_MAINTENANCE_TABLE} (
           id,
           mold_id,
           mold_no,
@@ -762,7 +763,7 @@ export async function deleteMoldMaintenanceLog(req: Request, res: Response): Pro
 
     const deletedRows = (await dbSql.unsafe(
       `
-        DELETE FROM mold_maintenance_logs
+        DELETE FROM ${MOLD_MAINTENANCE_TABLE}
         WHERE mold_id = $1 AND id = $2
         RETURNING id
       `,
