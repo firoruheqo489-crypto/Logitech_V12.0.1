@@ -106,6 +106,9 @@ artifacts/
 .rollback/
 .codex-local-*.err
 .codex-local-*.out
+.codex-local/
+artifacts/local-runtime/
+artifacts/releases/single-track-active.json
 .codex-smoke-upload.png
 .codex-sync-autosync-test-*/
 .codex-deploy-*/
