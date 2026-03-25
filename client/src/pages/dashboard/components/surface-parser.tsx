@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { AlertTriangle, CheckCircle2, FileSpreadsheet, Sparkles, Trash2, UploadCloud } from 'lucide-react';
 
 import CyberConfirmDialog from '@/components/ui/CyberConfirmDialog';
+import { buildDashboardScopedStorageKey } from '@/lib/dashboardClientState';
 
 import {
   normalizeColorDifferenceRows,
@@ -29,7 +30,12 @@ const EMPTY_META: SurfaceSectionMeta = {
 };
 
 function buildSurfaceParserStorageKey(moldId: string, moldNo?: string, trialStage?: string): string {
-  return `surface-parser-v2:${moldId}:${moldNo || 'default'}:${trialStage || 'T0'}`;
+  return buildDashboardScopedStorageKey(
+    'surface-parser',
+    moldId,
+    moldNo || 'default',
+    trialStage || 'T0',
+  );
 }
 
 function sanitizeMeta(value: unknown): SurfaceSectionMeta {

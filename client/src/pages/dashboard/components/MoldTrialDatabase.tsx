@@ -31,6 +31,7 @@ import {
   loadMoldTrialEvidence,
   saveMoldTrialEvidence,
 } from "../lib/moldTrialEvidenceStore";
+import { buildDashboardScopedStorageKey } from "@/lib/dashboardClientState";
 import FaiParserSection from "./fai-parser";
 import SurfaceParserSection from "./surface-parser";
 
@@ -78,11 +79,19 @@ function buildEvidenceSlotLabel(index: number): string {
 }
 
 function buildTrialStageStorageKey(moldId: string, moldNo?: string): string {
-  return `mold-trial-stages:${moldId}:${moldNo || "default"}`;
+  return buildDashboardScopedStorageKey(
+    "mold-trial-stages",
+    moldId,
+    moldNo || "default"
+  );
 }
 
 function buildTrialEvidenceStorageKey(moldId: string, moldNo?: string): string {
-  return `mold-trial-evidence:${moldId}:${moldNo || "default"}`;
+  return buildDashboardScopedStorageKey(
+    "mold-trial-evidence",
+    moldId,
+    moldNo || "default"
+  );
 }
 
 function sanitizeTrialStages(value: unknown): TrialStage[] {

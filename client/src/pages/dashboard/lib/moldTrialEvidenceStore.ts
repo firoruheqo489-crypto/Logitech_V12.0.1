@@ -1,4 +1,6 @@
-const DB_NAME = 'dashboard-cache';
+import { DASHBOARD_EVIDENCE_DB_NAME } from '@/lib/dashboardClientState';
+
+const DB_NAME = DASHBOARD_EVIDENCE_DB_NAME;
 const STORE_NAME = 'mold-trial-evidence';
 const DB_VERSION = 1;
 

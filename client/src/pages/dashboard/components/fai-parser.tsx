@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle2, FileSpreadsheet, Trash2, UploadCloud } from 'lucide-react';
 
 import CyberConfirmDialog from '@/components/ui/CyberConfirmDialog';
+import { buildDashboardScopedStorageKey } from '@/lib/dashboardClientState';
 
 type ShotTuple = [number | null, number | null, number | null];
 type RowFilter = 'all' | 'qualified' | 'unqualified';
@@ -57,7 +58,12 @@ const EMPTY_SUMMARY: FaiParseSummary = {
 const SHOT_LABELS = ['Shot 1', 'Shot 2', 'Shot 3'] as const;
 
 function buildFaiParserStorageKey(moldId: string, moldNo?: string, trialStage?: string): string {
-  return `dashboard_fai_parser_state_v2:${moldId}:${moldNo || 'default'}:${trialStage || 'T0'}`;
+  return buildDashboardScopedStorageKey(
+    'dashboard_fai_parser_state',
+    moldId,
+    moldNo || 'default',
+    trialStage || 'T0',
+  );
 }
 
 function normalizeHeader(value: unknown): string {
