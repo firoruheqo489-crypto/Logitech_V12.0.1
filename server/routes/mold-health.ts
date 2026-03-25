@@ -571,6 +571,57 @@ export function ensureMoldMaintenanceTable(): Promise<void> {
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
       `);
+      // Legacy deployments may already have this table with partial or different columns.
+      // Normalize schema in-place so new reliability endpoints can work without manual DBA steps.
+      await dbSql.unsafe(`
+        ALTER TABLE mold_maintenance_logs
+          ADD COLUMN IF NOT EXISTS id VARCHAR(80),
+          ADD COLUMN IF NOT EXISTS mold_id VARCHAR(80),
+          ADD COLUMN IF NOT EXISTS mold_no VARCHAR(80),
+          ADD COLUMN IF NOT EXISTS type VARCHAR(20),
+          ADD COLUMN IF NOT EXISTS repair_action VARCHAR(100),
+          ADD COLUMN IF NOT EXISTS current_shots BIGINT,
+          ADD COLUMN IF NOT EXISTS symptom TEXT,
+          ADD COLUMN IF NOT EXISTS diagnosis TEXT,
+          ADD COLUMN IF NOT EXISTS procedure TEXT,
+          ADD COLUMN IF NOT EXISTS operator VARCHAR(255),
+          ADD COLUMN IF NOT EXISTS downtime_hours NUMERIC(12,2),
+          ADD COLUMN IF NOT EXISTS recovery_rating NUMERIC(8,6),
+          ADD COLUMN IF NOT EXISTS cost NUMERIC(12,2),
+          ADD COLUMN IF NOT EXISTS image_url TEXT,
+          ADD COLUMN IF NOT EXISTS estimated_completion TIMESTAMPTZ,
+          ADD COLUMN IF NOT EXISTS occurred_at TIMESTAMPTZ,
+          ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ,
+          ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ
+      `);
+      await dbSql.unsafe(`
+        UPDATE mold_maintenance_logs
+        SET
+          mold_id = COALESCE(NULLIF(TRIM(CAST(mold_id AS TEXT)), ''), NULLIF(TRIM(CAST(mold_no AS TEXT)), ''), 'UNKNOWN'),
+          symptom = COALESCE(symptom, ''),
+          diagnosis = COALESCE(diagnosis, ''),
+          procedure = COALESCE(procedure, ''),
+          current_shots = COALESCE(current_shots, 0),
+          downtime_hours = COALESCE(downtime_hours, 0),
+          recovery_rating = COALESCE(recovery_rating, 0),
+          cost = COALESCE(cost, 0),
+          occurred_at = COALESCE(occurred_at, NOW()),
+          created_at = COALESCE(created_at, NOW()),
+          updated_at = COALESCE(updated_at, NOW())
+        WHERE
+          mold_id IS NULL
+          OR TRIM(CAST(mold_id AS TEXT)) = ''
+          OR symptom IS NULL
+          OR diagnosis IS NULL
+          OR procedure IS NULL
+          OR current_shots IS NULL
+          OR downtime_hours IS NULL
+          OR recovery_rating IS NULL
+          OR cost IS NULL
+          OR occurred_at IS NULL
+          OR created_at IS NULL
+          OR updated_at IS NULL
+      `);
       await dbSql.unsafe(`
         CREATE INDEX IF NOT EXISTS mold_maintenance_logs_mold_id_idx
         ON mold_maintenance_logs (mold_id)
