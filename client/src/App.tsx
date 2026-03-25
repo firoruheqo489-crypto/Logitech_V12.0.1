@@ -1,26 +1,30 @@
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import NotFound from "@/pages/NotFound";
+import { lazy, Suspense } from "react";
 import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
-import Home from "./pages/Home";
-import GanttV3 from "./pages/GanttV3";
-import DashboardHome from "./pages/dashboard/DashboardHome";
+
+const NotFound = lazy(() => import("@/pages/NotFound"));
+const Home = lazy(() => import("./pages/Home"));
+const GanttV3 = lazy(() => import("./pages/GanttV3"));
+const DashboardHome = lazy(() => import("./pages/dashboard/DashboardHome"));
 
 
 function Router() {
   return (
-    <Switch>
-      <Route path={"/"} component={DashboardHome} />
-      <Route path={"/dashboard"} component={DashboardHome} />
-      <Route path={"/gantt"} component={GanttV3} />
-      <Route path={"/v3/gantt"} component={GanttV3} />
-      <Route path={"/v2"} component={Home} />
-      <Route path={"/404"} component={NotFound} />
-      {/* Final fallback route */}
-      <Route component={NotFound} />
-    </Switch>
+    <Suspense fallback={null}>
+      <Switch>
+        <Route path={"/"} component={DashboardHome} />
+        <Route path={"/dashboard"} component={DashboardHome} />
+        <Route path={"/gantt"} component={GanttV3} />
+        <Route path={"/v3/gantt"} component={GanttV3} />
+        <Route path={"/v2"} component={Home} />
+        <Route path={"/404"} component={NotFound} />
+        {/* Final fallback route */}
+        <Route component={NotFound} />
+      </Switch>
+    </Suspense>
   );
 }
 
