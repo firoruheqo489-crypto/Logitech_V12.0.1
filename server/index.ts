@@ -16,6 +16,7 @@ import { listDashboardProjectAssets, upsertDashboardProjectAsset, deleteDashboar
 import { listDashboardProductData, batchUpsertDashboardProductData, ensureDashboardProductDataTable } from "./routes/dashboard-product-data.js";
 import { getProgressNotes, getLatestProgressBackup, saveProgressNotes, upsertProgressNote, createProgressBackup, restoreLatestProgressNotes, deleteProgressNote, getProgressNoteAuditLogs, ensureBackupTable, ensureProgressAuditTable } from "./routes/progress-notes.js";
 import { listIssues, createIssue, updateIssue, deleteIssue, ensureIssuesTable } from "./routes/issues.js";
+import { getMoldTelemetry, createMoldMaintenanceLog, deleteMoldMaintenanceLog, ensureMoldMaintenanceTable } from "./routes/mold-health.js";
 import { getTasksForSCurve } from "./routes/tasks.js";
 import { uploadsRouter } from "./routes/uploads.js";
 import { db, sql } from "./db.js";
@@ -102,6 +103,9 @@ async function startServer() {
   app.post("/api/issues", createIssue);
   app.patch("/api/issues/:id", updateIssue);
   app.delete("/api/issues/:id", deleteIssue);
+  app.get("/api/mold/:moldId/telemetry", getMoldTelemetry);
+  app.post("/api/mold/:moldId/maintenance-logs", createMoldMaintenanceLog);
+  app.delete("/api/mold/:moldId/maintenance-logs/:eventId", deleteMoldMaintenanceLog);
 
   if (!isDevApiOnly) {
     const staticPath =
@@ -144,6 +148,7 @@ async function startServer() {
     ensureBackupTable(),
     ensureProgressAuditTable(),
     ensureIssuesTable(),
+    ensureMoldMaintenanceTable(),
   ]);
 
   warmupResults.forEach((result, index) => {
