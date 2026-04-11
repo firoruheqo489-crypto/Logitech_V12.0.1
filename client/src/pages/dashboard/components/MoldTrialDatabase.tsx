@@ -32,6 +32,7 @@ import {
   saveMoldTrialEvidence,
 } from "../lib/moldTrialEvidenceStore";
 import { buildDashboardScopedStorageKey } from "@/lib/dashboardClientState";
+import { apiFetch } from "@/lib/api";
 import FaiParserSection from "./fai-parser";
 import SurfaceParserSection from "./surface-parser";
 
@@ -68,7 +69,7 @@ interface MoldTrialDatabaseProps {
   embedded?: boolean;
 }
 
-const defaultTrialStages: TrialStage[] = ["T0", "T1", "T2", "T3"];
+const defaultTrialStages: TrialStage[] = ["T0"];
 const trialStages = defaultTrialStages;
 const MAX_EVIDENCE_SIZE_BYTES = 500 * 1024;
 const EVIDENCE_SLOT_COUNT = 5;
@@ -121,6 +122,11 @@ function sanitizeTrialStages(value: unknown): TrialStage[] {
   );
 }
 
+function combineTrialStages(...lists: unknown[]): TrialStage[] {
+  const merged = lists.flatMap((value) => (Array.isArray(value) ? value : []));
+  return sanitizeTrialStages(merged);
+}
+
 function readStoredTrialStages(moldId: string, moldNo?: string): TrialStage[] {
   if (typeof window === "undefined") {
     return [...defaultTrialStages];
@@ -134,6 +140,47 @@ function readStoredTrialStages(moldId: string, moldNo?: string): TrialStage[] {
     return sanitizeTrialStages(JSON.parse(raw));
   } catch {
     return [...defaultTrialStages];
+  }
+}
+
+async function fetchRemoteTrialStages(
+  moldId: string,
+  moldNo?: string
+): Promise<TrialStage[]> {
+  const params = new URLSearchParams({
+    moldId,
+    moldNo: moldNo || "",
+  });
+  const res = await apiFetch(`/api/dashboard/mold-trial-stages?${params.toString()}`);
+  const payload = (await res.json().catch(() => null)) as
+    | { state?: { trialStages?: unknown } | null; error?: string }
+    | null;
+
+  if (!res.ok) {
+    throw new Error(payload?.error || "Failed to load mold trial stages");
+  }
+
+  const trialStages = payload?.state?.trialStages;
+  return sanitizeTrialStages(trialStages);
+}
+
+async function saveRemoteTrialStages(input: {
+  moldId: string;
+  moldNo?: string;
+  trialStages: TrialStage[];
+}): Promise<void> {
+  const res = await apiFetch("/api/dashboard/mold-trial-stages", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      moldId: input.moldId,
+      moldNo: input.moldNo || "",
+      trialStages: input.trialStages,
+    }),
+  });
+  if (!res.ok) {
+    const payload = (await res.json().catch(() => null)) as { error?: string } | null;
+    throw new Error(payload?.error || "Failed to save mold trial stages");
   }
 }
 
@@ -926,6 +973,7 @@ export default function MoldTrialDatabase({
   const [evidenceLightboxUrl, setEvidenceLightboxUrl] = useState("");
   const [evidenceLightboxRotation, setEvidenceLightboxRotation] = useState(0);
   const [isExporting, setIsExporting] = useState(false);
+  const [isTrialStagesHydrated, setIsTrialStagesHydrated] = useState(false);
   const trialStageStorageKey = buildTrialStageStorageKey(moldId, moldNo);
   const trialEvidenceStorageKey = buildTrialEvidenceStorageKey(moldId, moldNo);
   const trialDataMap = trialDataByStage;
@@ -985,9 +1033,26 @@ export default function MoldTrialDatabase({
     setShowClearConfirm(false);
     setPendingDeleteEvidenceSlotId(null);
     slotInputRefs.current = {};
+    setIsTrialStagesHydrated(false);
 
     void (async () => {
       try {
+        try {
+          const remoteTrialStages = await fetchRemoteTrialStages(moldId, moldNo);
+          if (!cancelled) {
+            const resolvedTrialStages = combineTrialStages(remoteTrialStages);
+            setTrialStagesState(resolvedTrialStages);
+            setActiveTrial((prev) =>
+              resolvedTrialStages.includes(prev)
+                ? prev
+                : (resolvedTrialStages[0] || defaultTrialStages[0])
+            );
+            setTrialDataByStage(buildInitialTrialDataMap(resolvedTrialStages));
+          }
+        } catch {
+          // Remote read failed: keep local fallback.
+        }
+
         let storedEvidence = await loadMoldTrialEvidence<Record<string, TrialEvidenceSlot[]>>(
           trialEvidenceStorageKey
         );
@@ -1010,6 +1075,10 @@ export default function MoldTrialDatabase({
         if (typeof window !== "undefined") {
           window.localStorage.removeItem(trialEvidenceStorageKey);
         }
+      } finally {
+        if (!cancelled) {
+          setIsTrialStagesHydrated(true);
+        }
       }
     })();
 
@@ -1030,6 +1099,15 @@ export default function MoldTrialDatabase({
       // Ignore storage write failures and keep UI responsive.
     }
   }, [trialStageStorageKey, trialStagesState]);
+
+  useEffect(() => {
+    if (!isTrialStagesHydrated) return;
+    void saveRemoteTrialStages({
+      moldId,
+      moldNo,
+      trialStages: trialStagesState,
+    }).catch(() => undefined);
+  }, [isTrialStagesHydrated, moldId, moldNo, trialStagesState]);
 
   useEffect(() => {
     void (async () => {

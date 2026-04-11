@@ -14,6 +14,7 @@ import { getGanttDataHandler, postGanttImportHandler, patchProjectImageHandler, 
 import { listDashboardProjects, getDashboardProject, batchReplaceDashboardProjects, clearDashboardProjects, getDashboardHealthCheck, getLatestDashboardHealthCheck, runDashboardHealthCheck, ensureDashboardHealthTable, ensureDashboardModuleOrderTable } from "./routes/dashboard.js";
 import { listDashboardProjectAssets, upsertDashboardProjectAsset, deleteDashboardProjectAsset, ensureDashboardProjectAssetsTable } from "./routes/dashboard-assets.js";
 import { listDashboardProductData, batchUpsertDashboardProductData, ensureDashboardProductDataTable } from "./routes/dashboard-product-data.js";
+import { getDashboardMoldTrialStagesState, upsertDashboardMoldTrialStagesState, ensureDashboardMoldTrialStagesTable } from "./routes/dashboard-mold-trial-stages.js";
 import { getProgressNotes, getLatestProgressBackup, saveProgressNotes, upsertProgressNote, createProgressBackup, restoreLatestProgressNotes, deleteProgressNote, getProgressNoteAuditLogs, ensureBackupTable, ensureProgressAuditTable } from "./routes/progress-notes.js";
 import { listIssues, createIssue, updateIssue, deleteIssue, ensureIssuesTable } from "./routes/issues.js";
 import { getMoldTelemetry, createMoldMaintenanceLog, deleteMoldMaintenanceLog, ensureMoldMaintenanceTable } from "./routes/mold-health.js";
@@ -83,6 +84,8 @@ async function startServer() {
   app.delete("/api/dashboard/project-assets/:moldNumber/:slotType", deleteDashboardProjectAsset);
   app.get("/api/dashboard/product-data", listDashboardProductData);
   app.post("/api/dashboard/product-data/batch-upsert", batchUpsertDashboardProductData);
+  app.get("/api/dashboard/mold-trial-stages", getDashboardMoldTrialStagesState);
+  app.put("/api/dashboard/mold-trial-stages", upsertDashboardMoldTrialStagesState);
   app.delete("/api/dashboard/projects", clearDashboardProjects);
   app.get("/api/dashboard/health-check", getDashboardHealthCheck);
   app.get("/api/dashboard/health-check/latest", getLatestDashboardHealthCheck);
@@ -143,6 +146,7 @@ async function startServer() {
   const warmupResults = await Promise.allSettled([
     ensureDashboardProjectAssetsTable(),
     ensureDashboardProductDataTable(),
+    ensureDashboardMoldTrialStagesTable(),
     ensureDashboardHealthTable(),
     ensureDashboardModuleOrderTable(),
     ensureBackupTable(),
