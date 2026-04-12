@@ -36,6 +36,10 @@ function sendUploadsRouteError(
   status: number,
   code: UploadsRouteErrorCode,
 ): void {
+  if (res.headersSent || res.writableEnded || res.destroyed) {
+    return;
+  }
+
   res.status(status).json({
     error: UPLOADS_ROUTE_ERROR_MESSAGES[code],
     code,
@@ -69,6 +73,11 @@ uploadsRouter.get('/object', async (req: Request, res: Response) => {
     const signedUrl = createSignedAssetUrl(objectKey);
     res.redirect(302, signedUrl);
   } catch (error) {
+    if (res.headersSent || res.writableEnded || res.destroyed) {
+      console.warn('GET /api/uploads/object aborted after response started:', error);
+      return;
+    }
+
     const details = String(error ?? '');
     const code =
       details.includes('NoSuchKey')
@@ -139,4 +148,4 @@ uploadsRouter.delete('/assets', async (req: Request, res: Response) => {
   }
 });
 
-export { uploadsRouter };
+export { sendUploadsRouteError, uploadsRouter };

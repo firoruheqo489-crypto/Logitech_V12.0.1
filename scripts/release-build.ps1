@@ -202,8 +202,16 @@ try {
 
   if (-not $SkipVerification) {
     Invoke-Step "Running TypeScript verification..." { pnpm exec tsc --noEmit } "TypeScript verification failed"
-    Invoke-Step "Running client release guard tests..." { pnpm exec vitest run client/src/server-index.structure.test.ts client/src/server-error-payload.structure.test.ts client/src/pages/dashboard/lib/dashboardApi.test.ts } "Client release guard tests failed"
-    Invoke-Step "Running server release guard tests..." { pnpm exec vitest run --root . server/middleware/apiCors.test.ts server/middleware/apiAccessPolicy.test.ts server/release.test.ts server/routes/progress-notes-guard.test.ts } "Server release guard tests failed"
+    $releaseGuardBundleDir = Join-Path $repoRoot ".codex-local\release-guards"
+    $releaseGuardBundlePath = Join-Path $releaseGuardBundleDir "entry.mjs"
+
+    Invoke-Step "Bundling release guard modules..." {
+      New-Item -ItemType Directory -Path $releaseGuardBundleDir -Force | Out-Null
+      pnpm.cmd exec esbuild scripts/release-guard-entry.mjs --bundle --platform=node --packages=external --format=esm --outfile=$releaseGuardBundlePath
+    } "Release guard module bundle failed"
+    Invoke-Step "Running release guard checks..." {
+      node scripts/run-release-guard-checks.mjs --bundle-path $releaseGuardBundlePath
+    } "Release guard checks failed"
 
     $smokePort = Get-FreeLocalPort
     Invoke-Step "Running local OSS upload/delete smoke on port $smokePort..." { powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-local-oss-smoke.ps1 -Port $smokePort -Retries 40 } "Local OSS upload/delete smoke failed"

@@ -12,7 +12,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // 从项目根目录（server/ 的上一级）加载 .env
-const envPath = path.resolve(__dirname, '..', '.env');
+const explicitEnvPath = process.env.APP_ENV_FILE?.trim();
+const envPath = explicitEnvPath ? path.resolve(explicitEnvPath) : path.resolve(__dirname, '..', '.env');
 const result = dotenv.config({ path: envPath });
 
 if (result.error) {
