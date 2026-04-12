@@ -180,6 +180,7 @@ function Get-FreeLocalPort([int]$StartPort = 3301, [int]$MaxPort = 3399) {
 }
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$reuseExistingDist = $env:RELEASE_REUSE_EXISTING_DIST -eq "1"
 Push-Location $repoRoot
 try {
   Require-CleanGitWorkspace $repoRoot
@@ -224,15 +225,19 @@ try {
     exit 0
   }
 
-  $originalVersionOverride = $env:RELEASE_VERSION_OVERRIDE
-  try {
-    $env:RELEASE_VERSION_OVERRIDE = $targetVersion
-    Invoke-Step "Building release bundle..." { pnpm.cmd build } "Build failed"
-  } finally {
-    if ($null -eq $originalVersionOverride) {
-      Remove-Item "Env:RELEASE_VERSION_OVERRIDE" -ErrorAction SilentlyContinue
-    } else {
-      Set-Item "Env:RELEASE_VERSION_OVERRIDE" $originalVersionOverride
+  if ($reuseExistingDist) {
+    Log "Reusing existing dist output because RELEASE_REUSE_EXISTING_DIST=1"
+  } else {
+    $originalVersionOverride = $env:RELEASE_VERSION_OVERRIDE
+    try {
+      $env:RELEASE_VERSION_OVERRIDE = $targetVersion
+      Invoke-Step "Building release bundle..." { pnpm.cmd build } "Build failed"
+    } finally {
+      if ($null -eq $originalVersionOverride) {
+        Remove-Item "Env:RELEASE_VERSION_OVERRIDE" -ErrorAction SilentlyContinue
+      } else {
+        Set-Item "Env:RELEASE_VERSION_OVERRIDE" $originalVersionOverride
+      }
     }
   }
 
