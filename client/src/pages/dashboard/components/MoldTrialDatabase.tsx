@@ -945,6 +945,7 @@ export default function MoldTrialDatabase({
   const [trialStagesState, setTrialStagesState] = useState<TrialStage[]>(() => [
     ...initialTrialStages,
   ]);
+  const trialStagesStateRef = useRef<TrialStage[]>([...initialTrialStages]);
   const [activeTrial, setActiveTrial] = useState<TrialStage>(
     initialTrialStages[0] || defaultTrialStages[0]
   );
@@ -974,6 +975,7 @@ export default function MoldTrialDatabase({
   const [evidenceLightboxRotation, setEvidenceLightboxRotation] = useState(0);
   const [isExporting, setIsExporting] = useState(false);
   const [isTrialStagesHydrated, setIsTrialStagesHydrated] = useState(false);
+  const [trialStageSaveRequestId, setTrialStageSaveRequestId] = useState(0);
   const trialStageStorageKey = buildTrialStageStorageKey(moldId, moldNo);
   const trialEvidenceStorageKey = buildTrialEvidenceStorageKey(moldId, moldNo);
   const trialDataMap = trialDataByStage;
@@ -993,6 +995,10 @@ export default function MoldTrialDatabase({
   const lastTrialStage = trialStagesState[trialStagesState.length - 1];
   const canDeleteActiveTrial =
     trialStagesState.length > 1 && activeTrial === lastTrialStage;
+
+  useEffect(() => {
+    trialStagesStateRef.current = trialStagesState;
+  }, [trialStagesState]);
 
   useEffect(() => {
     evidenceByTrialRef.current = evidenceByTrial;
@@ -1034,6 +1040,7 @@ export default function MoldTrialDatabase({
     setPendingDeleteEvidenceSlotId(null);
     slotInputRefs.current = {};
     setIsTrialStagesHydrated(false);
+    setTrialStageSaveRequestId(0);
 
     void (async () => {
       try {
@@ -1102,12 +1109,13 @@ export default function MoldTrialDatabase({
 
   useEffect(() => {
     if (!isTrialStagesHydrated) return;
+    if (trialStageSaveRequestId === 0) return;
     void saveRemoteTrialStages({
       moldId,
       moldNo,
-      trialStages: trialStagesState,
+      trialStages: trialStagesStateRef.current,
     }).catch(() => undefined);
-  }, [isTrialStagesHydrated, moldId, moldNo, trialStagesState]);
+  }, [isTrialStagesHydrated, moldId, moldNo, trialStageSaveRequestId]);
 
   useEffect(() => {
     void (async () => {
@@ -1149,6 +1157,7 @@ export default function MoldTrialDatabase({
       [nextStage]: buildDefaultTrialStageData(nextStage),
     }));
     setActiveTrial(nextStage);
+    setTrialStageSaveRequestId(current => current + 1);
   };
 
   const deleteCurrentTrialStage = () => {
@@ -1180,6 +1189,7 @@ export default function MoldTrialDatabase({
     });
     setActiveTrial(nextActiveTrial);
     setShowClearConfirm(false);
+    setTrialStageSaveRequestId(current => current + 1);
   };
 
   const handleExcelUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
