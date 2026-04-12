@@ -201,7 +201,7 @@ try {
   Log "Release version plan: $($plan.BaseSource) $($plan.BaseVersion) -> $targetVersion ($changeType)"
 
   if (-not $SkipVerification) {
-    Invoke-Step "Running TypeScript verification..." { pnpm exec tsc --noEmit } "TypeScript verification failed"
+    Invoke-Step "Running TypeScript verification..." { pnpm.cmd exec tsc --noEmit } "TypeScript verification failed"
     $releaseGuardBundleDir = Join-Path $repoRoot ".codex-local\release-guards"
     $releaseGuardBundlePath = Join-Path $releaseGuardBundleDir "entry.mjs"
 
@@ -227,7 +227,7 @@ try {
   $originalVersionOverride = $env:RELEASE_VERSION_OVERRIDE
   try {
     $env:RELEASE_VERSION_OVERRIDE = $targetVersion
-    Invoke-Step "Building release bundle..." { pnpm build } "Build failed"
+    Invoke-Step "Building release bundle..." { pnpm.cmd build } "Build failed"
   } finally {
     if ($null -eq $originalVersionOverride) {
       Remove-Item "Env:RELEASE_VERSION_OVERRIDE" -ErrorAction SilentlyContinue
