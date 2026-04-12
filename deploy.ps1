@@ -16,6 +16,9 @@ param(
     [string]$ArtifactPath = "",
     [string]$MetadataPath = "",
     [string]$OutputDir = "artifacts/releases",
+    [string]$HostAlias = "",
+    [string]$RemoteDir = "",
+    [string]$DeployConfigPath = "",
     [switch]$SkipVerification,
     [switch]$SkipRemoteSmoke,
     [switch]$PreflightOnly,
@@ -157,6 +160,9 @@ if ($Mode -eq "build") {
         -VersionBump $VersionBump `
         -ReleaseNote $ReleaseNote `
         -OutputDir $OutputDir `
+        -HostAlias $HostAlias `
+        -RemoteDir $RemoteDir `
+        -DeployConfigPath $DeployConfigPath `
         -SkipVerification:$SkipVerification `
         -PreflightOnly:$PreflightOnly
 
@@ -182,6 +188,9 @@ if ($Mode -eq "deploy") {
     & $releaseDeployScript `
         -ArtifactPath $ArtifactPath `
         -MetadataPath $MetadataPath `
+        -HostAlias $HostAlias `
+        -RemoteDir $RemoteDir `
+        -DeployConfigPath $DeployConfigPath `
         -SkipRemoteSmoke:$SkipRemoteSmoke
 
     if ($LASTEXITCODE -ne 0) {
@@ -197,6 +206,9 @@ Log "Running artifact build+deploy mode..."
     -VersionBump $VersionBump `
     -ReleaseNote $ReleaseNote `
     -OutputDir $OutputDir `
+    -HostAlias $HostAlias `
+    -RemoteDir $RemoteDir `
+    -DeployConfigPath $DeployConfigPath `
     -SkipVerification:$SkipVerification `
     -PreflightOnly:$PreflightOnly
 
@@ -231,6 +243,9 @@ Write-Host "  Metadata: $latestMetadata" -ForegroundColor Cyan
 & $releaseDeployScript `
     -ArtifactPath $derivedArtifactPath `
     -MetadataPath $latestMetadata `
+    -HostAlias $HostAlias `
+    -RemoteDir $RemoteDir `
+    -DeployConfigPath $DeployConfigPath `
     -SkipRemoteSmoke:$SkipRemoteSmoke
 
 if ($LASTEXITCODE -ne 0) {

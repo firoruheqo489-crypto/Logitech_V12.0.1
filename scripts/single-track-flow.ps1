@@ -4,7 +4,8 @@ param(
   [ValidateSet("minor", "major")]
   [string]$VersionBump = "minor",
   [string]$ReleaseNote = "",
-  [string]$ServerUrl = "http://120.27.153.140:3000",
+  [string]$ServerUrl = "",
+  [string]$DeployConfigPath = "",
   [int]$Port = 3000,
   [switch]$SkipVerification,
   [switch]$SkipRemoteSmoke
@@ -149,12 +150,22 @@ function Start-LocalArtifactFromMetadata {
 }
 
 $repoRoot = Resolve-RepoRoot
+$deploySshScript = Join-Path $PSScriptRoot "deploy-ssh.ps1"
 $deployScript = Join-Path $repoRoot "deploy.ps1"
 $releasesDir = Join-Path $repoRoot "artifacts\releases"
 $statePath = Join-Path $releasesDir "single-track-active.json"
 
 if (-not (Test-Path -LiteralPath $deployScript)) {
   Err "Missing deploy entrypoint: $deployScript"
+}
+if (-not (Test-Path -LiteralPath $deploySshScript)) {
+  Err "Missing deploy SSH helper: $deploySshScript"
+}
+
+. $deploySshScript
+$deployConfig = Get-DeployConnectionConfig -RepoRoot $repoRoot -ConfigPath $DeployConfigPath
+if (-not $ServerUrl) {
+  $ServerUrl = $deployConfig.ServerUrl
 }
 
 if ($Mode -eq "status") {
@@ -178,7 +189,7 @@ if ($Mode -eq "status") {
 
 if ($Mode -eq "preview") {
   Log "Building release artifact from current source..."
-  & $deployScript -Mode build -VersionBump $VersionBump -ReleaseNote $ReleaseNote -SkipVerification:$SkipVerification
+  & $deployScript -Mode build -VersionBump $VersionBump -ReleaseNote $ReleaseNote -DeployConfigPath $DeployConfigPath -SkipVerification:$SkipVerification
   if ($LASTEXITCODE -ne 0) {
     Err "Artifact build failed."
   }
@@ -225,7 +236,7 @@ if (-not (Test-Path -LiteralPath $metadataToDeploy)) {
 }
 
 Log "Deploying the same artifact validated locally..."
-& $deployScript -Mode deploy -ArtifactPath $artifactToDeploy -MetadataPath $metadataToDeploy -SkipRemoteSmoke:$SkipRemoteSmoke
+& $deployScript -Mode deploy -ArtifactPath $artifactToDeploy -MetadataPath $metadataToDeploy -DeployConfigPath $DeployConfigPath -SkipRemoteSmoke:$SkipRemoteSmoke
 if ($LASTEXITCODE -ne 0) {
   Err "Deploy failed."
 }
@@ -243,4 +254,3 @@ if ($localAfter -and $remoteAfter) {
 } else {
   Warn "Could not verify local/remote release after deploy."
 }
-

@@ -33,6 +33,8 @@
     "migrate:legacy-assets": "tsx scripts/migrate-legacy-supabase-assets.ts",
     "verify:oss-api": "node scripts/verify-oss-http-smoke.mjs",
     "verify:oss-api:local": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-local-oss-smoke.ps1",
+    "deploy:key:init": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/init-deploy-key.ps1",
+    "deploy:ssh:test": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-deploy-ssh.ps1",
     "board:flow:status": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/single-track-flow.ps1 -Mode status",
     "board:flow:preview": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/single-track-flow.ps1 -Mode preview",
     "board:flow:deploy": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/single-track-flow.ps1 -Mode deploy",

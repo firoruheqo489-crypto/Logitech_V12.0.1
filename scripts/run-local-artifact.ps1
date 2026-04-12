@@ -76,6 +76,12 @@ $artifactBase = [System.IO.Path]::GetFileNameWithoutExtension([System.IO.Path]::
 $runtimeRoot = Join-Path $repoRoot "artifacts\local-runtime\$artifactBase"
 $payloadRoot = Join-Path $runtimeRoot "payload"
 $distIndex = Join-Path $payloadRoot "dist\index.js"
+$resolvedEnvFile = Resolve-Path $EnvFile -ErrorAction SilentlyContinue
+if (-not $resolvedEnvFile) {
+  Err "Env file not found: $EnvFile"
+}
+
+Stop-PortListeners -TargetPort $Port
 
 if ((-not $KeepExistingRuntime) -and (Test-Path -LiteralPath $runtimeRoot)) {
   Remove-Item -LiteralPath $runtimeRoot -Recurse -Force
@@ -89,16 +95,9 @@ if (-not (Test-Path -LiteralPath $distIndex)) {
 if (-not (Test-Path -LiteralPath $distIndex)) {
   Err "Extracted runtime missing dist/index.js: $payloadRoot"
 }
-
-$resolvedEnvFile = Resolve-Path $EnvFile -ErrorAction SilentlyContinue
-if (-not $resolvedEnvFile) {
-  Err "Env file not found: $EnvFile"
-}
 $runtimeEnvPath = Join-Path $payloadRoot ".env"
 
 Copy-Item -LiteralPath $resolvedEnvFile.Path -Destination $runtimeEnvPath -Force
-
-Stop-PortListeners -TargetPort $Port
 
 Log "Starting V$($metadata.version) from $artifactBase on http://localhost:$Port"
 Log "Using env file: $($resolvedEnvFile.Path)"

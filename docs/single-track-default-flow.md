@@ -26,6 +26,22 @@ Deploy the same preview-validated artifact:
 pnpm run board:flow:deploy
 ```
 
+## One-Time Deploy Setup
+
+Keep machine-specific SSH settings in `deploy.local.json` (copy from `deploy.local.example.json` if needed).
+
+Generate or refresh the local deploy key:
+
+```powershell
+pnpm run deploy:key:init
+```
+
+Test SSH connectivity before the first deploy:
+
+```powershell
+pnpm run deploy:ssh:test
+```
+
 ## Guardrails
 
 - `deploy.ps1 -Mode all` is blocked by default.
@@ -39,4 +55,3 @@ Use only for incident response, with explicit approval and audit trail:
 ```powershell
 .\deploy.ps1 -Mode deploy -ArtifactPath <artifact.tar.gz> -MetadataPath <artifact.metadata.json> -AllowDirectDeploy
 ```
-

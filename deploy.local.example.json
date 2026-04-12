@@ -1,0 +1,10 @@
+{
+  "host": "120.27.153.140",
+  "user": "root",
+  "port": 22,
+  "remoteDir": "/var/www/logitech",
+  "serverUrl": "http://120.27.153.140:3000",
+  "identityFile": ".codex-user/.ssh/id_ed25519",
+  "knownHostsFile": ".codex-user/.ssh/known_hosts",
+  "strictHostKeyChecking": "accept-new"
+}

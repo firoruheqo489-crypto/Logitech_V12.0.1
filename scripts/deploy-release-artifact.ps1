@@ -2,8 +2,9 @@ param(
   [Parameter(Mandatory = $true)]
   [string]$ArtifactPath,
   [string]$MetadataPath = "",
-  [string]$HostAlias = "aliyun",
-  [string]$RemoteDir = "/var/www/logitech",
+  [string]$HostAlias = "",
+  [string]$RemoteDir = "",
+  [string]$DeployConfigPath = "",
   [switch]$SkipRemoteSmoke
 )
 
@@ -36,8 +37,8 @@ function Resolve-AbsolutePath([string]$PathValue) {
   }
 }
 
-function Get-RemoteReleaseJson([string]$TargetHost) {
-  $raw = ssh $TargetHost "curl -fsS http://127.0.0.1:3000/api/release"
+function Get-RemoteReleaseJson($DeployConfig) {
+  $raw = Invoke-DeploySsh -Config $DeployConfig -Command "curl -fsS http://127.0.0.1:3000/api/release"
   if ($LASTEXITCODE -ne 0 -or -not $raw) {
     return $null
   }
@@ -49,9 +50,9 @@ function Get-RemoteReleaseJson([string]$TargetHost) {
   }
 }
 
-function Wait-RemoteHealth([string]$TargetHost, [int]$Retries = 15) {
+function Wait-RemoteHealth($DeployConfig, [int]$Retries = 15) {
   for ($attempt = 1; $attempt -le $Retries; $attempt += 1) {
-    $result = ssh $TargetHost "curl -fsS http://127.0.0.1:3000/api/health 2>/dev/null || echo FAIL"
+    $result = Invoke-DeploySsh -Config $DeployConfig -Command "curl -fsS http://127.0.0.1:3000/api/health 2>/dev/null || echo FAIL"
     if ($LASTEXITCODE -eq 0 -and $result -match '"ok"\s*:\s*true') {
       Log "Remote health check passed on attempt $attempt."
       return $true
@@ -62,16 +63,25 @@ function Wait-RemoteHealth([string]$TargetHost, [int]$Retries = 15) {
   return $false
 }
 
-function Invoke-RemoteRollbackAndErr([string]$Reason, [string]$TargetHost, [string]$TargetRemoteDir) {
+function Invoke-RemoteRollbackAndErr([string]$Reason, $DeployConfig, [string]$TargetRemoteDir) {
   Warn "$Reason Attempting rollback..."
   $rollbackCmd = @(
     "if [ -d $TargetRemoteDir/dist.prev ]; then rm -rf $TargetRemoteDir/dist && mv $TargetRemoteDir/dist.prev $TargetRemoteDir/dist; fi",
     "if pm2 describe logitech > /dev/null 2>&1; then pm2 restart logitech --update-env; elif pm2 describe mold-gantt-v3 > /dev/null 2>&1; then pm2 restart mold-gantt-v3 --update-env; fi",
     "pm2 status || true"
   ) -join " && "
-  ssh $TargetHost $rollbackCmd | Out-Null
+  Invoke-DeploySsh -Config $DeployConfig -Command $rollbackCmd | Out-Null
   Err $Reason
 }
+
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$deploySshScript = Join-Path $PSScriptRoot "deploy-ssh.ps1"
+if (-not (Test-Path -LiteralPath $deploySshScript)) {
+  Err "Missing deploy SSH helper: $deploySshScript"
+}
+
+. $deploySshScript
+$deployConfig = Get-DeployConnectionConfig -RepoRoot $repoRoot -ConfigPath $DeployConfigPath -SshTargetOverride $HostAlias -RemoteDirOverride $RemoteDir
 
 $artifactAbsolutePath = Resolve-AbsolutePath $ArtifactPath
 if (-not $artifactAbsolutePath -or -not (Test-Path $artifactAbsolutePath)) {
@@ -99,23 +109,23 @@ if (-not $targetVersion -or -not $targetCommit) {
 }
 
 $artifactName = [IO.Path]::GetFileName($artifactAbsolutePath)
-$remoteReleaseRoot = "$RemoteDir/releases"
+$remoteReleaseRoot = "$($deployConfig.RemoteDir)/releases"
 $remoteIncomingDir = "$remoteReleaseRoot/incoming"
 $releaseId = "v$targetVersion-$targetCommitShort-$((Get-Date).ToString('yyyyMMddHHmmss'))"
 $remoteIncomingArtifact = "$remoteIncomingDir/$artifactName"
 $remoteExtractDir = "$remoteReleaseRoot/$releaseId"
 
 Invoke-Step "Preparing remote release directories..." {
-  ssh $HostAlias "mkdir -p $remoteIncomingDir"
+  Invoke-DeploySsh -Config $deployConfig -Command "mkdir -p $remoteIncomingDir"
 } "Failed to prepare remote release directories."
 
 Invoke-Step "Uploading artifact to remote server..." {
-  scp $artifactAbsolutePath "${HostAlias}:$remoteIncomingArtifact"
+  Invoke-DeployScp -Config $deployConfig -SourcePaths @($artifactAbsolutePath) -RemotePath $remoteIncomingArtifact
 } "Failed to upload artifact archive."
 
 $remoteDeployScript = @(
   "set -euo pipefail",
-  "REMOTE_DIR='$RemoteDir'",
+  "REMOTE_DIR='$($deployConfig.RemoteDir)'",
   "RELEASE_ROOT='$remoteReleaseRoot'",
   "INCOMING_ARTIFACT='$remoteIncomingArtifact'",
   "EXTRACT_DIR='$remoteExtractDir'",
@@ -141,14 +151,14 @@ $remoteDeployScript = @(
 ) -join " && "
 
 Invoke-Step "Deploying artifact on remote host..." {
-  ssh $HostAlias $remoteDeployScript
+  Invoke-DeploySsh -Config $deployConfig -Command $remoteDeployScript
 } "Remote deployment steps failed."
 
-if (-not (Wait-RemoteHealth $HostAlias)) {
-  Invoke-RemoteRollbackAndErr "Remote health check failed after deployment." $HostAlias $RemoteDir
+if (-not (Wait-RemoteHealth $deployConfig)) {
+  Invoke-RemoteRollbackAndErr "Remote health check failed after deployment." $deployConfig $deployConfig.RemoteDir
 }
 
-$remoteRelease = Get-RemoteReleaseJson $HostAlias
+$remoteRelease = Get-RemoteReleaseJson $deployConfig
 if (-not $remoteRelease) {
   Err "Failed to read remote /api/release after deployment."
 }
@@ -156,25 +166,25 @@ if (-not $remoteRelease) {
 if ([string]$remoteRelease.version -ne $targetVersion) {
   Write-Host "Expected version: $targetVersion" -ForegroundColor Yellow
   Write-Host "Actual version:   $([string]$remoteRelease.version)" -ForegroundColor Yellow
-  Invoke-RemoteRollbackAndErr "Remote version mismatch after deployment." $HostAlias $RemoteDir
+  Invoke-RemoteRollbackAndErr "Remote version mismatch after deployment." $deployConfig $deployConfig.RemoteDir
 }
 if ([string]$remoteRelease.commit -ne $targetCommit) {
   Write-Host "Expected commit: $targetCommit" -ForegroundColor Yellow
   Write-Host "Actual commit:   $([string]$remoteRelease.commit)" -ForegroundColor Yellow
-  Invoke-RemoteRollbackAndErr "Remote commit mismatch after deployment." $HostAlias $RemoteDir
+  Invoke-RemoteRollbackAndErr "Remote commit mismatch after deployment." $deployConfig $deployConfig.RemoteDir
 }
 Log "Remote release verified: version=$targetVersion commit=$targetCommitShort"
 
 if (-not $SkipRemoteSmoke) {
   $remoteSmokeCmd = @(
-    "cd $RemoteDir",
+    "cd $($deployConfig.RemoteDir)",
     "node scripts/verify-oss-http-smoke.mjs --base-url http://127.0.0.1:3000 --env-file .env --label remote-artifact-deploy"
   ) -join " && "
 
   Log "Running remote OSS upload/delete smoke..."
-  ssh $HostAlias $remoteSmokeCmd
+  Invoke-DeploySsh -Config $deployConfig -Command $remoteSmokeCmd
   if ($LASTEXITCODE -ne 0) {
-    Invoke-RemoteRollbackAndErr "Remote OSS upload/delete smoke failed." $HostAlias $RemoteDir
+    Invoke-RemoteRollbackAndErr "Remote OSS upload/delete smoke failed." $deployConfig $deployConfig.RemoteDir
   }
 } else {
   Warn "SkipRemoteSmoke is enabled. Remote OSS smoke was skipped."
@@ -183,17 +193,17 @@ if (-not $SkipRemoteSmoke) {
 $releaseHistoryLine = "$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss zzz')) | V$targetVersion | $changeType | $releaseNote | $targetCommitShort"
 $releaseHistoryLineB64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($releaseHistoryLine))
 $appendHistoryCmd = @(
-  "mkdir -p $RemoteDir",
-  "touch $RemoteDir/release-history.log",
-  "printf '%s' '$releaseHistoryLineB64' | base64 -d >> $RemoteDir/release-history.log",
-  "printf '\n' >> $RemoteDir/release-history.log",
-  "tail -n 5 $RemoteDir/release-history.log"
+  "mkdir -p $($deployConfig.RemoteDir)",
+  "touch $($deployConfig.RemoteDir)/release-history.log",
+  "printf '%s' '$releaseHistoryLineB64' | base64 -d >> $($deployConfig.RemoteDir)/release-history.log",
+  "printf '\n' >> $($deployConfig.RemoteDir)/release-history.log",
+  "tail -n 5 $($deployConfig.RemoteDir)/release-history.log"
 ) -join " && "
 
 Log "Appending remote release history..."
-ssh $HostAlias $appendHistoryCmd
+Invoke-DeploySsh -Config $deployConfig -Command $appendHistoryCmd
 if ($LASTEXITCODE -ne 0) {
-  Invoke-RemoteRollbackAndErr "Failed to append remote release history." $HostAlias $RemoteDir
+  Invoke-RemoteRollbackAndErr "Failed to append remote release history." $deployConfig $deployConfig.RemoteDir
 }
 
 Log "Artifact deployment succeeded."

@@ -3,8 +3,9 @@ param(
   [string]$VersionBump = "minor",
   [string]$ReleaseNote = "",
   [string]$OutputDir = "artifacts/releases",
-  [string]$HostAlias = "aliyun",
-  [string]$RemoteDir = "/var/www/logitech",
+  [string]$HostAlias = "",
+  [string]$RemoteDir = "",
+  [string]$DeployConfigPath = "",
   [switch]$SkipVerification,
   [switch]$PreflightOnly
 )
@@ -73,9 +74,9 @@ function Get-LocalPackageVersion([string]$Root) {
   return $null
 }
 
-function Get-RemoteReleaseVersion([string]$TargetHost, [string]$TargetRemoteDir) {
-  $cmd = "if [ -f ${TargetRemoteDir}/dist/release.json ]; then cat ${TargetRemoteDir}/dist/release.json; elif [ -f ${TargetRemoteDir}/package.json ]; then cat ${TargetRemoteDir}/package.json; fi"
-  $raw = ssh $TargetHost $cmd
+function Get-RemoteReleaseVersion($DeployConfig) {
+  $cmd = "if [ -f $($DeployConfig.RemoteDir)/dist/release.json ]; then cat $($DeployConfig.RemoteDir)/dist/release.json; elif [ -f $($DeployConfig.RemoteDir)/package.json ]; then cat $($DeployConfig.RemoteDir)/package.json; fi"
+  $raw = Invoke-DeploySsh -Config $DeployConfig -Command $cmd
   if ($LASTEXITCODE -ne 0 -or -not $raw) {
     return $null
   }
@@ -120,7 +121,7 @@ function Require-CleanGitWorkspace([string]$Root) {
   }
 }
 
-function Resolve-ReleasePlan([string]$Root, [string]$BumpType, [string]$TargetHost, [string]$TargetRemoteDir) {
+function Resolve-ReleasePlan([string]$Root, [string]$BumpType, $DeployConfig) {
   $localRaw = Get-LocalPackageVersion $Root
   $localVersion = Parse-SemVer $localRaw
   if (-not $localVersion) {
@@ -130,7 +131,7 @@ function Resolve-ReleasePlan([string]$Root, [string]$BumpType, [string]$TargetHo
   $baseRaw = $localRaw
   $baseSource = "local package.json"
 
-  $remoteRaw = Get-RemoteReleaseVersion $TargetHost $TargetRemoteDir
+  $remoteRaw = Get-RemoteReleaseVersion $DeployConfig
   $remoteVersion = Parse-SemVer $remoteRaw
   if ($remoteVersion) {
     $baseRaw = $remoteRaw
@@ -180,7 +181,14 @@ function Get-FreeLocalPort([int]$StartPort = 3301, [int]$MaxPort = 3399) {
 }
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$deploySshScript = Join-Path $PSScriptRoot "deploy-ssh.ps1"
 $reuseExistingDist = $env:RELEASE_REUSE_EXISTING_DIST -eq "1"
+
+if (-not (Test-Path -LiteralPath $deploySshScript)) {
+  Err "Missing deploy SSH helper: $deploySshScript"
+}
+
+. $deploySshScript
 Push-Location $repoRoot
 try {
   Require-CleanGitWorkspace $repoRoot
@@ -196,7 +204,8 @@ try {
     Err "Failed to resolve short git commit."
   }
 
-  $plan = Resolve-ReleasePlan $repoRoot $VersionBump $HostAlias $RemoteDir
+  $deployConfig = Get-DeployConnectionConfig -RepoRoot $repoRoot -ConfigPath $DeployConfigPath -SshTargetOverride $HostAlias -RemoteDirOverride $RemoteDir
+  $plan = Resolve-ReleasePlan $repoRoot $VersionBump $deployConfig
   $targetVersion = [string]$plan.NextVersion
   $changeType = [string]$plan.ChangeType
   Log "Release version plan: $($plan.BaseSource) $($plan.BaseVersion) -> $targetVersion ($changeType)"
