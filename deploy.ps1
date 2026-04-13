@@ -22,6 +22,7 @@ param(
     [switch]$ConfirmProduction,
     [string]$ConfirmText = "",
     [string]$HostAlias = "",
+    [switch]$AllowDirectDeploy,
     [switch]$PreflightOnly,
     [switch]$AllowDirtyWorkspace
 )
@@ -140,6 +141,75 @@ function Resolve-LatestMetadataPath([string]$RootPath) {
     return $candidate.FullName
 }
 
+function Get-SingleTrackStatePath([string]$RepoRootPath) {
+    return Join-Path $RepoRootPath "artifacts/releases/single-track-active.json"
+}
+
+function Resolve-MetadataPathForSingleTrackGuard([string]$ArtifactInputPath, [string]$MetadataInputPath) {
+    if (-not [string]::IsNullOrWhiteSpace($MetadataInputPath)) {
+        return $MetadataInputPath
+    }
+
+    if ([string]::IsNullOrWhiteSpace($ArtifactInputPath)) {
+        return ""
+    }
+
+    $derivedMetadataPath = $ArtifactInputPath -replace "\.tar\.gz$", ".metadata.json"
+    if ($derivedMetadataPath -and $derivedMetadataPath -ne $ArtifactInputPath) {
+        return $derivedMetadataPath
+    }
+
+    return ""
+}
+
+function Assert-SingleTrackDeployGuard(
+    [string]$RepoRootPath,
+    [string]$InputArtifactPath,
+    [string]$InputMetadataPath,
+    [switch]$AllowBypass
+) {
+    if ($AllowBypass) {
+        Warn "AllowDirectDeploy is enabled. Bypassing single-track deploy guard."
+        return
+    }
+
+    $resolvedInputMetadataPath = Resolve-MetadataPathForSingleTrackGuard -ArtifactInputPath $InputArtifactPath -MetadataInputPath $InputMetadataPath
+    if (-not $resolvedInputMetadataPath) {
+        Err "MetadataPath is required in deploy mode under single-track policy."
+    }
+
+    $statePath = Get-SingleTrackStatePath $RepoRootPath
+    if (-not (Test-Path $statePath)) {
+        Err "Single-track state file missing: $statePath. Run local preview first (pnpm run board:flow:preview)."
+    }
+
+    $state = Get-Content $statePath -Raw | ConvertFrom-Json
+    $expectedArtifact = Resolve-AbsolutePath ([string]$state.ArtifactPath)
+    $expectedMetadata = Resolve-AbsolutePath ([string]$state.MetadataPath)
+    $actualArtifact = Resolve-AbsolutePath $InputArtifactPath
+    $actualMetadata = Resolve-AbsolutePath $resolvedInputMetadataPath
+
+    if (-not $actualArtifact -or -not (Test-Path $actualArtifact)) {
+        Err "ArtifactPath not found: $InputArtifactPath"
+    }
+    if (-not $actualMetadata -or -not (Test-Path $actualMetadata)) {
+        Err "MetadataPath not found: $resolvedInputMetadataPath"
+    }
+    if (-not $expectedArtifact -or -not $expectedMetadata) {
+        Err "single-track-active.json is incomplete. Re-run preview (pnpm run board:flow:preview)."
+    }
+
+    if ($actualArtifact -ne $expectedArtifact -or $actualMetadata -ne $expectedMetadata) {
+        Write-Host "Expected artifact: $expectedArtifact" -ForegroundColor Yellow
+        Write-Host "Actual artifact:   $actualArtifact" -ForegroundColor Yellow
+        Write-Host "Expected metadata: $expectedMetadata" -ForegroundColor Yellow
+        Write-Host "Actual metadata:   $actualMetadata" -ForegroundColor Yellow
+        Err "Deploy blocked by single-track guard. You must deploy the exact artifact that passed local preview."
+    }
+
+    Log "Single-track deploy guard passed. Deploying preview-validated artifact."
+}
+
 $scriptRoot = $PSScriptRoot
 $releaseBuildScript = Join-Path $scriptRoot "scripts/release-build.ps1"
 $releaseDeployScript = Join-Path $scriptRoot "scripts/deploy-release-artifact.ps1"
@@ -161,6 +231,10 @@ Assert-ReleaseGuards `
     -CurrentConfirmText $ConfirmText
 
 $resolvedHostAlias = Resolve-DeployHostAlias $HostAlias
+
+if ($Mode -eq "all" -and -not $AllowDirectDeploy) {
+    Err "Mode=all is blocked by single-track policy. Use: pnpm run board:flow:preview, then pnpm run board:flow:deploy."
+}
 
 if ($Mode -eq "build") {
     Log "Running artifact build mode..."
@@ -185,6 +259,12 @@ if ($Mode -eq "deploy") {
     if (-not $ArtifactPath) {
         Err "ArtifactPath is required in deploy mode."
     }
+
+    Assert-SingleTrackDeployGuard `
+        -RepoRootPath $scriptRoot `
+        -InputArtifactPath $ArtifactPath `
+        -InputMetadataPath $MetadataPath `
+        -AllowBypass:$AllowDirectDeploy
 
     Log "Running artifact deploy mode..."
     & $releaseDeployScript `
