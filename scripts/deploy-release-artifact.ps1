@@ -24,7 +24,7 @@ function Resolve-DeployHostAlias([string]$ConfiguredHostAlias) {
     return $envHostAlias.Trim()
   }
 
-  return "aliyun"
+  return "root@120.27.153.140"
 }
 
 function Resolve-DeployRemoteDir([string]$ConfiguredRemoteDir) {
@@ -54,6 +54,63 @@ function Resolve-DeployRemoteDir([string]$ConfiguredRemoteDir) {
   }
 
   return $normalized
+}
+
+function Resolve-RepoKnownHostsPath([string]$RepoRootPath) {
+  $sshStateDir = Join-Path $RepoRootPath ".codex-local"
+  New-Item -ItemType Directory -Path $sshStateDir -Force | Out-Null
+  return (Join-Path $sshStateDir "deploy-known_hosts")
+}
+
+function Invoke-Ssh {
+  param(
+    [Parameter(Mandatory = $true)][string]$RepoRootPath,
+    [Parameter(Mandatory = $true)][string]$TargetHost,
+    [string]$RemoteCommand = "",
+    [switch]$BatchMode,
+    [int]$ConnectTimeoutSec = 0
+  )
+
+  $knownHostsPath = Resolve-RepoKnownHostsPath $RepoRootPath
+  $sshArgs = @(
+    "-o", "StrictHostKeyChecking=accept-new",
+    "-o", "UserKnownHostsFile=$knownHostsPath"
+  )
+
+  if ($BatchMode) {
+    $sshArgs += @("-o", "BatchMode=yes")
+  }
+
+  if ($ConnectTimeoutSec -gt 0) {
+    $sshArgs += @("-o", "ConnectTimeout=$ConnectTimeoutSec")
+  }
+
+  $sshArgs += $TargetHost
+
+  if (-not [string]::IsNullOrWhiteSpace($RemoteCommand)) {
+    $sshArgs += $RemoteCommand
+  }
+
+  return (& ssh @sshArgs)
+}
+
+function Invoke-Scp {
+  param(
+    [Parameter(Mandatory = $true)][string]$RepoRootPath,
+    [Parameter(Mandatory = $true)][string[]]$Sources,
+    [Parameter(Mandatory = $true)][string]$Destination
+  )
+
+  $knownHostsPath = Resolve-RepoKnownHostsPath $RepoRootPath
+  $scpArgs = @(
+    "-o", "StrictHostKeyChecking=accept-new",
+    "-o", "UserKnownHostsFile=$knownHostsPath"
+  )
+
+  $scpArgs += $Sources
+  $scpArgs += $Destination
+
+  & scp @scpArgs
 }
 
 function Format-RemoteShellPath([string]$PathValue) {
@@ -95,8 +152,8 @@ function Resolve-ChecksumPath([string]$ArtifactAbsolutePath) {
   return $null
 }
 
-function Get-RemoteReleaseJson([string]$TargetHost) {
-  $raw = ssh $TargetHost "curl -fsS http://127.0.0.1:3000/api/release"
+function Get-RemoteReleaseJson([string]$RepoRootPath, [string]$TargetHost) {
+  $raw = Invoke-Ssh -RepoRootPath $RepoRootPath -TargetHost $TargetHost -RemoteCommand "curl -fsS http://127.0.0.1:3000/api/release"
   if ($LASTEXITCODE -ne 0 -or -not $raw) {
     return $null
   }
@@ -108,9 +165,9 @@ function Get-RemoteReleaseJson([string]$TargetHost) {
   }
 }
 
-function Wait-RemoteHealth([string]$TargetHost, [int]$Retries = 15) {
+function Wait-RemoteHealth([string]$RepoRootPath, [string]$TargetHost, [int]$Retries = 15) {
   for ($attempt = 1; $attempt -le $Retries; $attempt += 1) {
-    $result = ssh $TargetHost "curl -fsS http://127.0.0.1:3000/api/health 2>/dev/null || echo FAIL"
+    $result = Invoke-Ssh -RepoRootPath $RepoRootPath -TargetHost $TargetHost -RemoteCommand "curl -fsS http://127.0.0.1:3000/api/health 2>/dev/null || echo FAIL"
     if ($LASTEXITCODE -eq 0 -and $result -match '"ok"\s*:\s*true') {
       Log "Remote health check passed on attempt $attempt."
       return $true
@@ -121,14 +178,14 @@ function Wait-RemoteHealth([string]$TargetHost, [int]$Retries = 15) {
   return $false
 }
 
-function Assert-RemoteHostReachable([string]$TargetHost) {
-  $probeOutput = ssh -o BatchMode=yes -o ConnectTimeout=8 $TargetHost "printf READY"
+function Assert-RemoteHostReachable([string]$RepoRootPath, [string]$TargetHost) {
+  $probeOutput = Invoke-Ssh -RepoRootPath $RepoRootPath -TargetHost $TargetHost -RemoteCommand "printf READY" -BatchMode -ConnectTimeoutSec 8
   if ($LASTEXITCODE -ne 0 -or $probeOutput -notmatch "^READY$") {
     Err "Remote host alias '$TargetHost' is not reachable. Pass -HostAlias or set DEPLOY_HOST_ALIAS."
   }
 }
 
-function Invoke-RemoteRollbackAndErr([string]$Reason, [string]$TargetHost, [string]$TargetRemoteDir) {
+function Invoke-RemoteRollbackAndErr([string]$Reason, [string]$RepoRootPath, [string]$TargetHost, [string]$TargetRemoteDir) {
   Warn "$Reason Attempting rollback..."
   $targetRemoteDirLiteral = Format-RemoteShellPath $TargetRemoteDir
   $rollbackCmd = @(
@@ -136,13 +193,14 @@ function Invoke-RemoteRollbackAndErr([string]$Reason, [string]$TargetHost, [stri
     "if pm2 describe logitech > /dev/null 2>&1; then pm2 restart logitech --update-env; elif pm2 describe mold-gantt-v3 > /dev/null 2>&1; then pm2 restart mold-gantt-v3 --update-env; fi",
     "pm2 status || true"
   ) -join " && "
-  ssh $TargetHost $rollbackCmd | Out-Null
+  Invoke-Ssh -RepoRootPath $RepoRootPath -TargetHost $TargetHost -RemoteCommand $rollbackCmd | Out-Null
   Err $Reason
 }
 
 $resolvedHostAlias = Resolve-DeployHostAlias $HostAlias
 $resolvedRemoteDir = Resolve-DeployRemoteDir $RemoteDir
-Assert-RemoteHostReachable $resolvedHostAlias
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+Assert-RemoteHostReachable $repoRoot $resolvedHostAlias
 
 $artifactAbsolutePath = Resolve-AbsolutePath $ArtifactPath
 if (-not $artifactAbsolutePath -or -not (Test-Path $artifactAbsolutePath)) {
@@ -183,14 +241,14 @@ $remoteExtractDir = "$remoteReleaseRoot/$releaseId"
 $remoteExtractDirLiteral = Format-RemoteShellPath $remoteExtractDir
 
 Invoke-Step "Preparing remote release directories..." {
-  ssh $resolvedHostAlias "mkdir -p $remoteIncomingDirLiteral"
+  Invoke-Ssh -RepoRootPath $repoRoot -TargetHost $resolvedHostAlias -RemoteCommand "mkdir -p $remoteIncomingDirLiteral"
 } "Failed to prepare remote release directories."
 
 Invoke-Step "Uploading artifact to remote server..." {
   if ($checksumAbsolutePath) {
-    scp $artifactAbsolutePath $checksumAbsolutePath "${resolvedHostAlias}:$remoteIncomingDirLiteral"
+    Invoke-Scp -RepoRootPath $repoRoot -Sources @($artifactAbsolutePath, $checksumAbsolutePath) -Destination "${resolvedHostAlias}:$remoteIncomingDirLiteral"
   } else {
-    scp $artifactAbsolutePath "${resolvedHostAlias}:$remoteIncomingArtifact"
+    Invoke-Scp -RepoRootPath $repoRoot -Sources @($artifactAbsolutePath) -Destination "${resolvedHostAlias}:$remoteIncomingArtifact"
   }
 } "Failed to upload artifact archive."
 
@@ -226,14 +284,14 @@ $remoteDeployScript = @(
 ) -join " && "
 
 Invoke-Step "Deploying artifact on remote host..." {
-  ssh $resolvedHostAlias $remoteDeployScript
+  Invoke-Ssh -RepoRootPath $repoRoot -TargetHost $resolvedHostAlias -RemoteCommand $remoteDeployScript
 } "Remote deployment steps failed."
 
-if (-not (Wait-RemoteHealth $resolvedHostAlias)) {
-  Invoke-RemoteRollbackAndErr "Remote health check failed after deployment." $resolvedHostAlias $resolvedRemoteDir
+if (-not (Wait-RemoteHealth $repoRoot $resolvedHostAlias)) {
+  Invoke-RemoteRollbackAndErr "Remote health check failed after deployment." $repoRoot $resolvedHostAlias $resolvedRemoteDir
 }
 
-$remoteRelease = Get-RemoteReleaseJson $resolvedHostAlias
+$remoteRelease = Get-RemoteReleaseJson $repoRoot $resolvedHostAlias
 if (-not $remoteRelease) {
   Err "Failed to read remote /api/release after deployment."
 }
@@ -241,12 +299,12 @@ if (-not $remoteRelease) {
 if ([string]$remoteRelease.version -ne $targetVersion) {
   Write-Host "Expected version: $targetVersion" -ForegroundColor Yellow
   Write-Host "Actual version:   $([string]$remoteRelease.version)" -ForegroundColor Yellow
-  Invoke-RemoteRollbackAndErr "Remote version mismatch after deployment." $resolvedHostAlias $resolvedRemoteDir
+  Invoke-RemoteRollbackAndErr "Remote version mismatch after deployment." $repoRoot $resolvedHostAlias $resolvedRemoteDir
 }
 if ([string]$remoteRelease.commit -ne $targetCommit) {
   Write-Host "Expected commit: $targetCommit" -ForegroundColor Yellow
   Write-Host "Actual commit:   $([string]$remoteRelease.commit)" -ForegroundColor Yellow
-  Invoke-RemoteRollbackAndErr "Remote commit mismatch after deployment." $resolvedHostAlias $resolvedRemoteDir
+  Invoke-RemoteRollbackAndErr "Remote commit mismatch after deployment." $repoRoot $resolvedHostAlias $resolvedRemoteDir
 }
 Log "Remote release verified: version=$targetVersion commit=$targetCommitShort"
 
@@ -257,9 +315,9 @@ if (-not $SkipRemoteSmoke) {
   ) -join " && "
 
   Log "Running remote OSS upload/delete smoke..."
-  ssh $resolvedHostAlias $remoteSmokeCmd
+  Invoke-Ssh -RepoRootPath $repoRoot -TargetHost $resolvedHostAlias -RemoteCommand $remoteSmokeCmd
   if ($LASTEXITCODE -ne 0) {
-    Invoke-RemoteRollbackAndErr "Remote OSS upload/delete smoke failed." $resolvedHostAlias $resolvedRemoteDir
+    Invoke-RemoteRollbackAndErr "Remote OSS upload/delete smoke failed." $repoRoot $resolvedHostAlias $resolvedRemoteDir
   }
 
   $remoteReliabilitySmokeCmd = @(
@@ -268,9 +326,9 @@ if (-not $SkipRemoteSmoke) {
   ) -join " && "
 
   Log "Running remote reliability smoke..."
-  ssh $resolvedHostAlias $remoteReliabilitySmokeCmd
+  Invoke-Ssh -RepoRootPath $repoRoot -TargetHost $resolvedHostAlias -RemoteCommand $remoteReliabilitySmokeCmd
   if ($LASTEXITCODE -ne 0) {
-    Invoke-RemoteRollbackAndErr "Remote reliability smoke failed." $resolvedHostAlias $resolvedRemoteDir
+    Invoke-RemoteRollbackAndErr "Remote reliability smoke failed." $repoRoot $resolvedHostAlias $resolvedRemoteDir
   }
 } else {
   Warn "SkipRemoteSmoke is enabled. Remote OSS smoke was skipped."
@@ -287,9 +345,9 @@ $appendHistoryCmd = @(
 ) -join " && "
 
 Log "Appending remote release history..."
-ssh $resolvedHostAlias $appendHistoryCmd
+Invoke-Ssh -RepoRootPath $repoRoot -TargetHost $resolvedHostAlias -RemoteCommand $appendHistoryCmd
 if ($LASTEXITCODE -ne 0) {
-  Invoke-RemoteRollbackAndErr "Failed to append remote release history." $resolvedHostAlias $resolvedRemoteDir
+  Invoke-RemoteRollbackAndErr "Failed to append remote release history." $repoRoot $resolvedHostAlias $resolvedRemoteDir
 }
 
 Log "Artifact deployment succeeded."

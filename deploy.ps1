@@ -93,7 +93,7 @@ function Resolve-DeployHostAlias([string]$ConfiguredHostAlias) {
         return $envHostAlias.Trim()
     }
 
-    return "aliyun"
+    return "root@120.27.153.140"
 }
 
 function Resolve-DeployRemoteDir([string]$ConfiguredRemoteDir) {

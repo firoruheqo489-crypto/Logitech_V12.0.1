@@ -27,7 +27,7 @@ function Resolve-DeployHostAlias([string]$ConfiguredHostAlias) {
     return $envHostAlias.Trim()
   }
 
-  return "aliyun"
+  return "root@120.27.153.140"
 }
 
 function Resolve-DeployRemoteDir([string]$ConfiguredRemoteDir) {
@@ -57,6 +57,53 @@ function Resolve-DeployRemoteDir([string]$ConfiguredRemoteDir) {
   }
 
   return $normalized
+}
+
+function Resolve-DeployServerUrl() {
+  $candidate = [string]$env:DEPLOY_SERVER_URL
+  if ([string]::IsNullOrWhiteSpace($candidate)) {
+    $candidate = "http://120.27.153.140:3000"
+  }
+
+  return $candidate.TrimEnd("/")
+}
+
+function Resolve-RepoKnownHostsPath([string]$RepoRootPath) {
+  $sshStateDir = Join-Path $RepoRootPath ".codex-local"
+  New-Item -ItemType Directory -Path $sshStateDir -Force | Out-Null
+  return (Join-Path $sshStateDir "deploy-known_hosts")
+}
+
+function Invoke-Ssh {
+  param(
+    [Parameter(Mandatory = $true)][string]$RepoRootPath,
+    [Parameter(Mandatory = $true)][string]$TargetHost,
+    [string]$RemoteCommand = "",
+    [switch]$BatchMode,
+    [int]$ConnectTimeoutSec = 0
+  )
+
+  $knownHostsPath = Resolve-RepoKnownHostsPath $RepoRootPath
+  $sshArgs = @(
+    "-o", "StrictHostKeyChecking=accept-new",
+    "-o", "UserKnownHostsFile=$knownHostsPath"
+  )
+
+  if ($BatchMode) {
+    $sshArgs += @("-o", "BatchMode=yes")
+  }
+
+  if ($ConnectTimeoutSec -gt 0) {
+    $sshArgs += @("-o", "ConnectTimeout=$ConnectTimeoutSec")
+  }
+
+  $sshArgs += $TargetHost
+
+  if (-not [string]::IsNullOrWhiteSpace($RemoteCommand)) {
+    $sshArgs += $RemoteCommand
+  }
+
+  return (& ssh @sshArgs)
 }
 
 function Invoke-Step {
@@ -116,10 +163,27 @@ function Get-LocalPackageVersion([string]$Root) {
   return $null
 }
 
-function Get-RemoteReleaseVersion([string]$TargetHost, [string]$TargetRemoteDir) {
+function Get-RemoteReleaseVersionFromHttp([string]$ServerUrl) {
+  if ([string]::IsNullOrWhiteSpace($ServerUrl)) {
+    return $null
+  }
+
+  try {
+    $release = Invoke-RestMethod -Uri "$ServerUrl/api/release" -TimeoutSec 8
+    if ($release.version) {
+      return [string]$release.version
+    }
+  } catch {
+    return $null
+  }
+
+  return $null
+}
+
+function Get-RemoteReleaseVersionFromSsh([string]$Root, [string]$TargetHost, [string]$TargetRemoteDir) {
   $remoteDirLiteral = "'$TargetRemoteDir'"
   $cmd = "if [ -f ${remoteDirLiteral}/dist/release.json ]; then cat ${remoteDirLiteral}/dist/release.json; elif [ -f ${remoteDirLiteral}/package.json ]; then cat ${remoteDirLiteral}/package.json; fi"
-  $raw = ssh $TargetHost $cmd
+  $raw = Invoke-Ssh -RepoRootPath $Root -TargetHost $TargetHost -RemoteCommand $cmd
   if ($LASTEXITCODE -ne 0 -or -not $raw) {
     return $null
   }
@@ -204,7 +268,7 @@ function Assert-NoMixedLineEndings([string]$Root) {
   }
 }
 
-function Resolve-ReleasePlan([string]$Root, [string]$BumpType, [string]$TargetHost, [string]$TargetRemoteDir) {
+function Resolve-ReleasePlan([string]$Root, [string]$BumpType, [string]$TargetHost, [string]$TargetRemoteDir, [string]$ServerUrl) {
   $localRaw = Get-LocalPackageVersion $Root
   $localVersion = Parse-SemVer $localRaw
   if (-not $localVersion) {
@@ -214,15 +278,26 @@ function Resolve-ReleasePlan([string]$Root, [string]$BumpType, [string]$TargetHo
   $baseRaw = $localRaw
   $baseSource = "local package.json"
 
-  $remoteRaw = Get-RemoteReleaseVersion $TargetHost $TargetRemoteDir
-  $remoteVersion = Parse-SemVer $remoteRaw
-  if ($remoteVersion) {
-    $baseRaw = $remoteRaw
-    $baseSource = "remote deployed version"
-  } elseif ($remoteRaw) {
-    Warn "Remote version '$remoteRaw' is invalid. Falling back to local version."
+  $remoteHttpRaw = Get-RemoteReleaseVersionFromHttp $ServerUrl
+  $remoteHttpVersion = Parse-SemVer $remoteHttpRaw
+  if ($remoteHttpVersion) {
+    $baseRaw = $remoteHttpRaw
+    $baseSource = "remote /api/release"
   } else {
-    Warn "Remote version not found. Falling back to local version."
+    if ($remoteHttpRaw) {
+      Warn "Remote HTTP version '$remoteHttpRaw' is invalid. Falling back to SSH lookup."
+    }
+
+    $remoteSshRaw = Get-RemoteReleaseVersionFromSsh $Root $TargetHost $TargetRemoteDir
+    $remoteSshVersion = Parse-SemVer $remoteSshRaw
+    if ($remoteSshVersion) {
+      $baseRaw = $remoteSshRaw
+      $baseSource = "remote deployed version"
+    } elseif ($remoteSshRaw) {
+      Warn "Remote SSH version '$remoteSshRaw' is invalid. Falling back to local version."
+    } else {
+      Warn "Remote version not found from HTTP or SSH. Falling back to local version."
+    }
   }
 
   $baseVersion = Parse-SemVer $baseRaw
@@ -263,13 +338,6 @@ function Get-FreeLocalPort([int]$StartPort = 3301, [int]$MaxPort = 3399) {
   Err "Could not find a free local port between $StartPort and $MaxPort"
 }
 
-function Assert-RemoteHostReachable([string]$TargetHost) {
-  $probeOutput = ssh -o BatchMode=yes -o ConnectTimeout=8 $TargetHost "printf READY"
-  if ($LASTEXITCODE -ne 0 -or $probeOutput -notmatch "^READY$") {
-    Err "Remote host alias '$TargetHost' is not reachable. Pass -HostAlias or set DEPLOY_HOST_ALIAS."
-  }
-}
-
 function Get-BooleanEnvLiteral([bool]$Value) {
   if ($Value) {
     return "true"
@@ -283,7 +351,7 @@ Push-Location $repoRoot
 try {
   $resolvedHostAlias = Resolve-DeployHostAlias $HostAlias
   $resolvedRemoteDir = Resolve-DeployRemoteDir $RemoteDir
-  Assert-RemoteHostReachable $resolvedHostAlias
+  $resolvedServerUrl = Resolve-DeployServerUrl
 
   Assert-NoMixedLineEndings $repoRoot
 
@@ -312,7 +380,7 @@ try {
     Err "Failed to resolve short git commit."
   }
 
-  $plan = Resolve-ReleasePlan $repoRoot $VersionBump $resolvedHostAlias $resolvedRemoteDir
+  $plan = Resolve-ReleasePlan $repoRoot $VersionBump $resolvedHostAlias $resolvedRemoteDir $resolvedServerUrl
   $targetVersion = [string]$plan.NextVersion
   $changeType = [string]$plan.ChangeType
   Log "Release version plan: $($plan.BaseSource) $($plan.BaseVersion) -> $targetVersion ($changeType)"
