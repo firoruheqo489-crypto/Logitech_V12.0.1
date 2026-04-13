@@ -38,6 +38,7 @@
     "board:flow:status": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/single-track-flow.ps1 -Mode status",
     "board:flow:preview": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/single-track-flow.ps1 -Mode preview",
     "board:flow:deploy": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/single-track-flow.ps1 -Mode deploy",
+    "board:flow:ship": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/board-release.ps1",
     "release:build": "powershell -NoProfile -ExecutionPolicy Bypass -File deploy.ps1 -Mode build",
     "release:deploy": "powershell -NoProfile -ExecutionPolicy Bypass -File deploy.ps1 -Mode deploy",
     "release:all": "powershell -NoProfile -ExecutionPolicy Bypass -File deploy.ps1 -Mode all",

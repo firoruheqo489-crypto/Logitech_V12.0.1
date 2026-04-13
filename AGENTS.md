@@ -14,6 +14,8 @@ Use these commands by default:
 - Status check: `pnpm run board:flow:status`
 - Local preview from current source: `pnpm run board:flow:preview -- -ReleaseNote "one-line release note"`
 - Deploy the exact artifact validated in preview: `pnpm run board:flow:deploy`
+- Convenience launcher for routine releases: `board-release.cmd "one-line release note"` or `pnpm run board:flow:ship -- -ReleaseNote "one-line release note"`
+- The convenience launcher still follows the same single-track path: OSS smoke -> preview artifact -> explicit confirm -> deploy the exact validated artifact
 
 Before deployment, run the built-in OSS gate:
 - `pnpm run verify:oss-api:local`
