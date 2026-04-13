@@ -17,6 +17,8 @@ describe('release metadata', () => {
       commit: '1234567890abcdef1234567890abcdef12345678',
       builtAt: '2026-03-19T14:00:00.000Z',
       dirty: false,
+      buildSource: 'clean-worktree',
+      sourceWorkspaceDirty: true,
     });
 
     expect(manifest).toEqual({
@@ -26,6 +28,8 @@ describe('release metadata', () => {
       commitShort: '1234567',
       builtAt: '2026-03-19T14:00:00.000Z',
       dirty: false,
+      buildSource: 'clean-worktree',
+      sourceWorkspaceDirty: true,
     });
   });
 
@@ -33,14 +37,20 @@ describe('release metadata', () => {
     const tempDir = mkdtempSync(path.join(tmpdir(), 'release-manifest-'));
     const manifestPath = path.join(tempDir, 'release.json');
 
-    writeFileSync(manifestPath, JSON.stringify({
-      name: 'mold-gantt-v3',
-      version: '1.0.0',
-      commit: 'abcdef1234567890abcdef1234567890abcdef12',
-      commitShort: 'abcdef1',
-      builtAt: '2026-03-19T14:00:00.000Z',
-      dirty: false,
-    }), 'utf8');
+    writeFileSync(
+      manifestPath,
+      JSON.stringify({
+        name: 'mold-gantt-v3',
+        version: '1.0.0',
+        commit: 'abcdef1234567890abcdef1234567890abcdef12',
+        commitShort: 'abcdef1',
+        builtAt: '2026-03-19T14:00:00.000Z',
+        dirty: false,
+        buildSource: 'workspace',
+        sourceWorkspaceDirty: false,
+      }),
+      'utf8',
+    );
 
     expect(readReleaseManifestFromFile(manifestPath)).toEqual({
       name: 'mold-gantt-v3',
@@ -49,6 +59,8 @@ describe('release metadata', () => {
       commitShort: 'abcdef1',
       builtAt: '2026-03-19T14:00:00.000Z',
       dirty: false,
+      buildSource: 'workspace',
+      sourceWorkspaceDirty: false,
     });
   });
 
@@ -68,6 +80,8 @@ describe('release metadata', () => {
       commitShort: null,
       builtAt: null,
       dirty: null,
+      buildSource: null,
+      sourceWorkspaceDirty: null,
       manifestFound: false,
       nodeEnv: 'production',
       runtimeStartedAt: '2026-03-19T14:00:00.000Z',

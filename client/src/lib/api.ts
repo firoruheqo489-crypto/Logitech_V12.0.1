@@ -1,8 +1,19 @@
 const API_KEY_STORAGE_KEY = 'dashboard_api_key';
+export const DEFAULT_LOCAL_WRITE_PASSWORD = '476281307';
 
 export function getStoredApiKey(): string {
   if (typeof window === 'undefined') return '';
   return window.localStorage.getItem(API_KEY_STORAGE_KEY)?.trim() || '';
+}
+
+export function setStoredApiKey(value: string): void {
+  if (typeof window === 'undefined') return;
+  const next = value.trim();
+  if (!next) {
+    window.localStorage.removeItem(API_KEY_STORAGE_KEY);
+    return;
+  }
+  window.localStorage.setItem(API_KEY_STORAGE_KEY, next);
 }
 
 export function promptForApiKey(): 'saved' | 'cleared' | 'cancelled' {

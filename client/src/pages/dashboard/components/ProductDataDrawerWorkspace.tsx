@@ -26,10 +26,10 @@ export default function ProductDataDrawerWorkspace({
   return (
     <AssetDrawerWorkspace
       panels={panels}
-      badgeLabel="Active Product Asset"
+      badgeLabel="当前产品对象"
       drawerTitle="产品模块抽屉"
-      drawerDescription="通过模具编号 + NO 双认证选择当前要查看的产品模块。"
-      emptyMessage="暂无产品模块数据"
+      drawerDescription="通过模具编号和序号选择当前要查看的产品模块。"
+      emptyMessage="暂无产品模块数据。"
       icon={PackageOpen}
       renderPanel={(panel) => {
         const panelLookupKey = buildProductModuleLookupKey(panel.moldId, panel.moldNo);
@@ -39,13 +39,12 @@ export default function ProductDataDrawerWorkspace({
           return normalizeMoldLookupKey(moldNumber) === panelMoldKey;
         });
 
-        const filteredProductDataByMold =
-          Object.fromEntries(
-            Object.entries(productDataByMold).filter(([lookupKey, record]) => {
-              if (lookupKey === panelLookupKey) return true;
-              return normalizeMoldLookupKey(record.moldNumber) === panelMoldKey;
-            }),
-          );
+        const filteredProductDataByMold = Object.fromEntries(
+          Object.entries(productDataByMold).filter(([lookupKey, record]) => {
+            if (lookupKey === panelLookupKey) return true;
+            return normalizeMoldLookupKey(record.moldNumber) === panelMoldKey;
+          }),
+        );
 
         return (
           <ProductDataWorkspace

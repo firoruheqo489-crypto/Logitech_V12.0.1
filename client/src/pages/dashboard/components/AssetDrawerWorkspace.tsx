@@ -22,6 +22,9 @@ interface AssetDrawerWorkspaceProps {
   drawerDescription: string;
   emptyMessage: string;
   icon?: LucideIcon;
+  hideBadgeLabel?: boolean;
+  renderActiveContent?: (panel: AssetPanelItem) => React.ReactNode;
+  renderActiveSummary?: (panel: AssetPanelItem) => React.ReactNode;
   renderPanel: (panel: AssetPanelItem) => React.ReactNode;
 }
 
@@ -36,6 +39,9 @@ export default function AssetDrawerWorkspace({
   drawerDescription,
   emptyMessage,
   icon: Icon = Database,
+  hideBadgeLabel = false,
+  renderActiveContent,
+  renderActiveSummary,
   renderPanel,
 }: AssetDrawerWorkspaceProps) {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -79,12 +85,21 @@ export default function AssetDrawerWorkspace({
             <Icon className="h-5 w-5 text-cyan-400" />
           </div>
           <div className="min-w-0">
-            <div className="text-[11px] font-mono uppercase tracking-[0.24em] text-slate-500">
-              {badgeLabel}
-            </div>
-            <div className="mt-1 flex items-center gap-2 text-slate-100">
-              <span className="text-lg font-bold tracking-wide">{activePanel.moldId}</span>
-              <span className="text-xs font-mono text-slate-500">{activePanel.moldNo}</span>
+            {!hideBadgeLabel && badgeLabel ? (
+              <div className="text-[11px] font-mono tracking-[0.24em] text-slate-500">
+                {badgeLabel}
+              </div>
+            ) : null}
+            <div className={`${!hideBadgeLabel && badgeLabel ? 'mt-1' : ''} text-slate-100`}>
+              {renderActiveContent ? (
+                renderActiveContent(activePanel)
+              ) : (
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <span className="text-lg font-bold tracking-wide">{activePanel.moldId}</span>
+                  <span className="text-xs font-mono text-slate-500">{activePanel.moldNo}</span>
+                  {renderActiveSummary ? renderActiveSummary(activePanel) : null}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -110,11 +125,11 @@ export default function AssetDrawerWorkspace({
           className="border-l border-slate-800 bg-[#050816] p-0 text-slate-100 sm:max-w-md"
         >
           <SheetHeader className="border-b border-slate-800 px-6 py-5">
-            <SheetTitle className="flex items-center gap-2 text-sm font-bold uppercase tracking-[0.2em] text-cyan-400">
+            <SheetTitle className="flex items-center gap-2 text-sm font-bold tracking-[0.2em] text-cyan-400">
               <Icon className="h-4 w-4" />
               {drawerTitle}
             </SheetTitle>
-            <SheetDescription className="text-xs font-mono tracking-wide text-slate-500">
+            <SheetDescription className="text-xs tracking-wide text-slate-500">
               {drawerDescription}
             </SheetDescription>
           </SheetHeader>
@@ -142,7 +157,7 @@ export default function AssetDrawerWorkspace({
                     <div className={`text-base font-bold tracking-wide ${isActive ? 'text-cyan-300' : 'text-slate-100'}`}>
                       {panel.moldId}
                     </div>
-                    <div className="mt-1 text-[11px] font-mono uppercase tracking-[0.22em] text-slate-500">
+                    <div className="mt-1 text-[11px] font-mono tracking-[0.22em] text-slate-500">
                       {panel.moldNo}
                     </div>
                   </div>

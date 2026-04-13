@@ -1,13 +1,25 @@
-import { Toaster } from "@/components/ui/sonner";
-import { TooltipProvider } from "@/components/ui/tooltip";
-import NotFound from "@/pages/NotFound";
+import { lazy, Suspense } from "react";
 import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
-import Home from "./pages/Home";
-import GanttV3 from "./pages/GanttV3";
-import DashboardHome from "./pages/dashboard/DashboardHome";
+import { Toaster } from "@/components/ui/sonner";
+import { TooltipProvider } from "@/components/ui/tooltip";
 
+const Home = lazy(() => import("./pages/Home"));
+const GanttV3 = lazy(() => import("./pages/GanttV3"));
+const DashboardHome = lazy(() => import("./pages/dashboard/DashboardHome"));
+const NotFound = lazy(() => import("./pages/NotFound"));
+
+function RouteLoadingState() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-[#000000] text-white/45 text-sm">
+      <span className="inline-flex items-center gap-2">
+        <span className="inline-block h-4 w-4 rounded-full border-2 border-white/20 border-t-cyan-400 animate-spin" />
+        页面加载中...
+      </span>
+    </div>
+  );
+}
 
 function Router() {
   return (
@@ -32,13 +44,15 @@ function Router() {
 function App() {
   return (
     <ErrorBoundary>
-        <ThemeProvider
-          defaultTheme="dark"
-          // switchable
-        >
+      <ThemeProvider
+        defaultTheme="dark"
+        // switchable
+      >
         <TooltipProvider>
           <Toaster />
-          <Router />
+          <Suspense fallback={<RouteLoadingState />}>
+            <Router />
+          </Suspense>
         </TooltipProvider>
       </ThemeProvider>
     </ErrorBoundary>

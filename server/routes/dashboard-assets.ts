@@ -2,7 +2,21 @@ import type { Request, Response } from 'express';
 import { sql as dbSql } from '../db.js';
 import { deleteAssetFromOssUrl } from '../lib/oss.js';
 
-const SLOT_TYPES = new Set(['product3d', 'product2d', 'productPhoto', 'mold3d', 'moldPhoto']);
+const DASHBOARD_PROJECT_ASSET_SLOT_TYPES = [
+  'product3d',
+  'product2d',
+  'productPhoto',
+  'mold3d',
+  'moldPhoto',
+  'product3dExtra',
+  'productPhotoExtra',
+  'mold3dExtra',
+  'moldPhotoExtra',
+] as const;
+
+type DashboardProjectAssetSlotType = (typeof DASHBOARD_PROJECT_ASSET_SLOT_TYPES)[number];
+
+const SLOT_TYPES = new Set<string>(DASHBOARD_PROJECT_ASSET_SLOT_TYPES);
 
 type AssetRow = {
   mold_number: string;
@@ -64,7 +78,7 @@ export function ensureDashboardProjectAssetsTable(): Promise<void> {
   return dashboardProjectAssetsTableReady;
 }
 
-function isValidSlotType(value: string): value is 'product3d' | 'product2d' | 'productPhoto' | 'mold3d' | 'moldPhoto' {
+function isValidSlotType(value: string): value is DashboardProjectAssetSlotType {
   return SLOT_TYPES.has(value);
 }
 

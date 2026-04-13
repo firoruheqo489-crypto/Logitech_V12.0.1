@@ -12,6 +12,8 @@ export type ReleaseManifest = {
   commitShort: string | null;
   builtAt: string | null;
   dirty: boolean | null;
+  buildSource: string | null;
+  sourceWorkspaceDirty: boolean | null;
 };
 
 export type ReleaseInfo = ReleaseManifest & {
@@ -84,6 +86,8 @@ export function normalizeReleaseManifest(value: unknown): ReleaseManifest | null
     commitShort,
     builtAt: readOptionalString(record.builtAt),
     dirty: readOptionalBoolean(record.dirty),
+    buildSource: readOptionalString(record.buildSource),
+    sourceWorkspaceDirty: readOptionalBoolean(record.sourceWorkspaceDirty),
   };
 }
 
@@ -131,6 +135,8 @@ export function buildReleaseInfo(input: {
     commitShort: manifest?.commitShort ?? (commit ? commit.slice(0, 7) : null),
     builtAt: manifest?.builtAt ?? null,
     dirty: manifest?.dirty ?? null,
+    buildSource: manifest?.buildSource ?? null,
+    sourceWorkspaceDirty: manifest?.sourceWorkspaceDirty ?? null,
     manifestFound: input.manifestFound ?? manifest !== null,
     nodeEnv: input.nodeEnv ?? process.env.NODE_ENV ?? 'development',
     runtimeStartedAt: input.runtimeStartedAt ?? RUNTIME_STARTED_AT,

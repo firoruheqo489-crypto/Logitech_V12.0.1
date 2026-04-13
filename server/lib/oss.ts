@@ -3,6 +3,22 @@ import OSS from 'ali-oss';
 
 type OssClient = InstanceType<typeof OSS>;
 
+type OssStreamClient = OssClient & {
+  getStream: (
+    name: string,
+    options?: {
+      headers?: Record<string, string>;
+      subres?: Record<string, unknown>;
+    },
+  ) => Promise<{
+    stream: NodeJS.ReadableStream;
+    res: {
+      status: number;
+      headers: Record<string, string | number | string[] | undefined>;
+    };
+  }>;
+};
+
 type UploadAssetOptions = {
   fileBuffer: Buffer;
   filename: string;
@@ -135,6 +151,18 @@ function isProxyAssetPath(pathname: string): boolean {
   return pathname === ASSET_PROXY_PATH;
 }
 
+function looksLikeUrl(value: string): boolean {
+  return /^[a-zA-Z][a-zA-Z\d+\-.]*:/.test(value) || value.startsWith('//');
+}
+
+function decodeMaybeEncodedComponent(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
 function buildObjectKey(options: {
   filename: string;
   mimeType?: string;
@@ -220,6 +248,10 @@ export function parseOssObjectKeyFromUrl(assetUrl: string | null | undefined): s
     return null;
   }
 
+  if (!looksLikeUrl(trimmedUrl)) {
+    return decodeMaybeEncodedComponent(trimmedUrl) || null;
+  }
+
   const publicBaseUrl = readPublicBaseUrl();
   if (!publicBaseUrl) {
     return null;
@@ -244,11 +276,45 @@ export function parseOssObjectKeyFromUrl(assetUrl: string | null | undefined): s
   }
 }
 
-export function createSignedAssetUrl(objectKey: string, expiresSeconds = 300): string {
+type SignedAssetResponseHeaders = {
+  'content-type'?: string;
+  'content-disposition'?: string;
+};
+
+export function createSignedAssetUrl(
+  objectKey: string,
+  expiresSeconds = 300,
+  response?: SignedAssetResponseHeaders,
+): string {
   const client = getClient();
   return client.signatureUrl(objectKey, {
     expires: expiresSeconds,
+    ...(response
+      ? {
+          response,
+        }
+      : {}),
   });
+}
+
+export async function getOssObjectStream(
+  objectKey: string,
+  rangeHeader?: string,
+): Promise<{
+  stream: NodeJS.ReadableStream;
+  status: number;
+  headers: Record<string, string | number | string[] | undefined>;
+  }> {
+  const client = getClient() as OssStreamClient;
+  const result = await client.getStream(objectKey, {
+    headers: rangeHeader ? { Range: rangeHeader } : undefined,
+  });
+
+  return {
+    stream: result.stream as NodeJS.ReadableStream,
+    status: result.res.status ?? 200,
+    headers: result.res.headers as Record<string, string | number | string[] | undefined>,
+  };
 }
 
 export async function deleteAssetFromOssUrl(assetUrl: string | null | undefined): Promise<DeleteAssetResult> {

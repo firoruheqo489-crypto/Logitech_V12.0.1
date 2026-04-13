@@ -13,7 +13,6 @@
 import type { Request, Response } from 'express';
 import { and, desc, eq, notInArray } from 'drizzle-orm';
 import { db, sql as dbSql } from '../db.js';
-import { buildAssetProxyUrl, parseOssObjectKeyFromUrl } from '../lib/oss.js';
 import { progressNotes } from '../../shared/schema.js';
 
 type ProgressNotePayload = {
@@ -232,14 +231,6 @@ function readSnapshotConfirmation(req: Request): string {
 
 function hasDestructiveSnapshotConfirmation(req: Request): boolean {
   return readSnapshotConfirmation(req) === SNAPSHOT_DESTRUCTIVE_CONFIRMATION_VALUE;
-}
-
-function sanitizeProgressNoteImageUrl(imageUrl: string | undefined): string | undefined {
-  const trimmed = typeof imageUrl === 'string' ? imageUrl.trim() : '';
-  if (!trimmed) return undefined;
-  const objectKey = parseOssObjectKeyFromUrl(trimmed);
-  if (!objectKey) return undefined;
-  return buildAssetProxyUrl(objectKey);
 }
 
 export function assessProgressSnapshotRisk(input: {
@@ -466,15 +457,11 @@ async function writeProgressAuditLog(params: {
 }
 
 function normalizeEntryPayload(entry: ProgressNotePayload | BackupEntry): BackupEntry {
-  const normalizedImageUrl = sanitizeProgressNoteImageUrl(
-    entry.imageUrl ? String(entry.imageUrl) : undefined,
-  );
-
   return {
     id: String(entry.id || ''),
     date: String(entry.date || ''),
     content: String(entry.content || ''),
-    imageUrl: normalizedImageUrl,
+    imageUrl: entry.imageUrl ? String(entry.imageUrl) : undefined,
     assignee: entry.assignee ? String(entry.assignee) : undefined,
     estimatedNodeCompletion: entry.estimatedNodeCompletion ? String(entry.estimatedNodeCompletion) : undefined,
     createdAt: entry.createdAt ? String(entry.createdAt) : undefined,

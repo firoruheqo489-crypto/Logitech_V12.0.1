@@ -1,8 +1,9 @@
 import { Router, type Request, type Response } from 'express';
 import multer from 'multer';
+import { pipeline } from 'node:stream/promises';
 import {
-  createSignedAssetUrl,
   deleteAssetFromOssUrl,
+  getOssObjectStream,
   parseOssObjectKeyFromUrl,
   uploadAssetToOss,
 } from '../lib/oss.js';
@@ -27,7 +28,8 @@ const UPLOADS_ROUTE_ERROR_MESSAGES: Record<UploadsRouteErrorCode, string> = {
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 25 * 1024 * 1024,
+    // Multi-page engineering PDFs are often larger than typical image uploads.
+    fileSize: 100 * 1024 * 1024,
   },
 });
 
@@ -36,10 +38,6 @@ function sendUploadsRouteError(
   status: number,
   code: UploadsRouteErrorCode,
 ): void {
-  if (res.headersSent || res.writableEnded || res.destroyed) {
-    return;
-  }
-
   res.status(status).json({
     error: UPLOADS_ROUTE_ERROR_MESSAGES[code],
     code,
@@ -58,11 +56,8 @@ function readMultipartField(value: unknown): string | undefined {
 const uploadsRouter = Router();
 
 uploadsRouter.get('/object', async (req: Request, res: Response) => {
-  const objectKey = parseOssObjectKeyFromUrl(
-    typeof req.query.key === 'string'
-      ? `/api/uploads/object?key=${encodeURIComponent(req.query.key)}`
-      : null,
-  );
+  const queryKey = Array.isArray(req.query.key) ? req.query.key[0] : req.query.key;
+  const objectKey = parseOssObjectKeyFromUrl(typeof queryKey === 'string' ? queryKey : null);
 
   if (!objectKey) {
     sendUploadsRouteError(res, 400, 'ASSET_KEY_REQUIRED');
@@ -70,14 +65,17 @@ uploadsRouter.get('/object', async (req: Request, res: Response) => {
   }
 
   try {
-    const signedUrl = createSignedAssetUrl(objectKey);
-    res.redirect(302, signedUrl);
-  } catch (error) {
-    if (res.headersSent || res.writableEnded || res.destroyed) {
-      console.warn('GET /api/uploads/object aborted after response started:', error);
-      return;
-    }
+    const rangeHeader = typeof req.headers.range === 'string' ? req.headers.range : undefined;
+    const ossObject = await getOssObjectStream(objectKey, rangeHeader);
 
+    res.status(ossObject.status);
+    Object.entries(ossObject.headers).forEach(([headerName, headerValue]) => {
+      if (headerValue === undefined) return;
+      res.setHeader(headerName, headerValue as string | number | readonly string[]);
+    });
+
+    await pipeline(ossObject.stream, res);
+  } catch (error) {
     const details = String(error ?? '');
     const code =
       details.includes('NoSuchKey')
@@ -148,4 +146,4 @@ uploadsRouter.delete('/assets', async (req: Request, res: Response) => {
   }
 });
 
-export { sendUploadsRouteError, uploadsRouter };
+export { uploadsRouter };

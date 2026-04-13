@@ -152,15 +152,20 @@ async function main() {
     const proxyResponse = await fetch(new URL(uploadedUrl, `${baseUrl}/`).toString(), {
       redirect: 'manual',
     });
-    const proxyLocation = proxyResponse.headers.get('location') || '';
+    const proxyContentType = proxyResponse.headers.get('content-type') || '';
 
-    if (proxyResponse.status !== 302 || !proxyLocation.includes('.aliyuncs.com/')) {
+    if (![200, 206].includes(proxyResponse.status) || proxyResponse.type === 'opaqueredirect') {
       throw new Error(
-        `OSS proxy redirect check failed. status=${proxyResponse.status} location=${proxyLocation}`,
+        `OSS proxy stream check failed. status=${proxyResponse.status} content-type=${proxyContentType}`,
       );
     }
 
-    console.log('[PASS] Proxy redirect ok.');
+    const proxyBody = await proxyResponse.arrayBuffer();
+    if (proxyBody.byteLength === 0) {
+      throw new Error('OSS proxy stream returned an empty body');
+    }
+
+    console.log(`[PASS] Proxy stream ok. status=${proxyResponse.status} content-type=${proxyContentType}`);
 
     const deleteResponse = await fetch(`${baseUrl}/api/uploads/assets`, {
       method: 'DELETE',

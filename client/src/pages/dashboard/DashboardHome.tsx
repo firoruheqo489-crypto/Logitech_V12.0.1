@@ -3,7 +3,6 @@
  */
 
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { createPortal } from 'react-dom';
 import type { ProjectData } from './types/project';
 import { calculateStats } from './lib/projectUtils';
 import FileUpload from './components/FileUpload';
@@ -20,20 +19,16 @@ import ReliabilityDrawerWorkspace from './components/ReliabilityDrawerWorkspace'
 import SpcRadarDrawerWorkspace from './components/SpcRadarDrawerWorkspace';
 import SpcCalculatorDrawerWorkspace from './components/SpcCalculatorDrawerWorkspace';
 import ProductDataDrawerWorkspace from './components/ProductDataDrawerWorkspace';
+import ProductStandardDrawerWorkspace from './components/ProductStandardDrawerWorkspace';
 import ProcessDrawerWorkspace from './components/ProcessDrawerWorkspace';
+import ProgressLogsDrawerWorkspace from './components/ProgressLogsDrawerWorkspace';
 
 import { transformDataToProject } from './lib/dataTransformer';
 import { fetchDashboardProjectData, fetchDashboardProgressEntries, type DashboardProgressEntry } from './lib/dashboardApi';
 import { toast } from 'sonner';
-import { FileSpreadsheet, Sparkles, Image as ImageIcon, X, ArrowLeft } from 'lucide-react';
+import { FileSpreadsheet, Sparkles, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { DEMO_PROJECTS } from './lib/demoData';
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from '@/components/ui/accordion';
 import { apiFetch } from '@/lib/api';
 import { getModuleTheme, getThemeGlowClass, orderModuleNamesForDisplay } from '@/lib/theme';
 import CyberConfirmDialog from '@/components/ui/CyberConfirmDialog';
@@ -77,12 +72,12 @@ async function batchReplaceProjects(data: Record<string, string | undefined>[]):
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
-  if (!res.ok) throw new Error('保存失败');
+  if (!res.ok) throw new Error('Save failed');
 }
 
 async function clearAllProjects(): Promise<void> {
   const res = await apiFetch('/api/dashboard/projects', { method: 'DELETE' });
-  if (!res.ok) throw new Error('清除失败');
+  if (!res.ok) throw new Error('Clear failed');
 }
 
 function formatDateTimeLabel(timestamp?: string): string {
@@ -95,30 +90,6 @@ function formatDateTimeLabel(timestamp?: string): string {
   const hh = String(dt.getHours()).padStart(2, '0');
   const mm = String(dt.getMinutes()).padStart(2, '0');
   return `${y}-${m}-${d} ${hh}:${mm}`;
-}
-
-function normalizeDateOnlyLabel(value?: string): string | null {
-  if (!value) return null;
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
-  const dt = new Date(trimmed);
-  if (isNaN(dt.getTime())) return null;
-  const y = dt.getFullYear();
-  const m = String(dt.getMonth() + 1).padStart(2, '0');
-  const d = String(dt.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
-}
-
-function resolveProgressUpdateLabel(uploadedAt?: string, mappedDate?: string): string {
-  const mappedDateOnly = normalizeDateOnlyLabel(mappedDate);
-  const uploadedDateOnly = normalizeDateOnlyLabel(uploadedAt);
-
-  if (uploadedAt && uploadedDateOnly && (!mappedDateOnly || uploadedDateOnly === mappedDateOnly)) {
-    return formatDateTimeLabel(uploadedAt);
-  }
-
-  return mappedDate?.trim() || '-';
 }
 
 function formatBatchLabel(uploadBatch?: string): string {
@@ -142,6 +113,7 @@ const DASHBOARD_TABS = [
   'overview',
   'logs',
   'product',
+  'product-standard',
   'mold-trial-database',
   'mold-reliability',
   'spc-calculator',
@@ -155,8 +127,14 @@ const DASHBOARD_TABS = [
 
 type DashboardTab = typeof DASHBOARD_TABS[number];
 
-const PUBLIC_DASHBOARD_TABS: DashboardTab[] = [...DASHBOARD_TABS.slice(0, 7)];
-const ADMIN_ONLY_DASHBOARD_TABS: DashboardTab[] = [...DASHBOARD_TABS.slice(7)];
+const PUBLIC_DASHBOARD_TAB_LIMIT =
+  DASHBOARD_TABS.indexOf('mold-trial-database') + 1;
+const PUBLIC_DASHBOARD_TABS: DashboardTab[] = [
+  ...DASHBOARD_TABS.slice(0, PUBLIC_DASHBOARD_TAB_LIMIT),
+];
+const ADMIN_ONLY_DASHBOARD_TABS: DashboardTab[] = [
+  ...DASHBOARD_TABS.slice(PUBLIC_DASHBOARD_TAB_LIMIT),
+];
 
 async function fetchProgressEntriesForMold(mold: string): Promise<{ mold: string; entries: ProgressEntry[] }> {
   return {
@@ -219,11 +197,11 @@ export default function DashboardHome() {
   const [loading, setLoading] = useState(true);
   const [localProjects, setLocalProjects] = useState<ProjectData[]>([]);
   const [progressEntriesByMold, setProgressEntriesByMold] = useState<Record<string, ProgressEntry[]>>({});
-  const [previewImageUrl, setPreviewImageUrl] = useState<string>('');
   const [activeTab, setActiveTab] = useState('overview');
   const [defectMaterial, setDefectMaterial] = useState<MaterialType>('PC/ABS');
   const [defectVDI, setDefectVDI] = useState<number>(24);
   const [productModuleRows, setProductModuleRows] = useState<ProductModuleRecord[]>([]);
+  const [isProductAdminModalOpen, setIsProductAdminModalOpen] = useState(false);
   const isAdminMode = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('mode') === 'admin';
   const visibleTabs = isAdminMode ? DASHBOARD_TABS : PUBLIC_DASHBOARD_TABS;
   const selectedTab = useMemo<DashboardTab>(() => {
@@ -231,7 +209,7 @@ export default function DashboardHome() {
       ? (activeTab as DashboardTab)
       : 'overview';
     if (!isAdminMode && ADMIN_ONLY_DASHBOARD_TABS.includes(currentTab)) {
-      return 'overview';
+      return 'mold-trial-database';
     }
     return currentTab;
   }, [activeTab, isAdminMode]);
@@ -260,6 +238,64 @@ export default function DashboardHome() {
       setActiveTab(selectedTab);
     }
   }, [activeTab, selectedTab]);
+
+  const loadProductModuleRows = useCallback(async () => {
+    try {
+      const response = await apiFetch('/api/dashboard/product-data');
+      if (!response.ok) return;
+      const payload = (await response.json()) as { rows?: Array<Record<string, unknown>> };
+      const rows = Array.isArray(payload.rows) ? payload.rows : [];
+      const mappedRows: ProductModuleRecord[] = rows
+        .map((row) => ({
+          moldNumber: normalizeMoldLookupKey(String(row.mold_number || '')),
+          serialNumber:
+            typeof row.serial_number === 'string' ? formatProductSequenceLabel(row.serial_number) : undefined,
+          productName: typeof row.product_name === 'string' ? row.product_name : undefined,
+          netWeight: typeof row.net_weight === 'string' ? row.net_weight : undefined,
+          runnerWeight: typeof row.runner_weight === 'string' ? row.runner_weight : undefined,
+          productSize: typeof row.product_size === 'string' ? row.product_size : undefined,
+          cavityNumber: typeof row.cavity_number === 'string' ? row.cavity_number : undefined,
+          material: typeof row.material === 'string' ? row.material : undefined,
+          materialErpName: typeof row.material_erp_name === 'string' ? row.material_erp_name : undefined,
+          materialErpCode: typeof row.material_erp_code === 'string' ? row.material_erp_code : undefined,
+          recycledMaterialErpCode:
+            typeof row.recycled_material_erp_code === 'string' ? row.recycled_material_erp_code : undefined,
+          recycledMaterialSpec:
+            typeof row.recycled_material_spec === 'string' ? row.recycled_material_spec : undefined,
+          rawMaterialName: typeof row.raw_material_name === 'string' ? row.raw_material_name : undefined,
+          rawMaterialSpec: typeof row.raw_material_spec === 'string' ? row.raw_material_spec : undefined,
+          finishedPartNumber: typeof row.finished_part_number === 'string' ? row.finished_part_number : undefined,
+          semiFinishedPartNumber:
+            typeof row.semi_finished_part_number === 'string' ? row.semi_finished_part_number : undefined,
+          internalFinishedErpCode:
+            typeof row.internal_finished_erp_code === 'string' ? row.internal_finished_erp_code : undefined,
+          internalSemiFinishedErpCode:
+            typeof row.internal_semi_finished_erp_code === 'string'
+              ? row.internal_semi_finished_erp_code
+              : undefined,
+          internalProductName:
+            typeof row.internal_product_name === 'string' ? row.internal_product_name : undefined,
+          moldSize: typeof row.mold_size === 'string' ? row.mold_size : undefined,
+          moldWeight: typeof row.mold_weight === 'string' ? row.mold_weight : undefined,
+          machineTonnage: typeof row.machine_tonnage === 'string' ? row.machine_tonnage : undefined,
+          moldMaterial: typeof row.mold_material === 'string' ? row.mold_material : undefined,
+          openMoldDate: typeof row.open_mold_date === 'string' ? row.open_mold_date : undefined,
+          t0Time: typeof row.t0_time === 'string' ? row.t0_time : undefined,
+          assetNumber: typeof row.asset_number === 'string' ? row.asset_number : undefined,
+          moldOwner: typeof row.mold_owner === 'string' ? row.mold_owner : undefined,
+          serviceLife: typeof row.service_life === 'string' ? row.service_life : undefined,
+          updatedAt: typeof row.updated_at === 'string' ? row.updated_at : undefined,
+        }))
+        .filter((row) => row.moldNumber);
+      setProductModuleRows(mappedRows);
+    } catch {
+      // Keep fallback display values if product module data is unavailable.
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadProductModuleRows();
+  }, [loadProductModuleRows]);
 
   // Scroll restoration - use mobile-scroll on mobile, #root on PC
   useEffect(() => {
@@ -343,14 +379,26 @@ export default function DashboardHome() {
   );
 
   const currentModuleTrialPanels = useMemo(() => {
-    const fallbackMoldId = currentModuleData[0]?.identity?.moldNumber?.trim() || currentModuleMoldIds[0] || 'LA26006';
-    const panelCount = Math.max(currentModuleMoldIds.length, currentModuleMoldSetCount, 1);
+    const seen = new Set<string>();
+    const panels = currentModuleData.flatMap((project) => {
+      const moldId = project.identity?.moldNumber?.trim() || '';
+      const moldNo = formatProductSequenceLabel(project.no) || '';
+      if (!moldId || !moldNo) return [];
 
-    return Array.from({ length: panelCount }, (_, index) => ({
-      moldId: currentModuleMoldIds[index] || fallbackMoldId,
-      moldNo: `NO. ${index + 1}`,
-    }));
-  }, [currentModuleData, currentModuleMoldIds, currentModuleMoldSetCount]);
+      const panelKey = `${normalizeMoldLookupKey(moldId)}::${moldNo}`;
+      if (seen.has(panelKey)) return [];
+      seen.add(panelKey);
+
+      return [{ moldId, moldNo }];
+    });
+
+    if (panels.length > 0) {
+      return panels;
+    }
+
+    const fallbackMoldId = currentModuleData[0]?.identity?.moldNumber?.trim() || currentModuleMoldIds[0] || 'LA26006';
+    return [{ moldId: fallbackMoldId, moldNo: 'NO. -' }];
+  }, [currentModuleData, currentModuleMoldIds]);
 
   const productModuleSequenceByMold = useMemo(() => {
     const sequenceMap: Record<string, string> = {};
@@ -395,7 +443,6 @@ export default function DashboardHome() {
   const hasData = currentModuleData.length > 0;
 
   const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
-  const [isProductAdminModalOpen, setIsProductAdminModalOpen] = useState(false);
   const [isInitialLoading, setIsInitialLoading] = useState(false);
   const [showDuplicateUploadConfirm, setShowDuplicateUploadConfirm] = useState(false);
   const [pendingUploadData, setPendingUploadData] = useState<ProjectData[] | null>(null);
@@ -413,64 +460,6 @@ export default function DashboardHome() {
   useEffect(() => {
     sessionStorage.setItem('dashboard_current_filter', filterStatus);
   }, [filterStatus]);
-
-  const loadProductModuleRows = useCallback(async () => {
-    try {
-      const response = await apiFetch('/api/dashboard/product-data');
-      if (!response.ok) return;
-      const payload = (await response.json()) as { rows?: Array<Record<string, unknown>> };
-      const rows = Array.isArray(payload.rows) ? payload.rows : [];
-      const mappedRows: ProductModuleRecord[] = rows
-        .map((row) => ({
-          moldNumber: normalizeMoldLookupKey(String(row.mold_number || '')),
-          serialNumber:
-            typeof row.serial_number === 'string' ? formatProductSequenceLabel(row.serial_number) : undefined,
-          productName: typeof row.product_name === 'string' ? row.product_name : undefined,
-          netWeight: typeof row.net_weight === 'string' ? row.net_weight : undefined,
-          runnerWeight: typeof row.runner_weight === 'string' ? row.runner_weight : undefined,
-          productSize: typeof row.product_size === 'string' ? row.product_size : undefined,
-          cavityNumber: typeof row.cavity_number === 'string' ? row.cavity_number : undefined,
-          material: typeof row.material === 'string' ? row.material : undefined,
-          materialErpName: typeof row.material_erp_name === 'string' ? row.material_erp_name : undefined,
-          materialErpCode: typeof row.material_erp_code === 'string' ? row.material_erp_code : undefined,
-          recycledMaterialErpCode:
-            typeof row.recycled_material_erp_code === 'string' ? row.recycled_material_erp_code : undefined,
-          recycledMaterialSpec:
-            typeof row.recycled_material_spec === 'string' ? row.recycled_material_spec : undefined,
-          rawMaterialName: typeof row.raw_material_name === 'string' ? row.raw_material_name : undefined,
-          rawMaterialSpec: typeof row.raw_material_spec === 'string' ? row.raw_material_spec : undefined,
-          finishedPartNumber: typeof row.finished_part_number === 'string' ? row.finished_part_number : undefined,
-          semiFinishedPartNumber:
-            typeof row.semi_finished_part_number === 'string' ? row.semi_finished_part_number : undefined,
-          internalFinishedErpCode:
-            typeof row.internal_finished_erp_code === 'string' ? row.internal_finished_erp_code : undefined,
-          internalSemiFinishedErpCode:
-            typeof row.internal_semi_finished_erp_code === 'string'
-              ? row.internal_semi_finished_erp_code
-              : undefined,
-          internalProductName:
-            typeof row.internal_product_name === 'string' ? row.internal_product_name : undefined,
-          moldSize: typeof row.mold_size === 'string' ? row.mold_size : undefined,
-          moldWeight: typeof row.mold_weight === 'string' ? row.mold_weight : undefined,
-          machineTonnage: typeof row.machine_tonnage === 'string' ? row.machine_tonnage : undefined,
-          moldMaterial: typeof row.mold_material === 'string' ? row.mold_material : undefined,
-          openMoldDate: typeof row.open_mold_date === 'string' ? row.open_mold_date : undefined,
-          t0Time: typeof row.t0_time === 'string' ? row.t0_time : undefined,
-          assetNumber: typeof row.asset_number === 'string' ? row.asset_number : undefined,
-          moldOwner: typeof row.mold_owner === 'string' ? row.mold_owner : undefined,
-          serviceLife: typeof row.service_life === 'string' ? row.service_life : undefined,
-          updatedAt: typeof row.updated_at === 'string' ? row.updated_at : undefined,
-        }))
-        .filter((row) => row.moldNumber);
-      setProductModuleRows(mappedRows);
-    } catch {
-      // Keep fallback display values if product module data is unavailable.
-    }
-  }, []);
-
-  useEffect(() => {
-    void loadProductModuleRows();
-  }, [loadProductModuleRows]);
 
   const handleFileSelect = async (_file: File) => {
     setIsInitialLoading(true);
@@ -498,7 +487,7 @@ export default function DashboardHome() {
       loadProjects();
     } catch {
       setLocalProjects(data);
-      toast.warning('未登录或服务不可用,已进入本地预览模式');
+      toast.warning('服务不可用，已切换到本地预览模式');
     }
   };
 
@@ -531,7 +520,7 @@ export default function DashboardHome() {
       loadProjects();
     } catch {
       setLocalProjects(DEMO_PROJECTS.map(normalizeProjectDataEnums));
-      toast.warning('服务不可用,已加载本地演示数据');
+      toast.warning('服务不可用，已加载本地演示数据');
     } finally { setIsInitialLoading(false); }
   };
 
@@ -552,57 +541,7 @@ export default function DashboardHome() {
     return filtered;
   }, [currentModuleData, hasData, searchProjectName, searchMoldId, filterStatus]);
 
-  // ALL groups (unfiltered) — always rendered in DOM to prevent unmount/remount scroll jumps
-  const groupKeyOf = useCallback((p: ProjectData) => {
-    const mold = p.identity.moldNumber || '未知模具';
-    return mold;
-  }, []);
-
-  const allGroupedProjects = useMemo(() => {
-    const groups: Record<string, ProjectData[]> = {};
-    currentModuleData.forEach(p => {
-      const key = groupKeyOf(p);
-      if (!groups[key]) groups[key] = [];
-      groups[key].push(p);
-    });
-    Object.keys(groups).forEach((key) => {
-      groups[key].sort((a, b) => {
-        const aTs = a.uploadBatch ? new Date(a.uploadBatch).getTime() : -1;
-        const bTs = b.uploadBatch ? new Date(b.uploadBatch).getTime() : -1;
-        return bTs - aTs;
-      });
-    });
-    return groups;
-  }, [currentModuleData, groupKeyOf]);
-
-  // Set of group names that have at least one visible project
-  const visibleGroupNames = useMemo(() => {
-    const names = new Set<string>();
-    filteredProjects.forEach(p => {
-      names.add(groupKeyOf(p));
-    });
-    return names;
-  }, [filteredProjects, groupKeyOf]);
-
   const hasActiveFilters = searchProjectName.trim() !== '' || searchMoldId.trim() !== '';
-
-  // Controlled accordion state — keeps all groups open
-  const [openGroups, setOpenGroups] = useState<string[]>([]);
-
-  // 进度记录展开状态: 默认只显示最新6条，点击"更多"后展开全部
-  const [expandedNoteGroups, setExpandedNoteGroups] = useState<Set<string>>(new Set());
-  const toggleNoteExpand = (key: string) =>
-    setExpandedNoteGroups(prev => {
-      const next = new Set(prev);
-      next.has(key) ? next.delete(key) : next.add(key);
-      return next;
-    });
-
-  // Sync openGroups whenever allGroupedProjects keys change (open all by default)
-  const allGroupKeys = useMemo(() => Object.keys(allGroupedProjects), [allGroupedProjects]);
-  useEffect(() => {
-    setOpenGroups(allGroupKeys);
-  }, [allGroupKeys]);
 
   const handleClearSearch = () => { setSearchProjectName(''); setSearchMoldId(''); setFilterStatus('ALL'); };
 
@@ -631,7 +570,16 @@ export default function DashboardHome() {
 
   const handleShowAll = () => handleFilterChange('ALL');
 
-  // 作用域限定：stats 只统计当前搜索条件下的项目（不含 filterStatus，避免循环）
+  const tabStripRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const activeTabButton = document.querySelector(
+      `[data-dashboard-tab="${selectedTab}"]`,
+    ) as HTMLElement | null;
+    activeTabButton?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+  }, [selectedTab]);
+
+  // Scope stats to the current search conditions only and avoid filter loops.
   const scopedProjects = useMemo(() => {
     let scoped = currentModuleData;
     if (searchProjectName.trim()) {
@@ -646,7 +594,15 @@ export default function DashboardHome() {
   }, [currentModuleData, searchProjectName, searchMoldId]);
 
   const stats = useMemo(() => calculateStats(scopedProjects), [scopedProjects]);
-  const visibleGroupCount = useMemo(() => visibleGroupNames.size, [visibleGroupNames]);
+  const visibleGroupCount = useMemo(
+    () =>
+      new Set(
+        filteredProjects
+          .map((project) => project.identity?.moldNumber?.trim() || '')
+          .filter(Boolean),
+      ).size,
+    [filteredProjects],
+  );
   const productModuleDataByLookup = useMemo(() => {
     const map: Record<string, ProductModuleRecord> = {};
     productModuleRows.forEach((row) => {
@@ -666,8 +622,7 @@ export default function DashboardHome() {
       .sort((a, b) => b.localeCompare(a))[0];
     return latest ? formatDateTimeLabel(latest) : '-';
   }, [currentModuleMoldIds, productModuleDataByLookup, productModuleSequenceByMold]);
-
-  // ── 大厅拦截：未选中项目时显示大厅 ──
+  // Lobby gate: show the lobby when no module is selected.
   if (!activeModule) {
     return <ProjectLobby onSelect={(name) => {
       setActiveModule(name);
@@ -685,7 +640,7 @@ export default function DashboardHome() {
         </h1>
         <div className="flex items-center gap-2.5 text-white/35 text-sm">
           <span className="inline-block w-4 h-4 border-2 border-white/15 rounded-full animate-spin" style={{ borderTopColor: moduleTheme.hex }} />
-          正在加载项目数据…
+          正在加载项目数据...
         </div>
       </div>
     );
@@ -699,11 +654,15 @@ export default function DashboardHome() {
             <div className={`inline-flex items-center justify-center w-16 h-16 border border-white/[0.06] rounded-2xl mb-4 ${moduleTheme.iconBg}`}>
               <FileSpreadsheet className={`w-8 h-8 ${moduleTheme.text}`} />
             </div>
-            <h1 className="text-3xl font-bold text-white mb-2" style={{ fontFamily: 'var(--font-display)' }}><span className={moduleTheme.text}>罗技</span>项目进度看板</h1>
+            <h1 className="text-3xl font-bold text-white mb-2" style={{ fontFamily: 'var(--font-display)' }}>
+              <span className={moduleTheme.text}>Logitech</span> 项目进度看板
+            </h1>
             <p className="text-sm text-white/30">项目状态可视化管理系统</p>
           </div>
           <div className="bg-[#080808] rounded-2xl border border-white/[0.06] p-8">
-            <p className="text-center text-white/30 mb-6">上传项目进度表 Excel 文件，系统将自动解析并生成可视化看板</p>
+            <p className="text-center text-white/30 mb-6">
+              上传项目进度 Excel 文件后，系统将自动解析并生成可视化看板。
+            </p>
             <FileUpload onFileSelect={handleFileSelect} onDataParsed={handleDataUpdate} />
             <div className="mt-6 pt-6 border-t border-white/[0.04]">
               <Button variant="outline" onClick={handleLoadDemo} className="w-full h-12 text-base" disabled={isInitialLoading}>
@@ -725,7 +684,7 @@ export default function DashboardHome() {
         <div className="mt-2 mb-8 flex w-full items-end justify-between px-1">
           <div className="flex flex-col gap-1.5">
             <h1 className="text-3xl font-extrabold tracking-tight text-white">{activeModule} 系列主看板</h1>
-            <p className="text-sm font-medium text-slate-400">项目状态可视化管理系统 · 部署链路验证</p>
+            <p className="text-sm font-medium text-slate-400">项目状态可视化管理系统</p>
           </div>
           <button
             onClick={() => { setActiveModule(null); setSearchProjectName(''); setSearchMoldId(''); setFilterStatus('ALL'); }}
@@ -742,7 +701,7 @@ export default function DashboardHome() {
       </div>
 
       <div className="mx-auto w-full max-w-7xl px-4 md:px-8">
-        <div className="mb-8 flex flex-nowrap items-center gap-4 overflow-x-auto border-b border-slate-800/40 px-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:gap-8 md:overflow-visible">
+        <div ref={tabStripRef} className="mb-8 flex flex-nowrap items-center gap-4 overflow-x-auto scrollbar-soft border-b border-slate-800/40 px-2 pb-2 md:gap-8">
           {visibleTabs.map((tab) => {
             const labels: Record<string, string> = {
               'spc-calculator': 'SPC计算器',
@@ -753,18 +712,20 @@ export default function DashboardHome() {
               process: '工艺模块',
               fmea: 'FMEA知识库',
               product: '产品模块',
+              'product-standard': '产品标准',
               'defect-library': 'VDI 3400 对照库',
               'injection-clinic': '注塑诊所',
               'mold-reliability': '模具可靠性',
               'mold-trial-database': '试模数据库',
             };
             const isActive = selectedTab === tab;
-            return (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                className={`relative flex-shrink-0 whitespace-nowrap pb-4 text-[15px] font-medium transition-all ${isActive ? moduleTheme.text : 'text-slate-500 hover:text-slate-300'}`}
-              >
+              return (
+                <button
+                  key={tab}
+                  data-dashboard-tab={tab}
+                  onClick={() => setActiveTab(tab)}
+                  className={`relative flex-shrink-0 whitespace-nowrap pb-4 text-[15px] font-medium transition-all ${isActive ? moduleTheme.text : 'text-slate-500 hover:text-slate-300'}`}
+                >
                 {labels[tab]}
                 {isActive && (
                   <span
@@ -780,115 +741,13 @@ export default function DashboardHome() {
       <main ref={mainRef} className="mx-auto w-full max-w-7xl px-4 md:px-8 pb-8" style={{ overflowAnchor: 'none' }}>
 
         {selectedTab === 'logs' && (
-        <div className="w-full mb-8">
-          <Accordion type="multiple" className="w-full space-y-4" value={openGroups} onValueChange={setOpenGroups}>
-            {Object.entries(allGroupedProjects).map(([groupKey, group]) => {
-              const isGroupVisible = visibleGroupNames.has(groupKey);
-              const firstProject = group[0];
-              const projectName = firstProject.identity.projectName || '-';
-              const productName = firstProject.identity.productName || '-';
-              const moldNo = firstProject.identity.moldNumber || '-';
-              const noteEntries = (moldNo && moldNo !== '-') ? (progressEntriesByMold[moldNo] || []) : [];
-              const detailRows = noteEntries.length > 0
-                ? noteEntries.map((entry, idx) => ({
-                    key: entry.id || `${moldNo}-${idx}`,
-                    updateDate: entry.date || '-',
-                    uploadedAt: entry.updatedAt || entry.createdAt || '',
-                    detail: entry.content?.trim() || '',
-                    detailImageUrl: entry.imageUrl?.trim() || null,
-                    estimated: entry.estimatedNodeCompletion || firstProject?.milestones?.estimatedCompletion || '-',
-                    assignee: entry.assignee || '-',
-                  }))
-                : [{
-                    key: `${moldNo}-fallback`,
-                    updateDate: firstProject?.details?.detailDate || '-',
-                    uploadedAt: '',
-                    detail: firstProject?.details?.detailProgress?.trim() || '',
-                    detailImageUrl: null,
-                    estimated: firstProject?.milestones?.estimatedCompletion || '-',
-                    assignee: '-',
-                  }];
-              return (
-                <AccordionItem
-                  value={groupKey}
-                  key={groupKey}
-                  className="project-group-card overflow-hidden"
-                  style={{ display: isGroupVisible ? undefined : 'none' }}
-                >
-                  <AccordionTrigger className="p-0 hover:no-underline">
-                    <div className="flex justify-between items-center w-full px-4 py-3 bg-slate-800/40 border-b border-slate-800/50 hover:bg-slate-800/60 transition-colors">
-                      <div className="flex items-center gap-3 text-sm font-medium text-slate-200 min-w-0">
-                        <span className={`w-2 h-2 rounded-full ${moduleTheme.bg} ${themeGlow}`} />
-                        <span className="truncate">{projectName}</span>
-                        <span className="text-slate-600">·</span>
-                        <span className="truncate">{productName}</span>
-                        <span className="text-slate-600">·</span>
-                        <span className="shrink-0">{moldNo}</span>
-                      </div>
-                    </div>
-                  </AccordionTrigger>
-                  <AccordionContent className="group-card__body px-0 pb-0">
-                    <div className="hidden md:grid md:grid-cols-[168px_136px_minmax(0,1fr)_156px_120px] gap-6 px-5 py-3 border-b border-slate-800/50 text-[11px] font-medium uppercase tracking-widest text-slate-500">
-                      <div className="text-center">节点更新时间</div>
-                      <div className="text-center">附图</div>
-                      <div className="text-center">推进细节</div>
-                      <div className="text-center">节点预估完成时间</div>
-                      <div className="text-center">节点负责人</div>
-                    </div>
-                    <div className="divide-y divide-slate-800/50">
-                      {(expandedNoteGroups.has(groupKey) ? detailRows : detailRows.slice(0, 6)).map((row) => {
-                        const updateDate = resolveProgressUpdateLabel(row.uploadedAt, row.updateDate);
-                        const detail = row.detail || '';
-                        const detailImageUrl = row.detailImageUrl;
-                        const estimated = row.estimated || '-';
-                        return (
-                          <div key={row.key} className="grid grid-cols-1 gap-4 px-4 py-4 md:grid-cols-[168px_136px_minmax(0,1fr)_156px_120px] md:gap-6 md:px-5 md:items-center">
-                            <div className="pr-2 text-sm font-mono text-slate-400 tabular-nums">{updateDate}</div>
-                            <div className="flex items-center md:justify-center">
-                              {detailImageUrl ? (
-                                <button
-                                  type="button"
-                                  className="w-20 h-12 rounded-lg overflow-hidden ring-1 ring-slate-700/50 shadow-md shrink-0 cursor-zoom-in"
-                                  title="查看推进图片"
-                                  onClick={() => setPreviewImageUrl(detailImageUrl)}
-                                >
-                                  <img src={detailImageUrl} alt="推进缩略图" className="w-full h-full object-cover opacity-90 hover:opacity-100 transition-opacity" />
-                                </button>
-                              ) : (
-                                <div className="w-20 h-12 rounded-lg shrink-0 flex items-center justify-center bg-slate-800/60 ring-1 ring-slate-700/50 shadow-md" title="暂无图片">
-                                  <ImageIcon className="w-4 h-4 text-slate-600" />
-                                </div>
-                              )}
-                            </div>
-                            <div className="min-w-0 px-2 text-left text-sm leading-7 whitespace-normal break-words [overflow-wrap:anywhere] text-slate-300">
-                              {detail || '-'}
-                            </div>
-                            <div className="text-center text-sm font-mono tracking-tight text-slate-400 tabular-nums">{estimated}</div>
-                            <div className="text-center text-sm font-medium text-slate-200">{row.assignee && row.assignee !== '-' ? row.assignee : '-'}</div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                    {detailRows.length > 6 && (
-                      <div className="flex justify-end px-6 py-2.5">
-                        <button
-                          type="button"
-                          onClick={() => toggleNoteExpand(groupKey)}
-                          className="text-xs text-slate-500 transition-colors hover:text-slate-200"
-                        >
-                          {expandedNoteGroups.has(groupKey) ? '收起' : `更多 (${detailRows.length - 6} 条)`}
-                        </button>
-                      </div>
-                    )}
-                  </AccordionContent>
-                </AccordionItem>
-              );
-            })}
-          </Accordion>
-        </div>
+          <ProgressLogsDrawerWorkspace
+            panels={currentModuleTrialPanels}
+            projects={currentModuleData}
+            progressEntriesByMold={progressEntriesByMold}
+          />
         )}
 
-        {/* ── Tab: 项目总览 ── */}
         {selectedTab === 'overview' && (
         <>
         <SearchBar projectName={searchProjectName} moldId={searchMoldId} onProjectNameChange={handleProjectNameChange} onMoldIdChange={handleMoldIdChange} onClear={handleClearSearch} hasActiveFilters={hasActiveFilters} />
@@ -897,7 +756,7 @@ export default function DashboardHome() {
             <div className="flex items-center gap-4">
               <h2 className="text-xl md:text-2xl font-bold text-[#E6EDF3]">项目列表</h2>
               <span className="text-xs md:text-sm text-[#6E7681]">
-                当前更新节点时间: {formatBatchLabel(latestBatch || undefined)}
+                当前更新节点时间：{formatBatchLabel(latestBatch || undefined)}
               </span>
               {filterStatus !== 'ALL' && (
                 <button onClick={handleShowAll} className={`px-3 md:px-4 py-1.5 md:py-2 bg-[#151B23] border border-white/[0.06] rounded-lg hover:bg-[#1B222C] text-xs md:text-sm font-medium text-[#8B949E] transition-all duration-200 ${moduleTheme.shadowGlow} flex items-center gap-2`}>
@@ -906,17 +765,17 @@ export default function DashboardHome() {
                 </button>
               )}
             </div>
-            <span className="text-xs md:text-sm text-[#6E7681]">共 {visibleGroupCount} 个项目</span>
+            <span className="text-xs md:text-sm text-[#6E7681]">共 {visibleGroupCount} 套模具</span>
           </div>
 
           <div className="md:hidden space-y-2">
             <div className="flex items-start justify-between gap-3">
               <h2 className="text-2xl font-bold leading-[1.1] text-[#E6EDF3]">项目列表</h2>
-              <span className="text-xs text-[#6E7681] whitespace-nowrap pt-1">共 {visibleGroupCount} 个项目</span>
+              <span className="text-xs text-[#6E7681] whitespace-nowrap pt-1">共 {visibleGroupCount} 套模具</span>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs text-[#6E7681]">
-                当前更新节点时间: {formatBatchLabel(latestBatch || undefined)}
+                当前更新节点时间：{formatBatchLabel(latestBatch || undefined)}
               </span>
               {filterStatus !== 'ALL' && (
                 <button onClick={handleShowAll} className={`px-3 py-1.5 bg-[#151B23] border border-white/[0.06] rounded-lg hover:bg-[#1B222C] text-xs font-medium text-[#8B949E] transition-all duration-200 ${moduleTheme.shadowGlow} flex items-center gap-1.5`}>
@@ -929,7 +788,11 @@ export default function DashboardHome() {
         </div>
         {filteredProjects.length === 0 ? (
           <div className="bg-[#151B23] rounded-xl shadow-[0_0_0_1px_rgba(255,255,255,0.04)] p-8 md:p-12 text-center min-h-[200px]">
-            <p className="text-sm md:text-lg text-[#8B949E]">{hasActiveFilters ? '未找到匹配的项目，请尝试其他搜索条件' : '暂无项目数据'}</p>
+            <p className="text-sm md:text-lg text-[#8B949E]">
+              {hasActiveFilters
+                ? '未找到匹配的项目，请尝试其他搜索条件。'
+                : '暂无项目数据。'}
+            </p>
           </div>
         ) : (
           <div className="project-list-scope relative z-0 grid grid-cols-1 items-start gap-6 xl:grid-cols-2">
@@ -957,7 +820,7 @@ export default function DashboardHome() {
           />
         )}
 
-        {/* ── Tab: 占位模块 ── */}
+        {/* Product module drawer workspace */}
         {selectedTab === 'product' && (
           <ProductDataDrawerWorkspace
             panels={currentModuleTrialPanels}
@@ -965,6 +828,13 @@ export default function DashboardHome() {
             theme={moduleTheme}
             productDataByMold={productModuleDataByLookup}
             productSequenceByMold={productModuleSequenceByMold}
+          />
+        )}
+
+        {selectedTab === 'product-standard' && (
+          <ProductStandardDrawerWorkspace
+            panels={currentModuleTrialPanels}
+            theme={moduleTheme}
           />
         )}
 
@@ -1023,28 +893,10 @@ export default function DashboardHome() {
         onUploadSuccess={loadProductModuleRows}
       />
 
-      {previewImageUrl && createPortal(
-        <div className="fixed inset-0 z-[10000] bg-black/85 flex items-center justify-center p-4" onClick={() => setPreviewImageUrl('')}>
-          <button
-            className="absolute top-4 right-4 w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center"
-            onClick={(e) => { e.stopPropagation(); setPreviewImageUrl(''); }}
-          >
-            <X className="w-4 h-4 text-white/80" />
-          </button>
-          <img
-            src={previewImageUrl}
-            alt="推进图片预览"
-            className="max-w-[92vw] max-h-[88vh] object-contain rounded-lg border border-white/10"
-            onClick={(e) => e.stopPropagation()}
-          />
-        </div>,
-        document.body
-      )}
-
       <CyberConfirmDialog
         open={showDuplicateUploadConfirm}
         title="检测到重复批次"
-        message="当前上传内容与现有项目数据一致。是否仍要继续上传覆盖？"
+        message="当前上传内容与现有项目数据一致，是否仍要继续上传并覆盖？"
         onCancel={() => {
           setShowDuplicateUploadConfirm(false);
           setPendingUploadData(null);

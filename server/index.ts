@@ -13,11 +13,24 @@ import { getReleaseInfoHandler } from "./release.js";
 import { getGanttDataHandler, postGanttImportHandler, patchProjectImageHandler, checkProjectExistsHandler, deleteGanttProject, getTaskEvidenceHandler, postTaskEvidenceHandler, deleteEvidenceHandler, getProjectEvidenceCountsHandler } from "./routes/gantt.js";
 import { listDashboardProjects, getDashboardProject, batchReplaceDashboardProjects, clearDashboardProjects, getDashboardHealthCheck, getLatestDashboardHealthCheck, runDashboardHealthCheck, ensureDashboardHealthTable, ensureDashboardModuleOrderTable } from "./routes/dashboard.js";
 import { listDashboardProjectAssets, upsertDashboardProjectAsset, deleteDashboardProjectAsset, ensureDashboardProjectAssetsTable } from "./routes/dashboard-assets.js";
+import { deleteDashboardPartFaiState, ensureDashboardPartFaiTable, getDashboardPartFaiState, upsertDashboardPartFaiState } from "./routes/dashboard-part-fai.js";
+import { deleteDashboardMoldTrialEvidenceState, ensureDashboardMoldTrialEvidenceTable, getDashboardMoldTrialEvidenceState, upsertDashboardMoldTrialEvidenceState } from "./routes/dashboard-mold-trial-evidence.js";
+import { deleteDashboardToolingFaiState, ensureDashboardToolingFaiTable, getDashboardToolingFaiState, upsertDashboardToolingFaiState } from "./routes/dashboard-tooling-fai.js";
+import { ensureDashboardMachineSheetTable, getDashboardMachineSheetState, upsertDashboardMachineSheetState } from "./routes/dashboard-machine-sheet.js";
 import { listDashboardProductData, batchUpsertDashboardProductData, ensureDashboardProductDataTable } from "./routes/dashboard-product-data.js";
-import { getDashboardMoldTrialStagesState, upsertDashboardMoldTrialStagesState, ensureDashboardMoldTrialStagesTable } from "./routes/dashboard-mold-trial-stages.js";
+import { listDashboardProductDocs, upsertDashboardProductDoc, deleteDashboardProductDoc } from "./routes/dashboard-product-docs.js";
 import { getProgressNotes, getLatestProgressBackup, saveProgressNotes, upsertProgressNote, createProgressBackup, restoreLatestProgressNotes, deleteProgressNote, getProgressNoteAuditLogs, ensureBackupTable, ensureProgressAuditTable } from "./routes/progress-notes.js";
 import { listIssues, createIssue, updateIssue, deleteIssue, ensureIssuesTable } from "./routes/issues.js";
-import { getMoldTelemetry, createMoldMaintenanceLog, deleteMoldMaintenanceLog, ensureMoldMaintenanceTable } from "./routes/mold-health.js";
+import {
+  deleteMoldMaintenanceLog,
+  ensureReliabilityTables,
+  generateReliabilityWorkOrder,
+  getDashboardStats,
+  getMoldTelemetry,
+  getReliabilityState,
+  postMoldMaintenanceLog,
+  postReliabilityEvent,
+} from "./routes/reliability.js";
 import { getTasksForSCurve } from "./routes/tasks.js";
 import { uploadsRouter } from "./routes/uploads.js";
 import { db, sql } from "./db.js";
@@ -84,11 +97,25 @@ async function startServer() {
   app.delete("/api/dashboard/project-assets/:moldNumber/:slotType", deleteDashboardProjectAsset);
   app.get("/api/dashboard/product-data", listDashboardProductData);
   app.post("/api/dashboard/product-data/batch-upsert", batchUpsertDashboardProductData);
-  app.get("/api/dashboard/mold-trial-stages", getDashboardMoldTrialStagesState);
-  app.put("/api/dashboard/mold-trial-stages", upsertDashboardMoldTrialStagesState);
+  app.get("/api/dashboard/product-docs", listDashboardProductDocs);
+  app.patch("/api/dashboard/product-docs/:moldNumber/:slotType", upsertDashboardProductDoc);
+  app.delete("/api/dashboard/product-docs/:moldNumber/:slotType", deleteDashboardProductDoc);
+  app.get("/api/dashboard/tooling-fai-state", getDashboardToolingFaiState);
+  app.put("/api/dashboard/tooling-fai-state", upsertDashboardToolingFaiState);
+  app.delete("/api/dashboard/tooling-fai-state", deleteDashboardToolingFaiState);
+  app.get("/api/dashboard/part-fai-state", getDashboardPartFaiState);
+  app.put("/api/dashboard/part-fai-state", upsertDashboardPartFaiState);
+  app.delete("/api/dashboard/part-fai-state", deleteDashboardPartFaiState);
+  app.get("/api/dashboard/mold-trial-evidence-state", getDashboardMoldTrialEvidenceState);
+  app.put("/api/dashboard/mold-trial-evidence-state", upsertDashboardMoldTrialEvidenceState);
+  app.delete("/api/dashboard/mold-trial-evidence-state", deleteDashboardMoldTrialEvidenceState);
+  app.get("/api/dashboard/machine-sheet-state", getDashboardMachineSheetState);
+  app.put("/api/dashboard/machine-sheet-state", upsertDashboardMachineSheetState);
   app.delete("/api/dashboard/projects", clearDashboardProjects);
   app.get("/api/dashboard/health-check", getDashboardHealthCheck);
   app.get("/api/dashboard/health-check/latest", getLatestDashboardHealthCheck);
+  app.get("/api/dashboard/stats", getDashboardStats);
+  app.get("/api/dashboard/stats/:projectId", getDashboardStats);
 
   // API — 项目推进细节 (Progress Notes)
   app.get("/api/dashboard/progress-notes/:moldNumber", getProgressNotes);
@@ -107,8 +134,11 @@ async function startServer() {
   app.patch("/api/issues/:id", updateIssue);
   app.delete("/api/issues/:id", deleteIssue);
   app.get("/api/mold/:moldId/telemetry", getMoldTelemetry);
-  app.post("/api/mold/:moldId/maintenance-logs", createMoldMaintenanceLog);
-  app.delete("/api/mold/:moldId/maintenance-logs/:eventId", deleteMoldMaintenanceLog);
+  app.post("/api/mold/:moldId/maintenance-logs", postMoldMaintenanceLog);
+  app.delete("/api/mold/:moldId/maintenance-logs/:id", deleteMoldMaintenanceLog);
+  app.get("/api/reliability/state/:moldId", getReliabilityState);
+  app.post("/api/reliability/event", postReliabilityEvent);
+  app.post("/api/reliability/work-order", generateReliabilityWorkOrder);
 
   if (!isDevApiOnly) {
     const staticPath =
@@ -146,13 +176,16 @@ async function startServer() {
   const warmupResults = await Promise.allSettled([
     ensureDashboardProjectAssetsTable(),
     ensureDashboardProductDataTable(),
-    ensureDashboardMoldTrialStagesTable(),
+    ensureDashboardToolingFaiTable(),
+    ensureDashboardPartFaiTable(),
+    ensureDashboardMoldTrialEvidenceTable(),
+    ensureDashboardMachineSheetTable(),
     ensureDashboardHealthTable(),
     ensureDashboardModuleOrderTable(),
     ensureBackupTable(),
     ensureProgressAuditTable(),
     ensureIssuesTable(),
-    ensureMoldMaintenanceTable(),
+    ensureReliabilityTables(),
   ]);
 
   warmupResults.forEach((result, index) => {

@@ -11,6 +11,17 @@ async function loadSource(relativePath: string): Promise<string> {
 }
 
 describe('product data workspace error boundaries', () => {
+  it('keeps an eight-slot product media grid without restoring the deprecated product 2d card', async () => {
+    const source = await loadSource('./pages/dashboard/components/ProductDataWorkspace.tsx');
+
+    expect(source).toContain("id: 'product3dExtra'");
+    expect(source).toContain("id: 'productPhotoExtra'");
+    expect(source).toContain("id: 'mold3dExtra'");
+    expect(source).toContain("id: 'moldPhotoExtra'");
+    expect(source).not.toContain("label: '产品2D图'");
+    expect(source).toContain('md:grid-cols-4');
+  });
+
   it('keeps project asset save failures on normalized dashboard api errors only', async () => {
     const source = await loadSource('./pages/dashboard/components/ProductDataWorkspace.tsx');
 
@@ -44,5 +55,19 @@ describe('product data workspace error boundaries', () => {
 
     expect(source).toMatch(/if \(!response\.ok\) \{\s*return;\s*\}/s);
     expect(source).not.toContain('throw new Error(`HTTP ${response.status}`);');
+  });
+
+  it('keeps trial-style lightbox keyboard navigation on the product image preview', async () => {
+    const source = await loadSource('./pages/dashboard/components/ProductDataWorkspace.tsx');
+
+    expect(source).toContain('openLightbox(productKey, activeSlotId)');
+    expect(source).toContain("event.key === 'Escape'");
+    expect(source).toContain("event.key === 'ArrowLeft'");
+    expect(source).toContain("event.key === 'ArrowRight'");
+    expect(source).toContain('navigateLightbox(-1)');
+    expect(source).toContain('navigateLightbox(1)');
+    expect(source).toContain("aria-label=\"Rotate left\"");
+    expect(source).toContain("aria-label=\"Rotate right\"");
+    expect(source).toContain("aria-label=\"Close preview\"");
   });
 });

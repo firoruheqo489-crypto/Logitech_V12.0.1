@@ -5,9 +5,9 @@ param(
   [string]$OutputDir = "artifacts/releases",
   [string]$HostAlias = "",
   [string]$RemoteDir = "",
-  [string]$DeployConfigPath = "",
   [switch]$SkipVerification,
-  [switch]$PreflightOnly
+  [switch]$PreflightOnly,
+  [switch]$AllowDirtyWorkspace
 )
 
 Set-StrictMode -Version Latest
@@ -16,6 +16,48 @@ $ErrorActionPreference = "Stop"
 function Log($msg) { Write-Host "[OK] $msg" -ForegroundColor Green }
 function Warn($msg) { Write-Host "[!!] $msg" -ForegroundColor Yellow }
 function Err($msg) { Write-Host "[ERR] $msg" -ForegroundColor Red; exit 1 }
+
+function Resolve-DeployHostAlias([string]$ConfiguredHostAlias) {
+  if (-not [string]::IsNullOrWhiteSpace($ConfiguredHostAlias)) {
+    return $ConfiguredHostAlias.Trim()
+  }
+
+  $envHostAlias = [string]$env:DEPLOY_HOST_ALIAS
+  if (-not [string]::IsNullOrWhiteSpace($envHostAlias)) {
+    return $envHostAlias.Trim()
+  }
+
+  return "aliyun"
+}
+
+function Resolve-DeployRemoteDir([string]$ConfiguredRemoteDir) {
+  $candidate = $ConfiguredRemoteDir
+  if ([string]::IsNullOrWhiteSpace($candidate)) {
+    $candidate = [string]$env:DEPLOY_REMOTE_DIR
+  }
+  if ([string]::IsNullOrWhiteSpace($candidate)) {
+    $candidate = "/var/www/logitech"
+  }
+
+  $normalized = $candidate.Trim()
+  while ($normalized.EndsWith("/") -and $normalized.Length -gt 1) {
+    $normalized = $normalized.Substring(0, $normalized.Length - 1)
+  }
+
+  if (-not $normalized.StartsWith("/")) {
+    Err "RemoteDir must be an absolute Unix path, for example /var/www/logitech."
+  }
+
+  if ($normalized -eq "/") {
+    Err "RemoteDir cannot be the filesystem root."
+  }
+
+  if ($normalized -match '[\s''"`$&|;<>\(\)\{\}\[\]]') {
+    Err "RemoteDir contains unsupported characters. Use a simple absolute Unix path without spaces or shell metacharacters."
+  }
+
+  return $normalized
+}
 
 function Invoke-Step {
   param(
@@ -74,9 +116,10 @@ function Get-LocalPackageVersion([string]$Root) {
   return $null
 }
 
-function Get-RemoteReleaseVersion($DeployConfig) {
-  $cmd = "if [ -f $($DeployConfig.RemoteDir)/dist/release.json ]; then cat $($DeployConfig.RemoteDir)/dist/release.json; elif [ -f $($DeployConfig.RemoteDir)/package.json ]; then cat $($DeployConfig.RemoteDir)/package.json; fi"
-  $raw = Invoke-DeploySsh -Config $DeployConfig -Command $cmd
+function Get-RemoteReleaseVersion([string]$TargetHost, [string]$TargetRemoteDir) {
+  $remoteDirLiteral = "'$TargetRemoteDir'"
+  $cmd = "if [ -f ${remoteDirLiteral}/dist/release.json ]; then cat ${remoteDirLiteral}/dist/release.json; elif [ -f ${remoteDirLiteral}/package.json ]; then cat ${remoteDirLiteral}/package.json; fi"
+  $raw = ssh $TargetHost $cmd
   if ($LASTEXITCODE -ne 0 -or -not $raw) {
     return $null
   }
@@ -121,7 +164,47 @@ function Require-CleanGitWorkspace([string]$Root) {
   }
 }
 
-function Resolve-ReleasePlan([string]$Root, [string]$BumpType, $DeployConfig) {
+function Assert-NoMixedLineEndings([string]$Root) {
+  $releasePathList = @(
+    "AGENTS.md"
+    ".gitignore"
+    "deploy.ps1"
+    "package.json"
+    "pnpm-lock.yaml"
+    "scripts/deploy-release-artifact.ps1"
+    "scripts/release-build.ps1"
+    "scripts/release-from-clean-worktree.ps1"
+    "scripts/report-local-dashboard-state.ps1"
+    "scripts/start-local-dashboard.mjs"
+    "scripts/write-release-manifest.mjs"
+    "scripts/verify-local-reliability-smoke.ps1"
+    "scripts/verify-reliability-smoke.mjs"
+    "scripts/verify-reliability-smoke.ps1"
+    "server/db.ts"
+    "server/index.ts"
+    "server/lib/reliability-engine.ts"
+    "server/release.ts"
+    "server/routes/reliability.ts"
+  )
+
+  $eolReport = git -C $Root ls-files --eol -- $releasePathList
+  if ($LASTEXITCODE -ne 0) {
+    Err "Failed to inspect git line endings."
+  }
+
+  $invalidLines = @(
+    $eolReport | Where-Object {
+      $_ -match '\bw/(mixed|crlf)\b'
+    }
+  )
+
+  if ($invalidLines.Count -gt 0) {
+    Write-Host $invalidLines -ForegroundColor Yellow
+    Err "Detected non-LF tracked files. Normalize line endings before release."
+  }
+}
+
+function Resolve-ReleasePlan([string]$Root, [string]$BumpType, [string]$TargetHost, [string]$TargetRemoteDir) {
   $localRaw = Get-LocalPackageVersion $Root
   $localVersion = Parse-SemVer $localRaw
   if (-not $localVersion) {
@@ -131,7 +214,7 @@ function Resolve-ReleasePlan([string]$Root, [string]$BumpType, $DeployConfig) {
   $baseRaw = $localRaw
   $baseSource = "local package.json"
 
-  $remoteRaw = Get-RemoteReleaseVersion $DeployConfig
+  $remoteRaw = Get-RemoteReleaseVersion $TargetHost $TargetRemoteDir
   $remoteVersion = Parse-SemVer $remoteRaw
   if ($remoteVersion) {
     $baseRaw = $remoteRaw
@@ -180,18 +263,43 @@ function Get-FreeLocalPort([int]$StartPort = 3301, [int]$MaxPort = 3399) {
   Err "Could not find a free local port between $StartPort and $MaxPort"
 }
 
-$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
-$deploySshScript = Join-Path $PSScriptRoot "deploy-ssh.ps1"
-$reuseExistingDist = $env:RELEASE_REUSE_EXISTING_DIST -eq "1"
-
-if (-not (Test-Path -LiteralPath $deploySshScript)) {
-  Err "Missing deploy SSH helper: $deploySshScript"
+function Assert-RemoteHostReachable([string]$TargetHost) {
+  $probeOutput = ssh -o BatchMode=yes -o ConnectTimeout=8 $TargetHost "printf READY"
+  if ($LASTEXITCODE -ne 0 -or $probeOutput -notmatch "^READY$") {
+    Err "Remote host alias '$TargetHost' is not reachable. Pass -HostAlias or set DEPLOY_HOST_ALIAS."
+  }
 }
 
-. $deploySshScript
+function Get-BooleanEnvLiteral([bool]$Value) {
+  if ($Value) {
+    return "true"
+  }
+
+  return "false"
+}
+
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 Push-Location $repoRoot
 try {
-  Require-CleanGitWorkspace $repoRoot
+  $resolvedHostAlias = Resolve-DeployHostAlias $HostAlias
+  $resolvedRemoteDir = Resolve-DeployRemoteDir $RemoteDir
+  Assert-RemoteHostReachable $resolvedHostAlias
+
+  Assert-NoMixedLineEndings $repoRoot
+
+  $workspaceStatus = git -C $repoRoot status --porcelain=v1 --untracked-files=all 2>$null
+  if ($LASTEXITCODE -ne 0) {
+    Err "Failed to read git workspace state."
+  }
+
+  if ($AllowDirtyWorkspace) {
+    Warn "AllowDirtyWorkspace is enabled. Using the current workspace snapshot."
+  } else {
+    if ($workspaceStatus) {
+      Write-Host $workspaceStatus -ForegroundColor Yellow
+      Err "Refusing release build from a dirty workspace."
+    }
+  }
 
   $releaseNoteNormalized = Resolve-ReleaseNote $ReleaseNote -AllowEmpty:$PreflightOnly
 
@@ -204,27 +312,21 @@ try {
     Err "Failed to resolve short git commit."
   }
 
-  $deployConfig = Get-DeployConnectionConfig -RepoRoot $repoRoot -ConfigPath $DeployConfigPath -SshTargetOverride $HostAlias -RemoteDirOverride $RemoteDir
-  $plan = Resolve-ReleasePlan $repoRoot $VersionBump $deployConfig
+  $plan = Resolve-ReleasePlan $repoRoot $VersionBump $resolvedHostAlias $resolvedRemoteDir
   $targetVersion = [string]$plan.NextVersion
   $changeType = [string]$plan.ChangeType
   Log "Release version plan: $($plan.BaseSource) $($plan.BaseVersion) -> $targetVersion ($changeType)"
 
   if (-not $SkipVerification) {
-    Invoke-Step "Running TypeScript verification..." { pnpm.cmd exec tsc --noEmit } "TypeScript verification failed"
-    $releaseGuardBundleDir = Join-Path $repoRoot ".codex-local\release-guards"
-    $releaseGuardBundlePath = Join-Path $releaseGuardBundleDir "entry.mjs"
+    Invoke-Step "Running TypeScript verification..." { pnpm exec tsc --noEmit } "TypeScript verification failed"
+    Invoke-Step "Running client release guard tests..." { pnpm exec vitest run client/src/server-index.structure.test.ts client/src/server-error-payload.structure.test.ts client/src/critical-entrypoints.structure.test.ts client/src/pages/dashboard/lib/dashboardApi.test.ts } "Client release guard tests failed"
+    Invoke-Step "Running server release guard tests..." { pnpm exec vitest run --root . server/middleware/apiCors.test.ts server/middleware/apiAccessPolicy.test.ts server/release.test.ts server/routes/progress-notes-guard.test.ts } "Server release guard tests failed"
 
-    Invoke-Step "Bundling release guard modules..." {
-      New-Item -ItemType Directory -Path $releaseGuardBundleDir -Force | Out-Null
-      pnpm.cmd exec esbuild scripts/release-guard-entry.mjs --bundle --platform=node --packages=external --format=esm --outfile=$releaseGuardBundlePath
-    } "Release guard module bundle failed"
-    Invoke-Step "Running release guard checks..." {
-      node scripts/run-release-guard-checks.mjs --bundle-path $releaseGuardBundlePath
-    } "Release guard checks failed"
+    $ossSmokePort = Get-FreeLocalPort
+    Invoke-Step "Running local OSS upload/delete smoke on port $ossSmokePort..." { powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-local-oss-smoke.ps1 -Port $ossSmokePort -Retries 60 -RetryIntervalMs 1500 } "Local OSS upload/delete smoke failed"
 
-    $smokePort = Get-FreeLocalPort
-    Invoke-Step "Running local OSS upload/delete smoke on port $smokePort..." { powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-local-oss-smoke.ps1 -Port $smokePort -Retries 40 } "Local OSS upload/delete smoke failed"
+    $reliabilitySmokePort = Get-FreeLocalPort -StartPort ($ossSmokePort + 1)
+    Invoke-Step "Running local reliability smoke on port $reliabilitySmokePort..." { powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-local-reliability-smoke.ps1 -Port $reliabilitySmokePort -Retries 60 -RetryIntervalMs 1500 } "Local reliability smoke failed"
   } else {
     Warn "SkipVerification is enabled. Build will continue without verification gates."
   }
@@ -234,19 +336,35 @@ try {
     exit 0
   }
 
-  if ($reuseExistingDist) {
-    Log "Reusing existing dist output because RELEASE_REUSE_EXISTING_DIST=1"
-  } else {
-    $originalVersionOverride = $env:RELEASE_VERSION_OVERRIDE
-    try {
-      $env:RELEASE_VERSION_OVERRIDE = $targetVersion
-      Invoke-Step "Building release bundle..." { pnpm.cmd build } "Build failed"
-    } finally {
-      if ($null -eq $originalVersionOverride) {
-        Remove-Item "Env:RELEASE_VERSION_OVERRIDE" -ErrorAction SilentlyContinue
-      } else {
-        Set-Item "Env:RELEASE_VERSION_OVERRIDE" $originalVersionOverride
-      }
+  $originalVersionOverride = $env:RELEASE_VERSION_OVERRIDE
+  $originalBuildSource = $env:RELEASE_BUILD_SOURCE
+  $originalSourceWorkspaceDirty = $env:RELEASE_SOURCE_WORKSPACE_DIRTY
+  try {
+    $env:RELEASE_VERSION_OVERRIDE = $targetVersion
+    if ([string]::IsNullOrWhiteSpace($env:RELEASE_BUILD_SOURCE)) {
+      $env:RELEASE_BUILD_SOURCE = "workspace"
+    }
+    if ([string]::IsNullOrWhiteSpace($env:RELEASE_SOURCE_WORKSPACE_DIRTY)) {
+      $env:RELEASE_SOURCE_WORKSPACE_DIRTY = Get-BooleanEnvLiteral (-not [string]::IsNullOrWhiteSpace($workspaceStatus))
+    }
+    Invoke-Step "Building release bundle..." { pnpm build } "Build failed"
+  } finally {
+    if ($null -eq $originalVersionOverride) {
+      Remove-Item "Env:RELEASE_VERSION_OVERRIDE" -ErrorAction SilentlyContinue
+    } else {
+      Set-Item "Env:RELEASE_VERSION_OVERRIDE" $originalVersionOverride
+    }
+
+    if ($null -eq $originalBuildSource) {
+      Remove-Item "Env:RELEASE_BUILD_SOURCE" -ErrorAction SilentlyContinue
+    } else {
+      Set-Item "Env:RELEASE_BUILD_SOURCE" $originalBuildSource
+    }
+
+    if ($null -eq $originalSourceWorkspaceDirty) {
+      Remove-Item "Env:RELEASE_SOURCE_WORKSPACE_DIRTY" -ErrorAction SilentlyContinue
+    } else {
+      Set-Item "Env:RELEASE_SOURCE_WORKSPACE_DIRTY" $originalSourceWorkspaceDirty
     }
   }
 
@@ -284,6 +402,9 @@ try {
   Copy-Item -Force (Join-Path $repoRoot "pnpm-lock.yaml") (Join-Path $payloadRoot "pnpm-lock.yaml")
   Copy-Item -Force (Join-Path $repoRoot "ecosystem.config.cjs") (Join-Path $payloadRoot "ecosystem.config.cjs")
   Copy-Item -Force (Join-Path $repoRoot "scripts/verify-oss-http-smoke.mjs") (Join-Path $payloadScriptsRoot "verify-oss-http-smoke.mjs")
+  Copy-Item -Force (Join-Path $repoRoot "scripts/verify-reliability-smoke.mjs") (Join-Path $payloadScriptsRoot "verify-reliability-smoke.mjs")
+  Copy-Item -Force (Join-Path $repoRoot "scripts/verify-reliability-smoke.ps1") (Join-Path $payloadScriptsRoot "verify-reliability-smoke.ps1")
+  Copy-Item -Force (Join-Path $repoRoot "scripts/verify-local-reliability-smoke.ps1") (Join-Path $payloadScriptsRoot "verify-local-reliability-smoke.ps1")
 
   if (Test-Path (Join-Path $repoRoot "patches")) {
     Copy-Item -Recurse -Force (Join-Path $repoRoot "patches") (Join-Path $payloadRoot "patches")
@@ -332,7 +453,11 @@ try {
   }
 
   $hash = Get-FileHash -Path $artifactPath -Algorithm SHA256
-  Set-Content -Path "$artifactPath.sha256" -Value "$($hash.Hash)  $([IO.Path]::GetFileName($artifactPath))" -Encoding ascii
+  [System.IO.File]::WriteAllText(
+    "$artifactPath.sha256",
+    "$($hash.Hash)  $([IO.Path]::GetFileName($artifactPath))`n",
+    [System.Text.Encoding]::ASCII
+  )
 
   $pointer = [ordered]@{
     artifactPath = $artifactPath

@@ -8,6 +8,8 @@ html, body {
   height: 100%;
   overflow: hidden;
   overscroll-behavior: none;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.24) transparent;
 }
 #root {
   position: fixed;
@@ -20,6 +22,46 @@ html, body {
   -webkit-overflow-scrolling: touch;
   overscroll-behavior-y: contain;
   overflow-anchor: none;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.24) transparent;
+}
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar,
+#root::-webkit-scrollbar {
+  height: 8px;
+  width: 8px;
+}
+
+html::-webkit-scrollbar-track,
+body::-webkit-scrollbar-track,
+#root::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+html::-webkit-scrollbar-thumb,
+body::-webkit-scrollbar-thumb,
+#root::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.24);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+html::-webkit-scrollbar-thumb:hover,
+body::-webkit-scrollbar-thumb:hover,
+#root::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.34);
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+html::-webkit-scrollbar-button,
+body::-webkit-scrollbar-button,
+#root::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 
@@ -54,6 +96,14 @@ html, body {
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-danger: var(--danger);
+  --color-danger-foreground: var(--danger-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
@@ -112,6 +162,15 @@ html, body {
   --sidebar-accent-foreground: oklch(0.18 0.02 264);
   --sidebar-border: oklch(0.92 0.004 264);
   --sidebar-ring: oklch(0.62 0.16 250);
+
+  --success: #22c55e;
+  --success-foreground: #0b0f14;
+  --warning: #f59e0b;
+  --warning-foreground: #0b0f14;
+  --danger: #ef4444;
+  --danger-foreground: #ffffff;
+  --info: #38bdf8;
+  --info-foreground: #0b0f14;
 
   /* ═══ Typography Token System — Industrial Console ═══ */
   /* Font stacks */
@@ -1664,4 +1723,36 @@ html, body {
   .report-block { break-inside: avoid; page-break-inside: avoid; }
   .meta-card { break-inside: avoid; }
   @page { size: A4; margin: 12mm; }
+}
+
+/* ── Subtle scrollbar utility ── */
+.scrollbar-soft {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.24) transparent;
+}
+.scrollbar-soft::-webkit-scrollbar {
+  height: 8px;
+  width: 8px;
+}
+.scrollbar-soft::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scrollbar-soft::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.24);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+.scrollbar-soft::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.34);
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+.scrollbar-soft::-webkit-scrollbar-corner {
+  background: transparent;
+}
+.scrollbar-soft::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
 }

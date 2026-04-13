@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useId, useMemo, useState, type ChangeEvent } from "react";
+import { EVENT_TYPE_CONFIG, type EventType } from "@/lib/mold-health-types";
 import type {
   MaintenanceEvent,
   MaintenanceEventLabelKey,
@@ -8,9 +9,11 @@ import type {
 import {
   SVG_HEIGHT,
   SVG_WIDTH,
+  formatHazardValue,
   generateCurvePath,
   generateFillPath,
   getMaxHazard,
+  getRenderedBathtubHazard,
   getXAxisLabels,
   getZoneMeta,
   hazardRate,
@@ -19,6 +22,9 @@ import {
 
 interface ToolingLifecycleBathtubChartProps {
   currentShots: number;
+  realTimeShots: number;
+  activeShotLine: "simulated" | "realtime";
+  onActiveShotLineChange: (line: "simulated" | "realtime") => void;
   onShotsChange: (shots: number) => void;
   maxLifespan: number;
   isCalibrated: boolean;
@@ -37,28 +43,91 @@ const MAINTENANCE_EVENT_LABELS: Record<MaintenanceEventLabelKey, string> = {
   ejector_pin_break: "顶针断裂 (CM)",
 };
 
+const MAJOR_REPAIR_RADIUS = 6;
+const CORRECTIVE_REPAIR_RADIUS = MAJOR_REPAIR_RADIUS * Math.SQRT1_2;
+
+const EVENT_MARKER_STYLE: Record<
+  EventType,
+  {
+    radius: number;
+    lineStroke: string;
+    markerFill: string;
+    markerStroke: string;
+    haloFill: string;
+    badgeClassName: string;
+    detailClassName: string;
+  }
+> = {
+  SICKNESS: {
+    radius: CORRECTIVE_REPAIR_RADIUS,
+    lineStroke: "#eab308",
+    markerFill: "rgba(250, 204, 21, 0.9)",
+    markerStroke: "#fde047",
+    haloFill: "rgba(250, 204, 21, 0.22)",
+    badgeClassName: "border-amber-700/50 bg-amber-950/85 text-amber-300",
+    detailClassName: "border-amber-700/40 bg-amber-950/90 text-amber-200",
+  },
+  SURGERY: {
+    radius: MAJOR_REPAIR_RADIUS,
+    lineStroke: "#dc2626",
+    markerFill: "rgba(220, 38, 38, 0.72)",
+    markerStroke: "#f87171",
+    haloFill: "rgba(220, 38, 38, 0.18)",
+    badgeClassName: "border-red-700/50 bg-red-950/85 text-red-300",
+    detailClassName: "border-red-700/40 bg-red-950/90 text-red-200",
+  },
+  CHECKUP: {
+    radius: 4.5,
+    lineStroke: "#10b981",
+    markerFill: "rgba(16, 185, 129, 0.68)",
+    markerStroke: "#34d399",
+    haloFill: "rgba(16, 185, 129, 0.14)",
+    badgeClassName: "border-emerald-700/50 bg-emerald-950/85 text-emerald-300",
+    detailClassName: "border-emerald-700/40 bg-emerald-950/90 text-emerald-200",
+  },
+};
+
 export function ToolingLifecycleBathtubChart({
   currentShots,
+  realTimeShots,
+  activeShotLine,
+  onActiveShotLineChange,
   onShotsChange,
   maxLifespan,
   isCalibrated,
   events,
 }: ToolingLifecycleBathtubChartProps) {
   const curvePath = useMemo(
-    () => generateCurvePath(maxLifespan),
-    [maxLifespan]
+    () => generateCurvePath(maxLifespan, events),
+    [events, maxLifespan]
   );
-  const fillPath = useMemo(() => generateFillPath(maxLifespan), [maxLifespan]);
-  const maxHazard = useMemo(() => getMaxHazard(maxLifespan), [maxLifespan]);
+  const fillPath = useMemo(
+    () => generateFillPath(maxLifespan, events),
+    [events, maxLifespan]
+  );
+  const maxHazard = useMemo(
+    () => getMaxHazard(maxLifespan, events),
+    [events, maxLifespan]
+  );
   const [hoveredEvent, setHoveredEvent] = useState<string | null>(null);
   const defsId = useId().replace(/:/g, "");
 
   const scrubberX = (currentShots / maxLifespan) * 100;
-  const currentHazard = hazardRate(currentShots, maxLifespan);
+  const currentHazard = hazardRate(currentShots, maxLifespan, events);
+  const currentRenderedHazard = getRenderedBathtubHazard(currentShots, maxLifespan);
   const scrubberSvgX = (currentShots / maxLifespan) * SVG_WIDTH;
   const scrubberSvgY =
     SVG_HEIGHT -
-    (currentHazard / maxHazard) * (SVG_HEIGHT * 0.85) -
+    (currentRenderedHazard / maxHazard) * (SVG_HEIGHT * 0.85) -
+    SVG_HEIGHT * 0.05;
+  const clampedRealTimeShots = Math.max(0, Math.min(realTimeShots, maxLifespan));
+  const realTimeX = (clampedRealTimeShots / maxLifespan) * 100;
+  const realTimeHazard = hazardRate(clampedRealTimeShots, maxLifespan, events);
+  const realTimeRenderedHazard = getRenderedBathtubHazard(clampedRealTimeShots, maxLifespan);
+  const realTimeSvgX = (clampedRealTimeShots / maxLifespan) * SVG_WIDTH;
+  const realTimeSvgY =
+    SVG_HEIGHT -
+    (realTimeRenderedHazard / maxHazard) * (SVG_HEIGHT * 0.85) -
     SVG_HEIGHT * 0.05;
   const zoneInfo = getZoneMeta(currentShots, maxLifespan);
 
@@ -99,7 +168,7 @@ export function ToolingLifecycleBathtubChart({
             </span>
           )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           <span
             className={`text-[11px] font-semibold tabular-nums ${zoneInfo.color}`}
           >
@@ -109,6 +178,30 @@ export function ToolingLifecycleBathtubChart({
           <span className="text-[11px] text-slate-400">
             {ZONE_SUMMARY_LABELS[zoneInfo.zoneId]}
           </span>
+          <div className="ml-2 flex items-center">
+            <button
+              type="button"
+              onClick={() => onActiveShotLineChange("realtime")}
+              className={`rounded-l border px-3 py-1 text-[11px] font-medium leading-tight transition-colors ${
+                activeShotLine === "realtime"
+                  ? "border-cyan-500/50 bg-cyan-500/15 text-cyan-300"
+                  : "border-slate-700 bg-slate-900/80 text-slate-500 hover:text-slate-300"
+              }`}
+            >
+              实时模数
+            </button>
+            <button
+              type="button"
+              onClick={() => onActiveShotLineChange("simulated")}
+              className={`-ml-px rounded-r border px-3 py-1 text-[11px] font-medium leading-tight transition-colors ${
+                activeShotLine === "simulated"
+                  ? "border-amber-500/50 bg-amber-500/15 text-amber-300"
+                  : "border-slate-700 bg-slate-900/80 text-slate-500 hover:text-slate-300"
+              }`}
+            >
+              模拟模数
+            </button>
+          </div>
         </div>
       </div>
 
@@ -266,22 +359,22 @@ export function ToolingLifecycleBathtubChart({
 
           {visibleEvents.map(eventItem => {
             const eventX = (eventItem.shots / maxLifespan) * SVG_WIDTH;
-            const eventHazard = hazardRate(eventItem.shots, maxLifespan);
+            const eventHazard = getRenderedBathtubHazard(eventItem.shots, maxLifespan);
             const eventY =
               SVG_HEIGHT -
               (eventHazard / maxHazard) * (SVG_HEIGHT * 0.85) -
               SVG_HEIGHT * 0.05;
-            const size = 6;
-            const isPmEvent = eventItem.type === "PM";
+            const markerStyle = EVENT_MARKER_STYLE[eventItem.sourceType];
+            const haloRadius = markerStyle.radius * 1.8;
 
             return (
               <g key={eventItem.id}>
                 <line
                   x1={eventX}
-                  y1={eventY + size + 2}
+                  y1={eventY + markerStyle.radius + 2}
                   x2={eventX}
                   y2={SVG_HEIGHT}
-                  stroke={isPmEvent ? "#f59e0b" : "#f43f5e"}
+                  stroke={markerStyle.lineStroke}
                   strokeWidth="1"
                   strokeDasharray="3 4"
                   opacity="0.3"
@@ -289,28 +382,23 @@ export function ToolingLifecycleBathtubChart({
                 />
                 <g
                   transform={`translate(${eventX}, ${eventY})`}
-                  className={isPmEvent ? "" : "animate-pulse"}
                   onMouseEnter={() => setHoveredEvent(eventItem.id)}
                   onMouseLeave={() => setHoveredEvent(null)}
                   style={{ cursor: "pointer" }}
                 >
-                  {!isPmEvent && (
-                    <circle
-                      cx={0}
-                      cy={0}
-                      r={12}
-                      fill="rgba(244, 63, 94, 0.2)"
-                      stroke="none"
-                    />
-                  )}
-                  <polygon
-                    points={`0,${-size} ${size},0 0,${size} ${-size},0`}
-                    fill={
-                      isPmEvent
-                        ? "rgba(245, 158, 11, 0.5)"
-                        : "rgba(244, 63, 94, 0.7)"
-                    }
-                    stroke={isPmEvent ? "#f59e0b" : "#fb7185"}
+                  <circle
+                    cx={0}
+                    cy={0}
+                    r={haloRadius}
+                    fill={markerStyle.haloFill}
+                    stroke="none"
+                  />
+                  <circle
+                    cx={0}
+                    cy={0}
+                    r={markerStyle.radius}
+                    fill={markerStyle.markerFill}
+                    stroke={markerStyle.markerStroke}
                     strokeWidth="1.5"
                     vectorEffect="non-scaling-stroke"
                   />
@@ -319,43 +407,82 @@ export function ToolingLifecycleBathtubChart({
             );
           })}
 
-          <line
-            x1={scrubberSvgX}
-            y1={0}
-            x2={scrubberSvgX}
-            y2={SVG_HEIGHT}
-            stroke="#f59e0b"
-            strokeWidth="1"
-            strokeDasharray="4 3"
-            opacity="0.7"
-            vectorEffect="non-scaling-stroke"
-          />
+          {activeShotLine === "realtime" ? (
+            <>
+              <line
+                x1={realTimeSvgX}
+                y1={0}
+                x2={realTimeSvgX}
+                y2={SVG_HEIGHT}
+                stroke="#22d3ee"
+                strokeWidth="1"
+                strokeDasharray="5 4"
+                opacity="0.75"
+                vectorEffect="non-scaling-stroke"
+              />
 
-          <circle
-            cx={scrubberSvgX}
-            cy={scrubberSvgY}
-            r="5"
-            fill="#f59e0b"
-            stroke="#030712"
-            strokeWidth="2"
-            vectorEffect="non-scaling-stroke"
-          />
-          <circle
-            cx={scrubberSvgX}
-            cy={scrubberSvgY}
-            r="10"
-            fill="none"
-            stroke="#f59e0b"
-            strokeWidth="1"
-            opacity="0.3"
-            vectorEffect="non-scaling-stroke"
-          />
+              <circle
+                cx={realTimeSvgX}
+                cy={realTimeSvgY}
+                r="4.5"
+                fill="#22d3ee"
+                stroke="#082f49"
+                strokeWidth="2"
+                vectorEffect="non-scaling-stroke"
+              />
+              <circle
+                cx={realTimeSvgX}
+                cy={realTimeSvgY}
+                r="9"
+                fill="none"
+                stroke="#22d3ee"
+                strokeWidth="1"
+                opacity="0.22"
+                vectorEffect="non-scaling-stroke"
+              />
+            </>
+          ) : (
+            <>
+              <line
+                x1={scrubberSvgX}
+                y1={0}
+                x2={scrubberSvgX}
+                y2={SVG_HEIGHT}
+                stroke="#f59e0b"
+                strokeWidth="1"
+                strokeDasharray="4 3"
+                opacity="0.7"
+                vectorEffect="non-scaling-stroke"
+              />
+
+              <circle
+                cx={scrubberSvgX}
+                cy={scrubberSvgY}
+                r="5"
+                fill="#f59e0b"
+                stroke="#030712"
+                strokeWidth="2"
+                vectorEffect="non-scaling-stroke"
+              />
+              <circle
+                cx={scrubberSvgX}
+                cy={scrubberSvgY}
+                r="10"
+                fill="none"
+                stroke="#f59e0b"
+                strokeWidth="1"
+                opacity="0.3"
+                vectorEffect="non-scaling-stroke"
+              />
+            </>
+          )}
         </svg>
 
         {visibleEvents.map(eventItem => {
           const pctX = (eventItem.shots / maxLifespan) * 100;
-          const isPmEvent = eventItem.type === "PM";
           const isHovered = hoveredEvent === eventItem.id;
+          const markerStyle = EVENT_MARKER_STYLE[eventItem.sourceType];
+          const eventTypeLabel = EVENT_TYPE_CONFIG[eventItem.sourceType].labelZh;
 
           return (
             <div
@@ -370,24 +497,16 @@ export function ToolingLifecycleBathtubChart({
               }}
             >
               <div
-                className={`rounded border px-1.5 py-0.5 text-[8px] font-mono tabular-nums whitespace-nowrap ${
-                  isPmEvent
-                    ? "border-amber-700/50 bg-amber-950/80 text-amber-400"
-                    : "border-rose-700/50 bg-rose-950/80 text-rose-400"
-                }`}
+                className={`rounded border px-1.5 py-0.5 text-[8px] font-mono tabular-nums whitespace-nowrap ${markerStyle.badgeClassName}`}
               >
                 {(eventItem.shots / 1000).toFixed(
                   eventItem.shots % 1000 === 0 ? 0 : 1
                 )}
-                K: {eventItem.type}
+                K: {eventTypeLabel}
               </div>
               {isHovered && (
                 <div
-                  className={`mt-0.5 rounded border px-1.5 py-0.5 text-[8px] font-mono whitespace-nowrap ${
-                    isPmEvent
-                      ? "border-amber-700/40 bg-amber-950/90 text-amber-300"
-                      : "border-rose-700/40 bg-rose-950/90 text-rose-300"
-                  }`}
+                  className={`mt-0.5 rounded border px-1.5 py-0.5 text-[8px] font-mono whitespace-nowrap ${markerStyle.detailClassName}`}
                 >
                   {MAINTENANCE_EVENT_LABELS[eventItem.labelKey]}
                 </div>
@@ -396,22 +515,41 @@ export function ToolingLifecycleBathtubChart({
           );
         })}
 
-        <div
-          className="pointer-events-none absolute top-2 z-30"
-          style={{
-            left: `${scrubberX}%`,
-            transform: `translateX(${scrubberX > 80 ? "-100%" : scrubberX < 10 ? "0%" : "-50%"})`,
-          }}
-        >
-          <div className="rounded border border-amber-500/30 bg-slate-900/95 px-2 py-1 backdrop-blur-sm">
-            <p className="text-[10px] font-semibold tabular-nums text-amber-400">
-              {currentShots.toLocaleString()} shots
-            </p>
-            <p className="text-[9px] tabular-nums text-slate-500">
-              h(t) = {currentHazard.toFixed(4)}
-            </p>
+        {activeShotLine === "simulated" ? (
+          <div
+            className="pointer-events-none absolute top-2 z-30"
+            style={{
+              left: `${scrubberX}%`,
+              transform: `translateX(${scrubberX > 80 ? "-100%" : scrubberX < 10 ? "0%" : "-50%"})`,
+            }}
+          >
+            <div className="rounded border border-amber-500/30 bg-slate-900/95 px-2 py-1 backdrop-blur-sm">
+              <p className="text-[10px] font-semibold tabular-nums text-amber-400">
+                模拟模数 {currentShots.toLocaleString()}
+              </p>
+              <p className="text-[9px] tabular-nums text-slate-500">
+                Simulated | h(t) = {formatHazardValue(currentHazard)}
+              </p>
+            </div>
           </div>
-        </div>
+        ) : (
+          <div
+            className="pointer-events-none absolute top-2 z-30"
+            style={{
+              left: `${realTimeX}%`,
+              transform: `translateX(${realTimeX > 80 ? "-100%" : realTimeX < 10 ? "0%" : "-50%"})`,
+            }}
+          >
+            <div className="rounded border border-cyan-500/30 bg-slate-900/95 px-2 py-1 backdrop-blur-sm">
+              <p className="text-[10px] font-semibold tabular-nums text-cyan-300">
+                实时模数 {clampedRealTimeShots.toLocaleString()}
+              </p>
+              <p className="text-[9px] tabular-nums text-slate-500">
+                Real-Time | h(t) = {formatHazardValue(realTimeHazard)}
+              </p>
+            </div>
+          </div>
+        )}
 
         <input
           type="range"
@@ -420,7 +558,10 @@ export function ToolingLifecycleBathtubChart({
           step={1000}
           value={currentShots}
           onChange={handleSliderChange}
-          className="absolute inset-0 z-20 h-full w-full cursor-ew-resize opacity-0"
+          disabled={activeShotLine === "realtime"}
+          className={`absolute inset-0 z-20 h-full w-full opacity-0 ${
+            activeShotLine === "realtime" ? "cursor-default" : "cursor-ew-resize"
+          }`}
           aria-label="Mold shot count scrubber"
         />
       </div>

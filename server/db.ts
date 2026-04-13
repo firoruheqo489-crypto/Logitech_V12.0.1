@@ -15,8 +15,9 @@ import * as schema from '../shared/schema.js';
 const connectionString = process.env.DATABASE_URL;
 const parsedPoolMax = Number.parseInt(process.env.DB_POOL_MAX || '4', 10);
 const poolMax = Number.isFinite(parsedPoolMax) ? Math.min(Math.max(parsedPoolMax, 1), 10) : 4;
+const isTestEnv = process.env.NODE_ENV === 'test' || process.env.VITEST === 'true' || process.env.VITEST === '1';
 
-if (!connectionString) {
+if (!connectionString && !isTestEnv) {
   console.warn(
     '⚠️  DATABASE_URL not set. Database operations will not be available.\n' +
       '   Set DATABASE_URL in your .env file to connect to Supabase V3.\n' +

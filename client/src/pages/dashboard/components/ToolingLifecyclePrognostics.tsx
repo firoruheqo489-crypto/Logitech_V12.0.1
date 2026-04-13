@@ -2,17 +2,27 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Activity, Download } from "lucide-react";
-import { ToolingLifecycleActionCards } from "./tooling-lifecycle/ToolingLifecycleActionCards";
 import { ToolingLifecycleBathtubChart } from "./tooling-lifecycle/ToolingLifecycleBathtubChart";
 import { ToolingLifecycleStatusPanels } from "./tooling-lifecycle/ToolingLifecycleStatusPanels";
 import { ToolingLifecycleWeibullPanel } from "./tooling-lifecycle/ToolingLifecycleWeibullPanel";
+import { MoldClinicalScorecard } from "@/components/mold-health/mold-clinical-scorecard";
+import type { MoldHealthEvent } from "@/lib/mold-health-types";
 import {
   DEFAULT_TOOLING_LIFECYCLE_STATE,
   DEFAULT_WEIBULL_PARAMETERS,
+  type MaintenanceEvent,
   type ToolingLifecycleState,
 } from "./tooling-lifecycle/toolingLifecycleModel";
-import { buildQuickJumpPoints } from "./tooling-lifecycle/toolingLifecycleMath";
+import {
+  buildQuickJumpPoints,
+  getLivingWeibullBeta,
+  getReliabilityRatio,
+  hazardRate,
+} from "./tooling-lifecycle/toolingLifecycleMath";
 import { useWeibullEngine } from "./tooling-lifecycle/useWeibullEngine";
+import { MOCK_ASSET, MOCK_EVENTS } from "@/lib/mold-health-data";
+import { fetchMoldTelemetry, type MoldTelemetrySnapshot } from "@/lib/mold-health-api";
+import type { MoldAssetInfo } from "@/lib/mold-health-types";
 
 interface ToolingLifecyclePrognosticsProps {
   moldId?: string;
@@ -20,13 +30,57 @@ interface ToolingLifecyclePrognosticsProps {
 }
 
 export default function ToolingLifecyclePrognostics({
-  moldId = "LA26006",
-  moldNo = "NO. 1",
+  moldId = "LA26021",
+  moldNo = "LA26021",
 }: ToolingLifecyclePrognosticsProps) {
   const [lifecycleState, setLifecycleState] = useState<ToolingLifecycleState>(
     DEFAULT_TOOLING_LIFECYCLE_STATE
   );
-  const { currentShots, isCalibrated, events } = lifecycleState;
+  const [activeShotLine, setActiveShotLine] = useState<"simulated" | "realtime">("simulated");
+  const { currentShots, isCalibrated } = lifecycleState;
+  const [telemetrySnapshot, setTelemetrySnapshot] = useState<MoldTelemetrySnapshot | null>(null);
+
+  const linkedEvents = telemetrySnapshot?.events ?? MOCK_EVENTS;
+  const repairHistory = useMemo<MaintenanceEvent[]>(() => {
+    const timelineShotsById = new Map(
+      (telemetrySnapshot?.timeline ?? []).map(entry => [entry.id, entry.currentShots])
+    );
+
+    const resolveSourceType = (eventItem: MoldHealthEvent): MoldHealthEvent["type"] => {
+      if (eventItem.type === "CHECKUP") return "CHECKUP";
+      if (eventItem.repairAction === "WEAR_PART_CLEAN_POLISH") return "SICKNESS";
+      if (
+        eventItem.repairAction === "INSERT_REPLACEMENT_LOCAL_REFIT" ||
+        eventItem.repairAction === "WELDING_MAJOR_MACHINING"
+      ) {
+        return "SURGERY";
+      }
+      return eventItem.type;
+    };
+
+    return linkedEvents
+      .map((eventItem: MoldHealthEvent) => {
+        const sourceType = resolveSourceType(eventItem);
+        const eventType: MaintenanceEvent["type"] =
+          sourceType === "CHECKUP" ? "PM" : "CM";
+        const labelKey: MaintenanceEvent["labelKey"] =
+          sourceType === "CHECKUP"
+            ? "routine_pm"
+            : eventItem.diagnosis === "顶针折断"
+              ? "ejector_pin_break"
+              : "slider_jam";
+
+        return {
+          id: eventItem.id,
+          shots: Math.max(0, Math.trunc(timelineShotsById.get(eventItem.id) ?? currentShots)),
+          type: eventType,
+          sourceType,
+          labelKey,
+          recoveryRate: Math.max(0, Math.min(1, eventItem.recoveryRating)),
+        } satisfies MaintenanceEvent;
+      })
+      .sort((left, right) => left.shots - right.shots);
+  }, [currentShots, linkedEvents, telemetrySnapshot?.timeline]);
 
   const {
     parameters,
@@ -34,9 +88,59 @@ export default function ToolingLifecyclePrognostics({
     currentReliability,
     currentHazardRate,
     wearOutThreshold,
-  } = useWeibullEngine(currentShots, isCalibrated, DEFAULT_WEIBULL_PARAMETERS);
+  } = useWeibullEngine(
+    currentShots,
+    isCalibrated,
+    repairHistory,
+    DEFAULT_WEIBULL_PARAMETERS
+  );
 
   const isInDeathSpiral = isCalibrated && currentShots >= wearOutThreshold;
+
+  const realTimeShots = useMemo(() => {
+    const timelineShotsById = new Map(
+      (telemetrySnapshot?.timeline ?? []).map(entry => [entry.id, entry.currentShots])
+    );
+
+    const eventsWithShots = linkedEvents
+      .map(eventItem => ({
+        timestamp: eventItem.timestamp.getTime(),
+        shots: Math.max(0, Math.trunc(timelineShotsById.get(eventItem.id) ?? 0)),
+      }))
+      .sort((left, right) => left.timestamp - right.timestamp);
+
+    const latestResetTimestamp = [...eventsWithShots]
+      .reverse()
+      .find(eventItem => eventItem.shots === 0)?.timestamp;
+
+    const activeSegment =
+      typeof latestResetTimestamp === "number"
+        ? eventsWithShots.filter(eventItem => eventItem.timestamp >= latestResetTimestamp)
+        : eventsWithShots;
+
+    return activeSegment.reduce(
+      (maxShots, eventItem) => Math.max(maxShots, eventItem.shots),
+      0
+    );
+  }, [linkedEvents, telemetrySnapshot?.timeline]);
+
+  const displayedShots = activeShotLine === "realtime" ? realTimeShots : currentShots;
+  const displayedReliability = useMemo(
+    () => getReliabilityRatio(displayedShots, activeEta, repairHistory) * 100,
+    [activeEta, displayedShots, repairHistory]
+  );
+  const displayedHazardRate = useMemo(
+    () => hazardRate(displayedShots, activeEta, repairHistory),
+    [activeEta, displayedShots, repairHistory]
+  );
+  const displayedBeta = useMemo(
+    () => getLivingWeibullBeta(displayedShots, activeEta, repairHistory),
+    [activeEta, displayedShots, repairHistory]
+  );
+  const displayedParameters = useMemo(
+    () => ({ ...parameters, beta: displayedBeta }),
+    [displayedBeta, parameters]
+  );
 
   useEffect(() => {
     if (isCalibrated && currentShots > activeEta) {
@@ -60,9 +164,11 @@ export default function ToolingLifecyclePrognostics({
   );
 
   const handleCalibrate = useCallback(() => {
-    setLifecycleState(prev =>
-      prev.isCalibrated ? prev : { ...prev, isCalibrated: true }
-    );
+    setLifecycleState(prev => ({ ...prev, isCalibrated: true }));
+  }, []);
+
+  const handleRollback = useCallback(() => {
+    setLifecycleState(prev => ({ ...prev, isCalibrated: false }));
   }, []);
 
   const handleGenerateReport = useCallback(async () => {
@@ -75,6 +181,71 @@ export default function ToolingLifecyclePrognostics({
       "资产减值与定责报告已生成，保存在本地缓存。请视行政博弈需要，决定是否流转至财务部。"
     );
   }, [currentShots, isCalibrated, moldId]);
+
+  const loadMoldTelemetry = useCallback(async () => {
+    try {
+      const next = await fetchMoldTelemetry(moldId, moldNo);
+      setTelemetrySnapshot(next);
+    } catch {
+      setTelemetrySnapshot(null);
+    }
+  }, [moldId, moldNo]);
+
+  useEffect(() => {
+    void loadMoldTelemetry();
+  }, [loadMoldTelemetry]);
+
+  useEffect(() => {
+    setLifecycleState(prev => {
+      if (prev.currentShots === realTimeShots) return prev;
+      return {
+        ...prev,
+        currentShots: realTimeShots,
+      };
+    });
+  }, [realTimeShots]);
+
+  const linkedAsset = useMemo<MoldAssetInfo>(() => {
+    const telemetryAsset = telemetrySnapshot?.asset ?? MOCK_ASSET;
+    const reliabilityRatio = Math.max(0, Math.min(1, currentReliability / 100));
+    const resolvedDesignLife = Math.max(1, activeEta || telemetryAsset.designLife || 1_000_000);
+    const latestEvent = [...linkedEvents].sort(
+      (left, right) => right.timestamp.getTime() - left.timestamp.getTime()
+    )[0];
+    const healthScore = Math.round(reliabilityRatio * 100);
+    const riskLevel: MoldAssetInfo["riskLevel"] =
+      healthScore >= 85
+        ? "LOW"
+        : healthScore >= 70
+          ? "MODERATE"
+          : healthScore >= 50
+            ? "HIGH"
+            : "CRITICAL";
+
+    return {
+      ...telemetryAsset,
+      moldId,
+      moldName: telemetryAsset.moldName || `Mold ${moldNo}`,
+      totalShots: realTimeShots,
+      designLife: resolvedDesignLife,
+      currentReliability: reliabilityRatio,
+      weibullBeta: parameters.beta,
+      weibullEta: activeEta,
+      lastMaintenanceDate: latestEvent?.timestamp ?? telemetryAsset.lastMaintenanceDate,
+      healthScore,
+      riskLevel,
+    };
+  }, [
+    activeEta,
+    currentReliability,
+    currentShots,
+    linkedEvents,
+    moldId,
+    moldNo,
+    parameters.beta,
+    realTimeShots,
+    telemetrySnapshot?.asset,
+  ]);
 
   return (
     <section
@@ -187,10 +358,13 @@ export default function ToolingLifecyclePrognostics({
               <div className="relative z-10 flex items-center justify-between rounded border border-slate-800 bg-slate-900/40 px-4 py-3">
                 <div>
                   <p className="text-[9px] uppercase tracking-[0.15em] text-slate-600">
-                    Shot Counter
+                    {activeShotLine === "realtime" ? "Real-Time Shots" : "Simulated Shots"}
                   </p>
-                  <p className="text-2xl font-bold tracking-tight text-amber-400 md:text-3xl">
-                    {currentShots.toLocaleString()}
+                  <p className={`text-2xl font-bold tracking-tight md:text-3xl ${activeShotLine === "realtime" ? "text-cyan-300" : "text-amber-400"}`}>
+                    {displayedShots.toLocaleString()}
+                  </p>
+                  <p className={`mt-1 text-[10px] tracking-[0.12em] ${activeShotLine === "realtime" ? "text-cyan-400/90" : "text-amber-300/90"}`}>
+                    {activeShotLine === "realtime" ? "实时模数 / Real-Time" : "模拟模数 / Simulated"}: {displayedShots.toLocaleString()}
                   </p>
                 </div>
                 <div className="text-right">
@@ -223,26 +397,30 @@ export default function ToolingLifecyclePrognostics({
               <div className="relative z-10">
                 <ToolingLifecycleBathtubChart
                   currentShots={currentShots}
+                  realTimeShots={realTimeShots}
+                  activeShotLine={activeShotLine}
+                  onActiveShotLineChange={setActiveShotLine}
                   onShotsChange={handleShotsChange}
                   maxLifespan={activeEta}
                   isCalibrated={isCalibrated}
-                  events={events}
+                  events={repairHistory}
                 />
               </div>
 
               <div className="relative z-10 flex flex-wrap gap-2">
                 {quickJumps.map(value => {
-                  const isActive = Math.abs(currentShots - value) < 5000;
+                  const isActive = activeShotLine === "simulated" && Math.abs(currentShots - value) < 5000;
                   return (
                     <button
                       key={value}
                       type="button"
                       onClick={() => handleShotsChange(value)}
+                      disabled={activeShotLine === "realtime"}
                       className={`cursor-pointer rounded border px-2 py-1 text-[10px] transition-colors ${
                         isActive
                           ? "border-amber-500/50 bg-amber-500/10 text-amber-400"
                           : "border-slate-800 bg-slate-900/30 text-slate-500 hover:border-slate-700 hover:text-slate-400"
-                      }`}
+                      } ${activeShotLine === "realtime" ? "cursor-not-allowed opacity-40" : ""}`}
                     >
                       {value === 0 ? "0" : `${(value / 1000).toFixed(0)}K`}
                     </button>
@@ -252,12 +430,13 @@ export default function ToolingLifecyclePrognostics({
             </div>
 
             <ToolingLifecycleStatusPanels
-              currentShots={currentShots}
+              activeShotLine={activeShotLine}
+              currentShots={displayedShots}
               activeEta={activeEta}
-              currentReliability={currentReliability}
-              currentHazardRate={currentHazardRate}
+              currentReliability={displayedReliability}
+              currentHazardRate={displayedHazardRate}
               wearOutThreshold={wearOutThreshold}
-              beta={parameters.beta}
+              beta={displayedParameters.beta}
               isCalibrated={isCalibrated}
               onGenerateReport={handleGenerateReport}
             />
@@ -265,31 +444,28 @@ export default function ToolingLifecyclePrognostics({
 
           <div className="lg:col-span-1">
             <ToolingLifecycleWeibullPanel
-              currentShots={currentShots}
-              currentReliability={currentReliability}
-              currentHazardRate={currentHazardRate}
+              activeShotLine={activeShotLine}
+              currentShots={displayedShots}
+              currentReliability={displayedReliability}
+              currentHazardRate={displayedHazardRate}
               activeEta={activeEta}
               isCalibrated={isCalibrated}
-              parameters={parameters}
-              events={events}
+              parameters={displayedParameters}
+              events={repairHistory}
               onCalibrate={handleCalibrate}
+              onRollback={handleRollback}
             />
           </div>
         </div>
 
         <div>
-          <div className="mb-3 flex items-center gap-2">
-            <div className="h-px flex-1 bg-slate-800" />
-            <span className="shrink-0 text-[9px] uppercase tracking-[0.25em] text-slate-600">
-              Tactical Action Center / 战术行动中心
-            </span>
-            <div className="h-px flex-1 bg-slate-800" />
+          <div className="mb-6">
+            <MoldClinicalScorecard
+              asset={linkedAsset}
+              events={linkedEvents}
+              onRecordCreated={loadMoldTelemetry}
+            />
           </div>
-          <ToolingLifecycleActionCards
-            currentShots={currentShots}
-            maxLifespan={activeEta}
-            isCalibrated={isCalibrated}
-          />
         </div>
 
         <footer className="flex items-center justify-between border-t border-slate-800/50 pb-2 pt-3">

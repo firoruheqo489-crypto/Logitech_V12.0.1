@@ -6,7 +6,6 @@ import {
   Box,
   Camera,
   Cuboid,
-  FileText,
   LoaderCircle,
   RotateCcw,
   RotateCw,
@@ -37,7 +36,15 @@ type ProductDataWorkspaceProps = {
   productSequenceByMold: Record<string, string>;
 };
 
-type SlotId = 'product3d' | 'product2d' | 'productPhoto' | 'mold3d' | 'moldPhoto';
+type SlotId =
+  | 'product3d'
+  | 'productPhoto'
+  | 'mold3d'
+  | 'moldPhoto'
+  | 'product3dExtra'
+  | 'productPhotoExtra'
+  | 'mold3dExtra'
+  | 'moldPhotoExtra';
 
 type UploadSlot = {
   id: SlotId;
@@ -46,6 +53,15 @@ type UploadSlot = {
 };
 
 type SlotStateMap<T> = Record<string, T>;
+type LightboxSelection = {
+  projectKey: string;
+  slotId: SlotId;
+};
+type LightboxEntry = {
+  id: SlotId;
+  label: string;
+  imageUrl: string;
+};
 
 const LABEL_CLASS = 'text-[10px] uppercase text-slate-500';
 const VALUE_CLASS = 'font-sans tabular-nums font-semibold tracking-tight text-slate-100';
@@ -57,10 +73,13 @@ const MAX_IMAGE_DIMENSION = 2000;
 
 const UPLOAD_SLOTS: UploadSlot[] = [
   { id: 'product3d', label: '产品3D图', icon: Box },
-  { id: 'product2d', label: '产品2D图', icon: FileText },
   { id: 'productPhoto', label: '产品实物图', icon: Camera },
   { id: 'mold3d', label: '模具3D图', icon: Cuboid },
   { id: 'moldPhoto', label: '模具实物图', icon: Aperture },
+  { id: 'product3dExtra', label: '产品3D图-2', icon: Box },
+  { id: 'productPhotoExtra', label: '产品实物图-2', icon: Camera },
+  { id: 'mold3dExtra', label: '模具3D图-2', icon: Cuboid },
+  { id: 'moldPhotoExtra', label: '模具实物图-2', icon: Aperture },
 ];
 
 function normalizeValue(value: unknown): string | null {
@@ -201,6 +220,7 @@ export default function ProductDataWorkspace({
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
   const [lightboxImageUrl, setLightboxImageUrl] = useState('');
   const [lightboxRotation, setLightboxRotation] = useState(0);
+  const [lightboxSelection, setLightboxSelection] = useState<LightboxSelection | null>(null);
   const [pendingDeleteSlot, setPendingDeleteSlot] = useState<{
     projectKey: string;
     moldNumber: string;
@@ -330,8 +350,19 @@ export default function ProductDataWorkspace({
     setSelectedSlots((prev) => ({ ...prev, [projectKey]: type }));
   }, []);
 
-  const openLightbox = useCallback((url: string) => {
-    setLightboxImageUrl(url);
+  const getLightboxEntriesForProject = useCallback((projectKey: string): LightboxEntry[] => {
+    return UPLOAD_SLOTS.flatMap(({ id, label }) => {
+      const imageUrl = previewUrlsRef.current[buildSlotKey(projectKey, id)];
+      return typeof imageUrl === 'string' && imageUrl.trim() ? [{ id, label, imageUrl: imageUrl.trim() }] : [];
+    });
+  }, []);
+
+  const openLightbox = useCallback((projectKey: string, slotId: SlotId) => {
+    const imageUrl = previewUrlsRef.current[buildSlotKey(projectKey, slotId)];
+    if (!imageUrl) return;
+
+    setLightboxSelection({ projectKey, slotId });
+    setLightboxImageUrl(imageUrl);
     setLightboxRotation(0);
     setIsLightboxOpen(true);
   }, []);
@@ -340,7 +371,74 @@ export default function ProductDataWorkspace({
     setIsLightboxOpen(false);
     setLightboxImageUrl('');
     setLightboxRotation(0);
+    setLightboxSelection(null);
   }, []);
+
+  const navigateLightbox = useCallback(
+    (direction: -1 | 1) => {
+      if (!lightboxSelection) return;
+
+      const entries = getLightboxEntriesForProject(lightboxSelection.projectKey);
+      if (entries.length === 0) return;
+
+      if (entries.length === 1) {
+        const onlyEntry = entries[0];
+        setLightboxSelection({ projectKey: lightboxSelection.projectKey, slotId: onlyEntry.id });
+        setSelectedSlots((prev) => ({ ...prev, [lightboxSelection.projectKey]: onlyEntry.id }));
+        setLightboxImageUrl(onlyEntry.imageUrl);
+        setLightboxRotation(0);
+        return;
+      }
+
+      let currentIndex = entries.findIndex((entry) => entry.id === lightboxSelection.slotId);
+      if (currentIndex < 0 && lightboxImageUrl) {
+        currentIndex = entries.findIndex((entry) => entry.imageUrl === lightboxImageUrl);
+      }
+      if (currentIndex < 0) currentIndex = 0;
+
+      const nextIndex = currentIndex + direction;
+      if (nextIndex < 0 || nextIndex >= entries.length) {
+        return;
+      }
+
+      const nextEntry = entries[nextIndex];
+      if (!nextEntry) return;
+
+      setLightboxSelection({ projectKey: lightboxSelection.projectKey, slotId: nextEntry.id });
+      setSelectedSlots((prev) => ({ ...prev, [lightboxSelection.projectKey]: nextEntry.id }));
+      setLightboxImageUrl(nextEntry.imageUrl);
+      setLightboxRotation(0);
+    },
+    [getLightboxEntriesForProject, lightboxImageUrl, lightboxSelection],
+  );
+
+  useEffect(() => {
+    if (!isLightboxOpen) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeLightbox();
+        return;
+      }
+
+      if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        navigateLightbox(-1);
+        return;
+      }
+
+      if (event.key === 'ArrowRight') {
+        event.preventDefault();
+        navigateLightbox(1);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [closeLightbox, isLightboxOpen, navigateLightbox]);
 
   const uploadToServer = useCallback(
     async (moldNumber: string, compressedFile: File, type: SlotId): Promise<string> => {
@@ -395,7 +493,6 @@ export default function ProductDataWorkspace({
   const handleImageDelete = useCallback(
     async (projectKey: string, moldNumber: string, type: SlotId) => {
       const slotKey = buildSlotKey(projectKey, type);
-      const deletedUrl = previewUrlsRef.current[slotKey];
 
       setUploadingSlots((prev) => ({ ...prev, [slotKey]: true }));
       setSlotErrors((prev) => ({ ...prev, [slotKey]: '' }));
@@ -430,7 +527,7 @@ export default function ProductDataWorkspace({
           return { ...prev, [projectKey]: nextSlot };
         });
 
-        if (lightboxImageUrl && deletedUrl && lightboxImageUrl === deletedUrl) {
+        if (lightboxSelection?.projectKey === projectKey && lightboxSelection.slotId === type) {
           closeLightbox();
         }
       } catch (error) {
@@ -443,7 +540,7 @@ export default function ProductDataWorkspace({
         setUploadProgress((prev) => ({ ...prev, [slotKey]: 0 }));
       }
     },
-    [closeLightbox, deleteFromServer, lightboxImageUrl],
+    [closeLightbox, deleteFromServer, lightboxSelection],
   );
 
   const handleFileChange = useCallback(
@@ -622,8 +719,8 @@ export default function ProductDataWorkspace({
               <div className="lg:w-[40%]">
                 <div
                   onClick={() => {
-                    if (activePreviewUrl) {
-                      openLightbox(activePreviewUrl);
+                    if (activePreviewUrl && activeSlotId) {
+                      openLightbox(productKey, activeSlotId);
                     }
                   }}
                   className={`relative flex aspect-square items-center justify-center overflow-hidden rounded-xl bg-[#050812] ${
@@ -718,7 +815,7 @@ export default function ProductDataWorkspace({
                   </div>
                 </div>
 
-                <div className="mt-6 grid grid-cols-2 gap-3 md:grid-cols-5">
+                <div className="mt-6 grid grid-cols-2 gap-3 md:grid-cols-4">
                   {UPLOAD_SLOTS.map(({ id, label, icon: Icon }) => {
                     const slotKey = buildSlotKey(productKey, id);
                     const previewUrl = previewUrls[slotKey];
@@ -897,7 +994,7 @@ export default function ProductDataWorkspace({
             </div>
 
             <span className="mt-4 text-[10px] font-bold uppercase tracking-widest text-slate-500">
-              Original Preview ( click anywhere to close )
+              Arrow Left / Arrow Right 切换图片 · ESC 退出预览
             </span>
           </div>
         </div>

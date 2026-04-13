@@ -4,7 +4,6 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { AlertTriangle, CheckCircle2, FileSpreadsheet, Sparkles, Trash2, UploadCloud } from 'lucide-react';
 
 import CyberConfirmDialog from '@/components/ui/CyberConfirmDialog';
-import { buildDashboardScopedStorageKey } from '@/lib/dashboardClientState';
 
 import {
   normalizeColorDifferenceRows,
@@ -30,12 +29,7 @@ const EMPTY_META: SurfaceSectionMeta = {
 };
 
 function buildSurfaceParserStorageKey(moldId: string, moldNo?: string, trialStage?: string): string {
-  return buildDashboardScopedStorageKey(
-    'surface-parser',
-    moldId,
-    moldNo || 'default',
-    trialStage || 'T0',
-  );
+  return `surface-parser-v2:${moldId}:${moldNo || 'default'}:${trialStage || 'T0'}`;
 }
 
 function sanitizeMeta(value: unknown): SurfaceSectionMeta {
@@ -444,6 +438,7 @@ export default function SurfaceParserSection({
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [isHydrated, setIsHydrated] = useState(false);
   const [hydratedStorageKey, setHydratedStorageKey] = useState('');
+  const loadRequestIdRef = useRef(0);
   const storageKey = buildSurfaceParserStorageKey(moldId, moldNo, trialStage);
 
   const hasParsedData = roughnessData.length > 0 || glossData.length > 0 || colorData.length > 0;
@@ -474,9 +469,23 @@ export default function SurfaceParserSection({
   useEffect(() => {
     setIsHydrated(false);
 
+    const requestId = ++loadRequestIdRef.current;
     const storedState = readStoredSurfaceState(storageKey);
+    setFileName('');
+    setRoughnessData([]);
+    setGlossData([]);
+    setColorData([]);
+    setRoughnessMeta(EMPTY_META);
+    setGlossMeta(EMPTY_META);
+    setColorMeta(EMPTY_META);
+    setRoughnessSummary(EMPTY_SUMMARY);
+    setGlossSummary(EMPTY_SUMMARY);
+    setColorSummary(EMPTY_SUMMARY);
 
     if (storedState) {
+      if (loadRequestIdRef.current !== requestId) {
+        return;
+      }
       setFileName(storedState.fileName);
       setRoughnessData(storedState.roughnessData);
       setGlossData(storedState.glossData);
@@ -487,17 +496,6 @@ export default function SurfaceParserSection({
       setRoughnessSummary(storedState.roughnessSummary);
       setGlossSummary(storedState.glossSummary);
       setColorSummary(storedState.colorSummary);
-    } else {
-      setFileName('');
-      setRoughnessData([]);
-      setGlossData([]);
-      setColorData([]);
-      setRoughnessMeta(EMPTY_META);
-      setGlossMeta(EMPTY_META);
-      setColorMeta(EMPTY_META);
-      setRoughnessSummary(EMPTY_SUMMARY);
-      setGlossSummary(EMPTY_SUMMARY);
-      setColorSummary(EMPTY_SUMMARY);
     }
 
     setError('');
