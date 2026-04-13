@@ -1,3 +1,4 @@
 @echo off
 setlocal
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0single-track-flow.ps1" -Mode deploy %*
+for %%I in ("%~dp0..") do set "REPO_ROOT=%%~fI"
+powershell -NoProfile -ExecutionPolicy Bypass -File "%REPO_ROOT%\scripts\single-track-flow.ps1" -Mode deploy %*
