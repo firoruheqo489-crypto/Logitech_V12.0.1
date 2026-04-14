@@ -44,6 +44,12 @@ const isDevApiOnly = process.env.DEV_API === "1";
 async function startServer() {
   const app = express();
   const server = createServer(app);
+  const sendFreshSpaHtml = (res: express.Response, staticPath: string) => {
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+    res.sendFile(path.join(staticPath, "index.html"));
+  };
 
   app.use(express.json({ limit: '20mb' }));
 
@@ -145,6 +151,10 @@ async function startServer() {
       process.env.NODE_ENV === "production"
         ? path.resolve(__dirname, "public")
         : path.resolve(__dirname, "..", "dist", "public");
+
+    app.get(["/", "/index.html"], (_req, res) => {
+      sendFreshSpaHtml(res, staticPath);
+    });
 
     // /assets/ 下带 hash 的 JS/CSS → 一年强缓存 + immutable
     app.use('/assets', express.static(path.join(staticPath, 'assets'), {

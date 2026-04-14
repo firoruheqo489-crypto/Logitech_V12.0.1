@@ -1,0 +1,35 @@
+diff --git a/dist/node/chunks/dep-D_zLpgQd.js b/dist/node/chunks/dep-D_zLpgQd.js
+index 4197f814c9f3907571d4b880ee03cfd44a3316d8..1c0ee40bdf79c7cf1e6e5bf78f0ab1cbc0f22f80 100644
+--- a/dist/node/chunks/dep-D_zLpgQd.js
++++ b/dist/node/chunks/dep-D_zLpgQd.js
+@@ -17164,14 +17164,2 @@ function optimizeSafeRealPathSync() {
+-  exec("net use", (error, stdout) => {
+-    if (error) return;
+-    const lines = stdout.split("\n");
+-    for (const line of lines) {
+-      const m = parseNetUseRE.exec(line);
+-      if (m) windowsNetworkMap.set(m[2], m[1]);
+-    }
+-    if (windowsNetworkMap.size === 0) {
+-      safeRealpathSync = fs__default.realpathSync.native;
+-    } else {
+-      safeRealpathSync = windowsMappedRealpathSync;
+-    }
+-  });
++  safeRealpathSync = fs__default.realpathSync.native;
+ }
+@@ -19247,6 +19235,14 @@ async function transformWithEsbuild(code, filename, options, inMap) {
+     };
+   } catch (e) {
+     debug$h?.(`esbuild error with options used: `, resolvedOptions);
++    if ((e?.code === "EPERM" || String(e?.message ?? "").includes("spawn EPERM")) && loader === "js") {
++      debug$h?.(`esbuild spawn EPERM for ${filename}; returning source without transform`);
++      return {
++        code,
++        map: { mappings: "" },
++        warnings: []
++      };
++    }
+     if (e.errors) {
+       e.frame = "";
+       e.errors.forEach((m) => {

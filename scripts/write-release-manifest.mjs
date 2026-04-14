@@ -60,8 +60,11 @@ function readOptionalEnvBoolean(name) {
 }
 
 const packageJson = readJson(packageJsonPath);
-const commit = tryRunGit(["rev-parse", "HEAD"]) || null;
-const commitShort = tryRunGit(["rev-parse", "--short", "HEAD"]) || (commit ? commit.slice(0, 7) : null);
+const commit = readOptionalEnvString("RELEASE_COMMIT_OVERRIDE") || tryRunGit(["rev-parse", "HEAD"]) || null;
+const commitShort =
+  readOptionalEnvString("RELEASE_COMMIT_SHORT_OVERRIDE") ||
+  tryRunGit(["rev-parse", "--short", "HEAD"]) ||
+  (commit ? commit.slice(0, 7) : null);
 const statusOutput = commit ? tryRunGit(["status", "--porcelain=v1", "--untracked-files=all"]) : "";
 const packageVersion = typeof packageJson.version === "string" ? packageJson.version : "0.0.0";
 const overrideVersionRaw = process.env.RELEASE_VERSION_OVERRIDE ?? "";

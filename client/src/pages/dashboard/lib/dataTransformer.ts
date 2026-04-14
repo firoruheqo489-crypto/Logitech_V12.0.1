@@ -1,4 +1,4 @@
-import { ProjectData } from '../types/project';
+import type { ProjectData } from '../types/project';
 import type { DashboardProject } from '@shared/schema';
 import {
   normalizeProjectQualifiedFlag,

@@ -62,6 +62,65 @@ function Resolve-RepoKnownHostsPath([string]$RepoRootPath) {
   return (Join-Path $sshStateDir "deploy-known_hosts")
 }
 
+function Resolve-NodeSshRuntimeDir([string]$RepoRootPath) {
+  $sshStateDir = Join-Path $RepoRootPath ".codex-local"
+  New-Item -ItemType Directory -Path $sshStateDir -Force | Out-Null
+  return (Join-Path $sshStateDir "ssh-runtime")
+}
+
+function Resolve-NodeSshBridgePath([string]$RepoRootPath) {
+  return (Join-Path $RepoRootPath "scripts\ssh-bridge.mjs")
+}
+
+function Ensure-NodeSshRuntime([string]$RepoRootPath) {
+  $runtimeDir = Resolve-NodeSshRuntimeDir $RepoRootPath
+  $runtimePackageJson = Join-Path $runtimeDir "package.json"
+  $runtimeModulePath = Join-Path $runtimeDir "node_modules\ssh2"
+
+  if (Test-Path -LiteralPath $runtimeModulePath) {
+    return $runtimeDir
+  }
+
+  New-Item -ItemType Directory -Path $runtimeDir -Force | Out-Null
+  if (-not (Test-Path -LiteralPath $runtimePackageJson)) {
+    '{"name":"codex-ssh-runtime","private":true}' | Set-Content -LiteralPath $runtimePackageJson -Encoding UTF8
+  }
+
+  Log "Bootstrapping local SSH runtime..."
+  & pnpm.cmd add ssh2@1.16.0 --dir $runtimeDir
+  if ($LASTEXITCODE -ne 0) {
+    Err "Failed to bootstrap local SSH runtime under $runtimeDir"
+  }
+
+  if (-not (Test-Path -LiteralPath $runtimeModulePath)) {
+    Err "Local SSH runtime missing ssh2 module after bootstrap: $runtimeModulePath"
+  }
+
+  return $runtimeDir
+}
+
+function Resolve-DeployIdentityPath([string]$RepoRootPath) {
+  $configuredPath = [string]$env:DEPLOY_SSH_KEY_PATH
+  if (-not [string]::IsNullOrWhiteSpace($configuredPath)) {
+    $resolvedConfiguredPath = Resolve-AbsolutePath $configuredPath
+    if (-not $resolvedConfiguredPath) {
+      Err "DEPLOY_SSH_KEY_PATH does not exist: $configuredPath"
+    }
+    return $resolvedConfiguredPath
+  }
+
+  foreach ($candidate in @(
+    (Join-Path $RepoRootPath ".codex-local\deploy_id_rsa"),
+    (Join-Path $RepoRootPath ".codex-local\deploy_id_ed25519")
+  )) {
+    if (Test-Path -LiteralPath $candidate) {
+      return (Resolve-Path -LiteralPath $candidate).Path
+    }
+  }
+
+  return $null
+}
+
 function Invoke-Ssh {
   param(
     [Parameter(Mandatory = $true)][string]$RepoRootPath,
@@ -72,10 +131,41 @@ function Invoke-Ssh {
   )
 
   $knownHostsPath = Resolve-RepoKnownHostsPath $RepoRootPath
+  $identityPath = Resolve-DeployIdentityPath $RepoRootPath
+  $bridgeScript = Resolve-NodeSshBridgePath $RepoRootPath
+
+  if ($identityPath -and (Test-Path -LiteralPath $bridgeScript)) {
+    $runtimeDir = Ensure-NodeSshRuntime $RepoRootPath
+    $nodeArgs = @(
+      $bridgeScript,
+      "exec",
+      "--host", $TargetHost,
+      "--private-key", $identityPath,
+      "--known-hosts", $knownHostsPath,
+      "--runtime-dir", $runtimeDir
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace($RemoteCommand)) {
+      $nodeArgs += @("--command", $RemoteCommand)
+    }
+    if ($ConnectTimeoutSec -gt 0) {
+      $nodeArgs += @("--connect-timeout-sec", [string]$ConnectTimeoutSec)
+    }
+
+    return (& node @nodeArgs)
+  }
+
   $sshArgs = @(
     "-o", "StrictHostKeyChecking=accept-new",
     "-o", "UserKnownHostsFile=$knownHostsPath"
   )
+
+  if ($identityPath) {
+    $sshArgs += @(
+      "-o", "IdentitiesOnly=yes",
+      "-i", $identityPath
+    )
+  }
 
   if ($BatchMode) {
     $sshArgs += @("-o", "BatchMode=yes")
@@ -102,10 +192,51 @@ function Invoke-Scp {
   )
 
   $knownHostsPath = Resolve-RepoKnownHostsPath $RepoRootPath
+  $identityPath = Resolve-DeployIdentityPath $RepoRootPath
+  $bridgeScript = Resolve-NodeSshBridgePath $RepoRootPath
+
+  if ($identityPath -and (Test-Path -LiteralPath $bridgeScript)) {
+    $destinationParts = $Destination -split ":", 2
+    if ($destinationParts.Count -ne 2) {
+      Err "Invalid upload destination. Expected host:path, got: $Destination"
+    }
+
+    $runtimeDir = Ensure-NodeSshRuntime $RepoRootPath
+    $targetHost = $destinationParts[0]
+    $remoteTarget = $destinationParts[1]
+    $nodeArgs = @(
+      $bridgeScript,
+      "upload",
+      "--host", $targetHost,
+      "--private-key", $identityPath,
+      "--known-hosts", $knownHostsPath,
+      "--runtime-dir", $runtimeDir,
+      "--destination", $remoteTarget
+    )
+
+    if ($Sources.Count -gt 1) {
+      $nodeArgs += "--destination-is-directory"
+    }
+
+    foreach ($source in $Sources) {
+      $nodeArgs += @("--source", $source)
+    }
+
+    & node @nodeArgs
+    return
+  }
+
   $scpArgs = @(
     "-o", "StrictHostKeyChecking=accept-new",
     "-o", "UserKnownHostsFile=$knownHostsPath"
   )
+
+  if ($identityPath) {
+    $scpArgs += @(
+      "-o", "IdentitiesOnly=yes",
+      "-i", $identityPath
+    )
+  }
 
   $scpArgs += $Sources
   $scpArgs += $Destination
@@ -179,9 +310,14 @@ function Wait-RemoteHealth([string]$RepoRootPath, [string]$TargetHost, [int]$Ret
 }
 
 function Assert-RemoteHostReachable([string]$RepoRootPath, [string]$TargetHost) {
+  $identityPath = Resolve-DeployIdentityPath $RepoRootPath
   $probeOutput = Invoke-Ssh -RepoRootPath $RepoRootPath -TargetHost $TargetHost -RemoteCommand "printf READY" -BatchMode -ConnectTimeoutSec 8
   if ($LASTEXITCODE -ne 0 -or $probeOutput -notmatch "^READY$") {
-    Err "Remote host alias '$TargetHost' is not reachable. Pass -HostAlias or set DEPLOY_HOST_ALIAS."
+    if ($identityPath) {
+      Err "Remote host alias '$TargetHost' rejected SSH authentication. Checked deploy key: $identityPath"
+    }
+
+    Err "Remote host alias '$TargetHost' is not reachable because no deploy SSH key is available in this workspace. Put a private key at .codex-local\\deploy_id_ed25519 or set DEPLOY_SSH_KEY_PATH, then add the matching public key to the server's authorized_keys."
   }
 }
 
@@ -261,7 +397,7 @@ $remoteDeployScript = @(
   "EXTRACT_DIR=$remoteExtractDirLiteral",
   'trap ''rm -rf "$EXTRACT_DIR"'' EXIT',
   'mkdir -p "$EXTRACT_DIR"',
-  'if [ -n "$INCOMING_CHECKSUM" ] && [ -f "$INCOMING_CHECKSUM" ]; then (cd "$RELEASE_ROOT/incoming" && sha256sum -c "$(basename "$INCOMING_CHECKSUM")"); fi',
+  'if [ -n "$INCOMING_CHECKSUM" ] && [ -f "$INCOMING_CHECKSUM" ]; then CHECKSUM_NAME="${INCOMING_CHECKSUM##*/}"; (cd "$RELEASE_ROOT/incoming" && sha256sum -c "$CHECKSUM_NAME"); fi',
   'tar -xzf "$INCOMING_ARTIFACT" -C "$EXTRACT_DIR"',
   '[ -d "$EXTRACT_DIR/payload/dist" ]',
   'rm -rf "$REMOTE_DIR/dist.new"',
@@ -281,7 +417,7 @@ $remoteDeployScript = @(
   'cd "$REMOTE_DIR"',
   'pnpm install --prod',
   'if pm2 describe logitech > /dev/null 2>&1; then pm2 restart logitech --update-env; elif pm2 describe mold-gantt-v3 > /dev/null 2>&1; then pm2 restart mold-gantt-v3 --update-env; else pm2 start ecosystem.config.cjs --only mold-gantt-v3 --env production && pm2 save; fi'
-) -join " && "
+) -join "`n"
 
 Invoke-Step "Deploying artifact on remote host..." {
   Invoke-Ssh -RepoRootPath $repoRoot -TargetHost $resolvedHostAlias -RemoteCommand $remoteDeployScript

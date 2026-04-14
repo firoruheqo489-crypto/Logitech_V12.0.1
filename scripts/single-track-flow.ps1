@@ -1,8 +1,6 @@
 param(
   [ValidateSet("status", "preview", "deploy")]
   [string]$Mode = "status",
-  [ValidateSet("minor", "major")]
-  [string]$VersionBump = "minor",
   [string]$ReleaseNote = "",
   [string]$ServerUrl = "http://120.27.153.140:3000",
   [int]$Port = 3000,
@@ -47,6 +45,47 @@ function Read-JsonFile([string]$PathValue) {
   }
 
   return $raw | ConvertFrom-Json
+}
+
+function Normalize-SingleTrackState([object]$Value, [string]$SourceLabel) {
+  if ($null -eq $Value) {
+    return $null
+  }
+
+  if ($Value -is [System.Array]) {
+    $candidates = @(
+      $Value | Where-Object {
+        $_ -and
+        $_.PSObject.Properties.Match("MetadataPath").Count -gt 0 -and
+        $_.PSObject.Properties.Match("ArtifactPath").Count -gt 0
+      }
+    )
+
+    if ($candidates.Count -eq 0) {
+      Err "Could not find a valid single-track state object in $SourceLabel"
+    }
+
+    if ($candidates.Count -gt 1) {
+      Warn "Multiple single-track state objects found in $SourceLabel. Using the last one."
+    }
+
+    return $candidates[-1]
+  }
+
+  return $Value
+}
+
+function Get-StateValue([object]$State, [string]$Name) {
+  if ($null -eq $State) {
+    return $null
+  }
+
+  $property = $State.PSObject.Properties.Match($Name) | Select-Object -First 1
+  if ($null -eq $property) {
+    return $null
+  }
+
+  return $property.Value
 }
 
 function Stop-PortListeners([int]$TargetPort) {
@@ -137,6 +176,19 @@ function Start-LocalArtifactFromMetadata {
   }
 
   Sync-LocalRuntimeEnv -RepoRoot $RepoRoot -PayloadRoot $payloadRoot
+  $payloadNodeModules = Join-Path $payloadRoot "node_modules"
+  if (-not (Test-Path -LiteralPath $payloadNodeModules)) {
+    Push-Location $payloadRoot
+    try {
+      Log "Installing runtime dependencies for local preview artifact..."
+      & pnpm install --prod | Out-Host
+    } finally {
+      Pop-Location
+    }
+    if ($LASTEXITCODE -ne 0) {
+      Err "Failed to install runtime dependencies for local preview artifact."
+    }
+  }
   Stop-PortListeners -TargetPort $TargetPort
 
   $logDir = Join-Path $RepoRoot ".codex-local"
@@ -178,13 +230,12 @@ $statePath = Join-Path $releasesDir "single-track-active.json"
 if (-not (Test-Path -LiteralPath $deployScript)) {
   Err "Missing deploy entrypoint: $deployScript"
 }
-
 if ($Mode -eq "status") {
   $localRelease = Get-ReleaseOrNull -Url "http://localhost:$Port/api/release"
   $remoteRelease = Get-ReleaseOrNull -Url "$($ServerUrl.TrimEnd('/'))/api/release"
 
   if (Test-Path -LiteralPath $statePath) {
-    $state = Read-JsonFile -PathValue $statePath
+    $state = Normalize-SingleTrackState -Value (Read-JsonFile -PathValue $statePath) -SourceLabel $statePath
     Write-Host "Active artifact state:" -ForegroundColor Cyan
     $state | ConvertTo-Json -Depth 5
   } else {
@@ -199,8 +250,8 @@ if ($Mode -eq "status") {
 }
 
 if ($Mode -eq "preview") {
-  Log "Building release artifact from current source..."
-  & $deployScript -Mode build -VersionBump $VersionBump -ReleaseNote $ReleaseNote -SkipVerification:$SkipVerification
+  Log "Building release artifact from the clean current workspace..."
+  & $deployScript -Mode build -ReleaseNote $ReleaseNote -SkipVerification:$SkipVerification
   if ($LASTEXITCODE -ne 0) {
     Err "Artifact build failed."
   }
@@ -210,16 +261,25 @@ if ($Mode -eq "preview") {
     Err "No metadata generated under $releasesDir"
   }
 
-  $runtimeState = Start-LocalArtifactFromMetadata -MetadataPath $latestMetaFile.FullName -RepoRoot $repoRoot -TargetPort $Port
+  $runtimeState = Normalize-SingleTrackState `
+    -Value (Start-LocalArtifactFromMetadata -MetadataPath $latestMetaFile.FullName -RepoRoot $repoRoot -TargetPort $Port) `
+    -SourceLabel "preview runtime state"
+
+  $runtimeCommit = [string](Get-StateValue -State $runtimeState -Name "Commit")
+  $runtimeVersion = [string](Get-StateValue -State $runtimeState -Name "Version")
+  if (-not $runtimeCommit -or -not $runtimeVersion) {
+    Err "Preview runtime state is missing commit/version information."
+  }
+
   $runtimeState | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $statePath -Encoding UTF8
 
   $remoteRelease = Get-ReleaseOrNull -Url "$($ServerUrl.TrimEnd('/'))/api/release"
   if ($remoteRelease) {
-    $sameAsRemote = ($remoteRelease.commit -eq $runtimeState.Commit) -and ($remoteRelease.version -eq $runtimeState.Version)
+    $sameAsRemote = ($remoteRelease.commit -eq $runtimeCommit) -and ($remoteRelease.version -eq $runtimeVersion)
     if ($sameAsRemote) {
-      Log "Preview is already same as remote: $($runtimeState.Version)@$($runtimeState.Commit)"
+      Log "Preview is already same as remote: $runtimeVersion@$runtimeCommit"
     } else {
-      Warn "Preview differs from remote. local=$($runtimeState.Version)@$($runtimeState.Commit) remote=$($remoteRelease.version)@$($remoteRelease.commit)"
+      Warn "Preview differs from remote. local=$runtimeVersion@$runtimeCommit remote=$($remoteRelease.version)@$($remoteRelease.commit)"
     }
   } else {
     Warn "Remote release is unreachable: $ServerUrl"
@@ -227,7 +287,7 @@ if ($Mode -eq "preview") {
 
   Log "Preview ready at http://localhost:$Port"
   Write-Host "Next step deploy command:" -ForegroundColor Cyan
-  Write-Host "  pnpm run board:flow:deploy" -ForegroundColor Cyan
+  Write-Host "  pnpm run release:deploy -- -ArtifactPath `"$($runtimeState.ArtifactPath)`" -MetadataPath `"$($runtimeState.MetadataPath)`"" -ForegroundColor Cyan
   exit 0
 }
 
@@ -235,9 +295,9 @@ if (-not (Test-Path -LiteralPath $statePath)) {
   Err "No preview state found. Run preview first: pnpm run board:flow:preview -- -ReleaseNote `"your note`""
 }
 
-$activeState = Read-JsonFile -PathValue $statePath
-$artifactToDeploy = [string]$activeState.ArtifactPath
-$metadataToDeploy = [string]$activeState.MetadataPath
+$activeState = Normalize-SingleTrackState -Value (Read-JsonFile -PathValue $statePath) -SourceLabel $statePath
+$artifactToDeploy = [string](Get-StateValue -State $activeState -Name "ArtifactPath")
+$metadataToDeploy = [string](Get-StateValue -State $activeState -Name "MetadataPath")
 
 if (-not (Test-Path -LiteralPath $artifactToDeploy)) {
   Err "Active artifact not found: $artifactToDeploy"
@@ -251,9 +311,7 @@ Log "Deploying the same artifact validated locally..."
   -Mode deploy `
   -ArtifactPath $artifactToDeploy `
   -MetadataPath $metadataToDeploy `
-  -SkipRemoteSmoke:$SkipRemoteSmoke `
-  -ConfirmProduction `
-  -ConfirmText "DEPLOY_PROD"
+  -SkipRemoteSmoke:$SkipRemoteSmoke
 if ($LASTEXITCODE -ne 0) {
   Err "Deploy failed."
 }

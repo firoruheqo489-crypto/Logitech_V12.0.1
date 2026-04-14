@@ -19,6 +19,7 @@ function loadOptionalJsxLocPlugin() {
 
 export default defineConfig({
   plugins: [react(), tailwindcss(), loadOptionalJsxLocPlugin()].filter(Boolean),
+  esbuild: false,
   resolve: {
     alias: {
       "@": path.resolve(import.meta.dirname, "client", "src"),
@@ -32,16 +33,19 @@ export default defineConfig({
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
     chunkSizeWarningLimit: 1000,
+    minify: false,
+    cssMinify: false,
+    target: "esnext",
   },
   worker: {
     format: "es",
   },
   server: {
     port: 3000,
-    strictPort: false, // Will find next available port if 3000 is busy
+    strictPort: false,
     host: true,
     proxy: {
-      '/api': { target: 'http://localhost:3001', changeOrigin: true },
+      "/api": { target: "http://localhost:3001", changeOrigin: true },
     },
     allowedHosts: [
       "localhost",

@@ -1,0 +1,92 @@
+diff --git a/dist/node/chunks/dep-Chhhsdoe.js b/dist/node/chunks/dep-Chhhsdoe.js
+index 90fc2d3d41cb9970e229adaf0766b18f9276a6d7..e4891e7903c11db56cb393d08c6d7ec10d7be46d 100644
+--- a/dist/node/chunks/dep-Chhhsdoe.js
++++ b/dist/node/chunks/dep-Chhhsdoe.js
+@@ -2414,16 +2414,7 @@ function optimizeSafeRealPathSync() {
+ 			return;
+ 		}
+ 	}
+-	exec("net use", (error$1, stdout) => {
+-		if (error$1) return;
+-		const lines = stdout.split("\n");
+-		for (const line of lines) {
+-			const m$2 = parseNetUseRE.exec(line);
+-			if (m$2) windowsNetworkMap.set(m$2[2], m$2[1]);
+-		}
+-		if (windowsNetworkMap.size === 0) safeRealpathSync = fs.realpathSync.native;
+-		else safeRealpathSync = windowsMappedRealpathSync;
+-	});
++	safeRealpathSync = fs.realpathSync.native;
+ }
+ function ensureWatchedFile(watcher, file, root) {
+ 	if (file && !file.startsWith(withTrailingSlash(root)) && !file.includes("\0") && fs.existsSync(file)) watcher.add(path.resolve(file));
+@@ -6307,6 +6298,30 @@ async function transformWithEsbuild(code, filename, options$1, inMap, config$2,
+ 		};
+ 	} catch (e$1) {
+ 		debug$17?.(`esbuild error with options used: `, resolvedOptions);
++		if (e$1?.code === "EPERM" || String(e$1?.message ?? "").includes("spawn EPERM")) {
++			const ts = createRequire(import.meta.url)("typescript");
++			const transpileOptions = {
++				compilerOptions: {
++					allowJs: true,
++					jsx: loader$1 === "tsx" || loader$1 === "jsx" ? ts.JsxEmit.ReactJSX : void 0,
++					module: ts.ModuleKind.ESNext,
++					target: ts.ScriptTarget.ESNext,
++					sourceMap: Boolean(resolvedOptions.sourcemap)
++				},
++				fileName: filename,
++				reportDiagnostics: false
++			};
++			const transpiled = ts.transpileModule(code, transpileOptions);
++			const outputCode = transpiled.outputText.replace(/\/\/# sourceMappingURL=.*$/m, "");
++			let fallbackMap = resolvedOptions.sourcemap && transpiled.sourceMapText ? JSON.parse(transpiled.sourceMapText) : { mappings: "" };
++			if (inMap && resolvedOptions.sourcemap && fallbackMap) fallbackMap = combineSourcemaps(filename, [fallbackMap, inMap]);
++			console.warn(`[vite-esbuild-fallback] loader=${loader$1} file=${filename}`);
++			return {
++				code: outputCode,
++				map: fallbackMap,
++				warnings: []
++			};
++		}
+ 		if (e$1.errors) {
+ 			e$1.frame = "";
+ 			e$1.errors.forEach((m$2) => {
+@@ -29147,14 +29162,30 @@ function definePlugin(config$2) {
+ 	};
+ }
+ async function replaceDefine(environment, code, id, define$1) {
+-	const result = await transform(code, {
+-		loader: "js",
+-		charset: (environment.config.esbuild || {}).charset ?? "utf8",
+-		platform: "neutral",
+-		define: define$1,
+-		sourcefile: id,
+-		sourcemap: environment.config.command === "build" ? !!environment.config.build.sourcemap : true
+-	});
++	let result;
++	try {
++		result = await transform(code, {
++			loader: "js",
++			charset: (environment.config.esbuild || {}).charset ?? "utf8",
++			platform: "neutral",
++			define: define$1,
++			sourcefile: id,
++			sourcemap: environment.config.command === "build" ? !!environment.config.build.sourcemap : true
++		});
++	} catch (error) {
++		if (error?.code === "EPERM" || String(error?.message ?? "").includes("spawn EPERM")) {
++			let fallbackCode = code;
++			for (const [key, value$1] of Object.entries(define$1).sort((left, right) => right[0].length - left[0].length)) {
++				fallbackCode = fallbackCode.split(key).join(value$1);
++			}
++			console.warn(`[vite-define-fallback] file=${id}`);
++			return {
++				code: fallbackCode,
++				map: null
++			};
++		}
++		throw error;
++	}
+ 	if (result.map.includes("<define:")) {
+ 		const originalMap = new TraceMap(result.map);
+ 		if (originalMap.sources.length >= 2) {

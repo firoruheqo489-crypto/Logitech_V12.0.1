@@ -18,6 +18,7 @@ import MacroStageGateDrawerWorkspace from './components/MacroStageGateDrawerWork
 import ReliabilityDrawerWorkspace from './components/ReliabilityDrawerWorkspace';
 import SpcRadarDrawerWorkspace from './components/SpcRadarDrawerWorkspace';
 import SpcCalculatorDrawerWorkspace from './components/SpcCalculatorDrawerWorkspace';
+import DimensionDataDrawerWorkspace from './components/DimensionDataDrawerWorkspace';
 import ProductDataDrawerWorkspace from './components/ProductDataDrawerWorkspace';
 import ProductStandardDrawerWorkspace from './components/ProductStandardDrawerWorkspace';
 import ProcessDrawerWorkspace from './components/ProcessDrawerWorkspace';
@@ -107,6 +108,11 @@ function parseMoldSetCount(value?: string): number {
   return Number.isFinite(count) ? count : 0;
 }
 
+function normalizeTrialStage(value?: string): string {
+  const normalized = String(value ?? '').trim().toUpperCase();
+  return /^T\d+$/.test(normalized) ? normalized : 'T0';
+}
+
 type ProgressEntry = DashboardProgressEntry;
 
 const DASHBOARD_TABS = [
@@ -115,6 +121,7 @@ const DASHBOARD_TABS = [
   'product',
   'product-standard',
   'mold-trial-database',
+  'dimension-data-dashboard',
   'mold-reliability',
   'spc-calculator',
   'fmea',
@@ -398,6 +405,29 @@ export default function DashboardHome() {
 
     const fallbackMoldId = currentModuleData[0]?.identity?.moldNumber?.trim() || currentModuleMoldIds[0] || 'LA26006';
     return [{ moldId: fallbackMoldId, moldNo: 'NO. -' }];
+  }, [currentModuleData, currentModuleMoldIds]);
+
+  const currentModuleDimensionPanels = useMemo(() => {
+    const seen = new Set<string>();
+    const panels = currentModuleData.flatMap((project) => {
+      const moldId = project.identity?.moldNumber?.trim() || '';
+      const moldNo = formatProductSequenceLabel(project.no) || '';
+      const trialStage = normalizeTrialStage(project.milestones?.currentStage);
+      if (!moldId || !moldNo) return [];
+
+      const panelKey = `${normalizeMoldLookupKey(moldId)}::${moldNo}::${trialStage}`;
+      if (seen.has(panelKey)) return [];
+      seen.add(panelKey);
+
+      return [{ moldId, moldNo, trialStage }];
+    });
+
+    if (panels.length > 0) {
+      return panels;
+    }
+
+    const fallbackMoldId = currentModuleData[0]?.identity?.moldNumber?.trim() || currentModuleMoldIds[0] || 'LA26006';
+    return [{ moldId: fallbackMoldId, moldNo: 'NO. -', trialStage: 'T0' }];
   }, [currentModuleData, currentModuleMoldIds]);
 
   const productModuleSequenceByMold = useMemo(() => {
@@ -717,6 +747,7 @@ export default function DashboardHome() {
               'injection-clinic': '注塑诊所',
               'mold-reliability': '模具可靠性',
               'mold-trial-database': '试模数据库',
+              'dimension-data-dashboard': '尺寸数据看板',
             };
             const isActive = selectedTab === tab;
               return (
@@ -852,6 +883,10 @@ export default function DashboardHome() {
 
         {selectedTab === 'mold-trial-database' && (
           <MoldTrialDrawerWorkspace panels={currentModuleTrialPanels} />
+        )}
+
+        {selectedTab === 'dimension-data-dashboard' && (
+          <DimensionDataDrawerWorkspace panels={currentModuleDimensionPanels} />
         )}
       </main>
 

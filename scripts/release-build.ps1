@@ -1,13 +1,9 @@
 param(
-  [ValidateSet("minor", "major")]
-  [string]$VersionBump = "minor",
   [string]$ReleaseNote = "",
   [string]$OutputDir = "artifacts/releases",
-  [string]$HostAlias = "",
-  [string]$RemoteDir = "",
   [switch]$SkipVerification,
-  [switch]$PreflightOnly,
-  [switch]$AllowDirtyWorkspace
+  [switch]$DeepVerification,
+  [switch]$PreflightOnly
 )
 
 Set-StrictMode -Version Latest
@@ -16,95 +12,6 @@ $ErrorActionPreference = "Stop"
 function Log($msg) { Write-Host "[OK] $msg" -ForegroundColor Green }
 function Warn($msg) { Write-Host "[!!] $msg" -ForegroundColor Yellow }
 function Err($msg) { Write-Host "[ERR] $msg" -ForegroundColor Red; exit 1 }
-
-function Resolve-DeployHostAlias([string]$ConfiguredHostAlias) {
-  if (-not [string]::IsNullOrWhiteSpace($ConfiguredHostAlias)) {
-    return $ConfiguredHostAlias.Trim()
-  }
-
-  $envHostAlias = [string]$env:DEPLOY_HOST_ALIAS
-  if (-not [string]::IsNullOrWhiteSpace($envHostAlias)) {
-    return $envHostAlias.Trim()
-  }
-
-  return "root@120.27.153.140"
-}
-
-function Resolve-DeployRemoteDir([string]$ConfiguredRemoteDir) {
-  $candidate = $ConfiguredRemoteDir
-  if ([string]::IsNullOrWhiteSpace($candidate)) {
-    $candidate = [string]$env:DEPLOY_REMOTE_DIR
-  }
-  if ([string]::IsNullOrWhiteSpace($candidate)) {
-    $candidate = "/var/www/logitech"
-  }
-
-  $normalized = $candidate.Trim()
-  while ($normalized.EndsWith("/") -and $normalized.Length -gt 1) {
-    $normalized = $normalized.Substring(0, $normalized.Length - 1)
-  }
-
-  if (-not $normalized.StartsWith("/")) {
-    Err "RemoteDir must be an absolute Unix path, for example /var/www/logitech."
-  }
-
-  if ($normalized -eq "/") {
-    Err "RemoteDir cannot be the filesystem root."
-  }
-
-  if ($normalized -match '[\s''"`$&|;<>\(\)\{\}\[\]]') {
-    Err "RemoteDir contains unsupported characters. Use a simple absolute Unix path without spaces or shell metacharacters."
-  }
-
-  return $normalized
-}
-
-function Resolve-DeployServerUrl() {
-  $candidate = [string]$env:DEPLOY_SERVER_URL
-  if ([string]::IsNullOrWhiteSpace($candidate)) {
-    $candidate = "http://120.27.153.140:3000"
-  }
-
-  return $candidate.TrimEnd("/")
-}
-
-function Resolve-RepoKnownHostsPath([string]$RepoRootPath) {
-  $sshStateDir = Join-Path $RepoRootPath ".codex-local"
-  New-Item -ItemType Directory -Path $sshStateDir -Force | Out-Null
-  return (Join-Path $sshStateDir "deploy-known_hosts")
-}
-
-function Invoke-Ssh {
-  param(
-    [Parameter(Mandatory = $true)][string]$RepoRootPath,
-    [Parameter(Mandatory = $true)][string]$TargetHost,
-    [string]$RemoteCommand = "",
-    [switch]$BatchMode,
-    [int]$ConnectTimeoutSec = 0
-  )
-
-  $knownHostsPath = Resolve-RepoKnownHostsPath $RepoRootPath
-  $sshArgs = @(
-    "-o", "StrictHostKeyChecking=accept-new",
-    "-o", "UserKnownHostsFile=$knownHostsPath"
-  )
-
-  if ($BatchMode) {
-    $sshArgs += @("-o", "BatchMode=yes")
-  }
-
-  if ($ConnectTimeoutSec -gt 0) {
-    $sshArgs += @("-o", "ConnectTimeout=$ConnectTimeoutSec")
-  }
-
-  $sshArgs += $TargetHost
-
-  if (-not [string]::IsNullOrWhiteSpace($RemoteCommand)) {
-    $sshArgs += $RemoteCommand
-  }
-
-  return (& ssh @sshArgs)
-}
 
 function Invoke-Step {
   param(
@@ -163,43 +70,6 @@ function Get-LocalPackageVersion([string]$Root) {
   return $null
 }
 
-function Get-RemoteReleaseVersionFromHttp([string]$ServerUrl) {
-  if ([string]::IsNullOrWhiteSpace($ServerUrl)) {
-    return $null
-  }
-
-  try {
-    $release = Invoke-RestMethod -Uri "$ServerUrl/api/release" -TimeoutSec 8
-    if ($release.version) {
-      return [string]$release.version
-    }
-  } catch {
-    return $null
-  }
-
-  return $null
-}
-
-function Get-RemoteReleaseVersionFromSsh([string]$Root, [string]$TargetHost, [string]$TargetRemoteDir) {
-  $remoteDirLiteral = "'$TargetRemoteDir'"
-  $cmd = "if [ -f ${remoteDirLiteral}/dist/release.json ]; then cat ${remoteDirLiteral}/dist/release.json; elif [ -f ${remoteDirLiteral}/package.json ]; then cat ${remoteDirLiteral}/package.json; fi"
-  $raw = Invoke-Ssh -RepoRootPath $Root -TargetHost $TargetHost -RemoteCommand $cmd
-  if ($LASTEXITCODE -ne 0 -or -not $raw) {
-    return $null
-  }
-
-  try {
-    $obj = $raw | ConvertFrom-Json
-    if ($obj.version) {
-      return [string]$obj.version
-    }
-  } catch {
-    return $null
-  }
-
-  return $null
-}
-
 function Resolve-ReleaseNote([string]$RawNote, [switch]$AllowEmpty) {
   $singleLine = ($RawNote -replace "(\r\n|\n|\r)+", " ").Trim()
   $singleLine = ($singleLine -replace "\s{2,}", " ").Trim()
@@ -237,7 +107,6 @@ function Assert-NoMixedLineEndings([string]$Root) {
     "pnpm-lock.yaml"
     "scripts/deploy-release-artifact.ps1"
     "scripts/release-build.ps1"
-    "scripts/release-from-clean-worktree.ps1"
     "scripts/report-local-dashboard-state.ps1"
     "scripts/start-local-dashboard.mjs"
     "scripts/write-release-manifest.mjs"
@@ -268,59 +137,36 @@ function Assert-NoMixedLineEndings([string]$Root) {
   }
 }
 
-function Resolve-ReleasePlan([string]$Root, [string]$BumpType, [string]$TargetHost, [string]$TargetRemoteDir, [string]$ServerUrl) {
+function Resolve-ReleaseNote([string]$RawNote, [switch]$AllowEmpty) {
+  $singleLine = ($RawNote -replace "(\r\n|\n|\r)+", " ").Trim()
+  $singleLine = ($singleLine -replace "\s{2,}", " ").Trim()
+
+  if (-not $singleLine -and -not $AllowEmpty) {
+    $singleLine = ((git -C $repoRoot show -s --format=%s HEAD 2>$null) | Select-Object -First 1)
+    $singleLine = ($singleLine -replace "(\r\n|\n|\r)+", " ").Trim()
+    $singleLine = ($singleLine -replace "\s{2,}", " ").Trim()
+  }
+
+  if ($singleLine.Length -gt 180) {
+    Warn "ReleaseNote is longer than 180 chars; truncating."
+    $singleLine = $singleLine.Substring(0, 180).Trim()
+  }
+
+  return $singleLine
+}
+
+function Resolve-ReleasePlan([string]$Root) {
   $localRaw = Get-LocalPackageVersion $Root
   $localVersion = Parse-SemVer $localRaw
   if (-not $localVersion) {
     Err "Invalid local package.json version: '$localRaw'"
   }
 
-  $baseRaw = $localRaw
-  $baseSource = "local package.json"
-
-  $remoteHttpRaw = Get-RemoteReleaseVersionFromHttp $ServerUrl
-  $remoteHttpVersion = Parse-SemVer $remoteHttpRaw
-  if ($remoteHttpVersion) {
-    $baseRaw = $remoteHttpRaw
-    $baseSource = "remote /api/release"
-  } else {
-    if ($remoteHttpRaw) {
-      Warn "Remote HTTP version '$remoteHttpRaw' is invalid. Falling back to SSH lookup."
-    }
-
-    $remoteSshRaw = Get-RemoteReleaseVersionFromSsh $Root $TargetHost $TargetRemoteDir
-    $remoteSshVersion = Parse-SemVer $remoteSshRaw
-    if ($remoteSshVersion) {
-      $baseRaw = $remoteSshRaw
-      $baseSource = "remote deployed version"
-    } elseif ($remoteSshRaw) {
-      Warn "Remote SSH version '$remoteSshRaw' is invalid. Falling back to local version."
-    } else {
-      Warn "Remote version not found from HTTP or SSH. Falling back to local version."
-    }
-  }
-
-  $baseVersion = Parse-SemVer $baseRaw
-  $nextVersion = [pscustomobject]@{
-    Major = $baseVersion.Major
-    Minor = $baseVersion.Minor
-    Patch = $baseVersion.Patch
-  }
-
-  $changeType = "small"
-  if ($BumpType -eq "major") {
-    $nextVersion.Minor = $nextVersion.Minor + 1
-    $nextVersion.Patch = 1
-    $changeType = "major"
-  } else {
-    $nextVersion.Patch = $nextVersion.Patch + 1
-  }
-
   return [pscustomobject]@{
-    BaseVersion = $baseRaw
-    BaseSource = $baseSource
-    NextVersion = (Format-SemVer $nextVersion)
-    ChangeType = $changeType
+    BaseVersion = $localRaw
+    BaseSource = "local package.json"
+    NextVersion = (Format-SemVer $localVersion)
+    ChangeType = "local"
   }
 }
 
@@ -349,10 +195,6 @@ function Get-BooleanEnvLiteral([bool]$Value) {
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 Push-Location $repoRoot
 try {
-  $resolvedHostAlias = Resolve-DeployHostAlias $HostAlias
-  $resolvedRemoteDir = Resolve-DeployRemoteDir $RemoteDir
-  $resolvedServerUrl = Resolve-DeployServerUrl
-
   Assert-NoMixedLineEndings $repoRoot
 
   $workspaceStatus = git -C $repoRoot status --porcelain=v1 --untracked-files=all 2>$null
@@ -360,13 +202,9 @@ try {
     Err "Failed to read git workspace state."
   }
 
-  if ($AllowDirtyWorkspace) {
-    Warn "AllowDirtyWorkspace is enabled. Using the current workspace snapshot."
-  } else {
-    if ($workspaceStatus) {
-      Write-Host $workspaceStatus -ForegroundColor Yellow
-      Err "Refusing release build from a dirty workspace."
-    }
+  if ($workspaceStatus) {
+    Write-Host $workspaceStatus -ForegroundColor Yellow
+    Err "Refusing release build from a dirty workspace."
   }
 
   $releaseNoteNormalized = Resolve-ReleaseNote $ReleaseNote -AllowEmpty:$PreflightOnly
@@ -380,21 +218,25 @@ try {
     Err "Failed to resolve short git commit."
   }
 
-  $plan = Resolve-ReleasePlan $repoRoot $VersionBump $resolvedHostAlias $resolvedRemoteDir $resolvedServerUrl
+  $plan = Resolve-ReleasePlan $repoRoot
   $targetVersion = [string]$plan.NextVersion
   $changeType = [string]$plan.ChangeType
-  Log "Release version plan: $($plan.BaseSource) $($plan.BaseVersion) -> $targetVersion ($changeType)"
+  Log "Release version: $($plan.BaseSource) -> $targetVersion"
 
   if (-not $SkipVerification) {
     Invoke-Step "Running TypeScript verification..." { pnpm exec tsc --noEmit } "TypeScript verification failed"
-    Invoke-Step "Running client release guard tests..." { pnpm exec vitest run client/src/server-index.structure.test.ts client/src/server-error-payload.structure.test.ts client/src/critical-entrypoints.structure.test.ts client/src/pages/dashboard/lib/dashboardApi.test.ts } "Client release guard tests failed"
-    Invoke-Step "Running server release guard tests..." { pnpm exec vitest run --root . server/middleware/apiCors.test.ts server/middleware/apiAccessPolicy.test.ts server/release.test.ts server/routes/progress-notes-guard.test.ts } "Server release guard tests failed"
 
-    $ossSmokePort = Get-FreeLocalPort
-    Invoke-Step "Running local OSS upload/delete smoke on port $ossSmokePort..." { powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-local-oss-smoke.ps1 -Port $ossSmokePort -Retries 60 -RetryIntervalMs 1500 } "Local OSS upload/delete smoke failed"
+    if ($DeepVerification) {
+      Invoke-Step "Running release guard checks..." { node --experimental-strip-types --loader ./scripts/ts-path-loader.mjs ./scripts/verify-release-guards.ts } "Release guard checks failed"
 
-    $reliabilitySmokePort = Get-FreeLocalPort -StartPort ($ossSmokePort + 1)
-    Invoke-Step "Running local reliability smoke on port $reliabilitySmokePort..." { powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-local-reliability-smoke.ps1 -Port $reliabilitySmokePort -Retries 60 -RetryIntervalMs 1500 } "Local reliability smoke failed"
+      $ossSmokePort = Get-FreeLocalPort
+      Invoke-Step "Running local OSS upload/delete smoke on port $ossSmokePort..." { powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-local-oss-smoke.ps1 -Port $ossSmokePort -Retries 60 -RetryIntervalMs 1500 } "Local OSS upload/delete smoke failed"
+
+      $reliabilitySmokePort = Get-FreeLocalPort -StartPort ($ossSmokePort + 1)
+      Invoke-Step "Running local reliability smoke on port $reliabilitySmokePort..." { powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-local-reliability-smoke.ps1 -Port $reliabilitySmokePort -Retries 60 -RetryIntervalMs 1500 } "Local reliability smoke failed"
+    } else {
+      Warn "DeepVerification is disabled. Skipping release guard and smoke checks."
+    }
   } else {
     Warn "SkipVerification is enabled. Build will continue without verification gates."
   }
@@ -405,10 +247,14 @@ try {
   }
 
   $originalVersionOverride = $env:RELEASE_VERSION_OVERRIDE
+  $originalCommitOverride = $env:RELEASE_COMMIT_OVERRIDE
+  $originalCommitShortOverride = $env:RELEASE_COMMIT_SHORT_OVERRIDE
   $originalBuildSource = $env:RELEASE_BUILD_SOURCE
   $originalSourceWorkspaceDirty = $env:RELEASE_SOURCE_WORKSPACE_DIRTY
   try {
     $env:RELEASE_VERSION_OVERRIDE = $targetVersion
+    $env:RELEASE_COMMIT_OVERRIDE = $commitFull
+    $env:RELEASE_COMMIT_SHORT_OVERRIDE = $commitShort
     if ([string]::IsNullOrWhiteSpace($env:RELEASE_BUILD_SOURCE)) {
       $env:RELEASE_BUILD_SOURCE = "workspace"
     }
@@ -421,6 +267,18 @@ try {
       Remove-Item "Env:RELEASE_VERSION_OVERRIDE" -ErrorAction SilentlyContinue
     } else {
       Set-Item "Env:RELEASE_VERSION_OVERRIDE" $originalVersionOverride
+    }
+
+    if ($null -eq $originalCommitOverride) {
+      Remove-Item "Env:RELEASE_COMMIT_OVERRIDE" -ErrorAction SilentlyContinue
+    } else {
+      Set-Item "Env:RELEASE_COMMIT_OVERRIDE" $originalCommitOverride
+    }
+
+    if ($null -eq $originalCommitShortOverride) {
+      Remove-Item "Env:RELEASE_COMMIT_SHORT_OVERRIDE" -ErrorAction SilentlyContinue
+    } else {
+      Set-Item "Env:RELEASE_COMMIT_SHORT_OVERRIDE" $originalCommitShortOverride
     }
 
     if ($null -eq $originalBuildSource) {

@@ -1,4 +1,6 @@
+/// <reference path="../types/multer.d.ts" />
 import { Router, type Request, type Response } from 'express';
+// @ts-ignore local declaration fallback covers runtime usage even when @types/multer is incomplete
 import multer from 'multer';
 import { pipeline } from 'node:stream/promises';
 import {
@@ -53,6 +55,14 @@ function readMultipartField(value: unknown): string | undefined {
   return trimmed || undefined;
 }
 
+type UploadRequest = Request & {
+  file?: {
+    buffer: Buffer;
+    originalname: string;
+    mimetype: string;
+  };
+};
+
 const uploadsRouter = Router();
 
 uploadsRouter.get('/object', async (req: Request, res: Response) => {
@@ -93,7 +103,7 @@ uploadsRouter.get('/object', async (req: Request, res: Response) => {
   }
 });
 
-uploadsRouter.post('/assets', upload.single('file'), async (req: Request, res: Response) => {
+uploadsRouter.post('/assets', upload.single('file'), async (req: UploadRequest, res: Response) => {
   const file = req.file;
   if (!file) {
     sendUploadsRouteError(res, 400, 'FILE_REQUIRED');

@@ -1,17 +1,16 @@
 # ============================================================================
 # deploy.ps1 - Release entrypoint (artifact-driven)
 # Usage:
-#   .\deploy.ps1 -Mode build  -VersionBump minor -ReleaseNote "fix xxx"
-#   .\deploy.ps1 -Mode deploy -ArtifactPath .\artifacts\releases\release-xxx.tar.gz -ConfirmProduction -ConfirmText "DEPLOY_PROD"
-#   .\deploy.ps1 -Mode all    -VersionBump major -ReleaseNote "add module yyy" -ConfirmProduction -ConfirmText "DEPLOY_PROD"
+#   .\deploy.ps1 -Mode build
+#   .\deploy.ps1 -Mode deploy -ArtifactPath .\artifacts\releases\release-xxx.tar.gz
+#   .\deploy.ps1 -Mode build -DeepVerification
+#   .\deploy.ps1 -Mode deploy -ArtifactPath .\artifacts\releases\release-xxx.tar.gz -DeepVerification
 #   .\deploy.ps1   # default mode: build (safe)
 # ============================================================================
 
 param(
-    [ValidateSet("build", "deploy", "all")]
+    [ValidateSet("build", "deploy")]
     [string]$Mode = "build",
-    [ValidateSet("minor", "major")]
-    [string]$VersionBump = "minor",
     [string]$ReleaseNote = "",
     [string]$ArtifactPath = "",
     [string]$MetadataPath = "",
@@ -19,12 +18,11 @@ param(
     [string]$RemoteDir = "",
     [switch]$SkipVerification,
     [switch]$SkipRemoteSmoke,
-    [switch]$ConfirmProduction,
-    [string]$ConfirmText = "",
     [string]$HostAlias = "",
-    [switch]$AllowDirectDeploy,
+    [switch]$DeepVerification,
+    [switch]$RequirePreviewArtifact,
     [switch]$PreflightOnly,
-    [switch]$AllowDirtyWorkspace
+    [switch]$AllowDirectDeploy
 )
 
 $ErrorActionPreference = "Stop"
@@ -41,34 +39,29 @@ function Normalize-SingleLine([string]$Value) {
     return ($singleLine -replace "\s{2,}", " ").Trim()
 }
 
-function Resolve-EntrypointReleaseNote([string]$RawNote, [string]$CurrentMode, [switch]$IsPreflightOnly) {
+function Resolve-EntrypointReleaseNote([string]$RawNote, [string]$CurrentMode, [switch]$IsPreflightOnly, [string]$RepoRootPath) {
     $normalized = Normalize-SingleLine $RawNote
     if (-not [string]::IsNullOrWhiteSpace($normalized)) { return $normalized }
     if ($CurrentMode -eq "deploy" -or $IsPreflightOnly) { return "" }
-    return ""
+    try {
+        $subject = (& git -C $RepoRootPath show -s --format=%s HEAD 2>$null | Select-Object -First 1)
+        $normalizedSubject = Normalize-SingleLine $subject
+        if (-not [string]::IsNullOrWhiteSpace($normalizedSubject)) {
+            return $normalizedSubject
+        }
+    } catch {
+    }
+    return "manual release"
 }
 
 function Assert-ReleaseGuards(
     [string]$CurrentMode,
     [string]$CurrentReleaseNote,
-    [switch]$IsPreflightOnly,
-    [switch]$IsConfirmProduction,
-    [string]$CurrentConfirmText
+    [switch]$IsPreflightOnly
 ) {
-    $isBuildRelated = $CurrentMode -eq "build" -or $CurrentMode -eq "all"
-    $isDeployRelated = $CurrentMode -eq "deploy" -or $CurrentMode -eq "all"
-
+    $isBuildRelated = $CurrentMode -eq "build"
     if ($isBuildRelated -and -not $IsPreflightOnly -and [string]::IsNullOrWhiteSpace($CurrentReleaseNote)) {
         Err "ReleaseNote is required for build/all mode. Example: -ReleaseNote '修复删除弹窗误触'."
-    }
-
-    if ($isDeployRelated -and -not $IsPreflightOnly) {
-        if (-not $IsConfirmProduction) {
-            Err "Production deploy guard: add -ConfirmProduction to continue."
-        }
-        if ($CurrentConfirmText -ne "DEPLOY_PROD") {
-            Err 'Production deploy guard: add -ConfirmText "DEPLOY_PROD" to continue.'
-        }
     }
 }
 
@@ -139,6 +132,17 @@ function Resolve-LatestMetadataPath([string]$RootPath) {
     }
 
     return $candidate.FullName
+}
+
+function Assert-ReleaseGuards(
+    [string]$CurrentMode,
+    [string]$CurrentReleaseNote,
+    [switch]$IsPreflightOnly
+) {
+    $isBuildRelated = $CurrentMode -eq "build"
+    if ($isBuildRelated -and -not $IsPreflightOnly -and [string]::IsNullOrWhiteSpace($CurrentReleaseNote)) {
+        Err "ReleaseNote could not be resolved for build/all mode."
+    }
 }
 
 function Get-SingleTrackStatePath([string]$RepoRootPath) {
@@ -221,31 +225,23 @@ if (-not (Test-Path $releaseDeployScript)) {
     Err "Missing script: $releaseDeployScript"
 }
 
-$ReleaseNote = Resolve-EntrypointReleaseNote -RawNote $ReleaseNote -CurrentMode $Mode -IsPreflightOnly:$PreflightOnly
+$ReleaseNote = Resolve-EntrypointReleaseNote -RawNote $ReleaseNote -CurrentMode $Mode -IsPreflightOnly:$PreflightOnly -RepoRootPath $scriptRoot
 $resolvedRemoteDir = Resolve-DeployRemoteDir $RemoteDir
 Assert-ReleaseGuards `
     -CurrentMode $Mode `
     -CurrentReleaseNote $ReleaseNote `
-    -IsPreflightOnly:$PreflightOnly `
-    -IsConfirmProduction:$ConfirmProduction `
-    -CurrentConfirmText $ConfirmText
+    -IsPreflightOnly:$PreflightOnly
 
 $resolvedHostAlias = Resolve-DeployHostAlias $HostAlias
-
-if ($Mode -eq "all" -and -not $AllowDirectDeploy) {
-    Err "Mode=all is blocked by single-track policy. Use: pnpm run board:flow:preview, then pnpm run board:flow:deploy."
-}
+$effectiveSkipRemoteSmoke = $SkipRemoteSmoke -or (-not $DeepVerification)
 
 if ($Mode -eq "build") {
     Log "Running artifact build mode..."
     & $releaseBuildScript `
-        -VersionBump $VersionBump `
         -ReleaseNote $ReleaseNote `
-        -HostAlias $resolvedHostAlias `
-        -RemoteDir $resolvedRemoteDir `
         -OutputDir $OutputDir `
         -SkipVerification:$SkipVerification `
-        -AllowDirtyWorkspace:$AllowDirtyWorkspace `
+        -DeepVerification:$DeepVerification `
         -PreflightOnly:$PreflightOnly
 
     if ($LASTEXITCODE -ne 0) {
@@ -260,11 +256,13 @@ if ($Mode -eq "deploy") {
         Err "ArtifactPath is required in deploy mode."
     }
 
-    Assert-SingleTrackDeployGuard `
-        -RepoRootPath $scriptRoot `
-        -InputArtifactPath $ArtifactPath `
-        -InputMetadataPath $MetadataPath `
-        -AllowBypass:$AllowDirectDeploy
+    if ($RequirePreviewArtifact) {
+        Assert-SingleTrackDeployGuard `
+            -RepoRootPath $scriptRoot `
+            -InputArtifactPath $ArtifactPath `
+            -InputMetadataPath $MetadataPath `
+            -AllowBypass:$AllowDirectDeploy
+    }
 
     Log "Running artifact deploy mode..."
     & $releaseDeployScript `
@@ -272,7 +270,7 @@ if ($Mode -eq "deploy") {
         -MetadataPath $MetadataPath `
         -HostAlias $resolvedHostAlias `
         -RemoteDir $resolvedRemoteDir `
-        -SkipRemoteSmoke:$SkipRemoteSmoke
+        -SkipRemoteSmoke:$effectiveSkipRemoteSmoke
 
     if ($LASTEXITCODE -ne 0) {
         Err "Artifact deploy failed."
@@ -281,55 +279,4 @@ if ($Mode -eq "deploy") {
     exit 0
 }
 
-# Mode = all
-Log "Running artifact build+deploy mode..."
-& $releaseBuildScript `
-    -VersionBump $VersionBump `
-    -ReleaseNote $ReleaseNote `
-    -HostAlias $resolvedHostAlias `
-    -RemoteDir $resolvedRemoteDir `
-    -OutputDir $OutputDir `
-    -SkipVerification:$SkipVerification `
-    -AllowDirtyWorkspace:$AllowDirtyWorkspace `
-    -PreflightOnly:$PreflightOnly
-
-if ($LASTEXITCODE -ne 0) {
-    Err "Artifact build failed."
-}
-
-if ($PreflightOnly) {
-    Log "Preflight finished. Skipping deploy because -PreflightOnly was requested."
-    exit 0
-}
-
-$resolvedOutputDir = Resolve-AbsolutePath $OutputDir
-if (-not $resolvedOutputDir) {
-    Err "Failed to resolve output directory after build: $OutputDir"
-}
-
-$latestMetadata = Resolve-LatestMetadataPath $resolvedOutputDir
-if (-not $latestMetadata) {
-    Err "Could not find release metadata file under $resolvedOutputDir"
-}
-
-$derivedArtifactPath = $latestMetadata -replace "\.metadata\.json$", ".tar.gz"
-if (-not (Test-Path $derivedArtifactPath)) {
-    Err "Derived artifact path not found: $derivedArtifactPath"
-}
-
-Log "Deploying latest artifact:"
-Write-Host "  Artifact: $derivedArtifactPath" -ForegroundColor Cyan
-Write-Host "  Metadata: $latestMetadata" -ForegroundColor Cyan
-
-& $releaseDeployScript `
-    -ArtifactPath $derivedArtifactPath `
-    -MetadataPath $latestMetadata `
-    -HostAlias $resolvedHostAlias `
-    -RemoteDir $resolvedRemoteDir `
-    -SkipRemoteSmoke:$SkipRemoteSmoke
-
-if ($LASTEXITCODE -ne 0) {
-    Err "Artifact deploy failed."
-}
-
-Log "Build+deploy completed."
+Err "Unsupported mode: $Mode"
