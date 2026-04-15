@@ -8,6 +8,7 @@ import { fileURLToPath } from "url";
 import express from "express";
 import { createServer } from "http";
 import { registerApiAccessPolicy } from "./middleware/apiAccessPolicy.js";
+import { registerDbWarmupGate, type DbWarmupState } from "./middleware/dbWarmupGate.js";
 import { securityHeaders } from "./middleware/security.js";
 import { getReleaseInfoHandler } from "./release.js";
 import { getGanttDataHandler, postGanttImportHandler, patchProjectImageHandler, checkProjectExistsHandler, deleteGanttProject, getTaskEvidenceHandler, postTaskEvidenceHandler, deleteEvidenceHandler, getProjectEvidenceCountsHandler } from "./routes/gantt.js";
@@ -40,18 +41,12 @@ const __dirname = path.dirname(__filename);
 
 // Dev API only: set DEV_API=1 and PORT=3001 so Vite proxy /api -> localhost:3001
 const isDevApiOnly = process.env.DEV_API === "1";
-type DbWarmupPhase = "pending" | "running" | "ready" | "failed";
 type DbWarmupTask = { name: string; run: () => Promise<unknown> };
 
 async function startServer() {
   const app = express();
   const server = createServer(app);
-  const warmupState: {
-    phase: DbWarmupPhase;
-    startedAt: string | null;
-    finishedAt: string | null;
-    failedTasks: string[];
-  } = {
+  const warmupState: DbWarmupState = {
     phase: "pending",
     startedAt: null,
     finishedAt: null,
@@ -161,37 +156,7 @@ async function startServer() {
     }
   });
 
-  app.use("/api", (req, res, next) => {
-    if (req.path === "/health" || req.path === "/release") {
-      next();
-      return;
-    }
-
-    if (warmupState.phase === "ready") {
-      next();
-      return;
-    }
-
-    const waitingForDb = warmupState.phase === "pending" || warmupState.phase === "running";
-    const code = waitingForDb ? "DB_WARMUP_IN_PROGRESS" : "DB_WARMUP_FAILED";
-    const message = waitingForDb
-      ? "service warming up, please retry shortly"
-      : "service warmup failed, database routes are temporarily unavailable";
-
-    res.status(503).json({
-      ok: false,
-      api: true,
-      code,
-      message,
-      retryable: waitingForDb,
-      warmup: {
-        phase: warmupState.phase,
-        startedAt: warmupState.startedAt,
-        finishedAt: warmupState.finishedAt,
-        failedTasks: warmupState.failedTasks,
-      },
-    });
-  });
+  registerDbWarmupGate(app, () => warmupState);
 
   // API — 甘特数据持久化与加载
   app.get("/api/gantt/data", getGanttDataHandler);
