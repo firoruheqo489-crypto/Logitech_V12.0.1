@@ -84,7 +84,7 @@ function Invoke-ExternalPowerShell([string]$RepoRootPath, [string]$ScriptRelativ
     Err "Missing script: $scriptPath"
   }
 
-  & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $scriptPath @Args
+  & $scriptPath @Args
   if ($LASTEXITCODE -ne 0) {
     Err "$ScriptRelativePath failed with exit code $LASTEXITCODE"
   }
@@ -101,12 +101,12 @@ function Get-GitStatus([string]$RepoRootPath) {
 
 function Invoke-AutoCommit([string]$RepoRootPath, [string]$CommitMsg) {
   $statusLines = Get-GitStatus $RepoRootPath
-  if ($statusLines.Count -eq 0) {
+  if (@($statusLines).Count -eq 0) {
     Log "Workspace is clean; no auto-commit needed."
     return
   }
 
-  Write-Host $statusLines -ForegroundColor Yellow
+  Write-Host (@($statusLines) -join "`n") -ForegroundColor Yellow
   Log "Auto-committing release checkpoint..."
   & git -C $RepoRootPath add -A
   if ($LASTEXITCODE -ne 0) {
@@ -159,7 +159,15 @@ function Resolve-LatestReleaseMetadata([string]$RepoRootPath, [string]$Configure
 }
 
 function Invoke-Backup([string]$RepoRootPath) {
-  Invoke-ExternalPowerShell -RepoRootPath $RepoRootPath -ScriptRelativePath "backup.ps1" -Args @()
+  $backupScriptPath = Join-Path $RepoRootPath "backup.ps1"
+  if (-not (Test-Path -LiteralPath $backupScriptPath)) {
+    Err "Missing script: $backupScriptPath"
+  }
+
+  & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $backupScriptPath
+  if ($LASTEXITCODE -ne 0) {
+    Err "backup.ps1 failed with exit code $LASTEXITCODE"
+  }
 }
 
 function Invoke-ReleaseBuild(
