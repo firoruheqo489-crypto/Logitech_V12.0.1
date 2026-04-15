@@ -78,18 +78,6 @@ function Get-RepoRoot() {
   return $root
 }
 
-function Invoke-ExternalPowerShell([string]$RepoRootPath, [string]$ScriptRelativePath, [string[]]$ArgumentList) {
-  $scriptPath = Join-Path $RepoRootPath $ScriptRelativePath
-  if (-not (Test-Path -LiteralPath $scriptPath)) {
-    Err "Missing script: $scriptPath"
-  }
-
-  & $scriptPath @ArgumentList
-  if ($LASTEXITCODE -ne 0) {
-    Err "$ScriptRelativePath failed with exit code $LASTEXITCODE"
-  }
-}
-
 function Get-GitStatus([string]$RepoRootPath) {
   $status = (& git -C $RepoRootPath status --porcelain=v1 --untracked-files=all 2>$null)
   if ($LASTEXITCODE -ne 0) {
@@ -174,16 +162,20 @@ function Invoke-ReleaseBuild(
   [string]$RepoRootPath,
   [string]$ReleaseText
 ) {
-  $args = @(
-    "-Mode", "build",
-    "-ReleaseNote", $ReleaseText,
-    "-OutputDir", $OutputDir
-  )
-  if (-not $SkipVerification) {
-    $args += "-DeepVerification"
+  $deployScriptPath = Join-Path $RepoRootPath "deploy.ps1"
+  if (-not (Test-Path -LiteralPath $deployScriptPath)) {
+    Err "Missing script: $deployScriptPath"
   }
 
-  Invoke-ExternalPowerShell -RepoRootPath $RepoRootPath -ScriptRelativePath "deploy.ps1" -ArgumentList $args
+  if (-not $SkipVerification) {
+    & $deployScriptPath -Mode build -ReleaseNote $ReleaseText -OutputDir $OutputDir -DeepVerification
+  } else {
+    & $deployScriptPath -Mode build -ReleaseNote $ReleaseText -OutputDir $OutputDir
+  }
+
+  if ($LASTEXITCODE -ne 0) {
+    Err "deploy.ps1 build failed with exit code $LASTEXITCODE"
+  }
 }
 
 function Invoke-ReleaseDeploy(
@@ -191,23 +183,32 @@ function Invoke-ReleaseDeploy(
   [string]$ArtifactValue,
   [string]$MetadataValue
 ) {
-  $args = @(
+  $deployScriptPath = Join-Path $RepoRootPath "deploy.ps1"
+  if (-not (Test-Path -LiteralPath $deployScriptPath)) {
+    Err "Missing script: $deployScriptPath"
+  }
+
+  $commonArgs = @(
     "-Mode", "deploy",
     "-ArtifactPath", $ArtifactValue,
     "-MetadataPath", $MetadataValue
   )
-
   if (-not [string]::IsNullOrWhiteSpace($HostAlias)) {
-    $args += @("-HostAlias", $HostAlias)
+    $commonArgs += @("-HostAlias", $HostAlias)
   }
   if (-not [string]::IsNullOrWhiteSpace($RemoteDir)) {
-    $args += @("-RemoteDir", $RemoteDir)
-  }
-  if (-not $SkipRemoteSmoke) {
-    $args += "-DeepVerification"
+    $commonArgs += @("-RemoteDir", $RemoteDir)
   }
 
-  Invoke-ExternalPowerShell -RepoRootPath $RepoRootPath -ScriptRelativePath "deploy.ps1" -ArgumentList $args
+  if (-not $SkipRemoteSmoke) {
+    & $deployScriptPath @commonArgs -DeepVerification
+  } else {
+    & $deployScriptPath @commonArgs
+  }
+
+  if ($LASTEXITCODE -ne 0) {
+    Err "deploy.ps1 deploy failed with exit code $LASTEXITCODE"
+  }
 }
 
 $repoRoot = Get-RepoRoot
