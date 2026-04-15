@@ -16,6 +16,8 @@ export type MoldTrialEvidenceRemoteState = {
   moldId: string;
   moldNo?: string;
   stagesByScope: Record<string, MoldTrialEvidenceRemoteStageState>;
+  trialStages?: string[];
+  clearedTrialStages?: string[];
   updatedAt?: string;
 };
 
@@ -62,6 +64,18 @@ function sanitizeStagesByScope(value: unknown): Record<string, MoldTrialEvidence
   }, {} as Record<string, MoldTrialEvidenceRemoteStageState>);
 }
 
+function sanitizeTrialStages(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return Array.from(
+    new Set(
+      value.filter((stage): stage is string => typeof stage === 'string' && /^T\d+$/.test(stage)),
+    ),
+  ).sort((a, b) => Number.parseInt(a.slice(1), 10) - Number.parseInt(b.slice(1), 10));
+}
+
 export async function fetchDashboardMoldTrialEvidenceState(
   identity: MoldTrialEvidenceIdentity,
 ): Promise<MoldTrialEvidenceRemoteState | null> {
@@ -83,6 +97,8 @@ export async function fetchDashboardMoldTrialEvidenceState(
     moldId: String(state.moldId ?? identity.moldId).trim(),
     moldNo: String(state.moldNo ?? identity.moldNo ?? '').trim() || undefined,
     stagesByScope: sanitizeStagesByScope(state.stagesByScope),
+    trialStages: sanitizeTrialStages((state as { trialStages?: unknown }).trialStages),
+    clearedTrialStages: sanitizeTrialStages((state as { clearedTrialStages?: unknown }).clearedTrialStages),
     updatedAt: typeof state.updatedAt === 'string' ? state.updatedAt : undefined,
   };
 }

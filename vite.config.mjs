@@ -20,6 +20,25 @@ function loadOptionalJsxLocPlugin() {
 export default defineConfig({
   plugins: [react(), tailwindcss(), loadOptionalJsxLocPlugin()].filter(Boolean),
   esbuild: false,
+  optimizeDeps: {
+    entries: ["index.html", "src/main.tsx", "src/App.tsx"],
+    include: [
+      "react",
+      "react-dom",
+      "wouter",
+      "sonner",
+      "lucide-react",
+      "recharts",
+      "framer-motion",
+      "react-day-picker",
+      "@supabase/supabase-js",
+      "@radix-ui/react-dialog",
+      "@radix-ui/react-dropdown-menu",
+      "@radix-ui/react-select",
+      "@radix-ui/react-tabs",
+      "@radix-ui/react-tooltip",
+    ],
+  },
   resolve: {
     alias: {
       "@": path.resolve(import.meta.dirname, "client", "src"),

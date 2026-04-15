@@ -2,7 +2,7 @@ param(
   [string]$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path,
   [int]$ApiPort = 3001,
   [int]$FrontendPort = 3000,
-  [int]$TimeoutSeconds = 45
+  [int]$TimeoutSeconds = 10
 )
 
 Set-StrictMode -Version Latest
@@ -238,36 +238,6 @@ function Get-ProcessFailureMessage {
   return $message
 }
 
-function Wait-ForApi {
-  param(
-    [string]$Url,
-    [System.Diagnostics.Process]$Process,
-    [string]$StdOutPath,
-    [string]$StdErrPath,
-    [int]$TimeoutSeconds
-  )
-
-  $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
-  while ((Get-Date) -lt $deadline) {
-    try {
-      $response = Invoke-RestMethod -Uri $Url -Method Get -TimeoutSec 2
-      if ($response.ok -eq $true -and $response.api -eq $true) {
-        return
-      }
-    } catch {
-    }
-
-    $Process.Refresh()
-    if ($Process.HasExited) {
-      throw (Get-ProcessFailureMessage -Name "api" -Process $Process -StdOutPath $StdOutPath -StdErrPath $StdErrPath)
-    }
-
-    Start-Sleep -Milliseconds 500
-  }
-
-  throw "api did not become healthy within $TimeoutSeconds seconds.`n$(Get-LogTail -Path $StdOutPath)"
-}
-
 function Get-FrontendUrlFromLog {
   param([string]$Path)
 
@@ -299,38 +269,75 @@ function Test-FrontendUrl {
   }
 }
 
-function Wait-ForFrontend {
+function Wait-ForServices {
   param(
+    [string]$ApiHealthUrl,
     [int]$PreferredPort,
-    [System.Diagnostics.Process]$Process,
-    [string]$StdOutPath,
-    [string]$StdErrPath,
+    [System.Diagnostics.Process]$ApiProcess,
+    [string]$ApiStdOutPath,
+    [string]$ApiStdErrPath,
+    [System.Diagnostics.Process]$ViteProcess,
+    [string]$ViteStdOutPath,
+    [string]$ViteStdErrPath,
     [int]$TimeoutSeconds
   )
 
   $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
-  while ((Get-Date) -lt $deadline) {
-    $loggedUrl = Get-FrontendUrlFromLog -Path $StdOutPath
-    if ($loggedUrl -and (Test-FrontendUrl -Url $loggedUrl)) {
-      return $loggedUrl
-    }
+  $apiReady = $false
+  $frontendReady = $false
+  $frontendUrl = $null
 
-    foreach ($port in $PreferredPort..($PreferredPort + 10)) {
-      $candidateUrl = "http://localhost:$port"
-      if (Test-FrontendUrl -Url $candidateUrl) {
-        return $candidateUrl
+  while ((Get-Date) -lt $deadline) {
+    if (-not $apiReady) {
+      try {
+        $response = Invoke-RestMethod -Uri $ApiHealthUrl -Method Get -TimeoutSec 2
+        if ($response.ok -eq $true -and $response.api -eq $true) {
+          $apiReady = $true
+          Write-Status "api ready at $ApiHealthUrl"
+        }
+      } catch {
       }
     }
 
-    $Process.Refresh()
-    if ($Process.HasExited) {
-      throw (Get-ProcessFailureMessage -Name "vite" -Process $Process -StdOutPath $StdOutPath -StdErrPath $StdErrPath)
+    if (-not $frontendReady) {
+      $loggedUrl = Get-FrontendUrlFromLog -Path $ViteStdOutPath
+      if ($loggedUrl -and (Test-FrontendUrl -Url $loggedUrl)) {
+        $frontendReady = $true
+        $frontendUrl = $loggedUrl
+        Write-Status "frontend ready at $frontendUrl"
+      }
+
+      if (-not $frontendReady) {
+        foreach ($port in $PreferredPort..($PreferredPort + 10)) {
+          $candidateUrl = "http://localhost:$port"
+          if (Test-FrontendUrl -Url $candidateUrl) {
+            $frontendReady = $true
+            $frontendUrl = $candidateUrl
+            Write-Status "frontend ready at $frontendUrl"
+            break
+          }
+        }
+      }
+    }
+
+    $ApiProcess.Refresh()
+    if ($ApiProcess.HasExited) {
+      throw (Get-ProcessFailureMessage -Name "api" -Process $ApiProcess -StdOutPath $ApiStdOutPath -StdErrPath $ApiStdErrPath)
+    }
+
+    $ViteProcess.Refresh()
+    if ($ViteProcess.HasExited) {
+      throw (Get-ProcessFailureMessage -Name "vite" -Process $ViteProcess -StdOutPath $ViteStdOutPath -StdErrPath $ViteStdErrPath)
+    }
+
+    if ($apiReady -and $frontendReady -and $frontendUrl) {
+      return $frontendUrl
     }
 
     Start-Sleep -Milliseconds 500
   }
 
-  throw "vite did not expose a reachable frontend within $TimeoutSeconds seconds.`n$(Get-LogTail -Path $StdOutPath)"
+  throw "probe acceptance failed: services were not ready within $TimeoutSeconds seconds. Review logs: $ApiStdOutPath, $ApiStdErrPath, $ViteStdOutPath, $ViteStdErrPath"
 }
 
 Remove-FileIfExists -Path $failureFile
@@ -358,14 +365,19 @@ try {
   $apiUrl = "http://localhost:$ApiPort"
   $apiHealthUrl = "$apiUrl/api/health"
 
-  Write-Status "waiting for api health at $apiHealthUrl"
-  Wait-ForApi -Url $apiHealthUrl -Process $apiProcessInfo.Process -StdOutPath $apiProcessInfo.StdOutPath -StdErrPath $apiProcessInfo.StdErrPath -TimeoutSeconds $TimeoutSeconds
-
-  Write-Status "starting frontend after api is healthy"
   $viteProcessInfo = Start-LoggedProcess -Name "vite" -ArgumentList @("run", "dev:only") -StdOutPath $viteOutLog -StdErrPath $viteErrLog
 
-  Write-Status "waiting for frontend"
-  $frontendUrl = Wait-ForFrontend -PreferredPort $FrontendPort -Process $viteProcessInfo.Process -StdOutPath $viteProcessInfo.StdOutPath -StdErrPath $viteProcessInfo.StdErrPath -TimeoutSeconds $TimeoutSeconds
+  Write-Status "waiting for api/frontend readiness in parallel"
+  $frontendUrl = Wait-ForServices `
+    -ApiHealthUrl $apiHealthUrl `
+    -PreferredPort $FrontendPort `
+    -ApiProcess $apiProcessInfo.Process `
+    -ApiStdOutPath $apiProcessInfo.StdOutPath `
+    -ApiStdErrPath $apiProcessInfo.StdErrPath `
+    -ViteProcess $viteProcessInfo.Process `
+    -ViteStdOutPath $viteProcessInfo.StdOutPath `
+    -ViteStdErrPath $viteProcessInfo.StdErrPath `
+    -TimeoutSeconds $TimeoutSeconds
 
   $frontendPort = ([System.Uri]$frontendUrl).Port
   $resolvedApiPid = Resolve-ListeningPid -Port $ApiPort -FallbackPid $apiProcessInfo.Process.Id
@@ -396,6 +408,7 @@ try {
   Write-StdoutLine "VITE_PID=$resolvedVitePid"
   Write-StdoutLine "STATE_FILE=$stateFile"
   [Console]::Out.Flush()
+  exit 0
 } catch {
   $failure = [PSCustomObject]@{
     failedAt = (Get-Date).ToString("o")

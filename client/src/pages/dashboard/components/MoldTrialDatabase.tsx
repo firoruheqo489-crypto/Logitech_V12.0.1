@@ -1350,14 +1350,8 @@ export default function MoldTrialDatabase({
 	);
 	const trialEvidenceStorageKey = buildTrialEvidenceStorageKey(moldId, moldNo);
 	const machineSheetStorageKey = buildMachineSheetStorageKey(moldId, moldNo);
-	const initialTrialStages = readStoredTrialStages(moldId, moldNo);
-	const initialStoredClearedTrialStages = readStoredClearedTrialStages(
-		trialStageClearedStorageKey,
-	);
-	const initialClearedTrialStages = resolveClearedTrialStages(
-		initialTrialStages,
-		initialStoredClearedTrialStages,
-	);
+	const initialTrialStages = [...defaultTrialStages];
+	const initialClearedTrialStages: TrialStage[] = [];
 
 	const [trialStagesState, setTrialStagesState] = useState<TrialStage[]>(() => [
 		...initialTrialStages,
@@ -1413,7 +1407,9 @@ export default function MoldTrialDatabase({
 	>({});
 	const machineSheetByTrialRef = useRef<Record<TrialStage, string>>({});
 	const canPersistEvidenceRef = useRef(false);
+	const canPersistTrialStateRef = useRef(false);
 	const [isEvidenceHydrated, setIsEvidenceHydrated] = useState(false);
+	const [isTrialStateHydrated, setIsTrialStateHydrated] = useState(false);
 	const [isMachineSheetHydrated, setIsMachineSheetHydrated] = useState(false);
 	const [isUploadingMachineSheet, setIsUploadingMachineSheet] = useState(false);
 	const [isEvidenceDropActive, setIsEvidenceDropActive] = useState(false);
@@ -1496,16 +1492,10 @@ export default function MoldTrialDatabase({
 	}, [currentEvidenceSlots, selectedEvidenceSlotId]);
 
 	useEffect(() => {
-		const nextTrialStages = readStoredTrialStages(moldId, moldNo);
-		const storedClearedTrialStages = readStoredClearedTrialStages(
-			trialStageClearedStorageKey,
-		);
-		const nextClearedTrialStages = resolveClearedTrialStages(
-			nextTrialStages,
-			storedClearedTrialStages,
-		);
-		const fallbackEvidence = buildEvidenceStateMap(nextTrialStages);
-		const fallbackEvidenceDrafts = nextTrialStages.reduce(
+		const baseTrialStages = [...defaultTrialStages];
+		const baseClearedTrialStages: TrialStage[] = [];
+		const fallbackEvidence = buildEvidenceStateMap(baseTrialStages);
+		const fallbackEvidenceDrafts = baseTrialStages.reduce(
 			(acc, stage) => {
 				acc[stage] = "";
 				return acc;
@@ -1515,12 +1505,12 @@ export default function MoldTrialDatabase({
 		let cancelled = false;
 
 		revokeEvidenceSlotUrls(evidenceByTrialRef.current);
-		setTrialStagesState(nextTrialStages);
-		setActiveTrial(nextTrialStages[0] || defaultTrialStages[0]);
+		setTrialStagesState(baseTrialStages);
+		setActiveTrial(baseTrialStages[0] || defaultTrialStages[0]);
 		setTrialDataByStage(
-			buildInitialTrialDataMap(nextTrialStages, nextClearedTrialStages),
+			buildInitialTrialDataMap(baseTrialStages, baseClearedTrialStages),
 		);
-		setClearedTrialStages(nextClearedTrialStages);
+		setClearedTrialStages(baseClearedTrialStages);
 		setEvidenceByTrial(fallbackEvidence);
 		evidenceByTrialRef.current = fallbackEvidence;
 		setEvidenceGroupNoteDraftByTrial(fallbackEvidenceDrafts);
@@ -1533,77 +1523,126 @@ export default function MoldTrialDatabase({
 		setMachineSheetByTrial({});
 		machineSheetByTrialRef.current = {};
 		canPersistEvidenceRef.current = false;
+		canPersistTrialStateRef.current = false;
 		setIsEvidenceHydrated(false);
+		setIsTrialStateHydrated(false);
 		setIsMachineSheetHydrated(false);
 		setIsUploadingMachineSheet(false);
 		setIsImportingExcel(false);
 
 		void (async () => {
 			try {
-				let storedEvidence: unknown = null;
-				let shouldMigrateEvidenceToRemote = false;
+				let remoteEvidenceState: unknown = null;
+				let remoteTrialStages: TrialStage[] = [];
+				let remoteClearedTrialStages: TrialStage[] = [];
+				let shouldMigrateLegacyState = false;
 
 				try {
-					const remoteEvidence = await fetchDashboardMoldTrialEvidenceState({
+					const remoteState = await fetchDashboardMoldTrialEvidenceState({
 						moldId,
 						moldNo,
 					});
-					storedEvidence = remoteEvidence
-						? {
+					if (remoteState) {
+						shouldMigrateLegacyState =
+							!remoteState.trialStages?.length ||
+							!remoteState.clearedTrialStages?.length;
+						remoteEvidenceState = {
 							version: 3,
-							stagesByScope: remoteEvidence.stagesByScope,
-						}
-						: null;
+							stagesByScope: remoteState.stagesByScope,
+						};
+						remoteTrialStages = sanitizeTrialStages(
+							remoteState.trialStages?.length
+								? remoteState.trialStages
+								: Object.keys(remoteState.stagesByScope),
+						);
+						remoteClearedTrialStages = resolveClearedTrialStages(
+							remoteTrialStages,
+							sanitizeTrialStages(remoteState.clearedTrialStages || []),
+						);
+					}
 				} catch {
-					storedEvidence = null;
+					remoteEvidenceState = null;
 				}
 
-				if (!storedEvidence) {
-					storedEvidence = await loadMoldTrialEvidence<unknown>(
+				if (!remoteEvidenceState) {
+					remoteEvidenceState = await loadMoldTrialEvidence<unknown>(
 						trialEvidenceStorageKey,
 					);
-					shouldMigrateEvidenceToRemote = !!storedEvidence;
+					shouldMigrateLegacyState = !!remoteEvidenceState;
 				}
 
-				if (!storedEvidence && typeof window !== "undefined") {
-					const legacyRaw = window.localStorage.getItem(
-						trialEvidenceStorageKey,
-					);
+				if (!remoteEvidenceState && typeof window !== "undefined") {
+					const legacyRaw = window.localStorage.getItem(trialEvidenceStorageKey);
 					if (legacyRaw) {
-						storedEvidence = JSON.parse(legacyRaw) as unknown;
-						shouldMigrateEvidenceToRemote = true;
+						remoteEvidenceState = JSON.parse(legacyRaw) as unknown;
+						shouldMigrateLegacyState = true;
 						await saveMoldTrialEvidence(
 							trialEvidenceStorageKey,
-							storedEvidence,
+							remoteEvidenceState,
 						);
 						window.localStorage.removeItem(trialEvidenceStorageKey);
 					}
 				}
 
-				if (cancelled) return;
-				if (storedEvidence) {
-					const parsedEvidenceState = normalizeStoredEvidenceStateMap(
-						storedEvidence,
-						nextTrialStages,
+				if (!remoteTrialStages.length) {
+					remoteTrialStages = readStoredTrialStages(moldId, moldNo);
+					remoteClearedTrialStages = resolveClearedTrialStages(
+						remoteTrialStages,
+						readStoredClearedTrialStages(trialStageClearedStorageKey),
 					);
-					setEvidenceByTrial(parsedEvidenceState);
-					evidenceByTrialRef.current = parsedEvidenceState;
-					setEvidenceGroupNoteDraftByTrial(
-						nextTrialStages.reduce(
-							(acc, stage) => {
-								acc[stage] = parsedEvidenceState[stage]?.groupNote || "";
-								return acc;
-							},
-							{} as Record<TrialStage, string>,
-						),
-					);
+					if (remoteTrialStages.length > 0) {
+						shouldMigrateLegacyState = true;
+					}
+				}
 
-					if (shouldMigrateEvidenceToRemote) {
-						void saveDashboardMoldTrialEvidenceState({
-							moldId,
-							moldNo,
-							stagesByScope: parsedEvidenceState,
-						}).catch(() => undefined);
+				if (remoteTrialStages.length === 0) {
+					remoteTrialStages = [...defaultTrialStages];
+					remoteClearedTrialStages = [];
+				}
+
+				const normalizedTrialStages = sanitizeTrialStages(remoteTrialStages);
+				const normalizedClearedTrialStages = resolveClearedTrialStages(
+					normalizedTrialStages,
+					remoteClearedTrialStages,
+				);
+				const parsedEvidenceState = normalizeStoredEvidenceStateMap(
+					remoteEvidenceState,
+					normalizedTrialStages,
+				);
+
+				if (cancelled) return;
+				setTrialStagesState(normalizedTrialStages);
+				setActiveTrial(normalizedTrialStages[0] || defaultTrialStages[0]);
+				setTrialDataByStage(
+					buildInitialTrialDataMap(
+						normalizedTrialStages,
+						normalizedClearedTrialStages,
+					),
+				);
+				setClearedTrialStages(normalizedClearedTrialStages);
+				setEvidenceByTrial(parsedEvidenceState);
+				evidenceByTrialRef.current = parsedEvidenceState;
+				setEvidenceGroupNoteDraftByTrial(
+					normalizedTrialStages.reduce(
+						(acc, stage) => {
+							acc[stage] = parsedEvidenceState[stage]?.groupNote || "";
+							return acc;
+						},
+						{} as Record<TrialStage, string>,
+					),
+				);
+
+				if (shouldMigrateLegacyState) {
+					void saveDashboardMoldTrialEvidenceState({
+						moldId,
+						moldNo,
+						stagesByScope: parsedEvidenceState,
+						trialStages: normalizedTrialStages,
+						clearedTrialStages: normalizedClearedTrialStages,
+					}).catch(() => undefined);
+					if (typeof window !== "undefined") {
+						window.localStorage.removeItem(trialStageStorageKey);
+						window.localStorage.removeItem(trialStageClearedStorageKey);
 					}
 				}
 
@@ -1637,6 +1676,7 @@ export default function MoldTrialDatabase({
 			} finally {
 				if (!cancelled) {
 					setIsEvidenceHydrated(true);
+					setIsTrialStateHydrated(true);
 					setIsMachineSheetHydrated(true);
 				}
 			}
@@ -1651,59 +1691,32 @@ export default function MoldTrialDatabase({
 		moldNo,
 		trialEvidenceStorageKey,
 		trialStageClearedStorageKey,
+		trialStageStorageKey,
 	]);
 
 	useEffect(() => {
-		if (typeof window === "undefined") return;
-
-		try {
-			window.localStorage.setItem(
-				trialStageStorageKey,
-				JSON.stringify(trialStagesState),
-			);
-		} catch {
-			// Ignore storage write failures and keep UI responsive.
-		}
-	}, [trialStageStorageKey, trialStagesState]);
-
-	useEffect(() => {
-		if (typeof window === "undefined") return;
-
-		try {
-			if (clearedTrialStages.length === 0) {
-				window.localStorage.removeItem(trialStageClearedStorageKey);
-			} else {
-				window.localStorage.setItem(
-					trialStageClearedStorageKey,
-					JSON.stringify(clearedTrialStages),
-				);
-			}
-		} catch {
-			// Ignore storage write failures and keep the UI responsive.
-		}
-	}, [clearedTrialStages, trialStageClearedStorageKey]);
-
-	useEffect(() => {
-		if (!isEvidenceHydrated) {
+		if (!isEvidenceHydrated || !isTrialStateHydrated) {
 			canPersistEvidenceRef.current = false;
+			canPersistTrialStateRef.current = false;
 			return;
 		}
 
 		const enablePersistTimer = window.setTimeout(() => {
 			canPersistEvidenceRef.current = true;
+			canPersistTrialStateRef.current = true;
 		}, 0);
 
 		return () => {
 			window.clearTimeout(enablePersistTimer);
 		};
-	}, [isEvidenceHydrated, moldId, moldNo]);
+	}, [isEvidenceHydrated, isTrialStateHydrated, moldId, moldNo]);
 
 	useEffect(() => {
-		if (!isEvidenceHydrated) {
+		if (!isEvidenceHydrated || !isTrialStateHydrated) {
 			return;
 		}
 
-		if (!canPersistEvidenceRef.current) {
+		if (!canPersistEvidenceRef.current || !canPersistTrialStateRef.current) {
 			return;
 		}
 
@@ -1713,6 +1726,8 @@ export default function MoldTrialDatabase({
 					moldId,
 					moldNo,
 					stagesByScope: evidenceByTrial,
+					trialStages: trialStagesState,
+					clearedTrialStages,
 				});
 			} catch {
 				// Ignore remote storage write failures and keep UI responsive.
@@ -1737,9 +1752,12 @@ export default function MoldTrialDatabase({
 		})();
 	}, [
 		evidenceByTrial,
+		clearedTrialStages,
+		isTrialStateHydrated,
 		isEvidenceHydrated,
 		moldId,
 		moldNo,
+		trialStagesState,
 		trialEvidenceStorageKey,
 	]);
 
@@ -1818,11 +1836,6 @@ export default function MoldTrialDatabase({
 		setEvidenceByTrial(nextEvidenceState);
 		evidenceByTrialRef.current = nextEvidenceState;
 		setEvidenceGroupNoteDraftByTrial(nextEvidenceDrafts);
-		writeStoredTrialStages(trialStageStorageKey, nextTrialStages);
-		writeStoredClearedTrialStages(
-			trialStageClearedStorageKey,
-			nextClearedTrialStages,
-		);
 		setActiveTrial(nextStage);
 	};
 
@@ -1868,11 +1881,6 @@ export default function MoldTrialDatabase({
 		setEvidenceByTrial(nextEvidenceState);
 		evidenceByTrialRef.current = nextEvidenceState;
 		setEvidenceGroupNoteDraftByTrial(nextEvidenceDrafts);
-		writeStoredTrialStages(trialStageStorageKey, nextTrialStages);
-		writeStoredClearedTrialStages(
-			trialStageClearedStorageKey,
-			nextClearedTrialStages,
-		);
 		setMachineSheetByTrial((prev) => {
 			if (!prev[activeTrial]) return prev;
 			const next = { ...prev };
@@ -1901,10 +1909,6 @@ export default function MoldTrialDatabase({
 				[stage]: buildClearedTrialStageDataFromSource(currentStageData),
 			};
 		});
-		writeStoredClearedTrialStages(
-			trialStageClearedStorageKey,
-			nextClearedTrialStages,
-		);
 		const clearedMachineSheetUrl = machineSheetByTrialRef.current[stage];
 		setMachineSheetByTrial((prev) => {
 			if (!prev[stage]) return prev;
@@ -3043,4 +3047,3 @@ export default function MoldTrialDatabase({
 		</div>
 	);
 }
-

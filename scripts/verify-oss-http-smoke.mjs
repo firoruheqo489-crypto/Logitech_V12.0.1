@@ -17,6 +17,9 @@ function parseArgs(argv) {
     envFile: '.env',
     label: 'oss-smoke',
     apiKey: '',
+    waitForDbReady: false,
+    waitRetries: 90,
+    waitIntervalMs: 1000,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -42,6 +45,23 @@ function parseArgs(argv) {
 
     if (arg === '--api-key') {
       args.apiKey = argv[index + 1];
+      index += 1;
+      continue;
+    }
+
+    if (arg === '--wait-for-db-ready') {
+      args.waitForDbReady = true;
+      continue;
+    }
+
+    if (arg === '--wait-retries') {
+      args.waitRetries = Number(argv[index + 1] ?? args.waitRetries);
+      index += 1;
+      continue;
+    }
+
+    if (arg === '--wait-interval-ms') {
+      args.waitIntervalMs = Number(argv[index + 1] ?? args.waitIntervalMs);
       index += 1;
       continue;
     }
@@ -95,11 +115,41 @@ async function readJson(response, step) {
   }
 }
 
-async function assertHealth(baseUrl) {
-  const response = await fetch(`${baseUrl}/api/health`);
-  const payload = await readJson(response, 'Health check');
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
-  if (!payload?.ok || !payload?.api) {
+async function readHealthPayload(baseUrl) {
+  const response = await fetch(`${baseUrl}/api/health`);
+  return readJson(response, 'Health check');
+}
+
+async function waitForDbReady(baseUrl, retries, intervalMs) {
+  for (let attempt = 1; attempt <= retries; attempt += 1) {
+    const payload = await readHealthPayload(baseUrl);
+
+    if (payload?.warmup?.phase === 'failed') {
+      throw new Error(`DB warmup failed before smoke could start: ${JSON.stringify(payload)}`);
+    }
+
+    if (payload?.dbReady === true) {
+      console.log(`[PASS] DB warmup ready at ${baseUrl}/api/health on attempt ${attempt}.`);
+      return;
+    }
+
+    console.log(
+      `[INFO] Waiting for DB warmup... attempt ${attempt}/${retries} phase=${payload?.warmup?.phase ?? 'unknown'}`,
+    );
+    await sleep(intervalMs);
+  }
+
+  throw new Error(`Timed out waiting for DB warmup at ${baseUrl}`);
+}
+
+async function assertHealth(baseUrl) {
+  const payload = await readHealthPayload(baseUrl);
+
+  if (!payload?.ok || !payload?.api || payload?.dbReady !== true) {
     throw new Error(`Health check payload was not healthy: ${JSON.stringify(payload)}`);
   }
 
@@ -126,6 +176,9 @@ async function main() {
   let deleted = false;
 
   console.log(`[INFO] OSS smoke started. baseUrl=${baseUrl} label=${args.label}`);
+  if (args.waitForDbReady) {
+    await waitForDbReady(baseUrl, args.waitRetries, args.waitIntervalMs);
+  }
   await assertHealth(baseUrl);
 
   try {

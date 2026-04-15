@@ -16,6 +16,8 @@ describe('dashboard mold trial evidence namespace', () => {
 
     expect(source).toContain('dashboard_mold_trial_evidence_states_v2');
     expect(source).toContain('UNIQUE (mold_id, mold_no)');
+    expect(source).toContain('trial_stages JSONB NOT NULL DEFAULT');
+    expect(source).toContain('cleared_trial_stages JSONB NOT NULL DEFAULT');
     expect(source).toContain('WHERE mold_id = $1 AND mold_no = $2');
     expect(source).toContain('DELETE FROM ${MOLD_TRIAL_EVIDENCE_STATE_TABLE} WHERE mold_id = $1 AND mold_no = $2');
   });

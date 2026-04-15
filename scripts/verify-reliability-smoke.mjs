@@ -12,6 +12,9 @@ function parseArgs(argv) {
     moldId: '',
     moldNo: '',
     envFile: '.env',
+    waitForDbReady: false,
+    waitRetries: 90,
+    waitIntervalMs: 1000,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -34,6 +37,20 @@ function parseArgs(argv) {
     if (current === '--env-file') {
       args.envFile = argv[index + 1] || args.envFile;
       index += 1;
+      continue;
+    }
+    if (current === '--wait-for-db-ready') {
+      args.waitForDbReady = true;
+      continue;
+    }
+    if (current === '--wait-retries') {
+      args.waitRetries = Number(argv[index + 1] || args.waitRetries);
+      index += 1;
+      continue;
+    }
+    if (current === '--wait-interval-ms') {
+      args.waitIntervalMs = Number(argv[index + 1] || args.waitIntervalMs);
+      index += 1;
     }
   }
 
@@ -55,6 +72,36 @@ async function readJson(url, init = undefined) {
     throw new Error(`Request failed: ${response.status} ${url}`);
   }
   return response.json();
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function readHealthPayload(baseUrl) {
+  return readJson(`${baseUrl}/api/health`);
+}
+
+async function waitForDbReady(baseUrl, retries, intervalMs) {
+  for (let attempt = 1; attempt <= retries; attempt += 1) {
+    const payload = await readHealthPayload(baseUrl);
+
+    if (payload?.warmup?.phase === 'failed') {
+      throw new Error(`DB warmup failed before reliability smoke could start: ${JSON.stringify(payload)}`);
+    }
+
+    if (payload?.dbReady === true) {
+      console.log(`[PASS] DB warmup ready at ${baseUrl}/api/health on attempt ${attempt}.`);
+      return;
+    }
+
+    console.log(
+      `[INFO] Waiting for DB warmup... attempt ${attempt}/${retries} phase=${payload?.warmup?.phase ?? 'unknown'}`,
+    );
+    await sleep(intervalMs);
+  }
+
+  throw new Error(`Timed out waiting for DB warmup at ${baseUrl}`);
 }
 
 function readNumber(value, fallback = 0) {
@@ -167,6 +214,10 @@ async function main() {
     console.log('[INFO] Reliability smoke auth header enabled.');
   } else {
     console.log('[INFO] Reliability smoke auth header skipped.');
+  }
+
+  if (args.waitForDbReady) {
+    await waitForDbReady(args.baseUrl, args.waitRetries, args.waitIntervalMs);
   }
 
   const before = await readJson(

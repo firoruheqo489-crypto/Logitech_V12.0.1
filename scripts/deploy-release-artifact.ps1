@@ -447,7 +447,7 @@ Log "Remote release verified: version=$targetVersion commit=$targetCommitShort"
 if (-not $SkipRemoteSmoke) {
   $remoteSmokeCmd = @(
     "cd $remoteDirLiteral",
-    "node scripts/verify-oss-http-smoke.mjs --base-url http://127.0.0.1:3000 --env-file .env --label remote-artifact-deploy"
+    "node scripts/verify-oss-http-smoke.mjs --base-url http://127.0.0.1:3000 --env-file .env --label remote-artifact-deploy --wait-for-db-ready"
   ) -join " && "
 
   Log "Running remote OSS upload/delete smoke..."
@@ -458,7 +458,7 @@ if (-not $SkipRemoteSmoke) {
 
   $remoteReliabilitySmokeCmd = @(
     "cd $remoteDirLiteral",
-    "node scripts/verify-reliability-smoke.mjs --base-url http://127.0.0.1:3000 --env-file .env"
+    "node scripts/verify-reliability-smoke.mjs --base-url http://127.0.0.1:3000 --env-file .env --wait-for-db-ready"
   ) -join " && "
 
   Log "Running remote reliability smoke..."

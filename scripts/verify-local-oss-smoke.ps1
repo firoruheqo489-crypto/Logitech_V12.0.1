@@ -92,7 +92,7 @@ try {
   Wait-ApiHealthy -BaseUrl "http://127.0.0.1:$Port" -Retries $Retries -RetryIntervalMs $RetryIntervalMs
 
   Invoke-Step -Label "Running isolated OSS upload/delete smoke" -Command {
-    node scripts/verify-oss-http-smoke.mjs --base-url "http://127.0.0.1:$Port" --env-file .env --label local-predeploy
+    node scripts/verify-oss-http-smoke.mjs --base-url "http://127.0.0.1:$Port" --env-file .env --label local-predeploy --wait-for-db-ready
   }
 
   Write-Host "[SUCCESS] Local OSS smoke passed."

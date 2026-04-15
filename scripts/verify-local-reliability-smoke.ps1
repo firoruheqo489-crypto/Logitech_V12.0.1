@@ -88,7 +88,7 @@ try {
   Wait-ApiHealthy -BaseUrl "http://127.0.0.1:$Port" -Retries $Retries -RetryIntervalMs $RetryIntervalMs
 
   Invoke-Step -Label "Running isolated reliability smoke" -Command {
-    node scripts/verify-reliability-smoke.mjs --base-url "http://127.0.0.1:$Port"
+    node scripts/verify-reliability-smoke.mjs --base-url "http://127.0.0.1:$Port" --wait-for-db-ready
   }
 
   Write-Host "[SUCCESS] Local reliability smoke passed."

@@ -40,10 +40,62 @@ const __dirname = path.dirname(__filename);
 
 // Dev API only: set DEV_API=1 and PORT=3001 so Vite proxy /api -> localhost:3001
 const isDevApiOnly = process.env.DEV_API === "1";
+type DbWarmupPhase = "pending" | "running" | "ready" | "failed";
+type DbWarmupTask = { name: string; run: () => Promise<unknown> };
 
 async function startServer() {
   const app = express();
   const server = createServer(app);
+  const warmupState: {
+    phase: DbWarmupPhase;
+    startedAt: string | null;
+    finishedAt: string | null;
+    failedTasks: string[];
+  } = {
+    phase: "pending",
+    startedAt: null,
+    finishedAt: null,
+    failedTasks: [],
+  };
+  const warmupTasks: DbWarmupTask[] = [
+    { name: "dashboard_project_assets", run: ensureDashboardProjectAssetsTable },
+    { name: "dashboard_product_data", run: ensureDashboardProductDataTable },
+    { name: "dashboard_tooling_fai", run: ensureDashboardToolingFaiTable },
+    { name: "dashboard_part_fai", run: ensureDashboardPartFaiTable },
+    { name: "dashboard_mold_trial_evidence", run: ensureDashboardMoldTrialEvidenceTable },
+    { name: "dashboard_machine_sheet", run: ensureDashboardMachineSheetTable },
+    { name: "dashboard_health", run: ensureDashboardHealthTable },
+    { name: "dashboard_module_order", run: ensureDashboardModuleOrderTable },
+    { name: "progress_backup", run: ensureBackupTable },
+    { name: "progress_audit", run: ensureProgressAuditTable },
+    { name: "issues", run: ensureIssuesTable },
+    { name: "reliability", run: ensureReliabilityTables },
+  ];
+  const startDbWarmup = () => {
+    warmupState.phase = "running";
+    warmupState.startedAt = new Date().toISOString();
+    warmupState.finishedAt = null;
+    warmupState.failedTasks = [];
+
+    void Promise.allSettled(warmupTasks.map((task) => task.run())).then((results) => {
+      const failedTasks = results
+        .map((result, index) => {
+          if (result.status !== "rejected") return null;
+          return warmupTasks[index]?.name ?? `task-${index}`;
+        })
+        .filter((name): name is string => Boolean(name));
+
+      warmupState.failedTasks = failedTasks;
+      warmupState.phase = failedTasks.length > 0 ? "failed" : "ready";
+      warmupState.finishedAt = new Date().toISOString();
+
+      results.forEach((result, index) => {
+        if (result.status === "rejected") {
+          console.error(`[db-warmup] ${warmupTasks[index]?.name ?? `task-${index}`} failed:`, result.reason);
+        }
+      });
+    });
+  };
   const sendFreshSpaHtml = (res: express.Response, staticPath: string) => {
     res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
     res.setHeader("Pragma", "no-cache");
@@ -62,13 +114,35 @@ async function startServer() {
   app.get("/api/release", getReleaseInfoHandler);
   app.get("/api/health", async (_req, res) => {
     if (!db || !sql) {
-      res.status(200).json({ ok: true, api: true, db: "missing" });
+      res.status(200).json({
+        ok: true,
+        api: true,
+        db: "missing",
+        dbReady: false,
+        warmup: {
+          phase: warmupState.phase,
+          startedAt: warmupState.startedAt,
+          finishedAt: warmupState.finishedAt,
+          failedTasks: warmupState.failedTasks,
+        },
+      });
       return;
     }
 
     try {
       await sql`SELECT 1`;
-      res.status(200).json({ ok: true, api: true, db: "ok" });
+      res.status(200).json({
+        ok: true,
+        api: true,
+        db: "ok",
+        dbReady: warmupState.phase === "ready",
+        warmup: {
+          phase: warmupState.phase,
+          startedAt: warmupState.startedAt,
+          finishedAt: warmupState.finishedAt,
+          failedTasks: warmupState.failedTasks,
+        },
+      });
     } catch (e) {
       res.status(503).json({
         ok: false,
@@ -76,8 +150,47 @@ async function startServer() {
         db: "error",
         message: "database unavailable",
         code: "DATABASE_UNAVAILABLE",
+        dbReady: false,
+        warmup: {
+          phase: warmupState.phase,
+          startedAt: warmupState.startedAt,
+          finishedAt: warmupState.finishedAt,
+          failedTasks: warmupState.failedTasks,
+        },
       });
     }
+  });
+
+  app.use("/api", (req, res, next) => {
+    if (req.path === "/health" || req.path === "/release") {
+      next();
+      return;
+    }
+
+    if (warmupState.phase === "ready") {
+      next();
+      return;
+    }
+
+    const waitingForDb = warmupState.phase === "pending" || warmupState.phase === "running";
+    const code = waitingForDb ? "DB_WARMUP_IN_PROGRESS" : "DB_WARMUP_FAILED";
+    const message = waitingForDb
+      ? "service warming up, please retry shortly"
+      : "service warmup failed, database routes are temporarily unavailable";
+
+    res.status(503).json({
+      ok: false,
+      api: true,
+      code,
+      message,
+      retryable: waitingForDb,
+      warmup: {
+        phase: warmupState.phase,
+        startedAt: warmupState.startedAt,
+        finishedAt: warmupState.finishedAt,
+        failedTasks: warmupState.failedTasks,
+      },
+    });
   });
 
   // API — 甘特数据持久化与加载
@@ -183,27 +296,6 @@ async function startServer() {
     });
   }
 
-  const warmupResults = await Promise.allSettled([
-    ensureDashboardProjectAssetsTable(),
-    ensureDashboardProductDataTable(),
-    ensureDashboardToolingFaiTable(),
-    ensureDashboardPartFaiTable(),
-    ensureDashboardMoldTrialEvidenceTable(),
-    ensureDashboardMachineSheetTable(),
-    ensureDashboardHealthTable(),
-    ensureDashboardModuleOrderTable(),
-    ensureBackupTable(),
-    ensureProgressAuditTable(),
-    ensureIssuesTable(),
-    ensureReliabilityTables(),
-  ]);
-
-  warmupResults.forEach((result, index) => {
-    if (result.status === "rejected") {
-      console.error(`[db-warmup] task-${index} failed:`, result.reason);
-    }
-  });
-
   const port = process.env.PORT || (isDevApiOnly ? 3001 : 3000);
   server.listen(port, () => {
     console.log(isDevApiOnly
@@ -223,6 +315,7 @@ async function startServer() {
       }
     };
 
+    startDbWarmup();
     runAndLogHealthCheck();
     setInterval(runAndLogHealthCheck, 24 * 60 * 60 * 1000);
   });

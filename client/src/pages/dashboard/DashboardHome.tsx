@@ -2,7 +2,7 @@
  * DashboardHome
  */
 
-import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import React, { lazy, Suspense, useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import type { ProjectData } from './types/project';
 import { calculateStats } from './lib/projectUtils';
 import FileUpload from './components/FileUpload';
@@ -13,16 +13,6 @@ import SearchBar from './components/SearchBar';
 import { AdminButton } from './components/AdminButton';
 import { AdminModal } from './components/AdminModal';
 import { ProductModuleAdminModal } from './components/ProductModuleAdminModal';
-import MoldTrialDrawerWorkspace from './components/MoldTrialDrawerWorkspace';
-import MacroStageGateDrawerWorkspace from './components/MacroStageGateDrawerWorkspace';
-import ReliabilityDrawerWorkspace from './components/ReliabilityDrawerWorkspace';
-import SpcRadarDrawerWorkspace from './components/SpcRadarDrawerWorkspace';
-import SpcCalculatorDrawerWorkspace from './components/SpcCalculatorDrawerWorkspace';
-import DimensionDataDrawerWorkspace from './components/DimensionDataDrawerWorkspace';
-import ProductDataDrawerWorkspace from './components/ProductDataDrawerWorkspace';
-import ProductStandardDrawerWorkspace from './components/ProductStandardDrawerWorkspace';
-import ProcessDrawerWorkspace from './components/ProcessDrawerWorkspace';
-import ProgressLogsDrawerWorkspace from './components/ProgressLogsDrawerWorkspace';
 
 import { transformDataToProject } from './lib/dataTransformer';
 import { fetchDashboardProjectData, fetchDashboardProgressEntries, type DashboardProgressEntry } from './lib/dashboardApi';
@@ -49,6 +39,24 @@ import {
   normalizeProjectDataEnums,
   normalizeProjectStatus,
 } from '@/lib/dashboardProjectState';
+
+const MoldTrialDrawerWorkspace = lazy(() => import('./components/MoldTrialDrawerWorkspace'));
+const MacroStageGateDrawerWorkspace = lazy(() => import('./components/MacroStageGateDrawerWorkspace'));
+const ReliabilityDrawerWorkspace = lazy(() => import('./components/ReliabilityDrawerWorkspace'));
+const SpcRadarDrawerWorkspace = lazy(() => import('./components/SpcRadarDrawerWorkspace'));
+const SpcCalculatorDrawerWorkspace = lazy(() => import('./components/SpcCalculatorDrawerWorkspace'));
+const ProductDataDrawerWorkspace = lazy(() => import('./components/ProductDataDrawerWorkspace'));
+const ProductStandardDrawerWorkspace = lazy(() => import('./components/ProductStandardDrawerWorkspace'));
+const ProcessDrawerWorkspace = lazy(() => import('./components/ProcessDrawerWorkspace'));
+const ProgressLogsDrawerWorkspace = lazy(() => import('./components/ProgressLogsDrawerWorkspace'));
+
+function LazyWorkspace({ children }: { children: React.ReactNode }) {
+  return (
+    <Suspense fallback={<div className="py-8 text-center text-sm text-white/40">加载中...</div>}>
+      {children}
+    </Suspense>
+  );
+}
 
 function useIsMobile(breakpoint = 767) {
   const [isMobile, setIsMobile] = React.useState(
@@ -108,11 +116,6 @@ function parseMoldSetCount(value?: string): number {
   return Number.isFinite(count) ? count : 0;
 }
 
-function normalizeTrialStage(value?: string): string {
-  const normalized = String(value ?? '').trim().toUpperCase();
-  return /^T\d+$/.test(normalized) ? normalized : 'T0';
-}
-
 type ProgressEntry = DashboardProgressEntry;
 
 const DASHBOARD_TABS = [
@@ -121,7 +124,6 @@ const DASHBOARD_TABS = [
   'product',
   'product-standard',
   'mold-trial-database',
-  'dimension-data-dashboard',
   'mold-reliability',
   'spc-calculator',
   'fmea',
@@ -222,15 +224,12 @@ export default function DashboardHome() {
   }, [activeTab, isAdminMode]);
 
   const loadProjects = useCallback(async () => {
-    const startedAt = Date.now();
     setLoading(true);
     try {
       const rows = await fetchProjects();
       setDbProjects(rows);
     } catch { /* ignore */ }
-    const elapsed = Date.now() - startedAt;
-    const holdMs = Math.max(0, 5000 - elapsed);
-    window.setTimeout(() => setLoading(false), holdMs);
+    setLoading(false);
   }, []);
 
   useEffect(() => { loadProjects(); }, [loadProjects]);
@@ -405,29 +404,6 @@ export default function DashboardHome() {
 
     const fallbackMoldId = currentModuleData[0]?.identity?.moldNumber?.trim() || currentModuleMoldIds[0] || 'LA26006';
     return [{ moldId: fallbackMoldId, moldNo: 'NO. -' }];
-  }, [currentModuleData, currentModuleMoldIds]);
-
-  const currentModuleDimensionPanels = useMemo(() => {
-    const seen = new Set<string>();
-    const panels = currentModuleData.flatMap((project) => {
-      const moldId = project.identity?.moldNumber?.trim() || '';
-      const moldNo = formatProductSequenceLabel(project.no) || '';
-      const trialStage = normalizeTrialStage(project.milestones?.currentStage);
-      if (!moldId || !moldNo) return [];
-
-      const panelKey = `${normalizeMoldLookupKey(moldId)}::${moldNo}::${trialStage}`;
-      if (seen.has(panelKey)) return [];
-      seen.add(panelKey);
-
-      return [{ moldId, moldNo, trialStage }];
-    });
-
-    if (panels.length > 0) {
-      return panels;
-    }
-
-    const fallbackMoldId = currentModuleData[0]?.identity?.moldNumber?.trim() || currentModuleMoldIds[0] || 'LA26006';
-    return [{ moldId: fallbackMoldId, moldNo: 'NO. -', trialStage: 'T0' }];
   }, [currentModuleData, currentModuleMoldIds]);
 
   const productModuleSequenceByMold = useMemo(() => {
@@ -747,7 +723,6 @@ export default function DashboardHome() {
               'injection-clinic': '注塑诊所',
               'mold-reliability': '模具可靠性',
               'mold-trial-database': '试模数据库',
-              'dimension-data-dashboard': '尺寸数据看板',
             };
             const isActive = selectedTab === tab;
               return (
@@ -772,11 +747,13 @@ export default function DashboardHome() {
       <main ref={mainRef} className="mx-auto w-full max-w-7xl px-4 md:px-8 pb-8" style={{ overflowAnchor: 'none' }}>
 
         {selectedTab === 'logs' && (
-          <ProgressLogsDrawerWorkspace
-            panels={currentModuleTrialPanels}
-            projects={currentModuleData}
-            progressEntriesByMold={progressEntriesByMold}
-          />
+          <LazyWorkspace>
+            <ProgressLogsDrawerWorkspace
+              panels={currentModuleTrialPanels}
+              projects={currentModuleData}
+              progressEntriesByMold={progressEntriesByMold}
+            />
+          </LazyWorkspace>
         )}
 
         {selectedTab === 'overview' && (
@@ -840,7 +817,9 @@ export default function DashboardHome() {
         )}
 
         {isAdminMode && selectedTab === 'macro-stage-gate' && (
-          <MacroStageGateDrawerWorkspace panels={currentModuleTrialPanels} />
+          <LazyWorkspace>
+            <MacroStageGateDrawerWorkspace panels={currentModuleTrialPanels} />
+          </LazyWorkspace>
         )}
 
         {selectedTab === 'fmea' && (
@@ -853,41 +832,56 @@ export default function DashboardHome() {
 
         {/* Product module drawer workspace */}
         {selectedTab === 'product' && (
-          <ProductDataDrawerWorkspace
-            panels={currentModuleTrialPanels}
-            projects={currentModuleData}
-            theme={moduleTheme}
-            productDataByMold={productModuleDataByLookup}
-            productSequenceByMold={productModuleSequenceByMold}
-          />
+          <LazyWorkspace>
+            <ProductDataDrawerWorkspace
+              panels={currentModuleTrialPanels}
+              projects={currentModuleData}
+              theme={moduleTheme}
+              productDataByMold={productModuleDataByLookup}
+              productSequenceByMold={productModuleSequenceByMold}
+            />
+          </LazyWorkspace>
         )}
 
         {selectedTab === 'product-standard' && (
-          <ProductStandardDrawerWorkspace
-            panels={currentModuleTrialPanels}
-            theme={moduleTheme}
-          />
+          <LazyWorkspace>
+            <ProductStandardDrawerWorkspace
+              panels={currentModuleTrialPanels}
+              theme={moduleTheme}
+            />
+          </LazyWorkspace>
         )}
 
         {isAdminMode && selectedTab === 'process' && (
-          <ProcessDrawerWorkspace panels={currentModuleTrialPanels} />
+          <LazyWorkspace>
+            <ProcessDrawerWorkspace panels={currentModuleTrialPanels} />
+          </LazyWorkspace>
         )}
 
         {selectedTab === 'spc-calculator' && (
-          <SpcCalculatorDrawerWorkspace panels={currentModuleTrialPanels} />
+          <LazyWorkspace>
+            <SpcCalculatorDrawerWorkspace panels={currentModuleTrialPanels} />
+          </LazyWorkspace>
         )}
 
-        {selectedTab === 'mold-reliability' && <ReliabilityDrawerWorkspace panels={currentModuleTrialPanels} />}
+        {selectedTab === 'mold-reliability' && (
+          <LazyWorkspace>
+            <ReliabilityDrawerWorkspace panels={currentModuleTrialPanels} />
+          </LazyWorkspace>
+        )}
 
-        {isAdminMode && selectedTab === 'mass-production-monitoring' && <SpcRadarDrawerWorkspace panels={currentModuleTrialPanels} />}
+        {isAdminMode && selectedTab === 'mass-production-monitoring' && (
+          <LazyWorkspace>
+            <SpcRadarDrawerWorkspace panels={currentModuleTrialPanels} />
+          </LazyWorkspace>
+        )}
 
         {selectedTab === 'mold-trial-database' && (
-          <MoldTrialDrawerWorkspace panels={currentModuleTrialPanels} />
+          <LazyWorkspace>
+            <MoldTrialDrawerWorkspace panels={currentModuleTrialPanels} />
+          </LazyWorkspace>
         )}
 
-        {selectedTab === 'dimension-data-dashboard' && (
-          <DimensionDataDrawerWorkspace panels={currentModuleDimensionPanels} />
-        )}
       </main>
 
       {isAdminMode && selectedTab === 'defect-library' && (

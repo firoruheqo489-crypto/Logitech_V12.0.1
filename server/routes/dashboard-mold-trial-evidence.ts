@@ -18,6 +18,8 @@ type MoldTrialEvidenceStateRow = {
   mold_id: string;
   mold_no: string;
   stages_by_scope: unknown;
+  trial_stages: unknown;
+  cleared_trial_stages: unknown;
   updated_at: string;
 };
 
@@ -150,6 +152,37 @@ function sanitizeStagesByScope(value: unknown): Record<string, TrialEvidenceStag
   }, {} as Record<string, TrialEvidenceStageState>);
 }
 
+function sanitizeTrialStages(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return Array.from(
+    new Set(
+      value.filter((stage): stage is string => typeof stage === 'string' && /^T\d+$/.test(stage)),
+    ),
+  ).sort((a, b) => Number.parseInt(a.slice(1), 10) - Number.parseInt(b.slice(1), 10));
+}
+
+function deriveTrialStages(stagesByScope: Record<string, TrialEvidenceStageState>, trialStages: unknown): string[] {
+  const sanitizedTrialStages = sanitizeTrialStages(trialStages);
+  if (sanitizedTrialStages.length > 0) {
+    return sanitizedTrialStages;
+  }
+
+  return sanitizeTrialStages(Object.keys(stagesByScope));
+}
+
+function sanitizeClearedTrialStages(value: unknown, trialStages: string[]): string[] {
+  const sanitized = sanitizeTrialStages(value);
+  if (trialStages.length === 0) {
+    return sanitized;
+  }
+
+  const trialStageSet = new Set(trialStages);
+  return sanitized.filter((stage) => trialStageSet.has(stage));
+}
+
 function readRequestIdentity(source: Request['query'] | Record<string, unknown>) {
   const moldId = normalizeIdentifier(source.moldId, 100);
   const moldNo = normalizeIdentifier(source.moldNo, 100);
@@ -168,10 +201,20 @@ export function ensureDashboardMoldTrialEvidenceTable(): Promise<void> {
           mold_id VARCHAR(100) NOT NULL,
           mold_no VARCHAR(100) NOT NULL DEFAULT '',
           stages_by_scope JSONB NOT NULL DEFAULT '{}'::jsonb,
+          trial_stages JSONB NOT NULL DEFAULT '[]'::jsonb,
+          cleared_trial_stages JSONB NOT NULL DEFAULT '[]'::jsonb,
           created_at TIMESTAMP NOT NULL DEFAULT NOW(),
           updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
           UNIQUE (mold_id, mold_no)
         )
+      `);
+      await dbSql.unsafe(`
+        ALTER TABLE ${MOLD_TRIAL_EVIDENCE_STATE_TABLE}
+        ADD COLUMN IF NOT EXISTS trial_stages JSONB NOT NULL DEFAULT '[]'::jsonb
+      `);
+      await dbSql.unsafe(`
+        ALTER TABLE ${MOLD_TRIAL_EVIDENCE_STATE_TABLE}
+        ADD COLUMN IF NOT EXISTS cleared_trial_stages JSONB NOT NULL DEFAULT '[]'::jsonb
       `);
     })();
   }
@@ -195,7 +238,7 @@ export async function getDashboardMoldTrialEvidenceState(req: Request, res: Resp
     await ensureDashboardMoldTrialEvidenceTable();
     const rows = (await dbSql.unsafe(
       `
-        SELECT mold_id, mold_no, stages_by_scope, updated_at
+        SELECT mold_id, mold_no, stages_by_scope, trial_stages, cleared_trial_stages, updated_at
         FROM ${MOLD_TRIAL_EVIDENCE_STATE_TABLE}
         WHERE mold_id = $1 AND mold_no = $2
         LIMIT 1
@@ -214,6 +257,11 @@ export async function getDashboardMoldTrialEvidenceState(req: Request, res: Resp
         moldId: row.mold_id,
         moldNo: row.mold_no || '',
         stagesByScope: sanitizeStagesByScope(row.stages_by_scope),
+        trialStages: deriveTrialStages(sanitizeStagesByScope(row.stages_by_scope), row.trial_stages),
+        clearedTrialStages: sanitizeClearedTrialStages(
+          row.cleared_trial_stages,
+          deriveTrialStages(sanitizeStagesByScope(row.stages_by_scope), row.trial_stages),
+        ),
         updatedAt: row.updated_at,
       },
     });
@@ -237,11 +285,13 @@ export async function upsertDashboardMoldTrialEvidenceState(req: Request, res: R
   }
 
   const stagesByScope = sanitizeStagesByScope(body.stagesByScope);
+  const trialStages = deriveTrialStages(stagesByScope, body.trialStages);
+  const clearedTrialStages = sanitizeClearedTrialStages(body.clearedTrialStages, trialStages);
 
   try {
     await ensureDashboardMoldTrialEvidenceTable();
 
-    if (Object.keys(stagesByScope).length === 0) {
+    if (Object.keys(stagesByScope).length === 0 && trialStages.length === 0) {
       await dbSql.unsafe(
         `DELETE FROM ${MOLD_TRIAL_EVIDENCE_STATE_TABLE} WHERE mold_id = $1 AND mold_no = $2`,
         [moldId, moldNo],
@@ -256,15 +306,19 @@ export async function upsertDashboardMoldTrialEvidenceState(req: Request, res: R
           mold_id,
           mold_no,
           stages_by_scope,
+          trial_stages,
+          cleared_trial_stages,
           created_at,
           updated_at
-        ) VALUES ($1, $2, $3::jsonb, NOW(), NOW())
+        ) VALUES ($1, $2, $3::jsonb, $4::jsonb, $5::jsonb, NOW(), NOW())
         ON CONFLICT (mold_id, mold_no)
         DO UPDATE SET
           stages_by_scope = EXCLUDED.stages_by_scope,
+          trial_stages = EXCLUDED.trial_stages,
+          cleared_trial_stages = EXCLUDED.cleared_trial_stages,
           updated_at = NOW()
       `,
-      [moldId, moldNo, JSON.stringify(stagesByScope)],
+      [moldId, moldNo, JSON.stringify(stagesByScope), JSON.stringify(trialStages), JSON.stringify(clearedTrialStages)],
     );
 
     res.status(200).json({ success: true });
