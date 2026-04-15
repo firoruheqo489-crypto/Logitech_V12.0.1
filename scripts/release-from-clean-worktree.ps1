@@ -9,11 +9,78 @@ param(
   [string]$HostAlias = "",
   [string]$RemoteDir = "",
   [switch]$SkipVerification,
-  [switch]$SkipRemoteSmoke
+  [switch]$SkipRemoteSmoke,
+  [Parameter(ValueFromRemainingArguments = $true)]
+  [string[]]$RemainingArgs = @()
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+
+if ($RemainingArgs.Count -gt 0) {
+  for ($index = 0; $index -lt $RemainingArgs.Count; $index += 1) {
+    switch ($RemainingArgs[$index]) {
+      "--" { continue }
+      "-ReleaseNote" {
+        if ($index + 1 -lt $RemainingArgs.Count) {
+          $ReleaseNote = [string]$RemainingArgs[$index + 1]
+          $index += 1
+        }
+        continue
+      }
+      "-CommitMessage" {
+        if ($index + 1 -lt $RemainingArgs.Count) {
+          $CommitMessage = [string]$RemainingArgs[$index + 1]
+          $index += 1
+        }
+        continue
+      }
+      "-OutputDir" {
+        if ($index + 1 -lt $RemainingArgs.Count) {
+          $OutputDir = [string]$RemainingArgs[$index + 1]
+          $index += 1
+        }
+        continue
+      }
+      "-ArtifactPath" {
+        if ($index + 1 -lt $RemainingArgs.Count) {
+          $ArtifactPath = [string]$RemainingArgs[$index + 1]
+          $index += 1
+        }
+        continue
+      }
+      "-MetadataPath" {
+        if ($index + 1 -lt $RemainingArgs.Count) {
+          $MetadataPath = [string]$RemainingArgs[$index + 1]
+          $index += 1
+        }
+        continue
+      }
+      "-HostAlias" {
+        if ($index + 1 -lt $RemainingArgs.Count) {
+          $HostAlias = [string]$RemainingArgs[$index + 1]
+          $index += 1
+        }
+        continue
+      }
+      "-RemoteDir" {
+        if ($index + 1 -lt $RemainingArgs.Count) {
+          $RemoteDir = [string]$RemainingArgs[$index + 1]
+          $index += 1
+        }
+        continue
+      }
+      "-SkipVerification" {
+        $SkipVerification = $true
+        continue
+      }
+      "-SkipRemoteSmoke" {
+        $SkipRemoteSmoke = $true
+        continue
+      }
+    }
+  }
+}
 
 function Log($msg) { Write-Host "[OK] $msg" -ForegroundColor Green }
 function Warn($msg) { Write-Host "[!!] $msg" -ForegroundColor Yellow }
