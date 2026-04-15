@@ -2,7 +2,6 @@ param(
   [ValidateSet("build", "deploy", "all")]
   [string]$Mode = "all",
   [string]$ReleaseNote = "",
-  [string]$CommitMessage = "",
   [string]$OutputDir = "artifacts/releases",
   [string]$ArtifactPath = "",
   [string]$MetadataPath = "",
@@ -24,13 +23,6 @@ if ($RemainingArgs.Count -gt 0) {
       "-ReleaseNote" {
         if ($index + 1 -lt $RemainingArgs.Count) {
           $ReleaseNote = [string]$RemainingArgs[$index + 1]
-          $index += 1
-        }
-        continue
-      }
-      "-CommitMessage" {
-        if ($index + 1 -lt $RemainingArgs.Count) {
-          $CommitMessage = [string]$RemainingArgs[$index + 1]
           $index += 1
         }
         continue
@@ -101,14 +93,11 @@ function Resolve-FlowLabel() {
 
 function Resolve-ReleaseText(
   [string]$PrimaryNote,
-  [string]$FallbackCommitMessage,
   [string]$FallbackLabel,
   [string]$RepoRootPath
 ) {
   $candidates = @(
     $PrimaryNote,
-    $FallbackCommitMessage,
-    $FallbackLabel
   )
 
   foreach ($candidate in $candidates) {
@@ -133,6 +122,14 @@ function Resolve-ReleaseText(
   } catch {
   }
 
+  $normalizedLabel = Normalize-SingleLine $FallbackLabel
+  if (-not [string]::IsNullOrWhiteSpace($normalizedLabel)) {
+    if ($normalizedLabel.Length -gt 180) {
+      return $normalizedLabel.Substring(0, 180).Trim()
+    }
+    return $normalizedLabel
+  }
+
   return "release"
 }
 
@@ -146,7 +143,7 @@ function Get-RepoRoot() {
 }
 
 function Get-GitStatus([string]$RepoRootPath) {
-  $status = (& git -C $RepoRootPath status --porcelain=v1 --untracked-files=all 2>$null)
+  $status = (& git -C $RepoRootPath status --porcelain 2>$null)
   if ($LASTEXITCODE -ne 0) {
     Err "Failed to read git workspace state."
   }
@@ -154,26 +151,11 @@ function Get-GitStatus([string]$RepoRootPath) {
   return @($status | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
 }
 
-function Invoke-AutoCommit([string]$RepoRootPath, [string]$CommitMsg) {
+function Assert-CleanGitWorkspace([string]$RepoRootPath) {
   $statusLines = Get-GitStatus $RepoRootPath
-  if (@($statusLines).Count -eq 0) {
-    Log "Workspace is clean; no auto-commit needed."
-    return
+  if (@($statusLines).Count -gt 0) {
+    Err "致命错误：工作区不干净。请人工执行 git commit 进行资产登记后，再启动发布流程。"
   }
-
-  Write-Host (@($statusLines) -join "`n") -ForegroundColor Yellow
-  Log "Auto-committing release checkpoint..."
-  & git -C $RepoRootPath add -A
-  if ($LASTEXITCODE -ne 0) {
-    Err "git add failed."
-  }
-
-  & git -C $RepoRootPath commit -m $CommitMsg
-  if ($LASTEXITCODE -ne 0) {
-    Err "git commit failed."
-  }
-
-  Log "Auto-commit created: $((& git -C $RepoRootPath rev-parse --short HEAD).Trim())"
 }
 
 function Resolve-LatestReleaseMetadata([string]$RepoRootPath, [string]$ConfiguredOutputDir) {
@@ -255,22 +237,26 @@ function Invoke-ReleaseDeploy(
     Err "Missing script: $deployScriptPath"
   }
 
-  $commonArgs = @(
-    "-Mode", "deploy",
-    "-ArtifactPath", $ArtifactValue,
-    "-MetadataPath", $MetadataValue
-  )
-  if (-not [string]::IsNullOrWhiteSpace($HostAlias)) {
-    $commonArgs += @("-HostAlias", $HostAlias)
-  }
-  if (-not [string]::IsNullOrWhiteSpace($RemoteDir)) {
-    $commonArgs += @("-RemoteDir", $RemoteDir)
-  }
-
   if (-not $SkipRemoteSmoke) {
-    & $deployScriptPath @commonArgs -DeepVerification
+    if (-not [string]::IsNullOrWhiteSpace($HostAlias) -and -not [string]::IsNullOrWhiteSpace($RemoteDir)) {
+      & $deployScriptPath -Mode deploy -ArtifactPath $ArtifactValue -MetadataPath $MetadataValue -HostAlias $HostAlias -RemoteDir $RemoteDir -DeepVerification
+    } elseif (-not [string]::IsNullOrWhiteSpace($HostAlias)) {
+      & $deployScriptPath -Mode deploy -ArtifactPath $ArtifactValue -MetadataPath $MetadataValue -HostAlias $HostAlias -DeepVerification
+    } elseif (-not [string]::IsNullOrWhiteSpace($RemoteDir)) {
+      & $deployScriptPath -Mode deploy -ArtifactPath $ArtifactValue -MetadataPath $MetadataValue -RemoteDir $RemoteDir -DeepVerification
+    } else {
+      & $deployScriptPath -Mode deploy -ArtifactPath $ArtifactValue -MetadataPath $MetadataValue -DeepVerification
+    }
   } else {
-    & $deployScriptPath @commonArgs
+    if (-not [string]::IsNullOrWhiteSpace($HostAlias) -and -not [string]::IsNullOrWhiteSpace($RemoteDir)) {
+      & $deployScriptPath -Mode deploy -ArtifactPath $ArtifactValue -MetadataPath $MetadataValue -HostAlias $HostAlias -RemoteDir $RemoteDir
+    } elseif (-not [string]::IsNullOrWhiteSpace($HostAlias)) {
+      & $deployScriptPath -Mode deploy -ArtifactPath $ArtifactValue -MetadataPath $MetadataValue -HostAlias $HostAlias
+    } elseif (-not [string]::IsNullOrWhiteSpace($RemoteDir)) {
+      & $deployScriptPath -Mode deploy -ArtifactPath $ArtifactValue -MetadataPath $MetadataValue -RemoteDir $RemoteDir
+    } else {
+      & $deployScriptPath -Mode deploy -ArtifactPath $ArtifactValue -MetadataPath $MetadataValue
+    }
   }
 
   if ($LASTEXITCODE -ne 0) {
@@ -281,13 +267,9 @@ function Invoke-ReleaseDeploy(
 $repoRoot = Get-RepoRoot
 Push-Location $repoRoot
 try {
+  Assert-CleanGitWorkspace -RepoRootPath $repoRoot
   $flowLabel = Resolve-FlowLabel
-  $releaseText = Resolve-ReleaseText -PrimaryNote $ReleaseNote -FallbackCommitMessage $CommitMessage -FallbackLabel $flowLabel -RepoRootPath $repoRoot
-  $commitText = if (-not [string]::IsNullOrWhiteSpace((Normalize-SingleLine $CommitMessage))) {
-    (Normalize-SingleLine $CommitMessage)
-  } else {
-    "release: $releaseText"
-  }
+  $releaseText = Resolve-ReleaseText -PrimaryNote $ReleaseNote -FallbackLabel $flowLabel -RepoRootPath $repoRoot
 
   Log "Flow label: $flowLabel"
   Log "Release text: $releaseText"
@@ -307,10 +289,6 @@ try {
 
   Log "Creating physical backup snapshot..."
   Invoke-Backup -RepoRootPath $repoRoot
-
-  if ($Mode -in @("build", "all")) {
-    Invoke-AutoCommit -RepoRootPath $repoRoot -CommitMsg $commitText
-  }
 
   if ($Mode -eq "build") {
     Log "Running verified release build..."

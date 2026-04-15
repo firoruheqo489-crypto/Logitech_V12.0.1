@@ -3,7 +3,8 @@ param(
   [string]$OutputDir = "artifacts/releases",
   [switch]$SkipVerification,
   [switch]$DeepVerification,
-  [switch]$PreflightOnly
+  [switch]$PreflightOnly,
+  [switch]$AllowDirtyWorkspace
 )
 
 Set-StrictMode -Version Latest
@@ -202,9 +203,14 @@ try {
     Err "Failed to read git workspace state."
   }
 
-  if ($workspaceStatus) {
+  if ($workspaceStatus -and -not $AllowDirtyWorkspace) {
     Write-Host $workspaceStatus -ForegroundColor Yellow
     Err "Refusing release build from a dirty workspace."
+  }
+
+  if ($workspaceStatus -and $AllowDirtyWorkspace) {
+    Write-Host $workspaceStatus -ForegroundColor Yellow
+    Warn "Dirty workspace allowed for this release run."
   }
 
   $releaseNoteNormalized = Resolve-ReleaseNote $ReleaseNote -AllowEmpty:$PreflightOnly
@@ -227,7 +233,7 @@ try {
     Invoke-Step "Running TypeScript verification..." { pnpm exec tsc --noEmit } "TypeScript verification failed"
 
     if ($DeepVerification) {
-      Invoke-Step "Running release guard checks..." { node --experimental-strip-types --loader ./scripts/ts-path-loader.mjs ./scripts/verify-release-guards.ts } "Release guard checks failed"
+      Invoke-Step "Running release guard checks..." { pnpm.cmd run verify:release-guards } "Release guard checks failed"
 
       $ossSmokePort = Get-FreeLocalPort
       Invoke-Step "Running local OSS upload/delete smoke on port $ossSmokePort..." { powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-local-oss-smoke.ps1 -Port $ossSmokePort -Retries 60 -RetryIntervalMs 1500 } "Local OSS upload/delete smoke failed"

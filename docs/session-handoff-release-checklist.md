@@ -45,8 +45,8 @@ If a new conversation starts with limited context, it should first establish:
 
 ## Deploy command
 
-Use the deploy script inside the clean handoff worktree:
+Use the canonical release entrypoint from the clean handoff worktree:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File d:\V6.3\HT\V3\.codex-release-handoff-ready\deploy.ps1 -VersionBump none -DeployRoot d:\V6.3\HT\V3\.codex-release-handoff-ready
+pnpm run release
 ```

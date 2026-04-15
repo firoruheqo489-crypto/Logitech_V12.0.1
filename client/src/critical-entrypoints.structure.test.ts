@@ -25,20 +25,20 @@ const requiredScriptFragments = [
     fragments: ['-File scripts/report-local-dashboard-state.ps1'],
   },
   {
-    name: 'release:build',
-    fragments: ['-File scripts/release-from-clean-worktree.ps1 -Mode build'],
+    name: 'verify:release-guards',
+    fragments: ['node --experimental-strip-types --loader ./scripts/ts-path-loader.mjs ./scripts/verify-release-guards.ts'],
   },
   {
-    name: 'release:all',
+    name: 'release',
     fragments: ['-File scripts/release-from-clean-worktree.ps1 -Mode all'],
   },
   {
-    name: 'release:build:clean',
+    name: '_release:build',
     fragments: ['-File scripts/release-from-clean-worktree.ps1 -Mode build'],
   },
   {
-    name: 'release:all:clean',
-    fragments: ['-File scripts/release-from-clean-worktree.ps1 -Mode all'],
+    name: '_release:deploy',
+    fragments: ['-File scripts/release-from-clean-worktree.ps1 -Mode deploy'],
   },
 ] as const;
 
@@ -46,6 +46,7 @@ const criticalRepoFiles = [
   'scripts/start-local-dashboard.mjs',
   'scripts/report-local-dashboard-state.ps1',
   'scripts/release-from-clean-worktree.ps1',
+  'scripts/release-build.ps1',
 ] as const;
 
 async function loadPackageScripts(): Promise<PackageJsonScripts> {

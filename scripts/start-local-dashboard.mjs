@@ -1,68 +1,52 @@
-import { readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync, writeFileSync, unlinkSync, openSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import { setTimeout as delay } from "node:timers/promises";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, "..");
-const startScript = path.join(repoRoot, "scripts", "start-local-dashboard.ps1");
 const stateFile = path.join(repoRoot, ".codex-local-dashboard.state.json");
 const failureFile = path.join(repoRoot, ".codex-local-dashboard.failure.json");
+const apiOutLog = path.join(repoRoot, ".codex-local-dashboard.out.log");
+const apiErrLog = path.join(repoRoot, ".codex-local-dashboard.err.log");
+const viteOutLog = path.join(repoRoot, ".codex-local-vite.out.log");
+const viteErrLog = path.join(repoRoot, ".codex-local-vite.err.log");
+const apiPort = 3001;
+const frontendPort = 3000;
+const timeoutSeconds = 10;
 
-function getPowerShellCommand() {
-  return process.platform === "win32" ? "powershell.exe" : "pwsh";
+function log(message) {
+  process.stdout.write(`[local-dashboard] ${message}\n`);
 }
 
-function runStartScript() {
-  return new Promise((resolve, reject) => {
-    const child = spawn(
-      getPowerShellCommand(),
-      [
-        "-NoProfile",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-File",
-        startScript,
-      ],
-      {
-        cwd: repoRoot,
-        stdio: "ignore",
-      },
-    );
-
-    child.on("error", reject);
-    child.on("exit", (code) => {
-      if (code === 0) {
-        resolve();
-        return;
-      }
-
-      reject(new Error(`start-local-dashboard.ps1 exited with code ${code ?? "null"}`));
-    });
-  });
+function removeFileIfExists(filePath) {
+  try {
+    if (existsSync(filePath)) {
+      unlinkSync(filePath);
+    }
+  } catch {
+  }
 }
 
-function printState() {
-  const raw = readFileSync(stateFile, "utf8").replace(/^\uFEFF/, "");
-  const state = JSON.parse(raw);
-  const lines = [
-    "LOCAL_DASHBOARD_READY",
-    `FRONTEND_URL=${state.frontendUrl}`,
-    `API_URL=${state.apiUrl}`,
-    `API_HEALTH=${state.apiHealthUrl}`,
-    `API_PID=${state.apiPid}`,
-    `VITE_PID=${state.vitePid}`,
-    `STATE_FILE=${stateFile}`,
-  ];
+function readJsonIfExists(filePath) {
+  try {
+    if (!existsSync(filePath)) return null;
+    const raw = readFileSync(filePath, "utf8").replace(/^\uFEFF/, "");
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
 
-  const output = `${lines.join("\n")}\n`;
-  process.stdout.write(output);
-  writeFileSync(path.join(repoRoot, ".codex-local-dashboard.last-output.txt"), output, "utf8");
+function writeJson(filePath, value) {
+  writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
 }
 
 function readTail(filePath, lineCount = 30) {
   try {
+    if (!existsSync(filePath)) return "";
     const raw = readFileSync(filePath, "utf8").replace(/^\uFEFF/, "");
     const lines = raw.split(/\r?\n/).filter(Boolean);
     return lines.slice(-lineCount).join("\n");
@@ -71,68 +55,250 @@ function readTail(filePath, lineCount = 30) {
   }
 }
 
-function findLatestLog(prefix) {
-  try {
-    const entries = readdirSync(repoRoot)
-      .filter((name) => name.startsWith(prefix) && name.endsWith(".log"))
-      .map((name) => ({
-        name,
-        path: path.join(repoRoot, name),
-        mtimeMs: statSync(path.join(repoRoot, name)).mtimeMs,
-      }))
-      .sort((a, b) => b.mtimeMs - a.mtimeMs);
+function killProcessTree(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return;
+  spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"], { stdio: "ignore" });
+}
 
-    return entries[0]?.path ?? "";
-  } catch {
-    return "";
+function stopTrackedProcesses() {
+  const state = readJsonIfExists(stateFile);
+  if (!state) {
+    removeFileIfExists(stateFile);
+    return;
+  }
+
+  const trackedPids = [
+    state.apiPid,
+    state.apiLauncherPid,
+    state.vitePid,
+    state.viteLauncherPid,
+  ].map((value) => Number(value)).filter((value) => Number.isInteger(value) && value > 0);
+
+  for (const pid of new Set(trackedPids)) {
+    killProcessTree(pid);
+  }
+
+  removeFileIfExists(stateFile);
+}
+
+function getListeningPids(port) {
+  const result = spawnSync("netstat", ["-ano", "-p", "tcp"], { encoding: "utf8" });
+  if (result.status !== 0 || !result.stdout) {
+    return [];
+  }
+
+  const pids = [];
+  const pattern = new RegExp(`:${port}\\s`, "i");
+  for (const line of result.stdout.split(/\r?\n/)) {
+    if (!pattern.test(line) || !/LISTENING/i.test(line)) continue;
+    const parts = line.trim().split(/\s+/);
+    const pid = Number(parts[parts.length - 1]);
+    if (Number.isInteger(pid) && pid > 0) {
+      pids.push(pid);
+    }
+  }
+
+  return [...new Set(pids)];
+}
+
+async function waitForPortFree(port, timeoutMs = 10000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (getListeningPids(port).length === 0) {
+      return;
+    }
+    await delay(300);
+  }
+
+  const remaining = getListeningPids(port);
+  if (remaining.length > 0) {
+    throw new Error(`port ${port} is still occupied after waiting ${Math.ceil(timeoutMs / 1000)} seconds. PIDs: ${remaining.join(", ")}`);
   }
 }
 
-function printFailureContext() {
-  let apiErrLog = findLatestLog(".codex-local-dashboard.err");
-  let apiOutLog = findLatestLog(".codex-local-dashboard.out");
-  let viteErrLog = findLatestLog(".codex-local-vite.err");
-  let failureMessage = "";
+function launchProcess(name, args, outLogPath, errLogPath, extraEnv = {}) {
+  const outFd = openSync(outLogPath, "w");
+  const errFd = openSync(errLogPath, "w");
+  const child = spawn(process.execPath, args, {
+    cwd: repoRoot,
+    env: { ...process.env, ...extraEnv },
+    stdio: ["ignore", outFd, errFd],
+    detached: true,
+  });
+  child.unref();
+  log(`started ${name} launcher (PID ${child.pid})`);
+  return { process: child, outLogPath, errLogPath };
+}
 
+function extractFrontendUrlFromLog(filePath) {
   try {
-    const failure = JSON.parse(readFileSync(failureFile, "utf8").replace(/^\uFEFF/, ""));
-    apiErrLog = failure.apiErrLog || apiErrLog;
-    apiOutLog = failure.apiOutLog || apiOutLog;
-    viteErrLog = failure.viteErrLog || viteErrLog;
-    failureMessage = failure.message || "";
+    if (!existsSync(filePath)) return null;
+    const content = readFileSync(filePath, "utf8");
+    const match = content.match(/http:\/\/localhost:\d+\//);
+    return match ? match[0].replace(/\/$/, "") : null;
   } catch {
+    return null;
+  }
+}
+
+async function fetchWithTimeout(url, timeoutMs) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function testUrl(url) {
+  try {
+    const response = await fetchWithTimeout(url, 2000);
+    return response.status >= 200 && response.status < 500;
+  } catch {
+    return false;
+  }
+}
+
+async function waitForServices(apiHealthUrl, preferredPort, apiProcessInfo, viteProcessInfo, timeoutSecondsValue) {
+  const deadline = Date.now() + timeoutSecondsValue * 1000;
+  let apiReady = false;
+  let frontendReady = false;
+  let frontendUrl = null;
+
+  while (Date.now() < deadline) {
+    if (!apiReady) {
+      try {
+        const response = await fetchWithTimeout(apiHealthUrl, 2000);
+        const payload = await response.json();
+        if (payload?.ok === true && payload?.api === true) {
+          apiReady = true;
+          log(`api ready at ${apiHealthUrl}`);
+        }
+      } catch {
+      }
+    }
+
+    if (!frontendReady) {
+      const loggedUrl = extractFrontendUrlFromLog(viteProcessInfo.outLogPath);
+      if (loggedUrl && await testUrl(loggedUrl)) {
+        frontendReady = true;
+        frontendUrl = loggedUrl;
+        log(`frontend ready at ${frontendUrl}`);
+      }
+
+      if (!frontendReady) {
+        for (let port = preferredPort; port <= preferredPort + 10; port += 1) {
+          const candidateUrl = `http://localhost:${port}`;
+          if (await testUrl(candidateUrl)) {
+            frontendReady = true;
+            frontendUrl = candidateUrl;
+            log(`frontend ready at ${frontendUrl}`);
+            break;
+          }
+        }
+      }
+    }
+
+    if (apiReady && frontendReady && frontendUrl) {
+      return frontendUrl;
+    }
+
+    await delay(500);
   }
 
-  if (failureMessage) {
-    console.error(`START_FAILURE=${failureMessage}`);
+  throw new Error(`probe acceptance failed: services were not ready within ${timeoutSecondsValue} seconds. Review logs: ${apiProcessInfo.outLogPath}, ${apiProcessInfo.errLogPath}, ${viteProcessInfo.outLogPath}, ${viteProcessInfo.errLogPath}`);
+}
+
+function writeFailure(message, apiProcessInfo, viteProcessInfo) {
+  writeJson(failureFile, {
+    failedAt: new Date().toISOString(),
+    message,
+    apiOutLog: apiProcessInfo?.outLogPath ?? apiOutLog,
+    apiErrLog: apiProcessInfo?.errLogPath ?? apiErrLog,
+    viteOutLog: viteProcessInfo?.outLogPath ?? viteOutLog,
+    viteErrLog: viteProcessInfo?.errLogPath ?? viteErrLog,
+    stateFile,
+  });
+}
+
+async function main() {
+  removeFileIfExists(failureFile);
+  log(`repo root: ${repoRoot}`);
+
+  stopTrackedProcesses();
+
+  log("freeing dev ports");
+  const freePortsResult = spawnSync(process.execPath, [path.join("scripts", "free-dev-ports.mjs")], {
+    cwd: repoRoot,
+    stdio: "inherit",
+  });
+  if (freePortsResult.status !== 0) {
+    throw new Error(`free-dev-ports.mjs exited with code ${freePortsResult.status ?? "null"}`);
   }
 
-  const apiErrTail = readTail(apiErrLog);
-  const apiOutTail = readTail(apiOutLog);
-  const viteErrTail = readTail(viteErrLog);
+  log(`waiting for ports ${frontendPort} and ${apiPort} to become free`);
+  await waitForPortFree(frontendPort);
+  await waitForPortFree(apiPort);
 
-  if (apiErrTail) {
-    console.error("--- API ERR TAIL ---");
-    console.error(apiErrTail);
-  }
+  const apiProcessInfo = launchProcess(
+    "api",
+    ["--experimental-strip-types", "--loader", "./scripts/ts-path-loader.mjs", "server/index.ts"],
+    apiOutLog,
+    apiErrLog,
+    {
+      DEV_API: "1",
+      PORT: String(apiPort),
+    },
+  );
 
-  if (apiOutTail) {
-    console.error("--- API OUT TAIL ---");
-    console.error(apiOutTail);
-  }
+  const apiUrl = `http://localhost:${apiPort}`;
+  const apiHealthUrl = `${apiUrl}/api/health`;
 
-  if (viteErrTail) {
-    console.error("--- VITE ERR TAIL ---");
-    console.error(viteErrTail);
-  }
+  const viteProcessInfo = launchProcess(
+    "vite",
+    ["./node_modules/vite/bin/vite.js", "--host", "--configLoader", "native"],
+    viteOutLog,
+    viteErrLog,
+    {
+      PORT: String(frontendPort),
+    },
+  );
+
+  log("waiting for api/frontend readiness in parallel");
+  const frontendUrl = await waitForServices(apiHealthUrl, frontendPort, apiProcessInfo, viteProcessInfo, timeoutSeconds);
+
+  const state = {
+    startedAt: new Date().toISOString(),
+    apiPid: apiProcessInfo.process.pid,
+    vitePid: viteProcessInfo.process.pid,
+    apiLauncherPid: apiProcessInfo.process.pid,
+    viteLauncherPid: viteProcessInfo.process.pid,
+    apiUrl,
+    apiHealthUrl,
+    frontendUrl,
+    apiOutLog: apiProcessInfo.outLogPath,
+    apiErrLog: apiProcessInfo.errLogPath,
+    viteOutLog: viteProcessInfo.outLogPath,
+    viteErrLog: viteProcessInfo.errLogPath,
+  };
+
+  writeJson(stateFile, state);
+
+  process.stdout.write("LOCAL_DASHBOARD_READY\n");
+  process.stdout.write(`FRONTEND_URL=${frontendUrl}\n`);
+  process.stdout.write(`API_URL=${apiUrl}\n`);
+  process.stdout.write(`API_HEALTH=${apiHealthUrl}\n`);
+  process.stdout.write(`API_PID=${state.apiPid}\n`);
+  process.stdout.write(`VITE_PID=${state.vitePid}\n`);
+  process.stdout.write(`STATE_FILE=${stateFile}\n`);
 }
 
 try {
-  await runStartScript();
-  printState();
+  await main();
 } catch (error) {
   const message = error instanceof Error ? error.stack ?? error.message : String(error);
   console.error(message);
-  printFailureContext();
+  writeFailure(message, null, null);
   process.exitCode = 1;
 }

@@ -287,7 +287,7 @@ if ($Mode -eq "preview") {
 
   Log "Preview ready at http://localhost:$Port"
   Write-Host "Next step deploy command:" -ForegroundColor Cyan
-  Write-Host "  pnpm run release:deploy -- -ArtifactPath `"$($runtimeState.ArtifactPath)`" -MetadataPath `"$($runtimeState.MetadataPath)`"" -ForegroundColor Cyan
+  Write-Host "  pnpm run _release:deploy -- -ArtifactPath `"$($runtimeState.ArtifactPath)`" -MetadataPath `"$($runtimeState.MetadataPath)`"" -ForegroundColor Cyan
   exit 0
 }
 

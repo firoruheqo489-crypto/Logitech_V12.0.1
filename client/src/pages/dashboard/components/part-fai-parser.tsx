@@ -1,35 +1,41 @@
-'use client';
+"use client";
 
-import { useEffect, useRef, useState } from 'react';
-import { AlertTriangle, CheckCircle2, FileSpreadsheet, Trash2, UploadCloud } from 'lucide-react';
+import { useEffect, useRef, useState } from "react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  FileSpreadsheet,
+  Trash2,
+  UploadCloud,
+} from "lucide-react";
 
-import CyberConfirmDialog from '@/components/ui/CyberConfirmDialog';
+import CyberConfirmDialog from "@/components/ui/CyberConfirmDialog";
 import {
   deletePartFaiState,
   fetchPartFaiState,
   savePartFaiState,
   type PartFaiColumnId,
-} from '@/lib/part-fai-api';
+} from "@/lib/part-fai-api";
 
 type ShotTuple = [number | null, number | null, number | null];
-type RowFilter = 'all' | 'qualified' | 'unqualified';
-type ColumnGroupId = 'fosBlock' | 'fosShots' | 'gtolBlock';
+type RowFilter = "all" | "qualified" | "unqualified";
+type ColumnGroupId = "fosBlock" | "fosShots" | "gtolBlock";
 type ColumnId =
-  | 'dim'
-  | 'fos'
-  | 'plusTol'
-  | 'minusTol'
-  | 'usl'
-  | 'lsl'
-  | 'judgeFos'
-  | 'cavity'
-  | 'fosShot1'
-  | 'fosShot2'
-  | 'fosShot3'
-  | 'judgeGtol'
-  | 'gtolShot1'
-  | 'gtolShot2'
-  | 'gtolShot3';
+  | "dim"
+  | "fos"
+  | "plusTol"
+  | "minusTol"
+  | "usl"
+  | "lsl"
+  | "judgeFos"
+  | "cavity"
+  | "fosShot1"
+  | "fosShot2"
+  | "fosShot3"
+  | "judgeGtol"
+  | "gtolShot1"
+  | "gtolShot2"
+  | "gtolShot3";
 
 type FaiDataRow = {
   dim: string;
@@ -87,58 +93,61 @@ const EMPTY_SUMMARY: FaiParseSummary = {
   qualifiedRate: null,
 };
 
-const SHOT_LABELS = ['Shot 1', 'Shot 2', 'Shot 3'] as const;
+const SHOT_LABELS = ["Shot 1", "Shot 2", "Shot 3"] as const;
 
 const PART_FAI_COLUMN_GROUPS: Array<{ id: ColumnGroupId; label: string }> = [
-  { id: 'fosBlock', label: 'FOS Block' },
-  { id: 'fosShots', label: 'FOS Shots' },
-  { id: 'gtolBlock', label: 'G-Tol Block' },
+  { id: "fosBlock", label: "FOS Block" },
+  { id: "fosShots", label: "FOS Shots" },
+  { id: "gtolBlock", label: "G-Tol Block" },
 ];
 
 const PART_FAI_COLUMNS: PartFaiColumnDefinition[] = [
-  { id: 'dim', label: 'Dim. #', group: 'fosBlock' },
-  { id: 'fos', label: 'FOS', group: 'fosBlock' },
-  { id: 'plusTol', label: 'Plus Tol (+)', group: 'fosBlock' },
-  { id: 'minusTol', label: 'Minus Tol (-)', group: 'fosBlock' },
-  { id: 'usl', label: 'USL', group: 'fosBlock' },
-  { id: 'lsl', label: 'LSL', group: 'fosBlock' },
-  { id: 'judgeFos', label: 'Judge FOS', group: 'fosBlock' },
-  { id: 'cavity', label: 'Cavity #', group: 'fosBlock' },
-  { id: 'fosShot1', label: `FOS ${SHOT_LABELS[0]}`, group: 'fosShots' },
-  { id: 'fosShot2', label: `FOS ${SHOT_LABELS[1]}`, group: 'fosShots' },
-  { id: 'fosShot3', label: `FOS ${SHOT_LABELS[2]}`, group: 'fosShots' },
-  { id: 'judgeGtol', label: 'Judge G-Tol', group: 'gtolBlock' },
-  { id: 'gtolShot1', label: `G-Tol ${SHOT_LABELS[0]}`, group: 'gtolBlock' },
-  { id: 'gtolShot2', label: `G-Tol ${SHOT_LABELS[1]}`, group: 'gtolBlock' },
-  { id: 'gtolShot3', label: `G-Tol ${SHOT_LABELS[2]}`, group: 'gtolBlock' },
+  { id: "dim", label: "Dim. #", group: "fosBlock" },
+  { id: "fos", label: "FOS", group: "fosBlock" },
+  { id: "plusTol", label: "Plus Tol (+)", group: "fosBlock" },
+  { id: "minusTol", label: "Minus Tol (-)", group: "fosBlock" },
+  { id: "usl", label: "USL", group: "fosBlock" },
+  { id: "lsl", label: "LSL", group: "fosBlock" },
+  { id: "judgeFos", label: "Judge FOS", group: "fosBlock" },
+  { id: "cavity", label: "Cavity #", group: "fosBlock" },
+  { id: "fosShot1", label: `FOS ${SHOT_LABELS[0]}`, group: "fosShots" },
+  { id: "fosShot2", label: `FOS ${SHOT_LABELS[1]}`, group: "fosShots" },
+  { id: "fosShot3", label: `FOS ${SHOT_LABELS[2]}`, group: "fosShots" },
+  { id: "judgeGtol", label: "Judge G-Tol", group: "gtolBlock" },
+  { id: "gtolShot1", label: `G-Tol ${SHOT_LABELS[0]}`, group: "gtolBlock" },
+  { id: "gtolShot2", label: `G-Tol ${SHOT_LABELS[1]}`, group: "gtolBlock" },
+  { id: "gtolShot3", label: `G-Tol ${SHOT_LABELS[2]}`, group: "gtolBlock" },
 ];
 
-const PART_FAI_COLUMN_IDS = PART_FAI_COLUMNS.map((column) => column.id);
+const PART_FAI_COLUMN_IDS = PART_FAI_COLUMNS.map(column => column.id);
 
 function normalizeHeader(value: unknown): string {
-  return String(value ?? '')
-    .replace(/\s+/g, ' ')
+  return String(value ?? "")
+    .replace(/\s+/g, " ")
     .trim()
     .toLowerCase();
 }
 
 function hasCellValue(value: unknown): boolean {
-  return value !== undefined && value !== null && String(value).trim() !== '';
+  return value !== undefined && value !== null && String(value).trim() !== "";
 }
 
 function coerceNumber(value: unknown): number | null {
-  if (typeof value === 'number' && Number.isFinite(value)) {
+  if (typeof value === "number" && Number.isFinite(value)) {
     return value;
   }
 
-  const text = String(value ?? '').trim();
+  const text = String(value ?? "").trim();
   if (!text) return null;
 
-  const normalized = text
-    .replace(/,/g, '')
-    .replace(/[^\d.+-]/g, '');
+  const normalized = text.replace(/,/g, "").replace(/[^\d.+-]/g, "");
 
-  if (!normalized || normalized === '+' || normalized === '-' || normalized === '.') {
+  if (
+    !normalized ||
+    normalized === "+" ||
+    normalized === "-" ||
+    normalized === "."
+  ) {
     return null;
   }
 
@@ -146,7 +155,10 @@ function coerceNumber(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function coerceToleranceNumber(value: unknown, fallbackToZero: boolean): number | null {
+function coerceToleranceNumber(
+  value: unknown,
+  fallbackToZero: boolean
+): number | null {
   const parsed = coerceNumber(value);
   if (parsed !== null) {
     return parsed;
@@ -156,47 +168,59 @@ function coerceToleranceNumber(value: unknown, fallbackToZero: boolean): number 
 }
 
 function normalizeJudge(value: unknown): string {
-  return String(value ?? '').trim().toUpperCase();
+  return String(value ?? "")
+    .trim()
+    .toUpperCase();
 }
 
-function getJudgeStatus(value: string): 'ok' | 'ng' | 'other' {
-  if (value.includes('NG')) {
-    return 'ng';
+function getJudgeStatus(value: string): "ok" | "ng" | "other" {
+  if (value.includes("NG")) {
+    return "ng";
   }
 
-  if (value.includes('OK')) {
-    return 'ok';
+  if (value.includes("OK") || value.includes("QK")) {
+    return "ok";
   }
 
-  return 'other';
+  return "other";
 }
 
 function summarizeParsedRows(rows: FaiDataRow[]): FaiParseSummary {
-  const okResults = rows.reduce((count, row) => (
-    count
-    + (getJudgeStatus(row.judgeFos) === 'ok' ? 1 : 0)
-    + (getJudgeStatus(row.judgeGtol) === 'ok' ? 1 : 0)
-  ), 0);
-  const ngResults = rows.reduce((count, row) => (
-    count
-    + (getJudgeStatus(row.judgeFos) === 'ng' ? 1 : 0)
-    + (getJudgeStatus(row.judgeGtol) === 'ng' ? 1 : 0)
-  ), 0);
+  const okResults = rows.reduce(
+    (count, row) =>
+      count +
+      (getJudgeStatus(row.judgeFos) === "ok" ? 1 : 0) +
+      (getJudgeStatus(row.judgeGtol) === "ok" ? 1 : 0),
+    0
+  );
+  const ngResults = rows.reduce(
+    (count, row) =>
+      count +
+      (getJudgeStatus(row.judgeFos) === "ng" ? 1 : 0) +
+      (getJudgeStatus(row.judgeGtol) === "ng" ? 1 : 0),
+    0
+  );
   const totalResults = okResults + ngResults;
 
   return {
     totalRows: totalResults,
     ngRows: ngResults,
     qualifiedRows: okResults,
-    qualifiedRate: totalResults > 0 ? roundToFourDecimals((okResults / totalResults) * 100) : null,
+    qualifiedRate:
+      totalResults > 0
+        ? roundToFourDecimals((okResults / totalResults) * 100)
+        : null,
   };
 }
 
 function normalizeSheetNameKey(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, '');
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "");
 }
 
-function findSheetRowsByKey(sheetRowsByName: Record<string, unknown[][]>, expectedKey: string): unknown[][] | null {
+function findSheetRowsByKey(
+  sheetRowsByName: Record<string, unknown[][]>,
+  expectedKey: string
+): unknown[][] | null {
   for (const [sheetName, rows] of Object.entries(sheetRowsByName)) {
     if (normalizeSheetNameKey(sheetName) === expectedKey) {
       return rows;
@@ -206,24 +230,35 @@ function findSheetRowsByKey(sheetRowsByName: Record<string, unknown[][]>, expect
   return null;
 }
 
-function countStatusesInColumn(rows: unknown[][], columnLabel: string): { okCount: number; ngCount: number } {
+function countStatusesInColumn(
+  rows: unknown[][],
+  columnLabel: string
+): { okCount: number; ngCount: number } {
   const columnIndex = columnLabelToIndex(columnLabel);
   if (columnIndex < 0) {
     return { okCount: 0, ngCount: 0 };
   }
 
-  return rows.reduce((counts, row) => {
-    const status = getJudgeStatus(normalizeJudge(row[columnIndex]));
-    return {
-      okCount: counts.okCount + (status === 'ok' ? 1 : 0),
-      ngCount: counts.ngCount + (status === 'ng' ? 1 : 0),
-    };
-  }, { okCount: 0, ngCount: 0 });
+  return rows.reduce(
+    (counts, row) => {
+      const status = getJudgeStatus(normalizeJudge(row[columnIndex]));
+      return {
+        okCount: counts.okCount + (status === "ok" ? 1 : 0),
+        ngCount: counts.ngCount + (status === "ng" ? 1 : 0),
+      };
+    },
+    { okCount: 0, ngCount: 0 }
+  );
 }
 
-export function summarizeWorkbookSheetRows(sheetRowsByName: Record<string, unknown[][]>): FaiParseSummary | null {
-  const dimensionRows = findSheetRowsByKey(sheetRowsByName, 'dimensionreport');
-  const profileScanRows = findSheetRowsByKey(sheetRowsByName, 'profilescanreport');
+export function summarizeWorkbookSheetRows(
+  sheetRowsByName: Record<string, unknown[][]>
+): FaiParseSummary | null {
+  const profileScanRows = findSheetRowsByKey(
+    sheetRowsByName,
+    "profilescanreport"
+  );
+  const dimensionRows = findSheetRowsByKey(sheetRowsByName, "dimensionreport");
 
   if (!dimensionRows && !profileScanRows) {
     return null;
@@ -240,7 +275,9 @@ export function summarizeWorkbookSheetRows(sheetRowsByName: Record<string, unkno
       return EMPTY_SUMMARY;
     }
   })();
-  const profileCounts = profileScanRows ? countStatusesInColumn(profileScanRows, 'C') : { okCount: 0, ngCount: 0 };
+  const profileCounts = profileScanRows
+    ? countStatusesInColumn(profileScanRows, "C")
+    : { okCount: 0, ngCount: 0 };
 
   const qualifiedRows = dimensionSummary.qualifiedRows + profileCounts.okCount;
   const ngRows = dimensionSummary.ngRows + profileCounts.ngCount;
@@ -250,7 +287,10 @@ export function summarizeWorkbookSheetRows(sheetRowsByName: Record<string, unkno
     totalRows,
     ngRows,
     qualifiedRows,
-    qualifiedRate: totalRows > 0 ? roundToFourDecimals((qualifiedRows / totalRows) * 100) : null,
+    qualifiedRate:
+      totalRows > 0
+        ? roundToFourDecimals((qualifiedRows / totalRows) * 100)
+        : null,
   };
 }
 
@@ -259,21 +299,23 @@ function roundToFourDecimals(value: number): number {
 }
 
 function normalizeDimTypeKey(value: unknown): string {
-  return String(value ?? '')
+  return String(value ?? "")
     .trim()
     .toUpperCase()
-    .replace(/\s+/g, '');
+    .replace(/\s+/g, "");
 }
 
 function formatNumber(value: number | null): string {
-  if (value === null || Number.isNaN(value)) return '--';
+  if (value === null || Number.isNaN(value)) return "--";
 
   const normalized = Number(value.toFixed(4));
-  return Number.isInteger(normalized) ? String(normalized) : normalized.toString();
+  return Number.isInteger(normalized)
+    ? String(normalized)
+    : normalized.toString();
 }
 
 function formatPercent(value: number | null): string {
-  return value === null || Number.isNaN(value) ? 'N/A' : value.toFixed(2);
+  return value === null || Number.isNaN(value) ? "N/A" : value.toFixed(2);
 }
 
 function sanitizeShotTuple(value: unknown): ShotTuple {
@@ -294,21 +336,21 @@ function sanitizePersistedRows(value: unknown): FaiDataRow[] {
   }
 
   return value
-    .map((row) => {
-      if (!row || typeof row !== 'object') {
+    .map(row => {
+      if (!row || typeof row !== "object") {
         return null;
       }
 
       const record = row as Record<string, unknown>;
-      const dim = String(record.dim ?? '').trim();
+      const dim = String(record.dim ?? "").trim();
       if (!dim) {
         return null;
       }
 
       return {
         dim,
-        dimType: String(record.dimType ?? '').trim(),
-        cavity: String(record.cavity ?? '').trim(),
+        dimType: String(record.dimType ?? "").trim(),
+        cavity: String(record.cavity ?? "").trim(),
         fos: coerceNumber(record.fos),
         plusTol: coerceNumber(record.plusTol),
         minusTol: coerceNumber(record.minusTol),
@@ -325,7 +367,7 @@ function sanitizePersistedRows(value: unknown): FaiDataRow[] {
 }
 
 function sanitizePersistedSummary(value: unknown): FaiParseSummary {
-  if (!value || typeof value !== 'object') {
+  if (!value || typeof value !== "object") {
     return EMPTY_SUMMARY;
   }
 
@@ -351,14 +393,18 @@ function sanitizePersistedHiddenColumns(value: unknown): ColumnId[] {
   return Array.from(
     new Set(
       value
-        .map((item) => String(item ?? ''))
-        .filter((item): item is ColumnId => isPartFaiColumnId(item)),
-    ),
+        .map(item => String(item ?? ""))
+        .filter((item): item is ColumnId => isPartFaiColumnId(item))
+    )
   );
 }
 
-function findRequiredIndex(headers: unknown[], matcher: (header: string) => boolean, label: string): number {
-  const index = headers.findIndex((cell) => matcher(normalizeHeader(cell)));
+function findRequiredIndex(
+  headers: unknown[],
+  matcher: (header: string) => boolean,
+  label: string
+): number {
+  const index = headers.findIndex(cell => matcher(normalizeHeader(cell)));
   if (index < 0) {
     throw new Error(`Missing required column: ${label}`);
   }
@@ -367,34 +413,54 @@ function findRequiredIndex(headers: unknown[], matcher: (header: string) => bool
 }
 
 function findHeaderIndexes(headers: unknown[]): HeaderIndexes {
-  const dim = 0;
-  const dimType = headers.findIndex((cell) => {
+  const dim = findRequiredIndex(
+    headers,
+    header =>
+      (header.includes("dim") && header.includes("#")) ||
+      (header === "dim" && !header.includes("type")),
+    "Dim. #"
+  );
+  const dimType = headers.findIndex(cell => {
     const header = normalizeHeader(cell);
-    return header === 'dim. type' || header === 'dim type' || header.includes('dim type');
+    return (
+      header === "dim. type" ||
+      header === "dim type" ||
+      header.includes("dim type")
+    );
   });
-  const cavity = headers.findIndex((cell) => {
+  const cavity = headers.findIndex(cell => {
     const header = normalizeHeader(cell);
-    return header === 'cavity #' || header === 'cavity#' || header.includes('cavity');
+    return (
+      header === "cavity #" || header === "cavity#" || header.includes("cavity")
+    );
   });
-  const judgeFos = findRequiredIndex(headers, (header) => header.includes('judge fos'), 'Judge FOS');
+  const judgeFos = findRequiredIndex(
+    headers,
+    header => header.includes("judge fos"),
+    "Judge FOS"
+  );
   const judgeGtol = findRequiredIndex(
     headers,
-    (header) => header.includes('judge g-tol') || header.includes('judge gtol'),
-    'Judge G-Tol',
+    header => header.includes("judge g-tol") || header.includes("judge gtol"),
+    "Judge G-Tol"
   );
-  const fos = headers.findIndex((cell) => {
+  const fos = headers.findIndex(cell => {
     const header = normalizeHeader(cell);
-    return header.includes('fos') && !header.includes('judge');
+    return header.includes("fos") && !header.includes("judge");
   });
-  const plusTol = headers.findIndex((cell) => normalizeHeader(cell).includes('plus tol'));
-  const minusTol = headers.findIndex((cell) => normalizeHeader(cell).includes('minus tol'));
-  const usl = headers.findIndex((cell) => {
+  const plusTol = headers.findIndex(cell =>
+    normalizeHeader(cell).includes("plus tol")
+  );
+  const minusTol = headers.findIndex(cell =>
+    normalizeHeader(cell).includes("minus tol")
+  );
+  const usl = headers.findIndex(cell => {
     const header = normalizeHeader(cell);
-    return header === 'usl' || header.includes('upper spec');
+    return header === "usl" || header.includes("upper spec");
   });
-  const lsl = headers.findIndex((cell) => {
+  const lsl = headers.findIndex(cell => {
     const header = normalizeHeader(cell);
-    return header === 'lsl' || header.includes('lower spec');
+    return header === "lsl" || header.includes("lower spec");
   });
 
   return {
@@ -413,8 +479,21 @@ function findHeaderIndexes(headers: unknown[]): HeaderIndexes {
   };
 }
 
-function readShotTuple(row: unknown[], indexes: [number, number, number]): ShotTuple {
-  return indexes.map((index) => coerceNumber(row[index])) as ShotTuple;
+function isFaiHeaderRow(row: unknown[]): boolean {
+  return row.some(cell => {
+    const header = normalizeHeader(cell);
+    return (
+      (header.includes("dim") && header.includes("#")) ||
+      (header === "dim" && !header.includes("type"))
+    );
+  });
+}
+
+function readShotTuple(
+  row: unknown[],
+  indexes: [number, number, number]
+): ShotTuple {
+  return indexes.map(index => coerceNumber(row[index])) as ShotTuple;
 }
 
 function columnLabelToIndex(label: string): number {
@@ -432,7 +511,9 @@ function columnLabelToIndex(label: string): number {
   return index - 1;
 }
 
-function decodeWorksheetAddress(address: string): { rowIndex: number; columnIndex: number } | null {
+function decodeWorksheetAddress(
+  address: string
+): { rowIndex: number; columnIndex: number } | null {
   const match = /^([A-Z]+)([1-9]\d*)$/i.exec(address);
   if (!match) {
     return null;
@@ -450,27 +531,29 @@ function decodeWorksheetAddress(address: string): { rowIndex: number; columnInde
 }
 
 function readWorksheetCellValue(cell: unknown): unknown {
-  if (!cell || typeof cell !== 'object') {
+  if (!cell || typeof cell !== "object") {
     return undefined;
   }
 
   const worksheetCell = cell as WorksheetCell;
-  if (Object.prototype.hasOwnProperty.call(worksheetCell, 'v')) {
+  if (Object.prototype.hasOwnProperty.call(worksheetCell, "v")) {
     return worksheetCell.v;
   }
 
-  if (Object.prototype.hasOwnProperty.call(worksheetCell, 'w')) {
+  if (Object.prototype.hasOwnProperty.call(worksheetCell, "w")) {
     return worksheetCell.w;
   }
 
   return undefined;
 }
 
-export function extractPopulatedSheetRows(sheet: Record<string, unknown>): unknown[][] {
+export function extractPopulatedSheetRows(
+  sheet: Record<string, unknown>
+): unknown[][] {
   const rowsByIndex = new Map<number, Map<number, unknown>>();
 
   Object.entries(sheet).forEach(([address, rawCell]) => {
-    if (address.startsWith('!')) {
+    if (address.startsWith("!")) {
       return;
     }
 
@@ -508,65 +591,90 @@ export function extractPopulatedSheetRows(sheet: Record<string, unknown>): unkno
     });
 }
 
-export function parseSheetRows(rows: unknown[][]): { data: FaiDataRow[]; summary: FaiParseSummary } {
-  const headerRowIndex = rows.findIndex((row) => {
-    const firstCell = normalizeHeader(row[0]);
-    return firstCell.includes('dim') && firstCell.includes('#');
-  });
+export function parseSheetRows(rows: unknown[][]): {
+  data: FaiDataRow[];
+  summary: FaiParseSummary;
+} {
+  const headerRowIndexes = rows
+    .map((row, index) => (isFaiHeaderRow(row) ? index : -1))
+    .filter((index): index is number => index >= 0);
 
-  if (headerRowIndex < 0) {
-    throw new Error('Unable to locate the FAI header row.');
+  if (headerRowIndexes.length === 0) {
+    throw new Error("Unable to locate the FAI header row.");
   }
 
-  const headers = rows[headerRowIndex] ?? [];
-  const dataStartIndex = headerRowIndex + 1;
-  const headerIndexes = findHeaderIndexes(headers);
-
   const parsedData: FaiDataRow[] = [];
+  headerRowIndexes.forEach((headerRowIndex, headerPosition) => {
+    const headerRow = rows[headerRowIndex] ?? [];
+    const headerIndexes = findHeaderIndexes(headerRow);
+    const nextHeaderRowIndex =
+      headerRowIndexes[headerPosition + 1] ?? rows.length;
 
-  rows.slice(dataStartIndex).forEach((row) => {
-    const dim = String(row[headerIndexes.dim] ?? '').trim();
-    if (!dim) {
-      return;
-    }
+    rows.slice(headerRowIndex + 1, nextHeaderRowIndex).forEach(row => {
+      const dim = String(row[headerIndexes.dim] ?? "").trim();
+      const cavity = String(
+        headerIndexes.cavity >= 0 ? row[headerIndexes.cavity] ?? "" : ""
+      ).trim();
+      const resolvedDim = dim || cavity;
+      if (!resolvedDim) {
+        return;
+      }
 
-    const judgeFos = normalizeJudge(row[headerIndexes.judgeFos]);
-    const judgeGtol = normalizeJudge(row[headerIndexes.judgeGtol]);
-    const isNG = getJudgeStatus(judgeFos) === 'ng' || getJudgeStatus(judgeGtol) === 'ng';
+      const judgeFos = normalizeJudge(row[headerIndexes.judgeFos]);
+      const judgeGtol = normalizeJudge(row[headerIndexes.judgeGtol]);
+      const isNG =
+        getJudgeStatus(judgeFos) === "ng" || getJudgeStatus(judgeGtol) === "ng";
 
-    const rawFos = headerIndexes.fos >= 0 ? row[headerIndexes.fos] : null;
-    const fos = hasCellValue(rawFos) ? coerceNumber(rawFos) : null;
-    const plusTol =
-      headerIndexes.plusTol >= 0
-        ? coerceToleranceNumber(row[headerIndexes.plusTol], fos !== null)
-        : fos !== null
-          ? 0
-          : null;
-    const minusTol =
-      headerIndexes.minusTol >= 0
-        ? coerceToleranceNumber(row[headerIndexes.minusTol], fos !== null)
-        : fos !== null
-          ? 0
-          : null;
-    const directUsl = headerIndexes.usl >= 0 ? coerceNumber(row[headerIndexes.usl]) : null;
-    const directLsl = headerIndexes.lsl >= 0 ? coerceNumber(row[headerIndexes.lsl]) : null;
-    const usl = directUsl ?? (fos !== null && plusTol !== null ? roundToFourDecimals(fos + plusTol) : null);
-    const lsl = directLsl ?? (fos !== null && minusTol !== null ? roundToFourDecimals(fos + minusTol) : null);
+      const rawFos = headerIndexes.fos >= 0 ? row[headerIndexes.fos] : null;
+      const fos = hasCellValue(rawFos) ? coerceNumber(rawFos) : null;
+      const plusTol =
+        headerIndexes.plusTol >= 0
+          ? coerceToleranceNumber(row[headerIndexes.plusTol], fos !== null)
+          : fos !== null
+            ? 0
+            : null;
+      const minusTol =
+        headerIndexes.minusTol >= 0
+          ? coerceToleranceNumber(row[headerIndexes.minusTol], fos !== null)
+          : fos !== null
+            ? 0
+            : null;
+      const directUsl =
+        headerIndexes.usl >= 0 ? coerceNumber(row[headerIndexes.usl]) : null;
+      const directLsl =
+        headerIndexes.lsl >= 0 ? coerceNumber(row[headerIndexes.lsl]) : null;
+      const usl =
+        directUsl ??
+        (fos !== null && plusTol !== null
+          ? roundToFourDecimals(fos + plusTol)
+          : null);
+      const lsl =
+        directLsl ??
+        (fos !== null && minusTol !== null
+          ? roundToFourDecimals(fos + minusTol)
+          : null);
 
-    parsedData.push({
-      dim,
-      dimType: headerIndexes.dimType >= 0 ? String(row[headerIndexes.dimType] ?? '').trim() : '',
-      cavity: headerIndexes.cavity >= 0 ? String(row[headerIndexes.cavity] ?? '').trim() : '',
-      fos,
-      plusTol,
-      minusTol,
-      usl,
-      lsl,
-      judgeFos,
-      judgeGtol,
-      isNG,
-      fosShots: readShotTuple(row, headerIndexes.fosShotIndexes),
-      gtolShots: readShotTuple(row, headerIndexes.gtolShotIndexes),
+      parsedData.push({
+        dim: resolvedDim,
+        dimType:
+          headerIndexes.dimType >= 0
+            ? String(row[headerIndexes.dimType] ?? "").trim()
+            : "",
+        cavity:
+          headerIndexes.cavity >= 0
+            ? String(row[headerIndexes.cavity] ?? "").trim()
+            : "",
+        fos,
+        plusTol,
+        minusTol,
+        usl,
+        lsl,
+        judgeFos,
+        judgeGtol,
+        isNG,
+        fosShots: readShotTuple(row, headerIndexes.fosShotIndexes),
+        gtolShots: readShotTuple(row, headerIndexes.gtolShotIndexes),
+      });
     });
   });
 
@@ -578,10 +686,12 @@ export function parseSheetRows(rows: unknown[][]): { data: FaiDataRow[]; summary
 
 export function summarizeDimensionRowsByDimTypes(
   rows: FaiDataRow[],
-  expectedDimTypes: string[],
+  expectedDimTypes: string[]
 ): FaiParseSummary {
-  const allowedTypes = new Set(expectedDimTypes.map((value) => normalizeDimTypeKey(value)));
-  const filteredRows = rows.filter((row) => {
+  const allowedTypes = new Set(
+    expectedDimTypes.map(value => normalizeDimTypeKey(value))
+  );
+  const filteredRows = rows.filter(row => {
     return allowedTypes.has(normalizeDimTypeKey(row.dimType));
   });
 
@@ -589,33 +699,36 @@ export function summarizeDimensionRowsByDimTypes(
 }
 
 function getJudgeBadgeClass(judge: string): string {
-  if (judge.includes('NG')) {
-    return 'border border-red-500/30 bg-red-500/15 text-red-300';
+  if (judge.includes("NG")) {
+    return "border border-red-500/30 bg-red-500/15 text-red-300";
   }
 
-  if (judge.includes('OK')) {
-    return 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-300';
+  if (judge.includes("OK") || judge.includes("QK")) {
+    return "border border-emerald-500/30 bg-emerald-500/10 text-emerald-300";
   }
 
-  return 'border border-slate-700 bg-slate-950 text-slate-400';
+  return "border border-slate-700 bg-slate-950 text-slate-400";
 }
 
-function getFilterCardClass(isActive: boolean, tone: 'neutral' | 'success' | 'danger'): string {
-  if (tone === 'success') {
+function getFilterCardClass(
+  isActive: boolean,
+  tone: "neutral" | "success" | "danger"
+): string {
+  if (tone === "success") {
     return isActive
-      ? 'border-emerald-400/40 bg-emerald-500/12 shadow-[0_0_0_1px_rgba(52,211,153,0.18)]'
-      : 'border-emerald-500/15 bg-emerald-500/5 hover:border-emerald-400/25 hover:bg-emerald-500/10';
+      ? "border-emerald-400/40 bg-emerald-500/12 shadow-[0_0_0_1px_rgba(52,211,153,0.18)]"
+      : "border-emerald-500/15 bg-emerald-500/5 hover:border-emerald-400/25 hover:bg-emerald-500/10";
   }
 
-  if (tone === 'danger') {
+  if (tone === "danger") {
     return isActive
-      ? 'border-red-400/35 bg-red-500/14 shadow-[0_0_0_1px_rgba(248,113,113,0.16)]'
-      : 'border-red-500/20 bg-red-500/10 hover:border-red-400/25 hover:bg-red-500/14';
+      ? "border-red-400/35 bg-red-500/14 shadow-[0_0_0_1px_rgba(248,113,113,0.16)]"
+      : "border-red-500/20 bg-red-500/10 hover:border-red-400/25 hover:bg-red-500/14";
   }
 
   return isActive
-    ? 'border-cyan-400/30 bg-cyan-500/10 shadow-[0_0_0_1px_rgba(34,211,238,0.14)]'
-    : 'border-slate-800 bg-slate-950/70 hover:border-slate-700 hover:bg-slate-950/90';
+    ? "border-cyan-400/30 bg-cyan-500/10 shadow-[0_0_0_1px_rgba(34,211,238,0.14)]"
+    : "border-slate-800 bg-slate-950/70 hover:border-slate-700 hover:bg-slate-950/90";
 }
 
 interface PartFaiParserSectionProps {
@@ -634,43 +747,51 @@ export default function PartFaiParserSection({
   const [summary, setSummary] = useState<FaiParseSummary>(EMPTY_SUMMARY);
   const [isDragging, setIsDragging] = useState(false);
   const [isParsing, setIsParsing] = useState(false);
-  const [fileName, setFileName] = useState('');
-  const [error, setError] = useState('');
+  const [fileName, setFileName] = useState("");
+  const [error, setError] = useState("");
   const [showClearConfirm, setShowClearConfirm] = useState(false);
-  const [activeFilter, setActiveFilter] = useState<RowFilter>('all');
+  const [activeFilter, setActiveFilter] = useState<RowFilter>("all");
   const [hiddenColumns, setHiddenColumns] = useState<ColumnId[]>([]);
   const [isColumnPanelOpen, setIsColumnPanelOpen] = useState(false);
   const [isHydrated, setIsHydrated] = useState(false);
   const loadRequestIdRef = useRef(0);
-  const visibleColumns = PART_FAI_COLUMNS.filter((column) => !hiddenColumns.includes(column.id));
+  const visibleColumns = PART_FAI_COLUMNS.filter(
+    column => !hiddenColumns.includes(column.id)
+  );
   const visibleColumnCount = visibleColumns.length;
-  const visibleGroupCounts = PART_FAI_COLUMN_GROUPS.map((group) => ({
+  const visibleGroupCounts = PART_FAI_COLUMN_GROUPS.map(group => ({
     ...group,
-    count: visibleColumns.filter((column) => column.group === group.id).length,
-  })).filter((group) => group.count > 0);
+    count: visibleColumns.filter(column => column.group === group.id).length,
+  })).filter(group => group.count > 0);
 
   const filteredRows =
-    activeFilter === 'qualified'
-      ? faiData.filter((row) => !row.isNG)
-      : activeFilter === 'unqualified'
-        ? faiData.filter((row) => row.isNG)
+    activeFilter === "qualified"
+      ? faiData.filter(row => !row.isNG)
+      : activeFilter === "unqualified"
+        ? faiData.filter(row => row.isNG)
         : faiData;
-  const hcfFocusSummary = summarizeDimensionRowsByDimTypes(faiData, ['HCF+CP', 'HCF']);
-  const hasDimTypeMetadata = faiData.some((row) => normalizeDimTypeKey(row.dimType).length > 0);
-  const needsDimTypeReparse = fileName && faiData.length > 0 && !hasDimTypeMetadata;
+  const hcfFocusSummary = summarizeDimensionRowsByDimTypes(faiData, [
+    "HCF+CP",
+    "HCF",
+  ]);
+  const hasDimTypeMetadata = faiData.some(
+    row => normalizeDimTypeKey(row.dimType).length > 0
+  );
+  const needsDimTypeReparse =
+    fileName && faiData.length > 0 && !hasDimTypeMetadata;
 
   const clearParsedData = () => {
     setFaiData([]);
     setSummary(EMPTY_SUMMARY);
-    setFileName('');
-    setError('');
+    setFileName("");
+    setError("");
     setIsDragging(false);
-    setActiveFilter('all');
+    setActiveFilter("all");
     setHiddenColumns([]);
     setIsColumnPanelOpen(false);
 
     if (inputRef.current) {
-      inputRef.current.value = '';
+      inputRef.current.value = "";
     }
   };
 
@@ -681,14 +802,18 @@ export default function PartFaiParserSection({
     let cancelled = false;
     setFaiData([]);
     setSummary(EMPTY_SUMMARY);
-    setFileName('');
-    setActiveFilter('all');
+    setFileName("");
+    setActiveFilter("all");
     setHiddenColumns([]);
     setIsColumnPanelOpen(false);
 
     void (async () => {
       try {
-        const storedState = await fetchPartFaiState({ moldId, moldNo, trialStage });
+        const storedState = await fetchPartFaiState({
+          moldId,
+          moldNo,
+          trialStage,
+        });
         if (cancelled || loadRequestIdRef.current !== requestId) {
           return;
         }
@@ -696,18 +821,25 @@ export default function PartFaiParserSection({
         if (storedState) {
           setFaiData(sanitizePersistedRows(storedState.data));
           setSummary(sanitizePersistedSummary(storedState.summary));
-          setFileName(String(storedState.fileName ?? ''));
-          setActiveFilter(storedState.activeFilter === 'qualified' || storedState.activeFilter === 'unqualified' ? storedState.activeFilter : 'all');
-          setHiddenColumns(sanitizePersistedHiddenColumns(storedState.hiddenColumns));
+          setFileName(String(storedState.fileName ?? ""));
+          setActiveFilter(
+            storedState.activeFilter === "qualified" ||
+              storedState.activeFilter === "unqualified"
+              ? storedState.activeFilter
+              : "all"
+          );
+          setHiddenColumns(
+            sanitizePersistedHiddenColumns(storedState.hiddenColumns)
+          );
         } else {
           setFaiData([]);
           setSummary(EMPTY_SUMMARY);
-          setFileName('');
-          setActiveFilter('all');
+          setFileName("");
+          setActiveFilter("all");
           setHiddenColumns([]);
         }
 
-        setError('');
+        setError("");
       } catch (loadError) {
         if (cancelled || loadRequestIdRef.current !== requestId) {
           return;
@@ -715,10 +847,14 @@ export default function PartFaiParserSection({
 
         setFaiData([]);
         setSummary(EMPTY_SUMMARY);
-        setFileName('');
-        setActiveFilter('all');
+        setFileName("");
+        setActiveFilter("all");
         setHiddenColumns([]);
-        setError(loadError instanceof Error ? loadError.message : 'Failed to load the saved Part FAI state.');
+        setError(
+          loadError instanceof Error
+            ? loadError.message
+            : "Failed to load the saved Part FAI state."
+        );
       } finally {
         if (cancelled) {
           return;
@@ -730,7 +866,7 @@ export default function PartFaiParserSection({
         setIsHydrated(true);
 
         if (inputRef.current) {
-          inputRef.current.value = '';
+          inputRef.current.value = "";
         }
       }
     })();
@@ -763,58 +899,85 @@ export default function PartFaiParserSection({
           data: faiData,
         });
       } catch (saveError) {
-        console.error('Failed to persist Part FAI state:', saveError);
+        console.error("Failed to persist Part FAI state:", saveError);
       }
     })();
-  }, [activeFilter, faiData, fileName, hiddenColumns, isHydrated, moldId, moldNo, summary, trialStage]);
+  }, [
+    activeFilter,
+    faiData,
+    fileName,
+    hiddenColumns,
+    isHydrated,
+    moldId,
+    moldNo,
+    summary,
+    trialStage,
+  ]);
 
   const handleFile = async (file?: File) => {
     if (!file) return;
 
     setIsParsing(true);
-    setError('');
+    setError("");
 
     try {
-      const XLSX = await import('xlsx');
+      const XLSX = await import("xlsx");
       const buffer = await file.arrayBuffer();
-      const workbook = XLSX.read(buffer, { type: 'array', cellDates: false });
-      const firstSheetName = workbook.SheetNames[0];
+      const workbook = XLSX.read(buffer, { type: "array", cellDates: false });
 
-      if (!firstSheetName) {
-        throw new Error('No worksheet found in the uploaded Excel file.');
-      }
+      const dimensionSheetName = workbook.SheetNames.find(
+        sheetName => normalizeSheetNameKey(sheetName) === "dimensionreport"
+      );
+      const profileScanSheetName = workbook.SheetNames.find(
+        sheetName => normalizeSheetNameKey(sheetName) === "profilescanreport"
+      );
 
       const workbookSheetRows = Object.fromEntries(
-        workbook.SheetNames.map((sheetName) => [
-          sheetName,
-          extractPopulatedSheetRows(workbook.Sheets[sheetName] as Record<string, unknown>),
-        ]),
+        [dimensionSheetName, profileScanSheetName]
+          .filter((sheetName): sheetName is string => !!sheetName)
+          .map(sheetName => [
+            sheetName,
+            extractPopulatedSheetRows(
+              workbook.Sheets[sheetName] as Record<string, unknown>
+            ),
+          ])
       ) as Record<string, unknown[][]>;
-      const parseSourceRows = findSheetRowsByKey(workbookSheetRows, 'dimensionreport') ?? workbookSheetRows[firstSheetName];
-      const parsed = parseSheetRows(parseSourceRows);
+      const dimensionRows = findSheetRowsByKey(
+        workbookSheetRows,
+        "dimensionreport"
+      );
+      if (!dimensionRows) {
+        throw new Error("Unable to locate the FAI header row.");
+      }
+
+      const parsedData = parseSheetRows(dimensionRows).data;
       const workbookSummary = summarizeWorkbookSheetRows(workbookSheetRows);
 
-      setFaiData(parsed.data);
-      setSummary(workbookSummary ?? parsed.summary);
+      setFaiData(parsedData);
+      setSummary(workbookSummary ?? summarizeParsedRows(parsedData));
       setFileName(file.name);
-      setActiveFilter('all');
+      setActiveFilter("all");
       setIsColumnPanelOpen(false);
     } catch (err) {
       setFaiData([]);
       setSummary(EMPTY_SUMMARY);
-      setFileName('');
-      setActiveFilter('all');
+      setFileName("");
+      setActiveFilter("all");
       setHiddenColumns([]);
-      setError(err instanceof Error ? err.message : 'Failed to parse the product FAI workbook.');
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to parse the product FAI workbook."
+      );
     } finally {
       setIsParsing(false);
     }
   };
 
   const toggleColumnVisibility = (columnId: ColumnId) => {
-    setHiddenColumns((current) => {
+    setHiddenColumns(current => {
       if (current.includes(columnId)) {
-        return current.filter((value) => value !== columnId);
+        return current.filter(value => value !== columnId);
       }
 
       if (PART_FAI_COLUMNS.length - current.length <= 1) {
@@ -849,7 +1012,7 @@ export default function PartFaiParserSection({
               </span>
             ) : null}
             <span className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1">
-              {trialStage || 'T0'}
+              {trialStage || "T0"}
             </span>
             {fileName ? <span>{fileName}</span> : null}
             {(fileName || faiData.length > 0 || error) && !isParsing ? (
@@ -867,15 +1030,15 @@ export default function PartFaiParserSection({
 
         {faiData.length === 0 ? (
           <div
-            onDragOver={(event) => {
+            onDragOver={event => {
               event.preventDefault();
               setIsDragging(true);
             }}
-            onDragLeave={(event) => {
+            onDragLeave={event => {
               event.preventDefault();
               setIsDragging(false);
             }}
-            onDrop={(event) => {
+            onDrop={event => {
               event.preventDefault();
               setIsDragging(false);
               void handleFile(event.dataTransfer.files?.[0]);
@@ -883,19 +1046,22 @@ export default function PartFaiParserSection({
             onClick={() => inputRef.current?.click()}
             className={`cursor-pointer rounded-xl border-2 border-dashed px-6 py-8 text-center transition-all ${
               isDragging
-                ? 'border-cyan-500/60 bg-cyan-500/10 shadow-[0_0_24px_rgba(34,211,238,0.12)]'
-                : 'border-slate-700 bg-slate-950/60 hover:border-slate-600 hover:bg-slate-950'
+                ? "border-cyan-500/60 bg-cyan-500/10 shadow-[0_0_24px_rgba(34,211,238,0.12)]"
+                : "border-slate-700 bg-slate-950/60 hover:border-slate-600 hover:bg-slate-950"
             }`}
           >
             <div className="mx-auto flex max-w-2xl flex-col items-center gap-3">
-              <UploadCloud className={`h-10 w-10 ${isDragging ? 'text-cyan-400' : 'text-slate-500'}`} />
+              <UploadCloud
+                className={`h-10 w-10 ${isDragging ? "text-cyan-400" : "text-slate-500"}`}
+              />
               <div className="text-sm text-slate-300">
                 Upload Product FAI Excel
                 <span className="ml-1 text-slate-500">(.xlsx / .xls)</span>
               </div>
               <p className="text-xs leading-6 text-slate-500">
-                Parses the Dimension report grid for table rows, and calculates summary cards from
-                Dimension report plus Profile_Scan report OK-NG counts without double-counting mirrored rows.
+                Parses the Dimension report grid for table rows, and calculates
+                summary cards from Dimension report plus Profile_Scan report
+                OK-NG counts without double-counting mirrored rows.
               </p>
               {isParsing ? (
                 <div className="text-[11px] font-mono uppercase tracking-[0.24em] text-cyan-400">
@@ -913,7 +1079,9 @@ export default function PartFaiParserSection({
                   <div className="text-[10px] font-mono uppercase tracking-[0.24em] text-cyan-300">
                     Product FAI File Loaded
                   </div>
-                  <div className="text-sm text-slate-200">{fileName || 'Current workbook attached'}</div>
+                  <div className="text-sm text-slate-200">
+                    {fileName || "Current workbook attached"}
+                  </div>
                 </div>
               </div>
               <div className="text-[11px] text-slate-500">
@@ -928,9 +1096,9 @@ export default function PartFaiParserSection({
           type="file"
           accept=".xlsx,.xls"
           className="hidden"
-          onChange={(event) => {
+          onChange={event => {
             void handleFile(event.target.files?.[0]);
-            event.target.value = '';
+            event.target.value = "";
           }}
         />
 
@@ -946,40 +1114,48 @@ export default function PartFaiParserSection({
             <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
               <button
                 type="button"
-                onClick={() => setActiveFilter('all')}
-                className={`rounded-xl border p-3 text-left transition-all ${getFilterCardClass(activeFilter === 'all', 'neutral')}`}
+                onClick={() => setActiveFilter("all")}
+                className={`rounded-xl border p-3 text-left transition-all ${getFilterCardClass(activeFilter === "all", "neutral")}`}
               >
                 <div className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">
                   Total Rows
                 </div>
-                <div className="mt-2 text-2xl font-mono text-slate-100">{summary.totalRows}</div>
+                <div className="mt-2 text-2xl font-mono text-slate-100">
+                  {summary.totalRows}
+                </div>
               </button>
               <button
                 type="button"
-                onClick={() => setActiveFilter('qualified')}
-                className={`rounded-xl border p-3 text-left transition-all ${getFilterCardClass(activeFilter === 'qualified', 'success')}`}
+                onClick={() => setActiveFilter("qualified")}
+                className={`rounded-xl border p-3 text-left transition-all ${getFilterCardClass(activeFilter === "qualified", "success")}`}
               >
                 <div className="text-[10px] font-semibold uppercase tracking-widest text-emerald-300/80">
                   Qualified Rows
                 </div>
-                <div className="mt-2 text-2xl font-mono text-emerald-400">{summary.qualifiedRows}</div>
+                <div className="mt-2 text-2xl font-mono text-emerald-400">
+                  {summary.qualifiedRows}
+                </div>
               </button>
               <button
                 type="button"
-                onClick={() => setActiveFilter('unqualified')}
-                className={`rounded-xl border p-3 text-left transition-all ${getFilterCardClass(activeFilter === 'unqualified', 'danger')}`}
+                onClick={() => setActiveFilter("unqualified")}
+                className={`rounded-xl border p-3 text-left transition-all ${getFilterCardClass(activeFilter === "unqualified", "danger")}`}
               >
                 <div className="text-[10px] font-semibold uppercase tracking-widest text-red-300/80">
                   Unqualified Rows
                 </div>
-                <div className="mt-2 text-2xl font-mono text-red-400">{summary.ngRows}</div>
+                <div className="mt-2 text-2xl font-mono text-red-400">
+                  {summary.ngRows}
+                </div>
               </button>
               <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/10 p-3">
                 <div className="text-[10px] font-semibold uppercase tracking-widest text-cyan-300/80">
                   Qualified Rate
                 </div>
                 <div className="mt-2 text-2xl font-mono text-cyan-300">
-                  {summary.qualifiedRate === null ? 'N/A' : `${formatPercent(summary.qualifiedRate)}%`}
+                  {summary.qualifiedRate === null
+                    ? "N/A"
+                    : `${formatPercent(summary.qualifiedRate)}%`}
                 </div>
               </div>
             </div>
@@ -1010,7 +1186,7 @@ export default function PartFaiParserSection({
                     Total Rows
                   </div>
                   <div className="mt-2 text-2xl font-mono text-slate-100">
-                    {needsDimTypeReparse ? '--' : hcfFocusSummary.totalRows}
+                    {needsDimTypeReparse ? "--" : hcfFocusSummary.totalRows}
                   </div>
                 </div>
                 <div className="rounded-xl border border-emerald-500/20 bg-slate-950/40 p-3">
@@ -1018,7 +1194,7 @@ export default function PartFaiParserSection({
                     Qualified Rows
                   </div>
                   <div className="mt-2 text-2xl font-mono text-emerald-300">
-                    {needsDimTypeReparse ? '--' : hcfFocusSummary.qualifiedRows}
+                    {needsDimTypeReparse ? "--" : hcfFocusSummary.qualifiedRows}
                   </div>
                 </div>
                 <div className="rounded-xl border border-rose-500/20 bg-slate-950/40 p-3">
@@ -1026,7 +1202,7 @@ export default function PartFaiParserSection({
                     Unqualified Rows
                   </div>
                   <div className="mt-2 text-2xl font-mono text-rose-300">
-                    {needsDimTypeReparse ? '--' : hcfFocusSummary.ngRows}
+                    {needsDimTypeReparse ? "--" : hcfFocusSummary.ngRows}
                   </div>
                 </div>
                 <div className="rounded-xl border border-cyan-500/20 bg-slate-950/40 p-3">
@@ -1035,9 +1211,9 @@ export default function PartFaiParserSection({
                   </div>
                   <div className="mt-2 text-2xl font-mono text-cyan-300">
                     {needsDimTypeReparse
-                      ? 'N/A'
+                      ? "N/A"
                       : hcfFocusSummary.qualifiedRate === null
-                        ? 'N/A'
+                        ? "N/A"
                         : `${formatPercent(hcfFocusSummary.qualifiedRate)}%`}
                   </div>
                 </div>
@@ -1048,9 +1224,9 @@ export default function PartFaiParserSection({
               <div className="border-b border-slate-800/80 px-3 py-2">
                 <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
                   <div className="text-[11px] font-mono uppercase tracking-[0.24em] text-slate-500">
-                    {activeFilter === 'qualified'
+                    {activeFilter === "qualified"
                       ? `Showing Qualified Rows (${filteredRows.length})`
-                      : activeFilter === 'unqualified'
+                      : activeFilter === "unqualified"
                         ? `Showing Unqualified Rows (${filteredRows.length})`
                         : `Showing All Rows (${filteredRows.length})`}
                   </div>
@@ -1060,7 +1236,7 @@ export default function PartFaiParserSection({
                     </span>
                     <button
                       type="button"
-                      onClick={() => setIsColumnPanelOpen((current) => !current)}
+                      onClick={() => setIsColumnPanelOpen(current => !current)}
                       className="rounded-md border border-slate-700 bg-slate-950/80 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-300 transition hover:border-cyan-400/40 hover:text-cyan-300"
                     >
                       Hide Columns / 隐藏列
@@ -1088,31 +1264,41 @@ export default function PartFaiParserSection({
                     </span>
                   </div>
                   <div className="grid gap-3 xl:grid-cols-3">
-                    {PART_FAI_COLUMN_GROUPS.map((group) => (
-                      <div key={group.id} className="rounded-lg border border-slate-800 bg-slate-900/70 p-3">
+                    {PART_FAI_COLUMN_GROUPS.map(group => (
+                      <div
+                        key={group.id}
+                        className="rounded-lg border border-slate-800 bg-slate-900/70 p-3"
+                      >
                         <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-500">
                           {group.label}
                         </div>
                         <div className="space-y-2">
-                          {PART_FAI_COLUMNS.filter((column) => column.group === group.id).map((column) => {
+                          {PART_FAI_COLUMNS.filter(
+                            column => column.group === group.id
+                          ).map(column => {
                             const isHidden = hiddenColumns.includes(column.id);
-                            const disableHide = !isHidden && visibleColumnCount <= 1;
+                            const disableHide =
+                              !isHidden && visibleColumnCount <= 1;
 
                             return (
                               <label
                                 key={column.id}
                                 className={`flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-xs transition ${
                                   isHidden
-                                    ? 'border-slate-800 bg-slate-950/70 text-slate-500'
-                                    : 'border-slate-700 bg-slate-900/90 text-slate-200'
-                                } ${disableHide ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:border-cyan-400/30 hover:text-cyan-200'}`}
+                                    ? "border-slate-800 bg-slate-950/70 text-slate-500"
+                                    : "border-slate-700 bg-slate-900/90 text-slate-200"
+                                } ${disableHide ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:border-cyan-400/30 hover:text-cyan-200"}`}
                               >
-                                <span className="font-mono uppercase tracking-[0.12em]">{column.label}</span>
+                                <span className="font-mono uppercase tracking-[0.12em]">
+                                  {column.label}
+                                </span>
                                 <input
                                   type="checkbox"
                                   checked={!isHidden}
                                   disabled={disableHide}
-                                  onChange={() => toggleColumnVisibility(column.id)}
+                                  onChange={() =>
+                                    toggleColumnVisibility(column.id)
+                                  }
                                   className="h-3.5 w-3.5 rounded border-slate-600 bg-slate-950 text-cyan-400 focus:ring-cyan-400/40"
                                 />
                               </label>
@@ -1128,15 +1314,22 @@ export default function PartFaiParserSection({
                 <table className="min-w-full border-collapse">
                   <thead className="sticky top-0 z-10 bg-slate-950 text-xs font-semibold tracking-wider text-slate-400">
                     <tr className="border-b border-slate-800/80 text-[10px] uppercase tracking-[0.24em] text-slate-500">
-                      {visibleGroupCounts.map((group) => (
-                        <th key={group.id} className="px-3 py-2 text-left" colSpan={group.count}>
+                      {visibleGroupCounts.map(group => (
+                        <th
+                          key={group.id}
+                          className="px-3 py-2 text-left"
+                          colSpan={group.count}
+                        >
                           {group.label}
                         </th>
                       ))}
                     </tr>
                     <tr>
-                      {visibleColumns.map((column) => (
-                        <th key={column.id} className="px-3 py-3 text-left whitespace-nowrap">
+                      {visibleColumns.map(column => (
+                        <th
+                          key={column.id}
+                          className="px-3 py-3 text-left whitespace-nowrap"
+                        >
                           {column.label}
                         </th>
                       ))}
@@ -1144,106 +1337,146 @@ export default function PartFaiParserSection({
                   </thead>
                   <tbody>
                     {filteredRows.map((row, index) => {
-                      const rowValueClass = row.isNG ? 'text-red-400' : 'text-slate-300';
-                      const rowMutedValueClass = row.isNG ? 'text-red-300' : 'text-slate-400';
+                      const rowValueClass = row.isNG
+                        ? "text-red-400"
+                        : "text-slate-300";
+                      const rowMutedValueClass = row.isNG
+                        ? "text-red-300"
+                        : "text-slate-400";
 
                       return (
                         <tr
                           key={`${row.dim}-${index}`}
                           className={`border-t transition-colors ${
                             row.isNG
-                              ? 'border-red-500/20 bg-red-500/10 text-red-400 hover:bg-red-500/15'
-                              : 'border-slate-800/80 bg-slate-900/30 hover:bg-slate-900/60'
+                              ? "border-red-500/20 bg-red-500/10 text-red-400 hover:bg-red-500/15"
+                              : "border-slate-800/80 bg-slate-900/30 hover:bg-slate-900/60"
                           }`}
                         >
-                          {visibleColumns.map((column) => {
+                          {visibleColumns.map(column => {
                             switch (column.id) {
-                              case 'dim':
+                              case "dim":
                                 return (
                                   <td
                                     key={`${row.dim}-${column.id}`}
-                                    className={`px-3 py-3 font-mono text-xs font-semibold ${row.isNG ? 'text-red-300' : 'text-slate-100'}`}
+                                    className={`px-3 py-3 font-mono text-xs font-semibold ${row.isNG ? "text-red-300" : "text-slate-100"}`}
                                   >
                                     {row.dim}
                                   </td>
                                 );
-                              case 'fos':
+                              case "fos":
                                 return (
-                                  <td key={`${row.dim}-${column.id}`} className={`px-3 py-3 font-mono text-xs ${rowValueClass}`}>
+                                  <td
+                                    key={`${row.dim}-${column.id}`}
+                                    className={`px-3 py-3 font-mono text-xs ${rowValueClass}`}
+                                  >
                                     {formatNumber(row.fos)}
                                   </td>
                                 );
-                              case 'plusTol':
+                              case "plusTol":
                                 return (
-                                  <td key={`${row.dim}-${column.id}`} className={`px-3 py-3 font-mono text-xs ${rowMutedValueClass}`}>
+                                  <td
+                                    key={`${row.dim}-${column.id}`}
+                                    className={`px-3 py-3 font-mono text-xs ${rowMutedValueClass}`}
+                                  >
                                     {formatNumber(row.plusTol)}
                                   </td>
                                 );
-                              case 'minusTol':
+                              case "minusTol":
                                 return (
-                                  <td key={`${row.dim}-${column.id}`} className={`px-3 py-3 font-mono text-xs ${rowMutedValueClass}`}>
+                                  <td
+                                    key={`${row.dim}-${column.id}`}
+                                    className={`px-3 py-3 font-mono text-xs ${rowMutedValueClass}`}
+                                  >
                                     {formatNumber(row.minusTol)}
                                   </td>
                                 );
-                              case 'usl':
+                              case "usl":
                                 return (
-                                  <td key={`${row.dim}-${column.id}`} className={`px-3 py-3 font-mono text-xs ${rowMutedValueClass}`}>
+                                  <td
+                                    key={`${row.dim}-${column.id}`}
+                                    className={`px-3 py-3 font-mono text-xs ${rowMutedValueClass}`}
+                                  >
                                     {formatNumber(row.usl)}
                                   </td>
                                 );
-                              case 'lsl':
+                              case "lsl":
                                 return (
-                                  <td key={`${row.dim}-${column.id}`} className={`px-3 py-3 font-mono text-xs ${rowMutedValueClass}`}>
+                                  <td
+                                    key={`${row.dim}-${column.id}`}
+                                    className={`px-3 py-3 font-mono text-xs ${rowMutedValueClass}`}
+                                  >
                                     {formatNumber(row.lsl)}
                                   </td>
                                 );
-                              case 'judgeFos':
+                              case "judgeFos":
                                 return (
-                                  <td key={`${row.dim}-${column.id}`} className="px-3 py-3">
+                                  <td
+                                    key={`${row.dim}-${column.id}`}
+                                    className="px-3 py-3"
+                                  >
                                     <span
                                       className={`inline-flex min-w-[74px] items-center justify-center rounded-md px-2.5 py-1.5 font-mono text-xs ${getJudgeBadgeClass(row.judgeFos)}`}
                                     >
-                                      {row.judgeFos || '--'}
+                                      {row.judgeFos || "--"}
                                     </span>
                                   </td>
                                 );
-                              case 'cavity':
+                              case "cavity":
                                 return (
-                                  <td key={`${row.dim}-${column.id}`} className={`px-3 py-3 font-mono text-xs ${row.isNG ? 'text-red-300' : 'text-slate-300'}`}>
-                                    {row.cavity || '--'}
+                                  <td
+                                    key={`${row.dim}-${column.id}`}
+                                    className={`px-3 py-3 font-mono text-xs ${row.isNG ? "text-red-300" : "text-slate-300"}`}
+                                  >
+                                    {row.cavity || "--"}
                                   </td>
                                 );
-                              case 'fosShot1':
-                              case 'fosShot2':
-                              case 'fosShot3': {
-                                const shotIndex = Number(column.id.slice(-1)) - 1;
+                              case "fosShot1":
+                              case "fosShot2":
+                              case "fosShot3": {
+                                const shotIndex =
+                                  Number(column.id.slice(-1)) - 1;
 
                                 return (
-                                  <td key={`${row.dim}-${column.id}`} className="px-3 py-2">
-                                    <span className={`inline-flex min-w-[74px] items-center justify-center rounded-md px-2.5 py-1.5 font-mono text-xs tabular-nums ${row.isNG ? 'text-red-300' : 'text-slate-200'}`}>
+                                  <td
+                                    key={`${row.dim}-${column.id}`}
+                                    className="px-3 py-2"
+                                  >
+                                    <span
+                                      className={`inline-flex min-w-[74px] items-center justify-center rounded-md px-2.5 py-1.5 font-mono text-xs tabular-nums ${row.isNG ? "text-red-300" : "text-slate-200"}`}
+                                    >
                                       {formatNumber(row.fosShots[shotIndex])}
                                     </span>
                                   </td>
                                 );
                               }
-                              case 'judgeGtol':
+                              case "judgeGtol":
                                 return (
-                                  <td key={`${row.dim}-${column.id}`} className="px-3 py-3">
+                                  <td
+                                    key={`${row.dim}-${column.id}`}
+                                    className="px-3 py-3"
+                                  >
                                     <span
                                       className={`inline-flex min-w-[74px] items-center justify-center rounded-md px-2.5 py-1.5 font-mono text-xs ${getJudgeBadgeClass(row.judgeGtol)}`}
                                     >
-                                      {row.judgeGtol || '--'}
+                                      {row.judgeGtol || "--"}
                                     </span>
                                   </td>
                                 );
-                              case 'gtolShot1':
-                              case 'gtolShot2':
-                              case 'gtolShot3': {
-                                const shotIndex = Number(column.id.slice(-1)) - 1;
+                              case "gtolShot1":
+                              case "gtolShot2":
+                              case "gtolShot3": {
+                                const shotIndex =
+                                  Number(column.id.slice(-1)) - 1;
 
                                 return (
-                                  <td key={`${row.dim}-${column.id}`} className="px-3 py-2">
-                                    <span className={`inline-flex min-w-[74px] items-center justify-center rounded-md px-2.5 py-1.5 font-mono text-xs tabular-nums ${row.isNG ? 'text-red-300' : 'text-slate-200'}`}>
+                                  <td
+                                    key={`${row.dim}-${column.id}`}
+                                    className="px-3 py-2"
+                                  >
+                                    <span
+                                      className={`inline-flex min-w-[74px] items-center justify-center rounded-md px-2.5 py-1.5 font-mono text-xs tabular-nums ${row.isNG ? "text-red-300" : "text-slate-200"}`}
+                                    >
                                       {formatNumber(row.gtolShots[shotIndex])}
                                     </span>
                                   </td>
@@ -1268,7 +1501,10 @@ export default function PartFaiParserSection({
               </div>
               <div className="flex items-center gap-2">
                 <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
-                <span>Summary cards count OK / NG from Dimension report K and Q plus Profile_Scan report C</span>
+                <span>
+                  Summary cards count OK / NG from Dimension report K and Q plus
+                  Profile_Scan report C
+                </span>
               </div>
               <div className="flex items-center gap-2">
                 <span className="h-2.5 w-2.5 rounded-full bg-cyan-300" />

@@ -22,7 +22,7 @@
 
 ## Deployment Command
 - Executed:
-  - `powershell -NoProfile -ExecutionPolicy Bypass -File .\deploy.ps1 -Mode all -VersionBump minor -ReleaseNote "看板文案追加部署链路验证标识" -ConfirmProduction -ConfirmText "DEPLOY_PROD"`
+  - `pnpm run release`
 
 ## Build + Verification Gates
 - TypeScript verification: passed

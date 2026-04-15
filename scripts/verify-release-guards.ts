@@ -286,8 +286,13 @@ async function verifyCriticalEntrypoints(): Promise<void> {
   const requiredScriptFragments = [
     ["dev:dashboard:local", ["node scripts/start-local-dashboard.mjs", "-File scripts/report-local-dashboard-state.ps1"]],
     ["dev:dashboard:status", ["-File scripts/report-local-dashboard-state.ps1"]],
-    ["release:build", ["-File scripts/release-from-clean-worktree.ps1 -Mode build"]],
-    ["release:deploy", ["-File scripts/release-from-clean-worktree.ps1 -Mode deploy"]],
+    [
+      "verify:release-guards",
+      ["node --experimental-strip-types --loader ./scripts/ts-path-loader.mjs ./scripts/verify-release-guards.ts"],
+    ],
+    ["release", ["-File scripts/release-from-clean-worktree.ps1 -Mode all"]],
+    ["_release:build", ["-File scripts/release-from-clean-worktree.ps1 -Mode build"]],
+    ["_release:deploy", ["-File scripts/release-from-clean-worktree.ps1 -Mode deploy"]],
     ["release:preview", ["board-flow-preview.cmd"]],
   ] as const;
 

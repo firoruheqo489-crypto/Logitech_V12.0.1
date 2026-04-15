@@ -180,13 +180,9 @@ function Stop-TrackedProcesses {
   }
 }
 
-function Get-PnpmCommand {
-  $pnpmCmd = Get-Command pnpm.cmd -ErrorAction SilentlyContinue
-  if ($pnpmCmd) {
-    return $pnpmCmd.Source
-  }
-
-  return (Get-Command pnpm -ErrorAction Stop).Source
+function Escape-PowerShellSingleQuotedText {
+  param([string]$Value)
+  return ($Value -replace "'", "''")
 }
 
 function Start-LoggedProcess {
@@ -199,17 +195,41 @@ function Start-LoggedProcess {
 
   $resolvedStdOutPath = Resolve-LogPath -PreferredPath $StdOutPath
   $resolvedStdErrPath = Resolve-LogPath -PreferredPath $StdErrPath
+  $escapedRepoRoot = Escape-PowerShellSingleQuotedText -Value $RepoRoot
+  $escapedStdOutPath = Escape-PowerShellSingleQuotedText -Value $resolvedStdOutPath
+  $escapedStdErrPath = Escape-PowerShellSingleQuotedText -Value $resolvedStdErrPath
 
-  $pnpmCommand = Get-PnpmCommand
-  $process = Start-Process -FilePath $pnpmCommand `
-    -ArgumentList $ArgumentList `
+  $commandText = switch ($Name) {
+    "api" { "& 'node' --experimental-strip-types --loader './scripts/ts-path-loader.mjs' 'server/index.ts'" }
+    "vite" { "& 'node' './node_modules/vite/bin/vite.js' --host --configLoader native" }
+    default { throw "unsupported process name: $Name" }
+  }
+
+  $launchScript = @"
+Set-Location -LiteralPath '$escapedRepoRoot'
+$(
+    if ($Name -eq 'api') {
+      "`$env:DEV_API = '1'`n`$env:PORT = '$ApiPort'"
+    } else {
+      "`$env:PORT = '$FrontendPort'"
+    }
+)
+$commandText 1>> '$escapedStdOutPath' 2>> '$escapedStdErrPath'
+"@
+  $encodedCommand = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($launchScript))
+  $process = Start-Process -FilePath "powershell.exe" `
+    -ArgumentList @(
+      "-NoProfile",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-EncodedCommand",
+      $encodedCommand
+    ) `
     -WorkingDirectory $RepoRoot `
-    -RedirectStandardOutput $resolvedStdOutPath `
-    -RedirectStandardError $resolvedStdErrPath `
     -PassThru `
     -WindowStyle Hidden
 
-  Write-Status "started $Name (PID $($process.Id))"
+  Write-Status "started $Name launcher (PID $($process.Id))"
   return [PSCustomObject]@{
     Process = $process
     StdOutPath = $resolvedStdOutPath
