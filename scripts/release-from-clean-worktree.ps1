@@ -78,13 +78,13 @@ function Get-RepoRoot() {
   return $root
 }
 
-function Invoke-ExternalPowerShell([string]$RepoRootPath, [string]$ScriptRelativePath, [string[]]$Args) {
+function Invoke-ExternalPowerShell([string]$RepoRootPath, [string]$ScriptRelativePath, [string[]]$ArgumentList) {
   $scriptPath = Join-Path $RepoRootPath $ScriptRelativePath
   if (-not (Test-Path -LiteralPath $scriptPath)) {
     Err "Missing script: $scriptPath"
   }
 
-  & $scriptPath @Args
+  & $scriptPath @ArgumentList
   if ($LASTEXITCODE -ne 0) {
     Err "$ScriptRelativePath failed with exit code $LASTEXITCODE"
   }
@@ -183,7 +183,7 @@ function Invoke-ReleaseBuild(
     $args += "-DeepVerification"
   }
 
-  Invoke-ExternalPowerShell -RepoRootPath $RepoRootPath -ScriptRelativePath "deploy.ps1" -Args $args
+  Invoke-ExternalPowerShell -RepoRootPath $RepoRootPath -ScriptRelativePath "deploy.ps1" -ArgumentList $args
 }
 
 function Invoke-ReleaseDeploy(
@@ -207,7 +207,7 @@ function Invoke-ReleaseDeploy(
     $args += "-DeepVerification"
   }
 
-  Invoke-ExternalPowerShell -RepoRootPath $RepoRootPath -ScriptRelativePath "deploy.ps1" -Args $args
+  Invoke-ExternalPowerShell -RepoRootPath $RepoRootPath -ScriptRelativePath "deploy.ps1" -ArgumentList $args
 }
 
 $repoRoot = Get-RepoRoot
