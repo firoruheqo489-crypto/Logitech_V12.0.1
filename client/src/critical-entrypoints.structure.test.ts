@@ -45,8 +45,10 @@ const requiredScriptFragments = [
 const criticalRepoFiles = [
   'scripts/start-local-dashboard.mjs',
   'scripts/report-local-dashboard-state.ps1',
+  'scripts/show-release-sop.ps1',
   'scripts/release-from-clean-worktree.ps1',
   'scripts/release-build.ps1',
+  'docs/release-sop.md',
 ] as const;
 
 async function loadPackageScripts(): Promise<PackageJsonScripts> {

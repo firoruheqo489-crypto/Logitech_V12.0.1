@@ -31,6 +31,24 @@ function Log($msg) { Write-Host "[OK] $msg" -ForegroundColor Green }
 function Warn($msg) { Write-Host "[!!] $msg" -ForegroundColor Yellow }
 function Err($msg) { Write-Host "[ERR] $msg" -ForegroundColor Red; exit 1 }
 
+function Show-ReleaseSop([string]$RepoRootPath) {
+    if (-not [string]::IsNullOrWhiteSpace($env:RELEASE_SOP_SHOWN)) {
+        return
+    }
+
+    $showSopScript = Join-Path $RepoRootPath "scripts/show-release-sop.ps1"
+    if (-not (Test-Path -LiteralPath $showSopScript)) {
+        Err "Missing script: $showSopScript"
+    }
+
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $showSopScript
+    if ($LASTEXITCODE -ne 0) {
+        Err "Failed to display release SOP."
+    }
+
+    $env:RELEASE_SOP_SHOWN = "1"
+}
+
 function Normalize-SingleLine([string]$Value) {
     if ($null -eq $Value) {
         return ""
@@ -227,6 +245,7 @@ if (-not (Test-Path $releaseDeployScript)) {
 
 $ReleaseNote = Resolve-EntrypointReleaseNote -RawNote $ReleaseNote -CurrentMode $Mode -IsPreflightOnly:$PreflightOnly -RepoRootPath $scriptRoot
 $resolvedRemoteDir = Resolve-DeployRemoteDir $RemoteDir
+Show-ReleaseSop $scriptRoot
 Assert-ReleaseGuards `
     -CurrentMode $Mode `
     -CurrentReleaseNote $ReleaseNote `

@@ -14,6 +14,24 @@ function Log($msg) { Write-Host "[OK] $msg" -ForegroundColor Green }
 function Warn($msg) { Write-Host "[!!] $msg" -ForegroundColor Yellow }
 function Err($msg) { Write-Host "[ERR] $msg" -ForegroundColor Red; exit 1 }
 
+function Show-ReleaseSop([string]$RepoRootPath) {
+  if (-not [string]::IsNullOrWhiteSpace($env:RELEASE_SOP_SHOWN)) {
+    return
+  }
+
+  $showSopScript = Join-Path $RepoRootPath "scripts/show-release-sop.ps1"
+  if (-not (Test-Path -LiteralPath $showSopScript)) {
+    Err "Missing script: $showSopScript"
+  }
+
+  & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $showSopScript
+  if ($LASTEXITCODE -ne 0) {
+    Err "Failed to display release SOP."
+  }
+
+  $env:RELEASE_SOP_SHOWN = "1"
+}
+
 function Invoke-Step {
   param(
     [Parameter(Mandatory = $true)][string]$Label,
@@ -103,9 +121,11 @@ function Assert-NoMixedLineEndings([string]$Root) {
   $releasePathList = @(
     "AGENTS.md"
     ".gitignore"
+    "docs/release-sop.md"
     "deploy.ps1"
     "package.json"
     "pnpm-lock.yaml"
+    "scripts/show-release-sop.ps1"
     "scripts/deploy-release-artifact.ps1"
     "scripts/release-build.ps1"
     "scripts/report-local-dashboard-state.ps1"
@@ -196,6 +216,7 @@ function Get-BooleanEnvLiteral([bool]$Value) {
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 Push-Location $repoRoot
 try {
+  Show-ReleaseSop $repoRoot
   Assert-NoMixedLineEndings $repoRoot
 
   $workspaceStatus = git -C $repoRoot status --porcelain=v1 --untracked-files=all 2>$null

@@ -24,6 +24,12 @@ If startup fails, inspect these logs first:
 
 For any request to deploy or upload this project to the server, use the artifact-driven flow via [`deploy.ps1`](/d:/V6.3/HT/V3/deploy.ps1) instead of ad-hoc `scp`, `ssh`, or manual PM2 commands.
 
+## Release SOP Banner
+
+Every release entrypoint must surface the canonical SOP before continuing. The SOP source of truth is [`docs/release-sop.md`](/d:/V6.3/HT/V3/docs/release-sop.md), and the shared display helper is [`scripts/show-release-sop.ps1`](/d:/V6.3/HT/V3/scripts/show-release-sop.ps1).
+
+Release entrypoints that must show it include `pnpm run release`, `pnpm run _release:build`, `pnpm run _release:deploy`, `deploy.ps1`, and `scripts/release-build.ps1`. If the SOP file or helper is missing, release must stop immediately.
+
 Recommended release commands:
 - Canonical release entrypoint: `pnpm run release`
 - Internal build helper: `pnpm run _release:build -- -ReleaseNote "one-line release note"`

@@ -307,11 +307,30 @@ async function verifyCriticalEntrypoints(): Promise<void> {
   for (const relativePath of [
     "scripts/start-local-dashboard.mjs",
     "scripts/report-local-dashboard-state.ps1",
+    "scripts/show-release-sop.ps1",
     "scripts/release-from-clean-worktree.ps1",
+    "scripts/release-build.ps1",
     "scripts/single-track-flow.ps1",
     "scripts/board-flow-preview.cmd",
+    "docs/release-sop.md",
   ]) {
     assert.equal(await fileExists(relativePath), true, `critical wrapper file missing: ${relativePath}`);
+  }
+}
+
+async function verifyReleaseSopVisibility(): Promise<void> {
+  const sourceFiles = [
+    "scripts/release-from-clean-worktree.ps1",
+    "scripts/release-build.ps1",
+    "deploy.ps1",
+  ] as const;
+
+  for (const relativePath of sourceFiles) {
+    const source = await readText(relativePath);
+    assert.ok(
+      source.includes("scripts/show-release-sop.ps1"),
+      `${relativePath} must display the shared release SOP before continuing`,
+    );
   }
 }
 
@@ -735,6 +754,7 @@ async function main(): Promise<void> {
   await runCheck("server/index.ts structure", verifyServerIndexStructure);
   await runCheck("server error payload structure", verifyServerErrorPayloadStructure);
   await runCheck("critical entrypoints", verifyCriticalEntrypoints);
+  await runCheck("release SOP visibility", verifyReleaseSopVisibility);
   await runCheck("dashboard API error normalization", verifyDashboardApi);
   await runCheck("api CORS policy", verifyApiCors);
   await runCheck("api access policy", verifyApiAccessPolicy);
