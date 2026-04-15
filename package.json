@@ -41,10 +41,13 @@
     "release:preview": "scripts\\board-flow-preview.cmd",
     "verify:mold-trial-evidence:e2e:local": "node scripts/verify-mold-trial-evidence-e2e.mjs",
     "verify:tooling-fai:e2e:local": "node scripts/verify-tooling-fai-e2e.mjs",
-    "release:build": "powershell -NoProfile -ExecutionPolicy Bypass -File deploy.ps1 -Mode build",
-    "release:deploy": "powershell -NoProfile -ExecutionPolicy Bypass -File deploy.ps1 -Mode deploy",
-    "release:deep:build": "powershell -NoProfile -ExecutionPolicy Bypass -File deploy.ps1 -Mode build -DeepVerification",
-    "release:deep:deploy": "powershell -NoProfile -ExecutionPolicy Bypass -File deploy.ps1 -Mode deploy -DeepVerification",
+    "release:build": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release-from-clean-worktree.ps1 -Mode build",
+    "release:build:clean": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release-from-clean-worktree.ps1 -Mode build",
+    "release:all": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release-from-clean-worktree.ps1 -Mode all",
+    "release:all:clean": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release-from-clean-worktree.ps1 -Mode all",
+    "release:deploy": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release-from-clean-worktree.ps1 -Mode deploy",
+    "release:deep:build": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release-from-clean-worktree.ps1 -Mode build",
+    "release:deep:deploy": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release-from-clean-worktree.ps1 -Mode deploy",
     "format": "prettier --write ."
   },
   "dependencies": {

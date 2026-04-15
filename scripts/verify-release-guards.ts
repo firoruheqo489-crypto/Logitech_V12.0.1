@@ -286,8 +286,8 @@ async function verifyCriticalEntrypoints(): Promise<void> {
   const requiredScriptFragments = [
     ["dev:dashboard:local", ["node scripts/start-local-dashboard.mjs", "-File scripts/report-local-dashboard-state.ps1"]],
     ["dev:dashboard:status", ["-File scripts/report-local-dashboard-state.ps1"]],
-    ["release:build", ["-File deploy.ps1 -Mode build"]],
-    ["release:deploy", ["-File deploy.ps1 -Mode deploy"]],
+    ["release:build", ["-File scripts/release-from-clean-worktree.ps1 -Mode build"]],
+    ["release:deploy", ["-File scripts/release-from-clean-worktree.ps1 -Mode deploy"]],
     ["release:preview", ["board-flow-preview.cmd"]],
   ] as const;
 
@@ -302,6 +302,7 @@ async function verifyCriticalEntrypoints(): Promise<void> {
   for (const relativePath of [
     "scripts/start-local-dashboard.mjs",
     "scripts/report-local-dashboard-state.ps1",
+    "scripts/release-from-clean-worktree.ps1",
     "scripts/single-track-flow.ps1",
     "scripts/board-flow-preview.cmd",
   ]) {
