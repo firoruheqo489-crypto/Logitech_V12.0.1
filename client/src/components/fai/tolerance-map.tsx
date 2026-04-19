@@ -14,6 +14,8 @@ interface ToleranceMapProps {
   ppk: number      // Process Performance Index
 }
 
+type ToleranceVisualStatus = "pass" | "warning" | "high" | "low"
+
 export function ToleranceMap({ 
   nominal, 
   actual, 
@@ -25,12 +27,29 @@ export function ToleranceMap({
   ppk,
 }: ToleranceMapProps) {
   const toleranceRange = usl - lsl
+  const lslBoundaryPos = 15
+  const uslBoundaryPos = 85
+  const warningLowPercent = 30
+  const warningHighPercent = 70
+  const inTolSpan = uslBoundaryPos - lslBoundaryPos
   // Position as percentage within the tolerance band
   const posPercent = ((actual - lsl) / toleranceRange) * 100
-  const clampedPos = Math.max(2, Math.min(98, posPercent))
-  const nominalPos = ((nominal - lsl) / toleranceRange) * 100
+  const nominalPercent = ((nominal - lsl) / toleranceRange) * 100
+  // Project value into the bar where in-tolerance maps to [15%, 85%].
+  const actualBarPos = (posPercent / 100) * inTolSpan + lslBoundaryPos
+  const nominalPos = (nominalPercent / 100) * inTolSpan + lslBoundaryPos
+  const clampedPos = Math.max(2, Math.min(98, actualBarPos))
 
   const isInTolerance = actual >= lsl && actual <= usl
+  const isWarningInTolerance = isInTolerance && (posPercent < warningLowPercent || posPercent > warningHighPercent)
+  const toleranceStatus: ToleranceVisualStatus = actual > usl ? "high" : actual < lsl ? "low" : isWarningInTolerance ? "warning" : "pass"
+
+  const statusPillClass = {
+    pass: "bg-emerald-400/15 text-emerald-300",
+    warning: "bg-amber-400/20 text-amber-300",
+    high: "bg-rose-500/15 text-rose-300",
+    low: "bg-blue-500/15 text-blue-500",
+  } as const
 
   return (
     <div className="rounded-lg border border-border bg-card p-4">
@@ -42,11 +61,7 @@ export function ToleranceMap({
         <span
           className={cn(
             "rounded px-2 py-0.5 text-xs font-bold font-mono",
-            isInTolerance
-              ? "bg-green-500/15 text-green-500"
-              : actual > usl
-                ? "bg-red-500/15 text-red-500"
-                : "bg-blue-600/15 text-blue-600"
+            statusPillClass[toleranceStatus]
           )}
         >
           {isInTolerance ? "IN TOL" : "OUT OF TOL"}
@@ -70,7 +85,7 @@ export function ToleranceMap({
           value={actual.toFixed(4)} 
           unit={unit} 
           highlight 
-          status={actual > usl ? "high" : actual < lsl ? "low" : "pass"}
+          status={toleranceStatus}
         />
         <MetricCard 
           label="标准差 / σ" 
@@ -86,83 +101,88 @@ export function ToleranceMap({
 
       {/* Tolerance Bar */}
       <div className="relative">
-        {/* Labels */}
-        <div className="mb-2 flex items-center justify-between text-xs font-mono">
-          <span className="text-blue-600 font-bold">LSL {lsl.toFixed(3)}</span>
-          <span className="text-muted-foreground">NOMINAL {nominal.toFixed(3)}</span>
-          <span className="text-red-500 font-bold">USL {usl.toFixed(3)}</span>
+        {/* Top label */}
+        <div className="relative mb-2 h-5 text-xs font-mono">
+          <span
+            className="absolute -translate-x-1/2 text-muted-foreground"
+            style={{ left: `${nominalPos}%` }}
+          >
+            NOMINAL {nominal.toFixed(3)}
+          </span>
         </div>
 
-        {/* Bar Container */}
-        <div className="relative h-10 overflow-hidden rounded-md border border-slate-700/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.1),0_10px_24px_rgba(2,6,23,0.35)]">
-          {/* Background gradient zones */}
-          <div className="absolute inset-0 flex">
-            <div className="w-[15%]" style={{ background: "linear-gradient(90deg, #1e3a8a 0%, #2563eb 100%)" }} />
-            <div className="w-[20%]" style={{ background: "linear-gradient(90deg, #ca8a04 0%, #fde047 100%)" }} />
-            <div className="flex-1 bg-[#22c55e]" />
-            <div className="w-[20%]" style={{ background: "linear-gradient(90deg, #fde047 0%, #ca8a04 100%)" }} />
-            <div className="w-[15%]" style={{ background: "linear-gradient(90deg, #fb7185 0%, #9f1239 100%)" }} />
-          </div>
-
-          {/* Grid lines */}
-          <div className="absolute inset-0">
-            {[15, 35, 50, 65, 85].map((p) => (
-              <div
-                key={p}
-                className="absolute top-0 bottom-0 w-px bg-border/50"
-                style={{ left: `${p}%` }}
-              />
-            ))}
-          </div>
-
-          {/* Nominal line */}
-          <div
-            className="absolute top-0 bottom-0 w-0.5 bg-muted-foreground/50"
-            style={{ left: `${nominalPos}%` }}
-          />
-
-          {/* Actual value indicator */}
-          <div
-            className="absolute top-0 bottom-0 flex flex-col items-center justify-center"
-            style={{ left: `${clampedPos}%`, transform: "translateX(-50%)" }}
-          >
+        {/* Flat high-contrast ruler */}
+        <div className="relative h-10">
+          <div className="relative w-full h-3 bg-slate-800 rounded-sm overflow-hidden">
+            {/* < LSL */}
             <div
-              className={cn(
-                "h-full w-1 rounded-full",
-                isInTolerance
-                  ? "bg-green-500 shadow-[0_0_12px_rgba(34,197,94,0.6)]"
-                  : actual > usl
-                    ? "bg-red-500 shadow-[0_0_12px_rgba(239,68,68,0.6)]"
-                    : "bg-blue-600 shadow-[0_0_12px_rgba(37,99,235,0.6)]"
-              )}
+              className="absolute left-0 top-0 h-full bg-blue-500"
+              style={{ width: `${lslBoundaryPos}%` }}
+            />
+            {/* LSL..USL */}
+            <div
+              className="absolute top-0 h-full bg-gradient-to-r from-amber-500 via-emerald-400 to-amber-500"
+              style={{ left: `${lslBoundaryPos}%`, width: `${inTolSpan}%` }}
+            />
+            {/* > USL */}
+            <div
+              className="absolute right-0 top-0 h-full bg-rose-500"
+              style={{ width: `${100 - uslBoundaryPos}%` }}
+            />
+
+            {/* Hard boundaries + nominal */}
+            <div
+              className="absolute top-1/2 -translate-y-1/2 w-[2px] h-5 bg-blue-400 z-10"
+              style={{ left: `${lslBoundaryPos}%` }}
+            />
+            <div
+              className="absolute top-1/2 -translate-y-1/2 w-[2px] h-5 bg-rose-400 z-10"
+              style={{ left: `${uslBoundaryPos}%` }}
+            />
+            <div
+              className="absolute top-1/2 -translate-y-1/2 w-px h-4 bg-slate-400/50 border-dashed z-10"
+              style={{ left: `${nominalPos}%` }}
+            />
+
+            {/* Actual indicator: vertical white line */}
+            <div
+              className="absolute top-0 w-[2px] h-full bg-white z-20 shadow-[0_0_4px_#fff]"
+              style={{ left: `${clampedPos}%` }}
             />
           </div>
         </div>
 
+        {/* Boundary labels below cutter lines */}
+        <div className="relative mt-1 h-4 text-[10px] font-mono tracking-wider">
+          <span
+            className="absolute -translate-x-1/2 text-blue-400/70 font-semibold"
+            style={{ left: `${lslBoundaryPos}%` }}
+          >
+            LSL {lsl.toFixed(3)}
+          </span>
+          <span
+            className="absolute -translate-x-1/2 text-rose-400/70 font-semibold"
+            style={{ left: `${uslBoundaryPos}%` }}
+          >
+            USL {usl.toFixed(3)}
+          </span>
+        </div>
+
+        {/* Continuous dashed guide line from track to value label */}
+        <div
+          className="pointer-events-none absolute top-[4.75rem] bottom-6 -translate-x-1/2"
+          style={{ left: `${clampedPos}%` }}
+        >
+          <div className="h-full border-l border-dashed border-white/45" />
+        </div>
+
         {/* Actual value label below */}
         <div
-          className="relative mt-1"
+          className="relative pt-3"
           style={{ paddingLeft: `${clampedPos}%` }}
         >
           <div className="flex -translate-x-1/2 flex-col items-center">
-            <div className={cn(
-              "h-0 w-0 border-x-4 border-b-4 border-x-transparent",
-              isInTolerance 
-                ? "border-b-green-500" 
-                : actual > usl 
-                  ? "border-b-red-500" 
-                  : "border-b-blue-600"
-            )} />
-            <span
-              className={cn(
-                "mt-0.5 rounded px-1.5 py-0.5 text-xs font-bold font-mono",
-                isInTolerance
-                  ? "bg-green-500/15 text-green-500"
-                  : actual > usl
-                    ? "bg-red-500/15 text-red-500"
-                    : "bg-blue-600/15 text-blue-600"
-              )}
-            >
+            <span className="mt-0.5 rounded-sm bg-slate-800 px-1.5 py-0.5 text-xs font-bold text-white font-mono">
               {actual.toFixed(3)}
             </span>
           </div>
@@ -183,22 +203,24 @@ function MetricCard({
   value: string
   unit: string
   highlight?: boolean
-  status?: "pass" | "high" | "low"
+  status?: "pass" | "warning" | "high" | "low"
 }) {
-  // pass = green (OK), high = red (>USL), low = deep blue (<LSL)
+  // pass = emerald (center), warning = amber (near limits), high = rose (>USL), low = blue (<LSL)
   const statusColors = {
-    pass: { icon: "text-green-500", value: "text-green-500" },
-    high: { icon: "text-red-500", value: "text-red-500" },
-    low: { icon: "text-blue-600", value: "text-blue-600" },
+    pass: { icon: "text-emerald-300", value: "text-emerald-300" },
+    warning: { icon: "text-amber-300", value: "text-amber-300" },
+    high: { icon: "text-rose-300", value: "text-rose-300" },
+    low: { icon: "text-blue-500", value: "text-blue-500" },
   }
 
   return (
     <div
       className={cn(
         "rounded-md border px-3 py-2",
-        highlight && status === "pass" && "border-green-500/30 bg-green-500/5",
-        highlight && status === "high" && "border-red-500/30 bg-red-500/5",
-        highlight && status === "low" && "border-blue-600/30 bg-blue-600/5",
+        highlight && status === "pass" && "border-emerald-400/35 bg-emerald-500/8",
+        highlight && status === "warning" && "border-amber-400/35 bg-amber-500/8",
+        highlight && status === "high" && "border-rose-400/35 bg-rose-500/8",
+        highlight && status === "low" && "border-blue-500/30 bg-blue-500/8",
         !highlight && "border-border bg-secondary/50"
       )}
     >
@@ -208,6 +230,8 @@ function MetricCard({
           <span className="mr-0.5">
             {status === "pass" ? (
               <ArrowUp className={cn("inline h-3 w-3", statusColors.pass.icon)} />
+            ) : status === "warning" ? (
+              <ArrowUp className={cn("inline h-3 w-3", statusColors.warning.icon)} />
             ) : status === "high" ? (
               <ArrowUp className={cn("inline h-3 w-3", statusColors.high.icon)} />
             ) : (

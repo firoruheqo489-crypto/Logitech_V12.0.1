@@ -75,13 +75,25 @@ export function CavityGrid({ cavities, usl, lsl, faiLabel }: CavityGridProps) {
   const weakOkCount = cavities.filter((c) => c.status === "OK" && getScorePercent(c.value) < 50).length
   const weakOkRate = cavities.length > 0 ? ((weakOkCount / cavities.length) * 100).toFixed(1) : "0.0"
   const yieldRate = cavities.length > 0 ? ((okCount / cavities.length) * 100).toFixed(1) : "0.0"
+  const normalizedFaiLabel = (faiLabel ?? "").trim()
+  const isFaiPrefixedLabel = normalizedFaiLabel.toUpperCase().startsWith("FAI")
+  const faiSuffix = isFaiPrefixedLabel ? normalizedFaiLabel.slice(3) : normalizedFaiLabel
 
   return (
     <div className="rounded-lg border border-border bg-card p-4">
       {/* Header */}
       <div className="mb-3 flex items-center justify-between">
         <h3 className="text-xs font-bold tracking-wider text-muted-foreground uppercase font-mono">
-          CAVITY TEST MATRIX {faiLabel ? `· ${faiLabel}` : ""}
+          CAVITY TEST MATRIX{" "}
+          {normalizedFaiLabel ? (
+            <>
+              ·{" "}
+              <span className="inline-flex items-center rounded-sm border border-amber-300/30 bg-amber-300/10 px-1.5 py-0.5">
+                <span className="text-slate-200">FAI</span>
+                <span className="text-amber-300">{faiSuffix}</span>
+              </span>
+            </>
+          ) : null}
         </h3>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1.5">
