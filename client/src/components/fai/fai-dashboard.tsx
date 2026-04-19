@@ -699,8 +699,9 @@ export function FAIDashboard() {
               </p>
               {hasUploadedDataset ? (
                 <p className="text-[11px] font-mono text-cyan-300/90">
-                  PARSED FAI: {faiItems.length} &mdash; SELECTED POINTS: {analyzedData.audit.selectedTotalPoints}
-                  {" "}(FOS {analyzedData.audit.selectedFosPoints}) &mdash; GLOBAL POINTS: {parsedPointTotal}
+                  PARSED FAI: {faiItems.length} &mdash; SELECTED FAI: {faiItem.label} &mdash; SELECTED POINTS:{" "}
+                  {analyzedData.audit.selectedTotalPoints} (FOS {analyzedData.audit.selectedFosPoints}) &mdash; GLOBAL
+                  POINTS: {parsedPointTotal}
                 </p>
               ) : null}
             </div>
@@ -792,6 +793,7 @@ export function FAIDashboard() {
               cavities={cavityData}
               usl={spec.usl}
               lsl={spec.lsl}
+              faiLabel={faiItem.label}
             />
           </div>
         </main>

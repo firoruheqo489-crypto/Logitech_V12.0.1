@@ -16,6 +16,7 @@ interface CavityGridProps {
   cavities: CavityData[]
   usl: number
   lsl: number
+  faiLabel?: string
 }
 
 // Color mapping for the 3 states: OK=green, +NG=red (>USL), -NG=deep blue (<LSL)
@@ -58,7 +59,7 @@ const weakOkConfig = {
   barBg: "bg-amber-400/70",
 }
 
-export function CavityGrid({ cavities, usl, lsl }: CavityGridProps) {
+export function CavityGrid({ cavities, usl, lsl, faiLabel }: CavityGridProps) {
   const okCount = cavities.filter((c) => c.status === "OK").length
   const plusNgCount = cavities.filter((c) => c.status === "+NG").length
   const minusNgCount = cavities.filter((c) => c.status === "-NG").length
@@ -80,7 +81,7 @@ export function CavityGrid({ cavities, usl, lsl }: CavityGridProps) {
       {/* Header */}
       <div className="mb-3 flex items-center justify-between">
         <h3 className="text-xs font-bold tracking-wider text-muted-foreground uppercase font-mono">
-          CAVITY TEST MATRIX
+          CAVITY TEST MATRIX {faiLabel ? `· ${faiLabel}` : ""}
         </h3>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1.5">
