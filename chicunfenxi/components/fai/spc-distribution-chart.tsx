@@ -4,7 +4,6 @@ import {
   ComposedChart,
   Bar,
   Cell,
-  LabelList,
   Line,
   XAxis,
   YAxis,
@@ -35,55 +34,53 @@ export function generateSPCData(
   stddev: number,
   usl: number,
   lsl: number,
-  rawValues?: number[],
-  sampleCount: number = 48
+  _sampleCount: number = 200
 ): { data: SPCDataPoint[]; nominal: number } {
   // IDEAL curve: centered exactly at nominal, stddev = tolerance/6 for 6-sigma coverage
   const nominal = (usl + lsl) / 2
-  const idealStddev = Math.max((usl - lsl) / 6, 0.0001)
-  const safeStddev = Math.max(stddev, 0.0001)
+  const idealStddev = (usl - lsl) / 6
   const range = usl - lsl
 
   // Determine X-axis range to show both distributions well
   // Include enough margin to show both curves fully
   const xPadding = range * 0.6
-  const xMin = Math.min(lsl - xPadding, mean - 4 * safeStddev)
-  const xMax = Math.max(usl + xPadding, mean + 4 * safeStddev)
+  const xMin = Math.min(lsl - xPadding, mean - 4 * stddev)
+  const xMax = Math.max(usl + xPadding, mean + 4 * stddev)
   
   // Generate unified data points (30 bins)
   const binCount = 30
   const binWidth = (xMax - xMin) / binCount
 
-  const cleanValues = (rawValues ?? []).filter(
-    (value): value is number => Number.isFinite(value)
-  )
-  const effectiveSampleCount = cleanValues.length > 0 ? cleanValues.length : Math.max(sampleCount, 1)
-  const frequencies = Array.from({ length: binCount }, () => 0)
-
-  if (cleanValues.length > 0) {
-    cleanValues.forEach((value) => {
-      const normalizedIndex = Math.floor((value - xMin) / binWidth)
-      const index = Math.min(binCount - 1, Math.max(0, normalizedIndex))
-      frequencies[index] += 1
-    })
+  // Pure deterministic PRNG
+  const baseSeed = Math.round((mean * 1000 + stddev * 10000) * 73856093) | 0
+  function mulberry32(seed: number, n: number): number {
+    let s = seed
+    for (let j = 0; j <= n; j++) {
+      s |= 0
+      s = (s + 0x6d2b79f5) | 0
+      let t = Math.imul(s ^ (s >>> 15), 1 | s)
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+      s = (t ^ (t >>> 14)) >>> 0
+    }
+    return s / 4294967296
   }
+
+  // Scale factor: normalize so histogram peak ~ 50
+  const actualPeakPDF = normalPDF(mean, mean, stddev)
+  const scaleFactor = 50 / actualPeakPDF
 
   const data: SPCDataPoint[] = []
   for (let i = 0; i < binCount; i++) {
     const x = xMin + (i + 0.5) * binWidth
-    const frequency =
-      cleanValues.length > 0
-        ? frequencies[i]
-        : Math.max(
-            0,
-            Math.round(normalPDF(x, mean, safeStddev) * effectiveSampleCount * binWidth)
-          )
-
-    // Curve values are projected frequencies under the same sample size.
-    const actualCurve =
-      normalPDF(x, mean, safeStddev) * effectiveSampleCount * binWidth
-    const idealCurve =
-      normalPDF(x, nominal, idealStddev) * effectiveSampleCount * binWidth
+    
+    // Histogram frequency based on actual distribution
+    const baseFreq = normalPDF(x, mean, stddev) * scaleFactor
+    const jitter = Math.round((mulberry32(baseSeed, i) - 0.5) * 3)
+    const frequency = Math.max(0, Math.round(baseFreq) + jitter)
+    
+    // Curve values - scaled to same units as frequency
+    const actualCurve = normalPDF(x, mean, stddev) * scaleFactor
+    const idealCurve = normalPDF(x, nominal, idealStddev) * scaleFactor
     
     data.push({
       x: parseFloat(x.toFixed(4)),
@@ -111,50 +108,6 @@ interface TooltipPayloadItem {
   dataKey: string
   color: string
   name?: string
-}
-
-interface FrequencyLabelProps {
-  x?: number
-  y?: number
-  width?: number
-  height?: number
-  value?: number | string
-}
-
-function FrequencyLabel({
-  x = 0,
-  y = 0,
-  width = 0,
-  height = 0,
-  value,
-}: FrequencyLabelProps) {
-  const numericValue = Number(value)
-  if (!Number.isFinite(numericValue) || numericValue <= 0) {
-    return null
-  }
-
-  const centerX = x + width / 2
-  const useInsideTop = height >= 18
-  const labelY = useInsideTop ? y + 11 : y - 6
-
-  return (
-    <text
-      x={centerX}
-      y={labelY}
-      textAnchor="middle"
-      dominantBaseline={useInsideTop ? "middle" : "auto"}
-      fill="#f8fafc"
-      fontSize={12}
-      fontWeight={800}
-      fontFamily="monospace"
-      stroke="#020617"
-      strokeWidth={3}
-      paintOrder="stroke fill"
-      style={{ pointerEvents: "none" }}
-    >
-      {numericValue}
-    </text>
-  )
 }
 
 function CustomTooltip({
@@ -233,7 +186,7 @@ export function SPCDistributionChart({
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart
             data={data}
-            margin={{ top: 22, right: 20, bottom: 30, left: 50 }}
+            margin={{ top: 10, right: 20, bottom: 30, left: 50 }}
           >
             <CartesianGrid
               strokeDasharray="3 3"
@@ -331,8 +284,14 @@ export function SPCDistributionChart({
               dataKey="frequency"
               radius={[2, 2, 0, 0]}
               barSize={16}
+              label={{
+                position: "top",
+                fill: "#94a3b8",
+                fontSize: 9,
+                fontFamily: "monospace",
+                formatter: (value: number) => (value > 0 ? value : ""),
+              }}
             >
-              <LabelList dataKey="frequency" content={<FrequencyLabel />} />
               {data.map((entry, index) => {
                 // Semantic coloring: red if > USL, blue if < LSL, green otherwise
                 let fillColor = "#10b981"  // green (OK)

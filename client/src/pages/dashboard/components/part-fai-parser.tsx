@@ -61,19 +61,26 @@ type FaiParseSummary = {
   qualifiedRate: number | null;
 };
 
-type HeaderIndexes = {
-  dim: number;
-  dimType: number;
-  cavity: number;
-  fos: number;
-  plusTol: number;
-  minusTol: number;
+export type FaiMeasurementPoint = {
+  cavity: string;
+  shot: number;
+  value: number;
+};
+
+export type FaiMeasurementTrack = {
+  nominal: number;
   usl: number;
   lsl: number;
-  judgeFos: number;
-  judgeGtol: number;
-  fosShotIndexes: [number, number, number];
-  gtolShotIndexes: [number, number, number];
+  rawData: FaiMeasurementPoint[];
+  flatValues: number[];
+};
+
+export type FaiParsedData = {
+  faiId: string;
+  measurements: {
+    FOS: FaiMeasurementTrack;
+    GTol: FaiMeasurementTrack | null;
+  };
 };
 
 type WorksheetCell = {
@@ -129,10 +136,6 @@ function normalizeHeader(value: unknown): string {
     .toLowerCase();
 }
 
-function hasCellValue(value: unknown): boolean {
-  return value !== undefined && value !== null && String(value).trim() !== "";
-}
-
 function coerceNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) {
     return value;
@@ -154,18 +157,6 @@ function coerceNumber(value: unknown): number | null {
 
   const parsed = Number(normalized);
   return Number.isFinite(parsed) ? parsed : null;
-}
-
-function coerceToleranceNumber(
-  value: unknown,
-  fallbackToZero: boolean
-): number | null {
-  const parsed = coerceNumber(value);
-  if (parsed !== null) {
-    return parsed;
-  }
-
-  return fallbackToZero ? 0 : null;
 }
 
 function normalizeJudge(value: unknown): string {
@@ -313,14 +304,6 @@ function normalizeFaiSetKey(value: unknown): string {
     .toUpperCase();
 }
 
-function isFaiSetLabel(value: string): boolean {
-  return /^FAI\s*\d+/i.test(value);
-}
-
-function isCavityLabel(value: string): boolean {
-  return /^CAV\s*\d+/i.test(value);
-}
-
 function formatNumber(value: number | null): string {
   if (value === null || Number.isNaN(value)) return "--";
 
@@ -416,6 +399,50 @@ function sanitizePersistedHiddenColumns(value: unknown): ColumnId[] {
   );
 }
 
+function isFaiHeaderRow(row: unknown[]): boolean {
+  return row.some(cell => {
+    const header = normalizeHeader(cell);
+    return (
+      (header.includes("dim") && header.includes("#")) ||
+      (header === "dim" && !header.includes("type"))
+    );
+  });
+}
+
+type ParserHeaderIndexes = {
+  dim: number;
+  dimType: number;
+  cavity: number;
+  fos: number;
+  plusTol: number;
+  minusTol: number;
+  usl: number;
+  lsl: number;
+  gtolRange: number;
+  fosShotIndexes: [number, number, number];
+  gtolShotIndexes: [number, number, number];
+};
+
+type FaiAggregationBuffer = {
+  faiId: string;
+  fosNominal: number | null;
+  fosUsl: number | null;
+  fosLsl: number | null;
+  plusTol: number | null;
+  minusTol: number | null;
+  gtolRange: number | null;
+  fosRawData: FaiMeasurementPoint[];
+  gtolRawData: FaiMeasurementPoint[];
+  cavityDimTypes: Map<string, string>;
+};
+
+type ParsedWorkbookSnapshot = {
+  contractData: FaiParsedData[];
+  rowData: FaiDataRow[];
+};
+
+type SheetJsonRow = Record<string, unknown>;
+
 function findRequiredIndex(
   headers: unknown[],
   matcher: (header: string) => boolean,
@@ -429,7 +456,150 @@ function findRequiredIndex(
   return index;
 }
 
-function findHeaderIndexes(headers: unknown[]): HeaderIndexes {
+function roundToThreeDecimals(value: number): number {
+  return Number(Math.round(Number(`${value}e3`)) + "e-3");
+}
+
+function isStrictNumericCell(value: unknown): boolean {
+  if (value === "" || value === null || value === undefined) {
+    return false;
+  }
+
+  const text = String(value).trim();
+  if (!text || /^(-|n\/a|na)$/i.test(text)) {
+    return false;
+  }
+
+  const normalized = text.replace(/,/g, "");
+  return !Number.isNaN(Number(normalized));
+}
+
+function parseMeasurementValue(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return roundToThreeDecimals(value);
+  }
+
+  const text = String(value ?? "").trim();
+  if (!text) {
+    return null;
+  }
+
+  if (/^(-|n\/a|na)$/i.test(text)) {
+    return null;
+  }
+
+  const cleaned = text.replace(/,/g, "");
+  const parsed = Number(cleaned);
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+
+  return roundToThreeDecimals(parsed);
+}
+
+function normalizeFaiIdFromDim(value: unknown): string {
+  const text = String(value ?? "").trim().toUpperCase();
+  if (!text) {
+    return "";
+  }
+
+  const compact = text.replace(/\s+/g, "");
+  const match = compact.match(/FAI0*(\d+)/i);
+  if (match) {
+    return `FAI${Number.parseInt(match[1], 10)}`;
+  }
+
+  return compact;
+}
+
+function normalizeCavity(value: unknown, rowIndex: number): string {
+  const text = String(value ?? "").trim();
+  if (!text) {
+    return `ROW${rowIndex + 1}`;
+  }
+
+  return text.replace(/\s+/g, "").toUpperCase();
+}
+
+function compareFaiId(left: string, right: string): number {
+  const leftMatch = left.match(/^FAI(\d+)$/i);
+  const rightMatch = right.match(/^FAI(\d+)$/i);
+  if (leftMatch && rightMatch) {
+    return Number.parseInt(leftMatch[1], 10) - Number.parseInt(rightMatch[1], 10);
+  }
+
+  return left.localeCompare(right);
+}
+
+function compareCavity(left: string, right: string): number {
+  const leftMatch = left.match(/^CAV0*(\d+)$/i);
+  const rightMatch = right.match(/^CAV0*(\d+)$/i);
+  if (leftMatch && rightMatch) {
+    return Number.parseInt(leftMatch[1], 10) - Number.parseInt(rightMatch[1], 10);
+  }
+
+  return left.localeCompare(right);
+}
+
+function computeJudgeFromShots(
+  shots: ShotTuple,
+  usl: number,
+  lsl: number
+): string {
+  const values = shots.filter((value): value is number => value !== null);
+  if (values.length === 0) {
+    return "";
+  }
+
+  return values.some(value => value > usl || value < lsl) ? "NG" : "OK";
+}
+
+function findShotIndexesByHeader(
+  headers: unknown[],
+  shot: 1 | 2 | 3
+): number[] {
+  const directPattern = new RegExp(`^shot\\s*${shot}$`);
+  const loosePattern = new RegExp(`shot\\s*${shot}`);
+
+  return headers
+    .map((cell, index) => ({ header: normalizeHeader(cell), index }))
+    .filter(({ header }) => directPattern.test(header) || loosePattern.test(header))
+    .map(({ index }) => index);
+}
+
+function resolveShotIndexes(headers: unknown[]): {
+  fosShotIndexes: [number, number, number];
+  gtolShotIndexes: [number, number, number];
+} {
+  const fosFallback: [number, number, number] = [
+    columnLabelToIndex("L"),
+    columnLabelToIndex("M"),
+    columnLabelToIndex("N"),
+  ];
+  const gtolFallback: [number, number, number] = [
+    columnLabelToIndex("R"),
+    columnLabelToIndex("S"),
+    columnLabelToIndex("T"),
+  ];
+
+  const shot1 = findShotIndexesByHeader(headers, 1);
+  const shot2 = findShotIndexesByHeader(headers, 2);
+  const shot3 = findShotIndexesByHeader(headers, 3);
+
+  if (shot1.length >= 2 && shot2.length >= 2 && shot3.length >= 2) {
+    return {
+      fosShotIndexes: [shot1[0], shot2[0], shot3[0]],
+      gtolShotIndexes: [shot1[1], shot2[1], shot3[1]],
+    };
+  }
+
+  return {
+    fosShotIndexes: fosFallback,
+    gtolShotIndexes: gtolFallback,
+  };
+}
+
+function findParserHeaderIndexes(headers: unknown[]): ParserHeaderIndexes {
   const dim = findRequiredIndex(
     headers,
     header =>
@@ -437,40 +607,15 @@ function findHeaderIndexes(headers: unknown[]): HeaderIndexes {
       (header === "dim" && !header.includes("type")),
     "Dim. #"
   );
-  const dimType = headers.findIndex(cell => {
-    const header = normalizeHeader(cell);
-    return (
-      header === "dim. type" ||
-      header === "dim type" ||
-      header.includes("dim type")
-    );
-  });
-  const cavity = headers.findIndex(cell => {
-    const header = normalizeHeader(cell);
-    return (
-      header === "cavity #" || header === "cavity#" || header.includes("cavity")
-    );
-  });
-  const judgeFos = findRequiredIndex(
-    headers,
-    header => header.includes("judge fos"),
-    "Judge FOS"
-  );
-  const judgeGtol = findRequiredIndex(
-    headers,
-    header => header.includes("judge g-tol") || header.includes("judge gtol"),
-    "Judge G-Tol"
-  );
+
+  const dimType = headers.findIndex(cell => normalizeHeader(cell).includes("dim type"));
+  const cavity = headers.findIndex(cell => normalizeHeader(cell).includes("cavity"));
   const fos = headers.findIndex(cell => {
     const header = normalizeHeader(cell);
     return header.includes("fos") && !header.includes("judge");
   });
-  const plusTol = headers.findIndex(cell =>
-    normalizeHeader(cell).includes("plus tol")
-  );
-  const minusTol = headers.findIndex(cell =>
-    normalizeHeader(cell).includes("minus tol")
-  );
+  const plusTol = headers.findIndex(cell => normalizeHeader(cell).includes("plus tol"));
+  const minusTol = headers.findIndex(cell => normalizeHeader(cell).includes("minus tol"));
   const usl = headers.findIndex(cell => {
     const header = normalizeHeader(cell);
     return header === "usl" || header.includes("upper spec");
@@ -479,6 +624,12 @@ function findHeaderIndexes(headers: unknown[]): HeaderIndexes {
     const header = normalizeHeader(cell);
     return header === "lsl" || header.includes("lower spec");
   });
+  const gtolRange = headers.findIndex(cell => {
+    const header = normalizeHeader(cell);
+    return header.includes("g-tol range") || header.includes("gtol range");
+  });
+
+  const { fosShotIndexes, gtolShotIndexes } = resolveShotIndexes(headers);
 
   return {
     dim,
@@ -489,114 +640,353 @@ function findHeaderIndexes(headers: unknown[]): HeaderIndexes {
     minusTol,
     usl,
     lsl,
-    judgeFos,
-    judgeGtol,
-    fosShotIndexes: [judgeFos + 1, judgeFos + 2, judgeFos + 3],
-    gtolShotIndexes: [judgeGtol + 1, judgeGtol + 2, judgeGtol + 3],
+    gtolRange,
+    fosShotIndexes,
+    gtolShotIndexes,
   };
 }
 
-function isFaiHeaderRow(row: unknown[]): boolean {
-  return row.some(cell => {
-    const header = normalizeHeader(cell);
-    return (
-      (header.includes("dim") && header.includes("#")) ||
-      (header === "dim" && !header.includes("type"))
-    );
-  });
-}
-
-function readShotTuple(
+function readShotTupleFromRow(
   row: unknown[],
   indexes: [number, number, number]
 ): ShotTuple {
-  const measurementColumnLimit = columnLabelToIndex("N");
-
   return indexes.map(index => {
-    if (index > measurementColumnLimit) {
+    const value = row[index];
+    if (!isStrictNumericCell(value)) {
       return null;
     }
 
-    return coerceNumber(row[index]);
+    return parseMeasurementValue(value);
   }) as ShotTuple;
 }
 
-function parseFaiDataRow(
-  row: unknown[],
-  headerIndexes: HeaderIndexes,
-  currentFaiSet: string
-): FaiDataRow | null {
-  const dim = String(row[headerIndexes.dim] ?? "").trim();
-  const cavity = String(
-    headerIndexes.cavity >= 0 ? row[headerIndexes.cavity] ?? "" : ""
-  ).trim();
-  const normalizedDim = normalizeFaiSetKey(dim);
-  const normalizedCavity = normalizeFaiSetKey(cavity);
-  const nextFaiSet =
-    normalizedDim && isFaiSetLabel(normalizedDim)
-      ? normalizedDim
-      : currentFaiSet || (normalizedCavity && isFaiSetLabel(normalizedCavity) ? normalizedCavity : "");
-  const resolvedDim = nextFaiSet || dim || cavity;
+function fillDownDimInMatrixRows(
+  rows: unknown[][],
+  headerRowIndex: number,
+  nextHeaderRowIndex: number,
+  dimColumnIndex: number
+): unknown[][] {
+  let currentDimCache = "";
 
-  if (!resolvedDim) {
-    return null;
+  return rows.slice(headerRowIndex + 1, nextHeaderRowIndex).map(row => {
+    const normalizedRow = [...row];
+    const dimText = String(normalizedRow[dimColumnIndex] ?? "").trim();
+    if (dimText) {
+      currentDimCache = dimText;
+    } else if (currentDimCache) {
+      normalizedRow[dimColumnIndex] = currentDimCache;
+    }
+
+    return normalizedRow;
+  });
+}
+
+function normalizeSheetJsonHeaderKey(key: string): string {
+  return key
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isDimHeaderKey(key: string): boolean {
+  const normalized = normalizeSheetJsonHeaderKey(key);
+  return (
+    (normalized.includes("dim") && normalized.includes("#")) ||
+    normalized === "dim" ||
+    normalized === "dim #"
+  );
+}
+
+export function fillDownDimInJsonRows(rows: SheetJsonRow[]): SheetJsonRow[] {
+  let currentDimCache = "";
+  let dimKey: string | null = null;
+
+  return rows.map(rawRow => {
+    const row: SheetJsonRow = { ...rawRow };
+
+    if (!dimKey) {
+      dimKey = Object.keys(row).find(isDimHeaderKey) ?? null;
+    }
+
+    if (!dimKey) {
+      return row;
+    }
+
+    const rawDim = String(row[dimKey] ?? "").trim();
+    if (rawDim) {
+      currentDimCache = rawDim;
+    } else if (currentDimCache) {
+      row[dimKey] = currentDimCache;
+    }
+
+    return row;
+  });
+}
+
+export function convertSheetJsonRowsToMatrixRows(rows: SheetJsonRow[]): unknown[][] {
+  if (rows.length === 0) {
+    return [];
   }
 
-  const judgeFos = normalizeJudge(row[headerIndexes.judgeFos]);
-  const judgeGtol = normalizeJudge(row[headerIndexes.judgeGtol]);
-  const isNG =
-    getJudgeStatus(judgeFos) === "ng" || getJudgeStatus(judgeGtol) === "ng";
+  const headers: string[] = [];
+  const seen = new Set<string>();
 
-  const rawFos = headerIndexes.fos >= 0 ? row[headerIndexes.fos] : null;
-  const fos = hasCellValue(rawFos) ? coerceNumber(rawFos) : null;
-  const plusTol =
-    headerIndexes.plusTol >= 0
-      ? coerceToleranceNumber(row[headerIndexes.plusTol], fos !== null)
-      : fos !== null
-        ? 0
-        : null;
-  const minusTol =
-    headerIndexes.minusTol >= 0
-      ? coerceToleranceNumber(row[headerIndexes.minusTol], fos !== null)
-      : fos !== null
-        ? 0
-        : null;
-  const directUsl =
-    headerIndexes.usl >= 0 ? coerceNumber(row[headerIndexes.usl]) : null;
-  const directLsl =
-    headerIndexes.lsl >= 0 ? coerceNumber(row[headerIndexes.lsl]) : null;
-  const usl =
-    directUsl ??
-    (fos !== null && plusTol !== null
-      ? roundToFourDecimals(fos + plusTol)
-      : null);
-  const lsl =
-    directLsl ??
-    (fos !== null && minusTol !== null
-      ? roundToFourDecimals(fos + minusTol)
-      : null);
+  rows.forEach(row => {
+    Object.keys(row).forEach(key => {
+      if (!seen.has(key)) {
+        seen.add(key);
+        headers.push(key);
+      }
+    });
+  });
+
+  return [
+    headers,
+    ...rows.map(row => headers.map(header => row[header] ?? "")),
+  ];
+}
+
+function buildContractSnapshot(rows: unknown[][]): ParsedWorkbookSnapshot {
+  const headerRowIndexes = rows
+    .map((row, index) => (isFaiHeaderRow(row) ? index : -1))
+    .filter((index): index is number => index >= 0);
+
+  if (headerRowIndexes.length === 0) {
+    throw new Error("Unable to locate the FAI header row.");
+  }
+
+  const headerRowIndex = headerRowIndexes[0];
+  const nextHeaderRowIndex = headerRowIndexes[1] ?? rows.length;
+  const headerIndexes = findParserHeaderIndexes(rows[headerRowIndex] ?? []);
+  const normalizedRows = fillDownDimInMatrixRows(
+    rows,
+    headerRowIndex,
+    nextHeaderRowIndex,
+    headerIndexes.dim
+  );
+
+  const buffers = new Map<string, FaiAggregationBuffer>();
+  let currentFaiId = "";
+
+  normalizedRows.forEach((row, rowOffset) => {
+    const rowIndex = headerRowIndex + 1 + rowOffset;
+    const rowDim = String(row[headerIndexes.dim] ?? "").trim();
+    const normalizedDim = normalizeFaiIdFromDim(rowDim);
+    if (normalizedDim) {
+      currentFaiId = normalizedDim;
+    }
+
+    if (!currentFaiId) {
+      return;
+    }
+
+    const cavity = normalizeCavity(
+      headerIndexes.cavity >= 0 ? row[headerIndexes.cavity] : "",
+      rowIndex
+    );
+    const dimType =
+      headerIndexes.dimType >= 0 ? String(row[headerIndexes.dimType] ?? "").trim() : "";
+
+    const buffer =
+      buffers.get(currentFaiId) ??
+      ({
+        faiId: currentFaiId,
+        fosNominal: null,
+        fosUsl: null,
+        fosLsl: null,
+        plusTol: null,
+        minusTol: null,
+        gtolRange: null,
+        fosRawData: [],
+        gtolRawData: [],
+        cavityDimTypes: new Map<string, string>(),
+      } satisfies FaiAggregationBuffer);
+
+    if (!buffers.has(currentFaiId)) {
+      buffers.set(currentFaiId, buffer);
+    }
+
+    if (dimType && !buffer.cavityDimTypes.has(cavity)) {
+      buffer.cavityDimTypes.set(cavity, dimType);
+    }
+
+    const fosNominal = headerIndexes.fos >= 0 ? parseMeasurementValue(row[headerIndexes.fos]) : null;
+    const plusTol = headerIndexes.plusTol >= 0 ? parseMeasurementValue(row[headerIndexes.plusTol]) : null;
+    const minusTol = headerIndexes.minusTol >= 0 ? parseMeasurementValue(row[headerIndexes.minusTol]) : null;
+    const directUsl = headerIndexes.usl >= 0 ? parseMeasurementValue(row[headerIndexes.usl]) : null;
+    const directLsl = headerIndexes.lsl >= 0 ? parseMeasurementValue(row[headerIndexes.lsl]) : null;
+    const gtolRange = headerIndexes.gtolRange >= 0 ? parseMeasurementValue(row[headerIndexes.gtolRange]) : null;
+
+    if (buffer.fosNominal === null && fosNominal !== null) {
+      buffer.fosNominal = fosNominal;
+    }
+    if (buffer.plusTol === null && plusTol !== null) {
+      buffer.plusTol = plusTol;
+    }
+    if (buffer.minusTol === null && minusTol !== null) {
+      buffer.minusTol = minusTol;
+    }
+    if (buffer.gtolRange === null && gtolRange !== null) {
+      buffer.gtolRange = gtolRange;
+    }
+
+    const computedUsl =
+      directUsl ??
+      (fosNominal !== null && plusTol !== null
+        ? roundToThreeDecimals(fosNominal + plusTol)
+        : null);
+    const computedLsl =
+      directLsl ??
+      (fosNominal !== null && minusTol !== null
+        ? roundToThreeDecimals(fosNominal + minusTol)
+        : null);
+
+    if (buffer.fosUsl === null && computedUsl !== null) {
+      buffer.fosUsl = computedUsl;
+    }
+    if (buffer.fosLsl === null && computedLsl !== null) {
+      buffer.fosLsl = computedLsl;
+    }
+
+    const fosShots = readShotTupleFromRow(row, headerIndexes.fosShotIndexes);
+    const gtolShots = readShotTupleFromRow(row, headerIndexes.gtolShotIndexes);
+
+    fosShots.forEach((value, index) => {
+      if (value === null) {
+        return;
+      }
+
+      buffer.fosRawData.push({
+        cavity,
+        shot: index + 1,
+        value,
+      });
+    });
+
+    gtolShots.forEach((value, index) => {
+      if (value === null) {
+        return;
+      }
+
+      buffer.gtolRawData.push({
+        cavity,
+        shot: index + 1,
+        value,
+      });
+    });
+  });
+
+  const contractData = Array.from(buffers.values())
+    .sort((left, right) => compareFaiId(left.faiId, right.faiId))
+    .map(buffer => {
+      const fosNominal = roundToThreeDecimals(buffer.fosNominal ?? 0);
+      const fosUsl = roundToThreeDecimals(buffer.fosUsl ?? fosNominal);
+      const fosLsl = roundToThreeDecimals(buffer.fosLsl ?? fosNominal);
+      const fosRawData = buffer.fosRawData.map(point => ({
+        cavity: point.cavity,
+        shot: point.shot,
+        value: roundToThreeDecimals(point.value),
+      }));
+      const fosFlatValues = fosRawData.map(point => point.value);
+
+      const gtolMeasurement =
+        buffer.gtolRawData.length === 0 && buffer.gtolRange === null
+          ? null
+          : {
+              nominal: 0,
+              usl: roundToThreeDecimals(buffer.gtolRange ?? 0),
+              lsl: 0,
+              rawData: buffer.gtolRawData.map(point => ({
+                cavity: point.cavity,
+                shot: point.shot,
+                value: roundToThreeDecimals(point.value),
+              })),
+              flatValues: buffer.gtolRawData.map(point => roundToThreeDecimals(point.value)),
+            };
+
+      return {
+        faiId: buffer.faiId,
+        measurements: {
+          FOS: {
+            nominal: fosNominal,
+            usl: fosUsl,
+            lsl: fosLsl,
+            rawData: fosRawData,
+            flatValues: fosFlatValues,
+          },
+          GTol: gtolMeasurement,
+        },
+      } satisfies FaiParsedData;
+    });
+
+  const rowData: FaiDataRow[] = [];
+  contractData.forEach(item => {
+    const sourceBuffer = buffers.get(item.faiId);
+    const cavitySet = new Set<string>();
+    item.measurements.FOS.rawData.forEach(point => cavitySet.add(point.cavity));
+    item.measurements.GTol?.rawData.forEach(point => cavitySet.add(point.cavity));
+    const cavities = Array.from(cavitySet).sort(compareCavity);
+
+    const fosValueMap = new Map<string, number>();
+    item.measurements.FOS.rawData.forEach(point => {
+      fosValueMap.set(`${point.cavity}|${point.shot}`, point.value);
+    });
+    const gtolValueMap = new Map<string, number>();
+    item.measurements.GTol?.rawData.forEach(point => {
+      gtolValueMap.set(`${point.cavity}|${point.shot}`, point.value);
+    });
+
+    cavities.forEach(cavity => {
+      const fosShots: ShotTuple = [
+        fosValueMap.get(`${cavity}|1`) ?? null,
+        fosValueMap.get(`${cavity}|2`) ?? null,
+        fosValueMap.get(`${cavity}|3`) ?? null,
+      ];
+      const gtolShots: ShotTuple = [
+        gtolValueMap.get(`${cavity}|1`) ?? null,
+        gtolValueMap.get(`${cavity}|2`) ?? null,
+        gtolValueMap.get(`${cavity}|3`) ?? null,
+      ];
+
+      const judgeFos = computeJudgeFromShots(
+        fosShots,
+        item.measurements.FOS.usl,
+        item.measurements.FOS.lsl
+      );
+      const judgeGtol = item.measurements.GTol
+        ? computeJudgeFromShots(
+            gtolShots,
+            item.measurements.GTol.usl,
+            item.measurements.GTol.lsl
+          )
+        : "";
+
+      rowData.push({
+        faiSet: item.faiId,
+        dim: item.faiId,
+        dimType: sourceBuffer?.cavityDimTypes.get(cavity) ?? "",
+        cavity,
+        fos: item.measurements.FOS.nominal,
+        plusTol:
+          sourceBuffer?.plusTol ??
+          roundToThreeDecimals(item.measurements.FOS.usl - item.measurements.FOS.nominal),
+        minusTol:
+          sourceBuffer?.minusTol ??
+          roundToThreeDecimals(item.measurements.FOS.lsl - item.measurements.FOS.nominal),
+        usl: item.measurements.FOS.usl,
+        lsl: item.measurements.FOS.lsl,
+        judgeFos,
+        judgeGtol,
+        isNG: judgeFos === "NG" || judgeGtol === "NG",
+        fosShots,
+        gtolShots,
+      });
+    });
+  });
 
   return {
-    faiSet: nextFaiSet || resolvedDim,
-    dim: resolvedDim,
-    dimType:
-      headerIndexes.dimType >= 0
-        ? String(row[headerIndexes.dimType] ?? "").trim()
-        : "",
-    cavity:
-      headerIndexes.cavity >= 0
-        ? String(row[headerIndexes.cavity] ?? "").trim()
-        : "",
-    fos,
-    plusTol,
-    minusTol,
-    usl,
-    lsl,
-    judgeFos,
-    judgeGtol,
-    isNG,
-    fosShots: readShotTuple(row, headerIndexes.fosShotIndexes),
-    gtolShots: readShotTuple(row, headerIndexes.gtolShotIndexes),
+    contractData,
+    rowData,
   };
 }
 
@@ -695,35 +1085,38 @@ export function extractPopulatedSheetRows(
     });
 }
 
+export function parseSheetRowsToContract(rows: unknown[][]): FaiParsedData[] {
+  return buildContractSnapshot(rows).contractData;
+}
+
+export function parseSheetJsonRowsToContract(jsonRows: SheetJsonRow[]): FaiParsedData[] {
+  const cleanedData = fillDownDimInJsonRows(jsonRows);
+  const matrixRows = convertSheetJsonRowsToMatrixRows(cleanedData);
+  return parseSheetRowsToContract(matrixRows);
+}
+
 export function parseSheetRows(rows: unknown[][]): {
   data: FaiDataRow[];
   summary: FaiParseSummary;
+  contractData: FaiParsedData[];
 } {
-  const headerRowIndexes = rows
-    .map((row, index) => (isFaiHeaderRow(row) ? index : -1))
-    .filter((index): index is number => index >= 0);
-
-  if (headerRowIndexes.length === 0) {
-    throw new Error("Unable to locate the FAI header row.");
-  }
-
-  const parsedData: FaiDataRow[] = [];
-  const headerIndexes = findHeaderIndexes(rows[headerRowIndexes[0]] ?? []);
-  const nextHeaderRowIndex = headerRowIndexes[1] ?? rows.length;
-  let currentFaiSet = "";
-
-  rows.slice(headerRowIndexes[0] + 1, nextHeaderRowIndex).forEach(row => {
-    const parsedRow = parseFaiDataRow(row, headerIndexes, currentFaiSet);
-    if (parsedRow) {
-      currentFaiSet = parsedRow.faiSet || currentFaiSet;
-      parsedData.push(parsedRow);
-    }
-  });
+  const snapshot = buildContractSnapshot(rows);
 
   return {
-    data: parsedData,
-    summary: summarizeParsedRows(parsedData),
+    data: snapshot.rowData,
+    summary: summarizeParsedRows(snapshot.rowData),
+    contractData: snapshot.contractData,
   };
+}
+
+export function parseSheetJsonRows(jsonRows: SheetJsonRow[]): {
+  data: FaiDataRow[];
+  summary: FaiParseSummary;
+  contractData: FaiParsedData[];
+} {
+  const cleanedData = fillDownDimInJsonRows(jsonRows);
+  const matrixRows = convertSheetJsonRowsToMatrixRows(cleanedData);
+  return parseSheetRows(matrixRows);
 }
 
 export function summarizeDimensionRowsByDimTypes(
@@ -786,6 +1179,7 @@ export default function PartFaiParserSection({
 }: PartFaiParserSectionProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [faiData, setFaiData] = useState<FaiDataRow[]>([]);
+  const [faiParsedData, setFaiParsedData] = useState<FaiParsedData[]>([]);
   const [summary, setSummary] = useState<FaiParseSummary>(EMPTY_SUMMARY);
   const [isDragging, setIsDragging] = useState(false);
   const [isParsing, setIsParsing] = useState(false);
@@ -824,6 +1218,7 @@ export default function PartFaiParserSection({
 
   const clearParsedData = () => {
     setFaiData([]);
+    setFaiParsedData([]);
     setSummary(EMPTY_SUMMARY);
     setFileName("");
     setError("");
@@ -843,6 +1238,7 @@ export default function PartFaiParserSection({
     const requestId = ++loadRequestIdRef.current;
     let cancelled = false;
     setFaiData([]);
+    setFaiParsedData([]);
     setSummary(EMPTY_SUMMARY);
     setFileName("");
     setActiveFilter("all");
@@ -862,6 +1258,7 @@ export default function PartFaiParserSection({
 
         if (storedState) {
           setFaiData(sanitizePersistedRows(storedState.data));
+          setFaiParsedData([]);
           setSummary(sanitizePersistedSummary(storedState.summary));
           setFileName(String(storedState.fileName ?? ""));
           setActiveFilter(
@@ -875,6 +1272,7 @@ export default function PartFaiParserSection({
           );
         } else {
           setFaiData([]);
+          setFaiParsedData([]);
           setSummary(EMPTY_SUMMARY);
           setFileName("");
           setActiveFilter("all");
@@ -888,6 +1286,7 @@ export default function PartFaiParserSection({
         }
 
         setFaiData([]);
+        setFaiParsedData([]);
         setSummary(EMPTY_SUMMARY);
         setFileName("");
         setActiveFilter("all");
@@ -966,42 +1365,26 @@ export default function PartFaiParserSection({
       const XLSX = await import("xlsx");
       const buffer = await file.arrayBuffer();
       const workbook = XLSX.read(buffer, { type: "array", cellDates: false });
-
-      const dimensionSheetName = workbook.SheetNames.find(
-        sheetName => normalizeSheetNameKey(sheetName) === "dimensionreport"
-      );
-      const profileScanSheetName = workbook.SheetNames.find(
-        sheetName => normalizeSheetNameKey(sheetName) === "profilescanreport"
-      );
-
-      const workbookSheetRows = Object.fromEntries(
-        [dimensionSheetName, profileScanSheetName]
-          .filter((sheetName): sheetName is string => !!sheetName)
-          .map(sheetName => [
-            sheetName,
-            extractPopulatedSheetRows(
-              workbook.Sheets[sheetName] as Record<string, unknown>
-            ),
-          ])
-      ) as Record<string, unknown[][]>;
-      const dimensionRows = findSheetRowsByKey(
-        workbookSheetRows,
-        "dimensionreport"
-      );
-      if (!dimensionRows) {
-        throw new Error("Unable to locate the FAI header row.");
+      const firstSheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[firstSheetName];
+      if (!worksheet) {
+        throw new Error("No worksheet found in the uploaded Excel file.");
       }
 
-      const parsedData = parseSheetRows(dimensionRows).data;
-      const workbookSummary = summarizeWorkbookSheetRows(workbookSheetRows);
+      const jsonData = XLSX.utils.sheet_to_json<SheetJsonRow>(worksheet, { defval: "" });
+      const parsed = parseSheetJsonRows(jsonData);
+      const parsedData = parsed.data;
+      const parsedContractData = parsed.contractData;
 
       setFaiData(parsedData);
-      setSummary(workbookSummary ?? summarizeParsedRows(parsedData));
+      setFaiParsedData(parsedContractData);
+      setSummary(parsed.summary);
       setFileName(file.name);
       setActiveFilter("all");
       setIsColumnPanelOpen(false);
     } catch (err) {
       setFaiData([]);
+      setFaiParsedData([]);
       setSummary(EMPTY_SUMMARY);
       setFileName("");
       setActiveFilter("all");
@@ -1043,7 +1426,7 @@ export default function PartFaiParserSection({
 
           <div className="flex flex-wrap items-center gap-3 text-[10px] font-mono uppercase tracking-widest text-slate-500">
             <span className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1">
-              Sheet 1 + Sheet 2 Summary
+              Sheet 1 Isolated Summary
             </span>
             <span className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1">
               {moldId}
@@ -1056,6 +1439,11 @@ export default function PartFaiParserSection({
             <span className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1">
               {trialStage || "T0"}
             </span>
+            {faiParsedData.length > 0 ? (
+              <span className="rounded-md border border-cyan-700/60 bg-cyan-950/30 px-2 py-1 text-cyan-300">
+                FAI Keys: {faiParsedData.length}
+              </span>
+            ) : null}
             {fileName ? <span>{fileName}</span> : null}
             {(fileName || faiData.length > 0 || error) && !isParsing ? (
               <button
@@ -1102,7 +1490,7 @@ export default function PartFaiParserSection({
               </div>
               <p className="text-xs leading-6 text-slate-500">
                 Parses the Dimension report grid for table rows, and calculates
-                summary cards from Dimension report plus Profile_Scan report
+                summary cards from the isolated first worksheet
                 OK-NG counts without double-counting mirrored rows.
               </p>
               {isParsing ? (
@@ -1544,8 +1932,7 @@ export default function PartFaiParserSection({
               <div className="flex items-center gap-2">
                 <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
                 <span>
-                  Summary cards count OK / NG from Dimension report K and Q plus
-                  Profile_Scan report C
+                  Summary cards count OK / NG from first worksheet Judge columns
                 </span>
               </div>
               <div className="flex items-center gap-2">

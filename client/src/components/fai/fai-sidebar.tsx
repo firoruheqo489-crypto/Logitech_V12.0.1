@@ -93,7 +93,7 @@ export function FAISidebar({ items, selectedId, onSelect }: FAISidebarProps) {
                         {item.label}
                       </p>
                       <p className="text-xs text-slate-400 font-mono">
-                        {item.cavities} CAVITIES
+                        {item.cavities} POINTS
                       </p>
                     </div>
                   </div>

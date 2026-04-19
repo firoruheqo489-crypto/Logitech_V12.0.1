@@ -5,7 +5,6 @@ import { Database } from "lucide-react"
 
 interface DiagnosticAssertionProps {
   cavityData: Array<{ value: number; status: "OK" | "+NG" | "-NG" }>
-  sampleValues?: number[]
   actualMean: number
   nominal: number
   usl: number
@@ -21,13 +20,12 @@ interface DiagnosticAssertionProps {
  */
 export function DiagnosticAssertion({
   cavityData,
-  sampleValues,
   actualMean,
   nominal,
   usl,
   lsl,
 }: DiagnosticAssertionProps) {
-  const audit = useFaiDiagnosis({ cavityData, sampleValues, actualMean, nominal, usl, lsl })
+  const audit = useFaiDiagnosis({ cavityData, actualMean, nominal, usl, lsl })
 
   return (
     <div className="rounded-md border border-slate-700 bg-slate-900/50 p-4">

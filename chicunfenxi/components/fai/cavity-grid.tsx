@@ -54,8 +54,6 @@ export function CavityGrid({ cavities, usl, lsl }: CavityGridProps) {
   const plusNgCount = cavities.filter((c) => c.status === "+NG").length
   const minusNgCount = cavities.filter((c) => c.status === "-NG").length
   const range = usl - lsl
-  const safeRange = range === 0 ? 0.000001 : range
-  const yieldRate = cavities.length > 0 ? ((okCount / cavities.length) * 100).toFixed(1) : "0.0"
 
   return (
     <div className="rounded-lg border border-border bg-card p-4">
@@ -84,7 +82,7 @@ export function CavityGrid({ cavities, usl, lsl }: CavityGridProps) {
             </span>
           </div>
           <span className="text-xs text-muted-foreground font-mono">
-            YIELD: {yieldRate}%
+            YIELD: {((okCount / cavities.length) * 100).toFixed(1)}%
           </span>
         </div>
       </div>
@@ -94,7 +92,7 @@ export function CavityGrid({ cavities, usl, lsl }: CavityGridProps) {
         {cavities.map((cavity) => {
           const cfg = statusConfig[cavity.status]
           const deviationPercent = Math.abs(
-            ((cavity.value - (usl + lsl) / 2) / (safeRange / 2)) * 100
+            ((cavity.value - (usl + lsl) / 2) / (range / 2)) * 100
           )
           return (
             <div

@@ -54,14 +54,7 @@ export function ToleranceMap({
       </div>
 
       {/* Metrics Row: 6 cards - 标准值, 上限值, 下限值, 实测均值, σ, Range */}
-      <div
-        className="mb-5 w-full"
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(6, minmax(0, 1fr))",
-          gap: "1rem",
-        }}
-      >
+      <div className="mb-5 grid grid-cols-6 gap-2">
         <MetricCard label="标准值 / NOM" value={nominal.toFixed(3)} unit={unit} />
         <MetricCard label="上限值 / USL" value={usl.toFixed(3)} unit={unit} />
         <MetricCard label="下限值 / LSL" value={lsl.toFixed(3)} unit={unit} />
@@ -94,14 +87,14 @@ export function ToleranceMap({
         </div>
 
         {/* Bar Container */}
-        <div className="relative h-10 overflow-hidden rounded-md border border-slate-700/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.1),0_10px_24px_rgba(2,6,23,0.35)]">
+        <div className="relative h-10 rounded-md overflow-hidden">
           {/* Background gradient zones */}
           <div className="absolute inset-0 flex">
-            <div className="w-[15%]" style={{ background: "linear-gradient(90deg, #1e3a8a 0%, #2563eb 100%)" }} />
-            <div className="w-[20%]" style={{ background: "linear-gradient(90deg, #ca8a04 0%, #fde047 100%)" }} />
-            <div className="flex-1 bg-[#22c55e]" />
-            <div className="w-[20%]" style={{ background: "linear-gradient(90deg, #fde047 0%, #ca8a04 100%)" }} />
-            <div className="w-[15%]" style={{ background: "linear-gradient(90deg, #fb7185 0%, #9f1239 100%)" }} />
+            <div className="w-[15%] bg-blue-600/40" />
+            <div className="w-[20%] bg-amber-600/25" />
+            <div className="flex-1 bg-slate-700/50" />
+            <div className="w-[20%] bg-amber-600/25" />
+            <div className="w-[15%] bg-red-500/35" />
           </div>
 
           {/* Grid lines */}
