@@ -35,11 +35,29 @@ const upload = multer({
   },
 });
 
+function shouldAbortResponseWrite(res: Response): boolean {
+  if (res.headersSent) {
+    console.warn('[System Audit] Headers already sent, intercepting duplicate response to prevent crash.');
+    return true;
+  }
+
+  if (res.writableEnded || res.destroyed) {
+    console.warn('[System Audit] Response stream closed, skipping response write to prevent crash.');
+    return true;
+  }
+
+  return false;
+}
+
 function sendUploadsRouteError(
   res: Response,
   status: number,
   code: UploadsRouteErrorCode,
 ): void {
+  if (shouldAbortResponseWrite(res)) {
+    return;
+  }
+
   res.status(status).json({
     error: UPLOADS_ROUTE_ERROR_MESSAGES[code],
     code,
@@ -78,6 +96,10 @@ uploadsRouter.get('/object', async (req: Request, res: Response) => {
     const rangeHeader = typeof req.headers.range === 'string' ? req.headers.range : undefined;
     const ossObject = await getOssObjectStream(objectKey, rangeHeader);
 
+    if (shouldAbortResponseWrite(res)) {
+      return;
+    }
+
     res.status(ossObject.status);
     Object.entries(ossObject.headers).forEach(([headerName, headerValue]) => {
       if (headerValue === undefined) return;
@@ -95,6 +117,10 @@ uploadsRouter.get('/object', async (req: Request, res: Response) => {
           : 'ASSET_UPLOAD_FAILED';
 
     console.error('GET /api/uploads/object error:', error);
+    if (shouldAbortResponseWrite(res)) {
+      return;
+    }
+
     sendUploadsRouteError(
       res,
       code === 'ASSET_NOT_FOUND' ? 404 : code === 'UPLOADS_NOT_CONFIGURED' ? 503 : 500,
@@ -120,6 +146,10 @@ uploadsRouter.post('/assets', upload.single('file'), async (req: UploadRequest, 
       slot: readMultipartField(req.body?.slot),
     });
 
+    if (shouldAbortResponseWrite(res)) {
+      return;
+    }
+
     res.status(201).json(uploaded);
   } catch (error) {
     const details = String(error ?? '');
@@ -137,12 +167,20 @@ uploadsRouter.delete('/assets', async (req: Request, res: Response) => {
   const assetUrl = typeof req.body?.url === 'string' ? req.body.url.trim() : '';
 
   if (!assetUrl) {
+    if (shouldAbortResponseWrite(res)) {
+      return;
+    }
+
     res.status(200).json({ success: true, deleted: false, skipped: true });
     return;
   }
 
   try {
     const result = await deleteAssetFromOssUrl(assetUrl);
+    if (shouldAbortResponseWrite(res)) {
+      return;
+    }
+
     res.status(200).json({ success: true, ...result });
   } catch (error) {
     const details = String(error ?? '');

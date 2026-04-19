@@ -49,12 +49,30 @@ const statusConfig: Record<
   },
 }
 
+const weakOkConfig = {
+  border: "border-amber-400/35",
+  bg: "bg-amber-500/8",
+  text: "text-foreground",
+  badgeBg: "bg-amber-400/20",
+  badgeText: "text-amber-300",
+  barBg: "bg-amber-400/70",
+}
+
 export function CavityGrid({ cavities, usl, lsl }: CavityGridProps) {
   const okCount = cavities.filter((c) => c.status === "OK").length
   const plusNgCount = cavities.filter((c) => c.status === "+NG").length
   const minusNgCount = cavities.filter((c) => c.status === "-NG").length
   const range = usl - lsl
   const safeRange = range === 0 ? 0.000001 : range
+  const centerValue = (usl + lsl) / 2
+  const halfRange = safeRange / 2
+  const getScorePercent = (value: number) => {
+    const normalizedDeviation = Math.abs(value - centerValue) / halfRange
+    const score = Math.max(0, 1 - normalizedDeviation)
+    return score * 100
+  }
+  const weakOkCount = cavities.filter((c) => c.status === "OK" && getScorePercent(c.value) < 50).length
+  const weakOkRate = cavities.length > 0 ? ((weakOkCount / cavities.length) * 100).toFixed(1) : "0.0"
   const yieldRate = cavities.length > 0 ? ((okCount / cavities.length) * 100).toFixed(1) : "0.0"
 
   return (
@@ -83,6 +101,12 @@ export function CavityGrid({ cavities, usl, lsl }: CavityGridProps) {
               -NG: {minusNgCount}
             </span>
           </div>
+          <div className="flex items-center gap-1.5">
+            <div className="h-2 w-2 rounded-full bg-amber-400" />
+            <span className="text-xs text-muted-foreground font-mono">
+              LOW&lt;50%: {weakOkCount} ({weakOkRate}%)
+            </span>
+          </div>
           <span className="text-xs text-muted-foreground font-mono">
             YIELD: {yieldRate}%
           </span>
@@ -92,10 +116,9 @@ export function CavityGrid({ cavities, usl, lsl }: CavityGridProps) {
       {/* Grid */}
       <div className="grid grid-cols-4 gap-2 xl:grid-cols-8">
         {cavities.map((cavity) => {
-          const cfg = statusConfig[cavity.status]
-          const deviationPercent = Math.abs(
-            ((cavity.value - (usl + lsl) / 2) / (safeRange / 2)) * 100
-          )
+          const scorePercent = getScorePercent(cavity.value)
+          const isWeakOk = cavity.status === "OK" && scorePercent < 50
+          const cfg = isWeakOk ? weakOkConfig : statusConfig[cavity.status]
           return (
             <div
               key={cavity.id}
@@ -103,7 +126,8 @@ export function CavityGrid({ cavities, usl, lsl }: CavityGridProps) {
                 "group relative rounded-md border px-2.5 py-2 transition-all hover:scale-[1.02]",
                 cfg.border,
                 cfg.bg,
-                cavity.status === "OK" && "hover:border-green-500/40",
+                isWeakOk && "hover:border-amber-400/55",
+                cavity.status === "OK" && !isWeakOk && "hover:border-green-500/40",
                 cavity.status === "+NG" && "hover:border-red-500/50",
                 cavity.status === "-NG" && "hover:border-blue-600/50"
               )}
@@ -134,7 +158,7 @@ export function CavityGrid({ cavities, usl, lsl }: CavityGridProps) {
                 <div
                   className={cn("h-full rounded-full transition-all", cfg.barBg)}
                   style={{
-                    width: `${Math.min(100, deviationPercent)}%`,
+                    width: `${Math.max(0, Math.min(100, scorePercent))}%`,
                   }}
                 />
               </div>

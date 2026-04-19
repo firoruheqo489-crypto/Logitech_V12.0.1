@@ -696,7 +696,6 @@ export function FAIDashboard() {
               <p className="text-xs text-muted-foreground font-mono">
                 {faiItem.label} &mdash; {faiItem.cavities} {hasUploadedDataset ? "POINTS" : "CAVITIES"} &mdash; SPEC:{" "}
                 {spec.lsl} ~ {spec.usl} {spec.unit}
-                {uploadedFileName ? ` - FILE: ${uploadedFileName}` : ""}
               </p>
               {hasUploadedDataset ? (
                 <p className="text-[11px] font-mono text-cyan-300/90">
@@ -728,7 +727,7 @@ export function FAIDashboard() {
 
         <div className="flex items-center justify-between border-b border-slate-800/70 px-6 py-2">
           <p className="text-xs font-mono text-slate-400">
-            POSITION: DIMENSION ANALYSIS / EXCEL PARSER ENTRANCE
+            POSITION: DIMENSION ANALYSIS
           </p>
           <div className="flex items-center gap-2">
             <button

@@ -15,7 +15,13 @@ const viteOutLog = path.join(repoRoot, ".codex-local-vite.out.log");
 const viteErrLog = path.join(repoRoot, ".codex-local-vite.err.log");
 const apiPort = 3001;
 const frontendPort = 3000;
-const timeoutSeconds = 10;
+const parsedTimeoutSeconds = Number.parseInt(
+  process.env.LOCAL_DASHBOARD_START_TIMEOUT_SECONDS ?? "30",
+  10,
+);
+const timeoutSeconds = Number.isFinite(parsedTimeoutSeconds)
+  ? Math.min(Math.max(parsedTimeoutSeconds, 10), 180)
+  : 30;
 
 function log(message) {
   process.stdout.write(`[local-dashboard] ${message}\n`);
@@ -130,6 +136,59 @@ function launchProcess(name, args, outLogPath, errLogPath, extraEnv = {}) {
   return { process: child, outLogPath, errLogPath };
 }
 
+function isProcessAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function freeListeningPort(port) {
+  const pids = getListeningPids(port);
+  for (const pid of pids) {
+    killProcessTree(pid);
+  }
+}
+
+async function launchApiProcessWithRetry(maxAttempts = 3) {
+  let lastProcessInfo = null;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    lastProcessInfo = launchProcess(
+      "api",
+      ["--experimental-strip-types", "--loader", "./scripts/ts-path-loader.mjs", "server/index.ts"],
+      apiOutLog,
+      apiErrLog,
+      {
+        DEV_API: "1",
+        PORT: String(apiPort),
+      },
+    );
+
+    await delay(1200);
+    if (isProcessAlive(lastProcessInfo.process.pid)) {
+      return lastProcessInfo;
+    }
+
+    const apiErrTail = readTail(apiErrLog, 80);
+    const isAddressInUse = /EADDRINUSE/.test(apiErrTail);
+    if (isAddressInUse && attempt < maxAttempts) {
+      log(`api port ${apiPort} conflict detected (attempt ${attempt}/${maxAttempts}), retrying`);
+      freeListeningPort(apiPort);
+      await waitForPortFree(apiPort, 8000).catch(() => {});
+      await delay(1000);
+      continue;
+    }
+
+    return lastProcessInfo;
+  }
+
+  return lastProcessInfo;
+}
+
 function extractFrontendUrlFromLog(filePath) {
   try {
     if (!existsSync(filePath)) return null;
@@ -241,16 +300,7 @@ async function main() {
   await waitForPortFree(frontendPort);
   await waitForPortFree(apiPort);
 
-  const apiProcessInfo = launchProcess(
-    "api",
-    ["--experimental-strip-types", "--loader", "./scripts/ts-path-loader.mjs", "server/index.ts"],
-    apiOutLog,
-    apiErrLog,
-    {
-      DEV_API: "1",
-      PORT: String(apiPort),
-    },
-  );
+  const apiProcessInfo = await launchApiProcessWithRetry();
 
   const apiUrl = `http://localhost:${apiPort}`;
   const apiHealthUrl = `${apiUrl}/api/health`;
@@ -266,7 +316,13 @@ async function main() {
   );
 
   log("waiting for api/frontend readiness in parallel");
-  const frontendUrl = await waitForServices(apiHealthUrl, frontendPort, apiProcessInfo, viteProcessInfo, timeoutSeconds);
+  let frontendUrl;
+  try {
+    frontendUrl = await waitForServices(apiHealthUrl, frontendPort, apiProcessInfo, viteProcessInfo, timeoutSeconds);
+  } catch (err) {
+    console.error('[Health Check Failed]:', err?.message || err?.code || String(err));
+    throw err;
+  }
 
   const state = {
     startedAt: new Date().toISOString(),

@@ -504,7 +504,7 @@ function normalizeFaiIdFromDim(value: unknown): string {
   }
 
   const compact = text.replace(/\s+/g, "");
-  const match = compact.match(/FAI0*(\d+)/i);
+  const match = compact.match(/^FAI0*(\d+)$/i);
   if (match) {
     return `FAI${Number.parseInt(match[1], 10)}`;
   }
@@ -558,12 +558,17 @@ function findShotIndexesByHeader(
   headers: unknown[],
   shot: 1 | 2 | 3
 ): number[] {
-  const directPattern = new RegExp(`^shot\\s*${shot}$`);
-  const loosePattern = new RegExp(`shot\\s*${shot}`);
+  const directPattern = new RegExp(`(^|\\s)shot\\s*0*${shot}(?=\\s|$)`);
+  const compactPattern = new RegExp(`(^|\\s)shot0*${shot}(?=\\s|$)`);
 
   return headers
-    .map((cell, index) => ({ header: normalizeHeader(cell), index }))
-    .filter(({ header }) => directPattern.test(header) || loosePattern.test(header))
+    .map((cell, index) => ({
+      header: normalizeHeader(cell).replace(/[_-]+/g, " "),
+      index,
+    }))
+    .filter(
+      ({ header }) => directPattern.test(header) || compactPattern.test(header)
+    )
     .map(({ index }) => index);
 }
 
@@ -755,126 +760,167 @@ function buildContractSnapshot(rows: unknown[][]): ParsedWorkbookSnapshot {
     throw new Error("Unable to locate the FAI header row.");
   }
 
-  const headerRowIndex = headerRowIndexes[0];
-  const nextHeaderRowIndex = headerRowIndexes[1] ?? rows.length;
-  const headerIndexes = findParserHeaderIndexes(rows[headerRowIndex] ?? []);
-  const normalizedRows = fillDownDimInMatrixRows(
-    rows,
-    headerRowIndex,
-    nextHeaderRowIndex,
-    headerIndexes.dim
-  );
-
   const buffers = new Map<string, FaiAggregationBuffer>();
-  let currentFaiId = "";
+  let parseError: unknown = null;
+  let parsedSectionCount = 0;
 
-  normalizedRows.forEach((row, rowOffset) => {
-    const rowIndex = headerRowIndex + 1 + rowOffset;
-    const rowDim = String(row[headerIndexes.dim] ?? "").trim();
-    const normalizedDim = normalizeFaiIdFromDim(rowDim);
-    if (normalizedDim) {
-      currentFaiId = normalizedDim;
-    }
+  headerRowIndexes.forEach((headerRowIndex, sectionIndex) => {
+    const nextHeaderRowIndex = headerRowIndexes[sectionIndex + 1] ?? rows.length;
 
-    if (!currentFaiId) {
-      return;
-    }
+    try {
+      const headerIndexes = findParserHeaderIndexes(rows[headerRowIndex] ?? []);
+      const normalizedRows = fillDownDimInMatrixRows(
+        rows,
+        headerRowIndex,
+        nextHeaderRowIndex,
+        headerIndexes.dim
+      );
+      let currentFaiId = "";
 
-    const cavity = normalizeCavity(
-      headerIndexes.cavity >= 0 ? row[headerIndexes.cavity] : "",
-      rowIndex
-    );
-    const dimType =
-      headerIndexes.dimType >= 0 ? String(row[headerIndexes.dimType] ?? "").trim() : "";
+      normalizedRows.forEach((row, rowOffset) => {
+        const rowIndex = headerRowIndex + 1 + rowOffset;
+        const rowDim = String(row[headerIndexes.dim] ?? "").trim();
+        const normalizedDim = normalizeFaiIdFromDim(rowDim);
+        if (normalizedDim) {
+          currentFaiId = normalizedDim;
+        }
 
-    const buffer =
-      buffers.get(currentFaiId) ??
-      ({
-        faiId: currentFaiId,
-        fosNominal: null,
-        fosUsl: null,
-        fosLsl: null,
-        plusTol: null,
-        minusTol: null,
-        gtolRange: null,
-        fosRawData: [],
-        gtolRawData: [],
-        cavityDimTypes: new Map<string, string>(),
-      } satisfies FaiAggregationBuffer);
+        if (!currentFaiId) {
+          return;
+        }
 
-    if (!buffers.has(currentFaiId)) {
-      buffers.set(currentFaiId, buffer);
-    }
+        const cavity = normalizeCavity(
+          headerIndexes.cavity >= 0 ? row[headerIndexes.cavity] : "",
+          rowIndex
+        );
+        const dimType =
+          headerIndexes.dimType >= 0
+            ? String(row[headerIndexes.dimType] ?? "").trim()
+            : "";
 
-    if (dimType && !buffer.cavityDimTypes.has(cavity)) {
-      buffer.cavityDimTypes.set(cavity, dimType);
-    }
+        const buffer =
+          buffers.get(currentFaiId) ??
+          ({
+            faiId: currentFaiId,
+            fosNominal: null,
+            fosUsl: null,
+            fosLsl: null,
+            plusTol: null,
+            minusTol: null,
+            gtolRange: null,
+            fosRawData: [],
+            gtolRawData: [],
+            cavityDimTypes: new Map<string, string>(),
+          } satisfies FaiAggregationBuffer);
 
-    const fosNominal = headerIndexes.fos >= 0 ? parseMeasurementValue(row[headerIndexes.fos]) : null;
-    const plusTol = headerIndexes.plusTol >= 0 ? parseMeasurementValue(row[headerIndexes.plusTol]) : null;
-    const minusTol = headerIndexes.minusTol >= 0 ? parseMeasurementValue(row[headerIndexes.minusTol]) : null;
-    const directUsl = headerIndexes.usl >= 0 ? parseMeasurementValue(row[headerIndexes.usl]) : null;
-    const directLsl = headerIndexes.lsl >= 0 ? parseMeasurementValue(row[headerIndexes.lsl]) : null;
-    const gtolRange = headerIndexes.gtolRange >= 0 ? parseMeasurementValue(row[headerIndexes.gtolRange]) : null;
+        if (!buffers.has(currentFaiId)) {
+          buffers.set(currentFaiId, buffer);
+        }
 
-    if (buffer.fosNominal === null && fosNominal !== null) {
-      buffer.fosNominal = fosNominal;
-    }
-    if (buffer.plusTol === null && plusTol !== null) {
-      buffer.plusTol = plusTol;
-    }
-    if (buffer.minusTol === null && minusTol !== null) {
-      buffer.minusTol = minusTol;
-    }
-    if (buffer.gtolRange === null && gtolRange !== null) {
-      buffer.gtolRange = gtolRange;
-    }
+        if (!buffer.cavityDimTypes.has(cavity)) {
+          buffer.cavityDimTypes.set(cavity, dimType);
+        } else if (dimType && !buffer.cavityDimTypes.get(cavity)) {
+          buffer.cavityDimTypes.set(cavity, dimType);
+        }
 
-    const computedUsl =
-      directUsl ??
-      (fosNominal !== null && plusTol !== null
-        ? roundToThreeDecimals(fosNominal + plusTol)
-        : null);
-    const computedLsl =
-      directLsl ??
-      (fosNominal !== null && minusTol !== null
-        ? roundToThreeDecimals(fosNominal + minusTol)
-        : null);
+        const fosNominal =
+          headerIndexes.fos >= 0
+            ? parseMeasurementValue(row[headerIndexes.fos])
+            : null;
+        const plusTol =
+          headerIndexes.plusTol >= 0
+            ? parseMeasurementValue(row[headerIndexes.plusTol])
+            : null;
+        const minusTol =
+          headerIndexes.minusTol >= 0
+            ? parseMeasurementValue(row[headerIndexes.minusTol])
+            : null;
+        const directUsl =
+          headerIndexes.usl >= 0
+            ? parseMeasurementValue(row[headerIndexes.usl])
+            : null;
+        const directLsl =
+          headerIndexes.lsl >= 0
+            ? parseMeasurementValue(row[headerIndexes.lsl])
+            : null;
+        const gtolRange =
+          headerIndexes.gtolRange >= 0
+            ? parseMeasurementValue(row[headerIndexes.gtolRange])
+            : null;
 
-    if (buffer.fosUsl === null && computedUsl !== null) {
-      buffer.fosUsl = computedUsl;
-    }
-    if (buffer.fosLsl === null && computedLsl !== null) {
-      buffer.fosLsl = computedLsl;
-    }
+        if (buffer.fosNominal === null && fosNominal !== null) {
+          buffer.fosNominal = fosNominal;
+        }
+        if (buffer.plusTol === null && plusTol !== null) {
+          buffer.plusTol = plusTol;
+        }
+        if (buffer.minusTol === null && minusTol !== null) {
+          buffer.minusTol = minusTol;
+        }
+        if (buffer.gtolRange === null && gtolRange !== null) {
+          buffer.gtolRange = gtolRange;
+        }
 
-    const fosShots = readShotTupleFromRow(row, headerIndexes.fosShotIndexes);
-    const gtolShots = readShotTupleFromRow(row, headerIndexes.gtolShotIndexes);
+        const computedUsl =
+          directUsl ??
+          (fosNominal !== null && plusTol !== null
+            ? roundToThreeDecimals(fosNominal + plusTol)
+            : null);
+        const computedLsl =
+          directLsl ??
+          (fosNominal !== null && minusTol !== null
+            ? roundToThreeDecimals(fosNominal + minusTol)
+            : null);
 
-    fosShots.forEach((value, index) => {
-      if (value === null) {
-        return;
-      }
+        if (buffer.fosUsl === null && computedUsl !== null) {
+          buffer.fosUsl = computedUsl;
+        }
+        if (buffer.fosLsl === null && computedLsl !== null) {
+          buffer.fosLsl = computedLsl;
+        }
 
-      buffer.fosRawData.push({
-        cavity,
-        shot: index + 1,
-        value,
+        const fosShots = readShotTupleFromRow(row, headerIndexes.fosShotIndexes);
+        const gtolShots = readShotTupleFromRow(row, headerIndexes.gtolShotIndexes);
+
+        fosShots.forEach((value, index) => {
+          if (value === null) {
+            return;
+          }
+
+          buffer.fosRawData.push({
+            cavity,
+            shot: index + 1,
+            value,
+          });
+        });
+
+        gtolShots.forEach((value, index) => {
+          if (value === null) {
+            return;
+          }
+
+          buffer.gtolRawData.push({
+            cavity,
+            shot: index + 1,
+            value,
+          });
+        });
       });
-    });
 
-    gtolShots.forEach((value, index) => {
-      if (value === null) {
-        return;
+      parsedSectionCount += 1;
+    } catch (sectionError) {
+      if (!parseError) {
+        parseError = sectionError;
       }
-
-      buffer.gtolRawData.push({
-        cavity,
-        shot: index + 1,
-        value,
-      });
-    });
+    }
   });
+
+  if (parsedSectionCount === 0) {
+    if (parseError instanceof Error) {
+      throw parseError;
+    }
+    throw new Error("Unable to parse any FAI data blocks in worksheet.");
+  }
 
   const contractData = Array.from(buffers.values())
     .sort((left, right) => compareFaiId(left.faiId, right.faiId))
@@ -923,6 +969,7 @@ function buildContractSnapshot(rows: unknown[][]): ParsedWorkbookSnapshot {
   contractData.forEach(item => {
     const sourceBuffer = buffers.get(item.faiId);
     const cavitySet = new Set<string>();
+    sourceBuffer?.cavityDimTypes.forEach((_, cavity) => cavitySet.add(cavity));
     item.measurements.FOS.rawData.forEach(point => cavitySet.add(point.cavity));
     item.measurements.GTol?.rawData.forEach(point => cavitySet.add(point.cavity));
     const cavities = Array.from(cavitySet).sort(compareCavity);
@@ -1190,6 +1237,7 @@ export default function PartFaiParserSection({
   const [hiddenColumns, setHiddenColumns] = useState<ColumnId[]>([]);
   const [isColumnPanelOpen, setIsColumnPanelOpen] = useState(false);
   const [isHydrated, setIsHydrated] = useState(false);
+  const [canPersistRemoteState, setCanPersistRemoteState] = useState(false);
   const loadRequestIdRef = useRef(0);
   const visibleColumns = PART_FAI_COLUMNS.filter(
     column => !hiddenColumns.includes(column.id)
@@ -1234,6 +1282,7 @@ export default function PartFaiParserSection({
 
   useEffect(() => {
     setIsHydrated(false);
+    setCanPersistRemoteState(false);
 
     const requestId = ++loadRequestIdRef.current;
     let cancelled = false;
@@ -1279,6 +1328,7 @@ export default function PartFaiParserSection({
           setHiddenColumns([]);
         }
 
+        setCanPersistRemoteState(true);
         setError("");
       } catch (loadError) {
         if (cancelled || loadRequestIdRef.current !== requestId) {
@@ -1291,6 +1341,7 @@ export default function PartFaiParserSection({
         setFileName("");
         setActiveFilter("all");
         setHiddenColumns([]);
+        setCanPersistRemoteState(false);
         setError(
           loadError instanceof Error
             ? loadError.message
@@ -1318,7 +1369,7 @@ export default function PartFaiParserSection({
   }, [moldId, moldNo, trialStage]);
 
   useEffect(() => {
-    if (!isHydrated) {
+    if (!isHydrated || !canPersistRemoteState) {
       return;
     }
 
@@ -1348,6 +1399,7 @@ export default function PartFaiParserSection({
     faiData,
     fileName,
     hiddenColumns,
+    canPersistRemoteState,
     isHydrated,
     moldId,
     moldNo,
@@ -1365,20 +1417,58 @@ export default function PartFaiParserSection({
       const XLSX = await import("xlsx");
       const buffer = await file.arrayBuffer();
       const workbook = XLSX.read(buffer, { type: "array", cellDates: false });
-      const firstSheetName = workbook.SheetNames[0];
-      const worksheet = workbook.Sheets[firstSheetName];
-      if (!worksheet) {
+      const targetSheetNames = workbook.SheetNames.slice(0, 2);
+      if (targetSheetNames.length === 0) {
         throw new Error("No worksheet found in the uploaded Excel file.");
       }
 
-      const jsonData = XLSX.utils.sheet_to_json<SheetJsonRow>(worksheet, { defval: "" });
-      const parsed = parseSheetJsonRows(jsonData);
-      const parsedData = parsed.data;
-      const parsedContractData = parsed.contractData;
+      const selectedSheetRows = targetSheetNames.reduce<Record<string, unknown[][]>>(
+        (accumulator, sheetName) => {
+          const worksheet = workbook.Sheets[sheetName];
+          if (!worksheet) {
+            return accumulator;
+          }
 
-      setFaiData(parsedData);
-      setFaiParsedData(parsedContractData);
-      setSummary(parsed.summary);
+          accumulator[sheetName] = XLSX.utils.sheet_to_json<unknown[]>(worksheet, {
+            header: 1,
+            defval: "",
+          });
+          return accumulator;
+        },
+        {}
+      );
+
+      let firstSheetParsed: ReturnType<typeof parseSheetJsonRows> | null = null;
+      let firstSheetError: unknown = null;
+      for (const sheetName of targetSheetNames) {
+        const worksheet = workbook.Sheets[sheetName];
+        if (!worksheet) {
+          continue;
+        }
+
+        try {
+          const jsonData = XLSX.utils.sheet_to_json<SheetJsonRow>(worksheet, {
+            defval: "",
+          });
+          firstSheetParsed = parseSheetJsonRows(jsonData);
+          break;
+        } catch (parseError) {
+          firstSheetError = parseError;
+        }
+      }
+
+      if (!firstSheetParsed) {
+        if (firstSheetError instanceof Error) {
+          throw firstSheetError;
+        }
+        throw new Error("Unable to parse the first two worksheets.");
+      }
+
+      const mergedSummary = summarizeWorkbookSheetRows(selectedSheetRows);
+
+      setFaiData(firstSheetParsed.data);
+      setFaiParsedData(firstSheetParsed.contractData);
+      setSummary(mergedSummary ?? firstSheetParsed.summary);
       setFileName(file.name);
       setActiveFilter("all");
       setIsColumnPanelOpen(false);
@@ -1426,7 +1516,7 @@ export default function PartFaiParserSection({
 
           <div className="flex flex-wrap items-center gap-3 text-[10px] font-mono uppercase tracking-widest text-slate-500">
             <span className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1">
-              Sheet 1 Isolated Summary
+              First 2 Worksheets Summary
             </span>
             <span className="rounded-md border border-slate-700 bg-slate-950 px-2 py-1">
               {moldId}

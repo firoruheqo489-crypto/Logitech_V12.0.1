@@ -1281,7 +1281,9 @@ export default function MoldTrialDatabase({
   const [isEvidenceHydrated, setIsEvidenceHydrated] = useState(false);
   const [isTrialStateHydrated, setIsTrialStateHydrated] = useState(false);
   const [isMachineSheetHydrated, setIsMachineSheetHydrated] = useState(false);
+  const [isDatabaseReady, setIsDatabaseReady] = useState(false);
   const [isRemoteSyncing, setIsRemoteSyncing] = useState(false);
+  const [isOfflineFallbackMode, setIsOfflineFallbackMode] = useState(false);
   const [isUploadingMachineSheet, setIsUploadingMachineSheet] = useState(false);
   const [isEvidenceDropActive, setIsEvidenceDropActive] = useState(false);
   const [selectedEvidenceSlotId, setSelectedEvidenceSlotId] = useState<
@@ -1290,8 +1292,6 @@ export default function MoldTrialDatabase({
   const [isEvidenceLightboxOpen, setIsEvidenceLightboxOpen] = useState(false);
   const [evidenceLightboxUrl, setEvidenceLightboxUrl] = useState("");
   const [evidenceLightboxRotation, setEvidenceLightboxRotation] = useState(0);
-  const isDatabaseReady =
-    isEvidenceHydrated && isTrialStateHydrated && isMachineSheetHydrated;
   const currentEvidenceState =
     evidenceByTrial[activeTrial] ||
     buildEmptyTrialEvidenceStageState(activeTrial);
@@ -1320,8 +1320,46 @@ export default function MoldTrialDatabase({
     machineSheetByTrial: Record<TrialStage, string>;
   };
 
+  type RemoteTrialDatabaseSnapshotReadResult =
+    | {
+        status: "ready";
+        snapshot: RemoteTrialDatabaseSnapshot;
+      }
+    | {
+        status: "empty";
+        snapshot: RemoteTrialDatabaseSnapshot;
+      };
+
+  const buildLocalFallbackTrialDatabaseSnapshot = useCallback(
+    (): RemoteTrialDatabaseSnapshot => {
+      const fallbackTrialStages = [...defaultTrialStages];
+      const fallbackEvidenceByTrial = buildEvidenceStateMap(fallbackTrialStages);
+      const fallbackEvidenceGroupNoteDraftByTrial = fallbackTrialStages.reduce(
+        (acc, stage) => {
+          acc[stage] = "";
+          return acc;
+        },
+        {} as Record<TrialStage, string>
+      );
+
+      return {
+        trialStages: fallbackTrialStages,
+        clearedTrialStages: [],
+        evidenceByTrial: fallbackEvidenceByTrial,
+        evidenceGroupNoteDraftByTrial: fallbackEvidenceGroupNoteDraftByTrial,
+        machineSheetByTrial: {},
+      };
+    },
+    []
+  );
+
   const applyRemoteTrialDatabaseSnapshot = useCallback(
-    (snapshot: RemoteTrialDatabaseSnapshot) => {
+    (
+      snapshot: RemoteTrialDatabaseSnapshot,
+      options?: { allowRemotePersistence?: boolean }
+    ) => {
+      const allowRemotePersistence = options?.allowRemotePersistence ?? true;
+
       revokeEvidenceSlotUrls(evidenceByTrialRef.current);
       canPersistEvidenceRef.current = false;
       canPersistTrialStateRef.current = false;
@@ -1344,6 +1382,10 @@ export default function MoldTrialDatabase({
       setIsTrialStateHydrated(true);
       setIsMachineSheetHydrated(true);
 
+      if (!allowRemotePersistence) {
+        return;
+      }
+
       window.setTimeout(() => {
         canPersistEvidenceRef.current = true;
         canPersistTrialStateRef.current = true;
@@ -1352,16 +1394,16 @@ export default function MoldTrialDatabase({
     []
   );
 
-  const readRemoteTrialDatabaseSnapshot = useCallback(async () => {
-    const [remoteEvidenceState, remoteMachineSheet] = await Promise.all([
-      fetchDashboardMoldTrialEvidenceState({ moldId, moldNo }).catch(
-        () => null
-      ),
-      fetchDashboardMachineSheetState({ moldId, moldNo }).catch(() => null),
-    ]);
-
+  const readRemoteTrialDatabaseSnapshot = useCallback(async (): Promise<RemoteTrialDatabaseSnapshotReadResult> => {
+    const remoteEvidenceState = await fetchDashboardMoldTrialEvidenceState({
+      moldId,
+      moldNo,
+    });
     if (!remoteEvidenceState) {
-      return null;
+      return {
+        status: "empty",
+        snapshot: buildLocalFallbackTrialDatabaseSnapshot(),
+      };
     }
 
     const remoteTrialStages = remoteEvidenceState.trialStages ?? [];
@@ -1371,8 +1413,16 @@ export default function MoldTrialDatabase({
         : Object.keys(remoteEvidenceState.stagesByScope);
     const normalizedTrialStages = sanitizeTrialStages(trialStagesSource);
     if (normalizedTrialStages.length === 0) {
-      return null;
+      return {
+        status: "empty",
+        snapshot: buildLocalFallbackTrialDatabaseSnapshot(),
+      };
     }
+
+    const remoteMachineSheet = await fetchDashboardMachineSheetState({
+      moldId,
+      moldNo,
+    }).catch(() => null);
 
     const normalizedClearedTrialStages = resolveClearedTrialStages(
       normalizedTrialStages,
@@ -1394,15 +1444,18 @@ export default function MoldTrialDatabase({
     );
 
     return {
-      trialStages: normalizedTrialStages,
-      clearedTrialStages: normalizedClearedTrialStages,
-      evidenceByTrial,
-      evidenceGroupNoteDraftByTrial,
-      machineSheetByTrial: normalizeStoredMachineSheetMap(
-        remoteMachineSheet?.stagesByTrial ?? {}
-      ),
+      status: "ready",
+      snapshot: {
+        trialStages: normalizedTrialStages,
+        clearedTrialStages: normalizedClearedTrialStages,
+        evidenceByTrial,
+        evidenceGroupNoteDraftByTrial,
+        machineSheetByTrial: normalizeStoredMachineSheetMap(
+          remoteMachineSheet?.stagesByTrial ?? {}
+        ),
+      },
     };
-  }, [moldId, moldNo]);
+  }, [buildLocalFallbackTrialDatabaseSnapshot, moldId, moldNo]);
 
   const reloadRemoteTrialDatabaseState = useCallback(
     async (options?: { background?: boolean }) => {
@@ -1410,14 +1463,14 @@ export default function MoldTrialDatabase({
       setIsRemoteSyncing(true);
 
       try {
-        const snapshot = await readRemoteTrialDatabaseSnapshot();
-        if (!snapshot) {
-          return false;
-        }
-
-        applyRemoteTrialDatabaseSnapshot(snapshot);
+        const readResult = await readRemoteTrialDatabaseSnapshot();
+        applyRemoteTrialDatabaseSnapshot(readResult.snapshot, {
+          allowRemotePersistence: true,
+        });
+        setIsOfflineFallbackMode(false);
         return true;
       } catch {
+        setIsOfflineFallbackMode(true);
         return false;
       } finally {
         setIsRemoteSyncing(false);
@@ -1506,21 +1559,34 @@ export default function MoldTrialDatabase({
     setIsEvidenceHydrated(false);
     setIsTrialStateHydrated(false);
     setIsMachineSheetHydrated(false);
+    setIsDatabaseReady(false);
+    setIsOfflineFallbackMode(false);
     setIsRemoteSyncing(true);
     setIsUploadingMachineSheet(false);
     setIsImportingExcel(false);
 
     void (async () => {
       try {
-        const snapshot = await readRemoteTrialDatabaseSnapshot();
+        const readResult = await readRemoteTrialDatabaseSnapshot();
         if (cancelled) return;
 
-        if (snapshot) {
-          applyRemoteTrialDatabaseSnapshot(snapshot);
-        }
+        applyRemoteTrialDatabaseSnapshot(readResult.snapshot, {
+          allowRemotePersistence: true,
+        });
+        setIsOfflineFallbackMode(false);
+      } catch {
+        if (cancelled) return;
+        applyRemoteTrialDatabaseSnapshot(
+          buildLocalFallbackTrialDatabaseSnapshot(),
+          {
+            allowRemotePersistence: false,
+          }
+        );
+        setIsOfflineFallbackMode(true);
       } finally {
         if (!cancelled) {
           setIsRemoteSyncing(false);
+          setIsDatabaseReady(true);
         }
       }
     })();
@@ -1530,6 +1596,7 @@ export default function MoldTrialDatabase({
     };
   }, [
     applyRemoteTrialDatabaseSnapshot,
+    buildLocalFallbackTrialDatabaseSnapshot,
     readRemoteTrialDatabaseSnapshot,
     moldId,
     moldNo,
@@ -1558,7 +1625,11 @@ export default function MoldTrialDatabase({
   }, [reloadRemoteTrialDatabaseState, shouldRevalidateAfterSave]);
 
   useEffect(() => {
-    if (!isEvidenceHydrated || !isTrialStateHydrated) {
+    if (
+      !isEvidenceHydrated ||
+      !isTrialStateHydrated ||
+      isOfflineFallbackMode
+    ) {
       canPersistEvidenceRef.current = false;
       canPersistTrialStateRef.current = false;
       return;
@@ -1572,10 +1643,20 @@ export default function MoldTrialDatabase({
     return () => {
       window.clearTimeout(enablePersistTimer);
     };
-  }, [isEvidenceHydrated, isTrialStateHydrated, moldId, moldNo]);
+  }, [
+    isEvidenceHydrated,
+    isTrialStateHydrated,
+    isOfflineFallbackMode,
+    moldId,
+    moldNo,
+  ]);
 
   useEffect(() => {
-    if (!isEvidenceHydrated || !isTrialStateHydrated) {
+    if (
+      !isEvidenceHydrated ||
+      !isTrialStateHydrated ||
+      isOfflineFallbackMode
+    ) {
       return;
     }
 
@@ -1604,6 +1685,7 @@ export default function MoldTrialDatabase({
     clearedTrialStages,
     isTrialStateHydrated,
     isEvidenceHydrated,
+    isOfflineFallbackMode,
     moldId,
     moldNo,
     reloadRemoteTrialDatabaseState,
@@ -1612,7 +1694,7 @@ export default function MoldTrialDatabase({
   ]);
 
   useEffect(() => {
-    if (!isMachineSheetHydrated) {
+    if (!isMachineSheetHydrated || isOfflineFallbackMode) {
       return;
     }
 
@@ -1632,6 +1714,7 @@ export default function MoldTrialDatabase({
     })();
   }, [
     isMachineSheetHydrated,
+    isOfflineFallbackMode,
     machineSheetByTrial,
     moldId,
     moldNo,
@@ -1680,6 +1763,14 @@ export default function MoldTrialDatabase({
     evidenceByTrialRef.current = nextEvidenceState;
     setEvidenceGroupNoteDraftByTrial(nextEvidenceDrafts);
     setActiveTrial(nextStage);
+
+    if (isOfflineFallbackMode) {
+      toast.info("当前处于离线兜底模式", {
+        description: "新增轮次已本地暂存，网络恢复后点击“重试同步”。",
+        position: "bottom-right",
+      });
+      return;
+    }
 
     try {
       await saveDashboardMoldTrialEvidenceState({
@@ -2483,6 +2574,26 @@ export default function MoldTrialDatabase({
     <div
       className={`flex flex-col gap-6 p-6 bg-slate-950 ${embedded ? "" : "min-h-screen"}`}
     >
+      {isOfflineFallbackMode ? (
+        <div className="rounded-xl border border-amber-700/35 bg-amber-950/20 p-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-xs leading-5 text-amber-100/90">
+              当前处于离线兜底模式，已加载本地默认数据；远端恢复后请执行重试同步。
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                void reloadRemoteTrialDatabaseState({ background: true });
+              }}
+              disabled={isRemoteSyncing}
+              className="rounded-md border border-amber-600/50 bg-amber-950/40 px-3 py-1.5 text-xs font-bold tracking-wide text-amber-200 transition-colors hover:bg-amber-900/50 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isRemoteSyncing ? "重试中..." : "重试同步"}
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       {/* SECTION 1: Header & Infinite T-Axis */}
       <section>
         <div className="flex justify-between items-center pb-4 border-b border-slate-800">

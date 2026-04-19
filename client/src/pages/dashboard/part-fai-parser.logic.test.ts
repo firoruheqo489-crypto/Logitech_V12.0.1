@@ -117,6 +117,84 @@ describe("Part FAI SPC parser", () => {
     ).toEqual(new Set(["CAV1", "CAV2"]));
   });
 
+  it("keeps FAI suffix keys isolated (FAI5A/FAI5B/FAI5C) and avoids cross-cavity merge pollution", () => {
+    const rows: unknown[][] = [
+      buildHeaderRow(),
+      [
+        "FAI5A",
+        "",
+        "PROFILE",
+        "",
+        "CAV1",
+        "",
+        6.0,
+        0.05,
+        -0.05,
+        "",
+        "OK",
+        6.01,
+        6.02,
+        6.03,
+        0.08,
+        "",
+        "OK",
+        0.01,
+        0.02,
+        0.03,
+      ],
+      [
+        "FAI5B",
+        "",
+        "PROFILE",
+        "",
+        "CAV1",
+        "",
+        6.0,
+        0.05,
+        -0.05,
+        "",
+        "OK",
+        6.11,
+        6.12,
+        6.13,
+        0.08,
+        "",
+        "OK",
+        0.11,
+        0.12,
+        0.13,
+      ],
+      [
+        "FAI5C",
+        "",
+        "PROFILE",
+        "",
+        "CAV1",
+        "",
+        6.0,
+        0.05,
+        -0.05,
+        "",
+        "OK",
+        6.21,
+        6.22,
+        6.23,
+        0.08,
+        "",
+        "OK",
+        0.21,
+        0.22,
+        0.23,
+      ],
+    ];
+
+    const parsed = parseSheetRowsToContract(rows);
+    expect(parsed.map(item => item.faiId)).toEqual(["FAI5A", "FAI5B", "FAI5C"]);
+    expect(parsed[0]?.measurements.FOS.flatValues).toEqual([6.01, 6.02, 6.03]);
+    expect(parsed[1]?.measurements.FOS.flatValues).toEqual([6.11, 6.12, 6.13]);
+    expect(parsed[2]?.measurements.FOS.flatValues).toEqual([6.21, 6.22, 6.23]);
+  });
+
   it("builds independent 16x3=48 flat arrays for FOS and G-Tol under one FAI", () => {
     const rows: unknown[][] = [buildHeaderRow()];
 
@@ -345,5 +423,141 @@ describe("Part FAI SPC parser", () => {
     const parsed = parseSheetJsonRowsToContract(jsonRows);
     expect(parsed[0]?.measurements.FOS.flatValues).toEqual([6.02]);
     expect(parsed[0]?.measurements.GTol?.flatValues).toEqual([0.031]);
+  });
+
+  it("parses all repeated FAI header blocks instead of truncating at the second header", () => {
+    const rows: unknown[][] = [
+      buildHeaderRow(),
+      [
+        "FAI1",
+        "",
+        "PROFILE",
+        "",
+        "CAV1",
+        "",
+        10,
+        0.1,
+        -0.1,
+        "",
+        "OK",
+        10.01,
+        10.02,
+        10.03,
+        0.05,
+        "",
+        "OK",
+        0.01,
+        0.02,
+        0.03,
+      ],
+      buildHeaderRow(),
+      [
+        "FAI2",
+        "",
+        "PROFILE",
+        "",
+        "CAV1",
+        "",
+        20,
+        0.1,
+        -0.1,
+        "",
+        "OK",
+        20.01,
+        20.02,
+        20.03,
+        0.05,
+        "",
+        "OK",
+        0.11,
+        0.12,
+        0.13,
+      ],
+    ];
+
+    const parsed = parseSheetRows(rows);
+    expect(parsed.contractData).toHaveLength(2);
+    expect(parsed.data).toHaveLength(2);
+    expect(parsed.contractData.map(item => item.faiId)).toEqual(["FAI1", "FAI2"]);
+  });
+
+  it("does not let Shot 10 / Shot 20 pollute Shot 1 column matching", () => {
+    const rows: unknown[][] = [
+      [
+        "Dim. #",
+        "Dim. Type",
+        "Cavity #",
+        "FOS",
+        "Plus Tol (+)",
+        "Minus Tol (-)",
+        "USL",
+        "LSL",
+        "Shot 10",
+        "Shot 1",
+        "Shot 2",
+        "Shot 3",
+        "G-Tol Range",
+        "Shot 20",
+        "Shot 1",
+        "Shot 2",
+        "Shot 3",
+      ],
+      [
+        "FAI9",
+        "PROFILE",
+        "CAV1",
+        6,
+        0.1,
+        -0.1,
+        6.1,
+        5.9,
+        99,
+        6.01,
+        6.02,
+        6.03,
+        0.2,
+        88,
+        0.01,
+        0.02,
+        0.03,
+      ],
+    ];
+
+    const parsed = parseSheetRowsToContract(rows);
+    expect(parsed[0]?.measurements.FOS.flatValues).toEqual([6.01, 6.02, 6.03]);
+    expect(parsed[0]?.measurements.GTol?.flatValues).toEqual([0.01, 0.02, 0.03]);
+  });
+
+  it("keeps cavity rows even when shot values are blank to avoid silent row loss", () => {
+    const rows: unknown[][] = [
+      buildHeaderRow(),
+      [
+        "FAI11",
+        "",
+        "PROFILE",
+        "",
+        "CAV1",
+        "",
+        5,
+        0.1,
+        -0.1,
+        "",
+        "",
+        "",
+        "",
+        "",
+        0.05,
+        "",
+        "",
+        "",
+        "",
+        "",
+      ],
+    ];
+
+    const parsed = parseSheetRows(rows);
+    expect(parsed.data).toHaveLength(1);
+    expect(parsed.data[0]?.cavity).toBe("CAV1");
+    expect(parsed.data[0]?.fosShots).toEqual([null, null, null]);
   });
 });
