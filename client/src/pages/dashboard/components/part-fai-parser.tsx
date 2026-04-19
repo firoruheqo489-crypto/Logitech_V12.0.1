@@ -136,6 +136,10 @@ function normalizeHeader(value: unknown): string {
     .toLowerCase();
 }
 
+function normalizeHeaderKey(value: unknown): string {
+  return normalizeHeader(value).replace(/[^a-z0-9]+/g, "");
+}
+
 function coerceNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) {
     return value;
@@ -613,7 +617,7 @@ function findParserHeaderIndexes(headers: unknown[]): ParserHeaderIndexes {
     "Dim. #"
   );
 
-  const dimType = headers.findIndex(cell => normalizeHeader(cell).includes("dim type"));
+  const dimType = headers.findIndex(cell => normalizeHeaderKey(cell).includes("dimtype"));
   const cavity = headers.findIndex(cell => normalizeHeader(cell).includes("cavity"));
   const fos = headers.findIndex(cell => {
     const header = normalizeHeader(cell);

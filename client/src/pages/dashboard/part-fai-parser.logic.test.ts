@@ -195,6 +195,38 @@ describe("Part FAI SPC parser", () => {
     expect(parsed[2]?.measurements.FOS.flatValues).toEqual([6.21, 6.22, 6.23]);
   });
 
+  it("reads Dim. Type header with punctuation and preserves dimType metadata", () => {
+    const rows: unknown[][] = [
+      buildHeaderRow(),
+      [
+        "FAI8",
+        "",
+        "HCF+CP",
+        "",
+        "CAV1",
+        "",
+        5,
+        0.1,
+        -0.1,
+        "",
+        "OK",
+        5.01,
+        5.02,
+        5.03,
+        0.05,
+        "",
+        "OK",
+        0.01,
+        0.02,
+        0.03,
+      ],
+    ];
+
+    const parsed = parseSheetRows(rows);
+    expect(parsed.data).toHaveLength(1);
+    expect(parsed.data[0]?.dimType).toBe("HCF+CP");
+  });
+
   it("builds independent 16x3=48 flat arrays for FOS and G-Tol under one FAI", () => {
     const rows: unknown[][] = [buildHeaderRow()];
 

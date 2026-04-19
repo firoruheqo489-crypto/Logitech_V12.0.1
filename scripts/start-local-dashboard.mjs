@@ -193,8 +193,13 @@ function extractFrontendUrlFromLog(filePath) {
   try {
     if (!existsSync(filePath)) return null;
     const content = readFileSync(filePath, "utf8");
-    const match = content.match(/http:\/\/localhost:\d+\//);
-    return match ? match[0].replace(/\/$/, "") : null;
+    const normalized = content.replace(/\x1B\[[0-9;]*m/g, "");
+    const matches = [...normalized.matchAll(/http:\/\/localhost:\d+\//g)];
+    if (matches.length === 0) {
+      return null;
+    }
+
+    return matches[matches.length - 1][0].replace(/\/$/, "");
   } catch {
     return null;
   }
@@ -244,18 +249,6 @@ async function waitForServices(apiHealthUrl, preferredPort, apiProcessInfo, vite
         frontendReady = true;
         frontendUrl = loggedUrl;
         log(`frontend ready at ${frontendUrl}`);
-      }
-
-      if (!frontendReady) {
-        for (let port = preferredPort; port <= preferredPort + 10; port += 1) {
-          const candidateUrl = `http://localhost:${port}`;
-          if (await testUrl(candidateUrl)) {
-            frontendReady = true;
-            frontendUrl = candidateUrl;
-            log(`frontend ready at ${frontendUrl}`);
-            break;
-          }
-        }
       }
     }
 
