@@ -22,6 +22,7 @@ export type PartFaiColumnId =
 export type PartFaiShotTuple = [number | null, number | null, number | null];
 
 export type PartFaiDataRow = {
+  faiSet: string;
   dim: string;
   dimType: string;
   cavity: string;

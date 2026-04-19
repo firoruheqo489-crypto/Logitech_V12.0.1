@@ -1,4 +1,4 @@
-/**
+﻿/**
  * DashboardHome
  */
 
@@ -49,6 +49,7 @@ const ProductDataDrawerWorkspace = lazy(() => import('./components/ProductDataDr
 const ProductStandardDrawerWorkspace = lazy(() => import('./components/ProductStandardDrawerWorkspace'));
 const ProcessDrawerWorkspace = lazy(() => import('./components/ProcessDrawerWorkspace'));
 const ProgressLogsDrawerWorkspace = lazy(() => import('./components/ProgressLogsDrawerWorkspace'));
+const FaiDimensionAnalyzer = lazy(() => import('./components/FaiDimensionAnalyzer'));
 
 function LazyWorkspace({ children }: { children: React.ReactNode }) {
   return (
@@ -124,6 +125,7 @@ const DASHBOARD_TABS = [
   'product',
   'product-standard',
   'mold-trial-database',
+  'dimension-analysis',
   'mold-reliability',
   'spc-calculator',
   'fmea',
@@ -137,7 +139,7 @@ const DASHBOARD_TABS = [
 type DashboardTab = typeof DASHBOARD_TABS[number];
 
 const PUBLIC_DASHBOARD_TAB_LIMIT =
-  DASHBOARD_TABS.indexOf('mold-trial-database') + 1;
+  DASHBOARD_TABS.indexOf('dimension-analysis') + 1;
 const PUBLIC_DASHBOARD_TABS: DashboardTab[] = [
   ...DASHBOARD_TABS.slice(0, PUBLIC_DASHBOARD_TAB_LIMIT),
 ];
@@ -710,19 +712,20 @@ export default function DashboardHome() {
         <div ref={tabStripRef} className="mb-8 flex flex-nowrap items-center gap-4 overflow-x-auto scrollbar-soft border-b border-slate-800/40 px-2 pb-2 md:gap-8">
           {visibleTabs.map((tab) => {
             const labels: Record<string, string> = {
-              'spc-calculator': 'SPC计算器',
-              'mass-production-monitoring': '量产监控',
-              'macro-stage-gate': '宏观流程视图',
-              overview: '项目总览',
-              logs: '推进日志',
-              process: '工艺模块',
-              fmea: 'FMEA知识库',
-              product: '产品模块',
+              'overview': '项目总览',
+              'logs': '推进日志',
+              'product': '产品模块',
               'product-standard': '产品标准',
+              'mold-trial-database': '试模数据库',
+              'dimension-analysis': '尺寸分析',
+              'mold-reliability': '模具可靠性',
+              'spc-calculator': 'SPC计算器',
+              'fmea': 'FMEA知识库',
+              'process': '工艺模块',
               'defect-library': 'VDI 3400 对照库',
               'injection-clinic': '注塑诊所',
-              'mold-reliability': '模具可靠性',
-              'mold-trial-database': '试模数据库',
+              'mass-production-monitoring': '量产监控',
+              'macro-stage-gate': '宏观流程视图',
             };
             const isActive = selectedTab === tab;
               return (
@@ -744,7 +747,11 @@ export default function DashboardHome() {
         </div>
       </div>
 
-      <main ref={mainRef} className="mx-auto w-full max-w-7xl px-4 md:px-8 pb-8" style={{ overflowAnchor: 'none' }}>
+      <main
+        ref={mainRef}
+        className="mx-auto w-full max-w-7xl px-4 md:px-8 pb-8"
+        style={{ overflowAnchor: 'none' }}
+      >
 
         {selectedTab === 'logs' && (
           <LazyWorkspace>
@@ -864,6 +871,12 @@ export default function DashboardHome() {
           </LazyWorkspace>
         )}
 
+        {selectedTab === 'dimension-analysis' && (
+          <LazyWorkspace>
+            <FaiDimensionAnalyzer />
+          </LazyWorkspace>
+        )}
+
         {selectedTab === 'mold-reliability' && (
           <LazyWorkspace>
             <ReliabilityDrawerWorkspace panels={currentModuleTrialPanels} />
@@ -937,3 +950,5 @@ export default function DashboardHome() {
     </div>
   );
 }
+
+

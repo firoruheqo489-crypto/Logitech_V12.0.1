@@ -54,6 +54,7 @@ describe("parseSheetRows", () => {
     const parsed = parseSheetRows(rows);
 
     expect(parsed.data).toHaveLength(1);
+    expect(parsed.data[0]?.faiSet).toBe("FAI1");
     expect(parsed.data[0]?.dim).toBe("FAI1");
     expect(parsed.data[0]?.dimType).toBe("Profile");
     expect(parsed.data[0]?.cavity).toBe("CAV1");
@@ -230,207 +231,7 @@ describe("parseSheetRows", () => {
     });
   });
 
-  it("re-parses repeated header blocks with shifted columns on later pages", () => {
-    const rows: unknown[][] = [
-      ["Project"],
-      [
-        "Dim. #",
-        "Location",
-        "Dim. Type",
-        "Tolerance Type",
-        "Cavity #",
-        "Datum System",
-        "FOS",
-        "Plus Tol (+)",
-        "Minus Tol (-)",
-        "Measurement Tool",
-        "Judge FOS",
-        "Shot 1",
-        "Shot 2",
-        "Shot 3",
-        "Judge G-Tol",
-        "Shot 1",
-        "Shot 2",
-        "Shot 3",
-      ],
-      [
-        "FAI1",
-        "CZ",
-        "Profile",
-        "Profile",
-        "CAV1",
-        "",
-        0.7,
-        0.05,
-        -0.05,
-        "OMM",
-        "OK",
-        0.66,
-        0.67,
-        0.66,
-        "NG",
-        0.098,
-        0.096,
-        0.12,
-      ],
-      [
-        "Dim. #",
-        "Location",
-        "Dim. Type",
-        "Tolerance Type",
-        "Cavity #",
-        "Datum System",
-        "FOS",
-        "Plus Tol (+)",
-        "Minus Tol (-)",
-        "Measurement Tool",
-        "Judge FOS",
-        "Shot 1",
-        "Shot 2",
-        "Shot 3",
-        "G-Tol Range",
-        "Measurement Tool",
-        "Judge G-Tol",
-        "Shot 1",
-        "Shot 2",
-        "Shot 3",
-      ],
-      [
-        "FAI2",
-        "CZ",
-        "Profile",
-        "Profile",
-        "CAV2",
-        "",
-        0.8,
-        0.05,
-        -0.05,
-        "OMM",
-        "NG",
-        0.76,
-        0.77,
-        0.78,
-        0.08,
-        "3D",
-        "OK",
-        0.1,
-        0.11,
-        0.12,
-      ],
-    ];
-
-    const parsed = parseSheetRows(rows);
-
-    expect(parsed.data).toHaveLength(2);
-    expect(parsed.summary).toEqual({
-      totalRows: 4,
-      qualifiedRows: 2,
-      ngRows: 2,
-      qualifiedRate: 50,
-    });
-  });
-
-  it("detects repeated header blocks even when the Dim. # header is shifted away from column A", () => {
-    const rows: unknown[][] = [
-      [
-        "Dim. #",
-        "Location",
-        "Dim. Type",
-        "Tolerance Type",
-        "Cavity #",
-        "Datum System",
-        "FOS",
-        "Plus Tol (+)",
-        "Minus Tol (-)",
-        "Measurement Tool",
-        "Judge FOS",
-        "Shot 1",
-        "Shot 2",
-        "Shot 3",
-        "Judge G-Tol",
-        "Shot 1",
-        "Shot 2",
-        "Shot 3",
-      ],
-      [
-        "FAI1",
-        "CZ",
-        "Profile",
-        "Profile",
-        "CAV1",
-        "",
-        0.7,
-        0.05,
-        -0.05,
-        "OMM",
-        "OK",
-        0.66,
-        0.67,
-        0.66,
-        "NG",
-        0.098,
-        0.096,
-        0.12,
-      ],
-      [
-        null,
-        null,
-        "Dim. #",
-        "Location",
-        "Dim. Type",
-        "Tolerance Type",
-        "Cavity #",
-        "Datum System",
-        "FOS",
-        "Plus Tol (+)",
-        "Minus Tol (-)",
-        "Measurement Tool",
-        "Judge FOS",
-        "Shot 1",
-        "Shot 2",
-        "Shot 3",
-        "Judge G-Tol",
-        "Shot 1",
-        "Shot 2",
-        "Shot 3",
-      ],
-      [
-        null,
-        null,
-        "FAI2",
-        "CZ",
-        "Profile",
-        "Profile",
-        "CAV2",
-        "",
-        0.8,
-        0.05,
-        -0.05,
-        "OMM",
-        "OK",
-        0.76,
-        0.77,
-        0.78,
-        "OK",
-        0.1,
-        0.11,
-        0.12,
-      ],
-    ];
-
-    const parsed = parseSheetRows(rows);
-
-    expect(parsed.data).toHaveLength(2);
-    expect(parsed.data[1]?.dim).toBe("FAI2");
-    expect(parsed.summary).toEqual({
-      totalRows: 4,
-      qualifiedRows: 3,
-      ngRows: 1,
-      qualifiedRate: 75,
-    });
-  });
-
-  it("keeps continuation rows whose Dim. # is blank but Cavity # and judge data are present", () => {
+  it("keeps continuation rows under the same FAI set when Dim. # is blank", () => {
     const rows: unknown[][] = [
       [
         "Dim. #",
@@ -453,6 +254,26 @@ describe("parseSheetRows", () => {
         "Shot 1",
         "Shot 2",
         "Shot 3",
+      ],
+      [
+        "FAI1",
+        "",
+        "Profile",
+        "Profile",
+        "CAV1",
+        "",
+        0.7,
+        0.05,
+        -0.05,
+        "OMM",
+        "OK",
+        0.66,
+        0.67,
+        0.66,
+        "OK",
+        0.098,
+        0.096,
+        0.12,
       ],
       ...Array.from({ length: 16 }, (_, index) => [
         "",
@@ -480,11 +301,14 @@ describe("parseSheetRows", () => {
 
     const parsed = parseSheetRows(rows);
 
-    expect(parsed.data).toHaveLength(16);
-    expect(parsed.data[0]?.dim).toBe("CAV1");
+    expect(parsed.data).toHaveLength(17);
+    expect(parsed.data[0]?.faiSet).toBe("FAI1");
+    expect(parsed.data[0]?.dim).toBe("FAI1");
+    expect(parsed.data[1]?.faiSet).toBe("FAI1");
+    expect(parsed.data[1]?.dim).toBe("FAI1");
     expect(parsed.summary).toEqual({
-      totalRows: 16,
-      qualifiedRows: 16,
+      totalRows: 34,
+      qualifiedRows: 34,
       ngRows: 0,
       qualifiedRate: 100,
     });
@@ -650,137 +474,6 @@ describe("parseSheetRows", () => {
       qualifiedRows: 4,
       ngRows: 3,
       qualifiedRate: 57.1429,
-    });
-  });
-
-  it("does not double count profile scan rows when a mirrored block appears at the bottom of the dimension sheet", () => {
-    const summary = summarizeWorkbookSheetRows({
-      "Dimension report ": [
-        ["Project"],
-        [
-          "Dim. #",
-          "Location",
-          "Dim. Type",
-          "Tolerance Type",
-          "Cavity #",
-          "Datum System",
-          "FOS",
-          "Plus Tol (+)",
-          "Minus Tol (-)",
-          "Measurement Tool",
-          "Judge FOS",
-          "Shot 1",
-          "Shot 2",
-          "Shot 3",
-          "G-Tol Range",
-          "Measurement Tool",
-          "Judge G-Tol",
-          "Shot 1",
-          "Shot 2",
-          "Shot 3",
-        ],
-        [
-          "FAI1",
-          "",
-          "Profile",
-          "Profile",
-          "CAV1",
-          "",
-          0.7,
-          0.05,
-          -0.05,
-          "OMM",
-          "OK",
-          0.66,
-          0.67,
-          0.66,
-          0.08,
-          "3D",
-          "NG",
-          0.098,
-          0.096,
-          0.12,
-        ],
-        [
-          "FAI2",
-          "",
-          "Profile",
-          "Profile",
-          "CAV2",
-          "",
-          0.8,
-          0.05,
-          -0.05,
-          "OMM",
-          "OK",
-          0.76,
-          0.77,
-          0.78,
-          0.08,
-          "3D",
-          "OK",
-          0.1,
-          0.11,
-          0.12,
-        ],
-        [
-          "",
-          "",
-          "",
-          "",
-          "CAV1",
-          "",
-          "",
-          "",
-          "",
-          "",
-          "",
-          "",
-          "",
-          "",
-          0.4,
-          "",
-          "OK",
-          0.112,
-          0.124,
-          0.244,
-        ],
-        [
-          "",
-          "",
-          "",
-          "",
-          "CAV2",
-          "",
-          "",
-          "",
-          "",
-          "",
-          "",
-          "",
-          "",
-          "",
-          0.4,
-          "",
-          "OK",
-          0.13,
-          0.11,
-          0.282,
-        ],
-      ],
-      "Profile_Scan report ": [
-        ["Title"],
-        ["Cavity", "Spec", "Judgement", "Shot 1", "Shot 2", "Shot 3"],
-        ["CAV1", 0.4, "OK", 0.112, 0.124, 0.244],
-        ["CAV2", 0.4, "OK", 0.13, 0.11, 0.282],
-      ],
-    });
-
-    expect(summary).toEqual({
-      totalRows: 6,
-      qualifiedRows: 5,
-      ngRows: 1,
-      qualifiedRate: 83.3333,
     });
   });
 

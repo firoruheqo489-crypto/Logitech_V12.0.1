@@ -23,6 +23,7 @@ type ColumnId =
 type ShotTuple = [number | null, number | null, number | null];
 
 type PartFaiDataRow = {
+  faiSet: string;
   dim: string;
   dimType: string;
   cavity: string;
@@ -162,6 +163,7 @@ function sanitizeRows(value: unknown): PartFaiDataRow[] {
       }
 
       return {
+        faiSet: normalizeIdentifier(record.faiSet ?? record.dim, 100),
         dim,
         dimType: normalizeIdentifier(record.dimType, 100),
         cavity: normalizeIdentifier(record.cavity, 100),

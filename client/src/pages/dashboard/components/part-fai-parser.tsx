@@ -38,6 +38,7 @@ type ColumnId =
   | "gtolShot3";
 
 type FaiDataRow = {
+  faiSet: string;
   dim: string;
   dimType: string;
   cavity: string;
@@ -305,6 +306,21 @@ function normalizeDimTypeKey(value: unknown): string {
     .replace(/\s+/g, "");
 }
 
+function normalizeFaiSetKey(value: unknown): string {
+  return String(value ?? "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toUpperCase();
+}
+
+function isFaiSetLabel(value: string): boolean {
+  return /^FAI\s*\d+/i.test(value);
+}
+
+function isCavityLabel(value: string): boolean {
+  return /^CAV\s*\d+/i.test(value);
+}
+
 function formatNumber(value: number | null): string {
   if (value === null || Number.isNaN(value)) return "--";
 
@@ -348,6 +364,7 @@ function sanitizePersistedRows(value: unknown): FaiDataRow[] {
       }
 
       return {
+        faiSet: normalizeFaiSetKey(record.faiSet ?? record.dim),
         dim,
         dimType: String(record.dimType ?? "").trim(),
         cavity: String(record.cavity ?? "").trim(),
@@ -493,7 +510,94 @@ function readShotTuple(
   row: unknown[],
   indexes: [number, number, number]
 ): ShotTuple {
-  return indexes.map(index => coerceNumber(row[index])) as ShotTuple;
+  const measurementColumnLimit = columnLabelToIndex("N");
+
+  return indexes.map(index => {
+    if (index > measurementColumnLimit) {
+      return null;
+    }
+
+    return coerceNumber(row[index]);
+  }) as ShotTuple;
+}
+
+function parseFaiDataRow(
+  row: unknown[],
+  headerIndexes: HeaderIndexes,
+  currentFaiSet: string
+): FaiDataRow | null {
+  const dim = String(row[headerIndexes.dim] ?? "").trim();
+  const cavity = String(
+    headerIndexes.cavity >= 0 ? row[headerIndexes.cavity] ?? "" : ""
+  ).trim();
+  const normalizedDim = normalizeFaiSetKey(dim);
+  const normalizedCavity = normalizeFaiSetKey(cavity);
+  const nextFaiSet =
+    normalizedDim && isFaiSetLabel(normalizedDim)
+      ? normalizedDim
+      : currentFaiSet || (normalizedCavity && isFaiSetLabel(normalizedCavity) ? normalizedCavity : "");
+  const resolvedDim = nextFaiSet || dim || cavity;
+
+  if (!resolvedDim) {
+    return null;
+  }
+
+  const judgeFos = normalizeJudge(row[headerIndexes.judgeFos]);
+  const judgeGtol = normalizeJudge(row[headerIndexes.judgeGtol]);
+  const isNG =
+    getJudgeStatus(judgeFos) === "ng" || getJudgeStatus(judgeGtol) === "ng";
+
+  const rawFos = headerIndexes.fos >= 0 ? row[headerIndexes.fos] : null;
+  const fos = hasCellValue(rawFos) ? coerceNumber(rawFos) : null;
+  const plusTol =
+    headerIndexes.plusTol >= 0
+      ? coerceToleranceNumber(row[headerIndexes.plusTol], fos !== null)
+      : fos !== null
+        ? 0
+        : null;
+  const minusTol =
+    headerIndexes.minusTol >= 0
+      ? coerceToleranceNumber(row[headerIndexes.minusTol], fos !== null)
+      : fos !== null
+        ? 0
+        : null;
+  const directUsl =
+    headerIndexes.usl >= 0 ? coerceNumber(row[headerIndexes.usl]) : null;
+  const directLsl =
+    headerIndexes.lsl >= 0 ? coerceNumber(row[headerIndexes.lsl]) : null;
+  const usl =
+    directUsl ??
+    (fos !== null && plusTol !== null
+      ? roundToFourDecimals(fos + plusTol)
+      : null);
+  const lsl =
+    directLsl ??
+    (fos !== null && minusTol !== null
+      ? roundToFourDecimals(fos + minusTol)
+      : null);
+
+  return {
+    faiSet: nextFaiSet || resolvedDim,
+    dim: resolvedDim,
+    dimType:
+      headerIndexes.dimType >= 0
+        ? String(row[headerIndexes.dimType] ?? "").trim()
+        : "",
+    cavity:
+      headerIndexes.cavity >= 0
+        ? String(row[headerIndexes.cavity] ?? "").trim()
+        : "",
+    fos,
+    plusTol,
+    minusTol,
+    usl,
+    lsl,
+    judgeFos,
+    judgeGtol,
+    isNG,
+    fosShots: readShotTuple(row, headerIndexes.fosShotIndexes),
+    gtolShots: readShotTuple(row, headerIndexes.gtolShotIndexes),
+  };
 }
 
 function columnLabelToIndex(label: string): number {
@@ -604,78 +708,16 @@ export function parseSheetRows(rows: unknown[][]): {
   }
 
   const parsedData: FaiDataRow[] = [];
-  headerRowIndexes.forEach((headerRowIndex, headerPosition) => {
-    const headerRow = rows[headerRowIndex] ?? [];
-    const headerIndexes = findHeaderIndexes(headerRow);
-    const nextHeaderRowIndex =
-      headerRowIndexes[headerPosition + 1] ?? rows.length;
+  const headerIndexes = findHeaderIndexes(rows[headerRowIndexes[0]] ?? []);
+  const nextHeaderRowIndex = headerRowIndexes[1] ?? rows.length;
+  let currentFaiSet = "";
 
-    rows.slice(headerRowIndex + 1, nextHeaderRowIndex).forEach(row => {
-      const dim = String(row[headerIndexes.dim] ?? "").trim();
-      const cavity = String(
-        headerIndexes.cavity >= 0 ? row[headerIndexes.cavity] ?? "" : ""
-      ).trim();
-      const resolvedDim = dim || cavity;
-      if (!resolvedDim) {
-        return;
-      }
-
-      const judgeFos = normalizeJudge(row[headerIndexes.judgeFos]);
-      const judgeGtol = normalizeJudge(row[headerIndexes.judgeGtol]);
-      const isNG =
-        getJudgeStatus(judgeFos) === "ng" || getJudgeStatus(judgeGtol) === "ng";
-
-      const rawFos = headerIndexes.fos >= 0 ? row[headerIndexes.fos] : null;
-      const fos = hasCellValue(rawFos) ? coerceNumber(rawFos) : null;
-      const plusTol =
-        headerIndexes.plusTol >= 0
-          ? coerceToleranceNumber(row[headerIndexes.plusTol], fos !== null)
-          : fos !== null
-            ? 0
-            : null;
-      const minusTol =
-        headerIndexes.minusTol >= 0
-          ? coerceToleranceNumber(row[headerIndexes.minusTol], fos !== null)
-          : fos !== null
-            ? 0
-            : null;
-      const directUsl =
-        headerIndexes.usl >= 0 ? coerceNumber(row[headerIndexes.usl]) : null;
-      const directLsl =
-        headerIndexes.lsl >= 0 ? coerceNumber(row[headerIndexes.lsl]) : null;
-      const usl =
-        directUsl ??
-        (fos !== null && plusTol !== null
-          ? roundToFourDecimals(fos + plusTol)
-          : null);
-      const lsl =
-        directLsl ??
-        (fos !== null && minusTol !== null
-          ? roundToFourDecimals(fos + minusTol)
-          : null);
-
-      parsedData.push({
-        dim: resolvedDim,
-        dimType:
-          headerIndexes.dimType >= 0
-            ? String(row[headerIndexes.dimType] ?? "").trim()
-            : "",
-        cavity:
-          headerIndexes.cavity >= 0
-            ? String(row[headerIndexes.cavity] ?? "").trim()
-            : "",
-        fos,
-        plusTol,
-        minusTol,
-        usl,
-        lsl,
-        judgeFos,
-        judgeGtol,
-        isNG,
-        fosShots: readShotTuple(row, headerIndexes.fosShotIndexes),
-        gtolShots: readShotTuple(row, headerIndexes.gtolShotIndexes),
-      });
-    });
+  rows.slice(headerRowIndexes[0] + 1, nextHeaderRowIndex).forEach(row => {
+    const parsedRow = parseFaiDataRow(row, headerIndexes, currentFaiSet);
+    if (parsedRow) {
+      currentFaiSet = parsedRow.faiSet || currentFaiSet;
+      parsedData.push(parsedRow);
+    }
   });
 
   return {
