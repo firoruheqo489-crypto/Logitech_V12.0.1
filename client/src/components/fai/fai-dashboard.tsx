@@ -774,6 +774,7 @@ export function FAIDashboard() {
             <DiagnosticAssertion
               cavityData={cavityData}
               sampleValues={analyzedData.sampleValues}
+              excelFileName={uploadedFileName}
               actualMean={stats.mean}
               nominal={spec.nominal}
               usl={spec.usl}
