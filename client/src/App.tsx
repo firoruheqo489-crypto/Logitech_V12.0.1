@@ -8,6 +8,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 const Home = lazy(() => import("./pages/Home"));
 const GanttV3 = lazy(() => import("./pages/GanttV3"));
 const DashboardHome = lazy(() => import("./pages/dashboard/DashboardHome"));
+const ProjectProgress = lazy(() => import("./pages/dashboard/ProjectProgress"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 function RouteLoadingState() {
@@ -25,6 +26,7 @@ function Router() {
   return (
     <Switch>
       <Route path={"/"} component={DashboardHome} />
+      <Route path={"/dashboard/progress"} component={ProjectProgress} />
       <Route path={"/dashboard"} component={DashboardHome} />
       <Route path={"/gantt"} component={GanttV3} />
       <Route path={"/v3/gantt"} component={GanttV3} />

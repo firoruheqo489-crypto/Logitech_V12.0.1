@@ -3,6 +3,7 @@
  */
 
 import React, { lazy, Suspense, useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { useLocation } from 'wouter';
 import type { ProjectData } from './types/project';
 import { calculateStats } from './lib/projectUtils';
 import FileUpload from './components/FileUpload';
@@ -126,6 +127,7 @@ const DASHBOARD_TABS = [
   'product-standard',
   'mold-trial-database',
   'dimension-analysis',
+  'project-progress',
   'mold-reliability',
   'spc-calculator',
   'fmea',
@@ -139,7 +141,7 @@ const DASHBOARD_TABS = [
 type DashboardTab = typeof DASHBOARD_TABS[number];
 
 const PUBLIC_DASHBOARD_TAB_LIMIT =
-  DASHBOARD_TABS.indexOf('dimension-analysis') + 1;
+  DASHBOARD_TABS.indexOf('project-progress') + 1;
 const PUBLIC_DASHBOARD_TABS: DashboardTab[] = [
   ...DASHBOARD_TABS.slice(0, PUBLIC_DASHBOARD_TAB_LIMIT),
 ];
@@ -199,6 +201,7 @@ function buildBatchSignature(projects: ProjectData[]): string {
 }
 
 export default function DashboardHome() {
+  const [, setLocation] = useLocation();
   const isMobile = useIsMobile();
   const [activeModule, setActiveModule] = useState<string | null>(() => {
     if (typeof window === 'undefined') return null;
@@ -578,6 +581,24 @@ export default function DashboardHome() {
 
   const handleShowAll = () => handleFilterChange('ALL');
 
+  const handleTabSelect = useCallback((tab: DashboardTab) => {
+    if (tab === 'project-progress') {
+      if (typeof window !== 'undefined') {
+        if (activeModule) {
+          sessionStorage.setItem('dashboard_active_module', activeModule);
+        }
+        sessionStorage.setItem('dashboard_active_module_theme_key', moduleTheme.key);
+      }
+      const nextUrl = activeModule
+        ? `/dashboard/progress?module=${encodeURIComponent(activeModule)}`
+        : '/dashboard/progress';
+      setLocation(nextUrl);
+      return;
+    }
+
+    setActiveTab(tab);
+  }, [activeModule, moduleTheme.key, setLocation]);
+
   const tabStripRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -718,6 +739,7 @@ export default function DashboardHome() {
               'product-standard': '产品标准',
               'mold-trial-database': '试模数据库',
               'dimension-analysis': '尺寸分析',
+              'project-progress': '项目进度看板',
               'mold-reliability': '模具可靠性',
               'spc-calculator': 'SPC计算器',
               'fmea': 'FMEA知识库',
@@ -732,7 +754,7 @@ export default function DashboardHome() {
                 <button
                   key={tab}
                   data-dashboard-tab={tab}
-                  onClick={() => setActiveTab(tab)}
+                  onClick={() => handleTabSelect(tab)}
                   className={`relative flex-shrink-0 whitespace-nowrap pb-4 text-[15px] font-medium transition-all ${isActive ? moduleTheme.text : 'text-slate-500 hover:text-slate-300'}`}
                 >
                 {labels[tab]}

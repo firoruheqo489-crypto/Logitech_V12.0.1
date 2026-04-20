@@ -1,204 +1,159 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react';
 import {
+  Area,
+  CartesianGrid,
+  ComposedChart,
+  Legend,
   Line,
+  ReferenceArea,
+  ReferenceLine,
+  ResponsiveContainer,
+  Tooltip,
   XAxis,
   YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  ReferenceLine,
-  Legend,
-  Area,
-  ComposedChart,
-} from 'recharts'
-import { Activity, TrendingUp, AlertTriangle, Clock, Target } from 'lucide-react'
-import { cn } from '@/lib/utils'
-import { apiFetch } from '@/lib/api'
+} from 'recharts';
+import { Activity, AlertTriangle, Clock, Target, TrendingUp } from 'lucide-react';
+
+import { apiFetch } from '@/lib/api';
+import type { SCurvePoint, TaskItem } from '@/lib/projectProgress';
+import { cn } from '@/lib/utils';
+
 import {
   FORECAST_COMPLETION_MILESTONE_ID,
   SCURVE_MILESTONES,
   getNextSCurveMilestoneId,
   type SCurveMilestoneId,
-  type SCurvePointMilestoneId,
-} from './logitech-s-curve-machine'
+} from './logitech-s-curve-machine';
 import {
   formatSCurveCurrentStageLabel,
   getSCurveMilestoneBadgeLabel,
   getSCurveMilestoneLabel,
-} from './logitech-s-curve-labels'
+} from './logitech-s-curve-labels';
 
-const SCURVE_RETRY_DELAY_MS = 3000
+const SCURVE_RETRY_DELAY_MS = 3000;
+const MIN_SPI = 0.15;
+const MAX_SPI = 1.35;
 
-// ═══════════════════════════════════════════════════════════════
-// Types
-// ═══════════════════════════════════════════════════════════════
+type TaskRow = TaskItem;
 
-interface TaskRow {
-  id: string
-  project_id: string
-  name: string
-  name_cn: string
-  phase: string
-  track?: string
-  stage?: string
-  weight?: number
-  duration_days: number
-  baseline_start: string
-  baseline_end: string
-  actual_start?: string
-  actual_end?: string
-  progress: number
-  status: string
-  is_milestone?: boolean
-  is_merge_point?: boolean
-}
-
-// Legacy localized milestone shell retained during handoff cleanup.
-interface LegacyLocalizedMilestoneShell {
-  /** Canonical stage IDs used by the engine/import pipeline */
-  stageIds: string[]
-  /** 对应的进度百分比 */
-  progress: number
-  /** 显示标签 */
-  label: string
-  /** 短标签 */
-  shortLabel: string
-}
-
-/* Legacy localized milestone values removed from runtime path.
-const legacyLocalizedMilestoneValues = [
-  { stageIds: ['project_launch'], progress: 0, label: '项目立项', shortLabel: 'KO' },
-  { stageIds: ['mold_fai_cpk'], progress: 25, label: '模具FAI/CPK', shortLabel: 'FAI' },
-  { stageIds: ['t0_summary'], progress: 50, label: 'T0综合报告', shortLabel: 'T0' },
-  { stageIds: ['t0_closure_report'], progress: 75, label: 'T0问题闭环', shortLabel: 'T1' },
-  { stageIds: ['spc_inspection'], progress: 100, label: '巡检SPC数据', shortLabel: 'SPC' },
-] */
-
-/** A single data point on the S-curve time axis (weekly) */
-interface SCurvePoint {
-  /** Week index (W0, W1, W2, ...) */
-  week: number
-  /** Date label for this week start */
-  dateLabel: string
-  /** Timestamp for sorting */
-  timestamp: number
-  /** Planned cumulative progress 0-100 */
-  planned: number
-  /** Actual cumulative progress 0-100 (null if in the future) */
-  actual: number | null
-  /** Forecast line (null until actual line ends) */
-  forecast: number | null
-  /** Milestone machine id if this week aligns with one */
-  milestoneId?: SCurvePointMilestoneId
-  /** Render-only short label for milestone reference lines */
-  milestoneShortLabel?: string
-  /** True when the milestone comes from the forecast overlay, not a canonical stage */
-  isForecastMilestone?: boolean
+interface LogitechSCurveProps {
+  projectId: string;
+  moldNumber?: string;
+  className?: string;
+  taskItems?: TaskItem[];
+  disableRemoteFetch?: boolean;
+  fillHeight?: boolean;
 }
 
 interface SCurveMetrics {
-  /** ΔQ: planned% - actual% at today */
-  deltaQ: number
-  /** ΔT: days between today and the date when planned curve hit current actual% */
-  deltaT: number
-  /** Predicted MP completion date based on 4-week velocity */
-  predictedMpDate: Date | null
-  /** Current actual progress (gated by today) */
-  actualProgress: number
-  /** Current planned progress (gated by today) */
-  plannedProgress: number
-  /** 全案达成率：所有有 actual_end 的任务 / 总数（不受 today 门控） */
-  totalCompletion: number
-  /** 当前阶段标签 */
-  currentStageId: SCurveMilestoneId | 'unknown'
-  currentStageComplete: boolean
-  /** 任务完成数（gated by today） / 总数 */
-  doneCount: number
-  taskCount: number
-  /** 项目目标完工日期（最后一个里程碑的 baselineStart） */
-  targetDate: Date | null
+  deltaQ: number;
+  deltaT: number;
+  predictedMpDate: Date | null;
+  actualProgress: number;
+  plannedProgress: number;
+  forecastAtTarget: number | null;
+  totalCompletion: number;
+  currentStageId: SCurveMilestoneId | 'unknown';
+  currentStageComplete: boolean;
+  doneCount: number;
+  taskCount: number;
+  targetDate: Date | null;
+  spi: number;
+  forecastSlipDays: number;
+  totalWeight: number;
+  earnedWeight: number;
+  plannedWeight: number;
 }
 
 type ExtractedMilestone = {
-  date: Date
-  actualDate: Date | null
-  progress: number
-  milestoneId: SCurveMilestoneId
-  shortLabel: string
-  task: TaskRow
-}
+  date: Date;
+  actualDate: Date | null;
+  milestoneId: SCurveMilestoneId;
+  shortLabel: string;
+  label: string;
+  task: TaskRow;
+};
 
-export interface LogitechSCurveProps {
-  /** Project ID used to query tasks table (e.g. "LA26006") */
-  projectId: string
-  /** Optional mold_id for display */
-  moldNumber?: string
-  className?: string
-}
-
-type UnknownRecord = Record<string, unknown>
-
-type SCurveSeriesKey = 'planned' | 'actual' | 'forecast'
+type UnknownRecord = Record<string, unknown>;
+type SCurveSeriesKey = 'planned' | 'actual' | 'forecast';
 
 type SCurveTooltipEntry = {
-  dataKey?: string
-  value?: number | string | null
-  payload?: SCurvePoint
-}
+  dataKey?: string;
+  value?: number | string | null;
+  payload?: SCurvePoint;
+};
 
 type SCurveTooltipProps = {
-  active?: boolean
-  payload?: SCurveTooltipEntry[]
-  label?: string | number
-}
+  active?: boolean;
+  payload?: SCurveTooltipEntry[];
+  label?: string | number;
+};
 
 function asRecord(value: unknown): UnknownRecord | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
-  return value as UnknownRecord
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+  return value as UnknownRecord;
 }
 
 function readString(value: unknown): string {
-  if (typeof value === 'string') return value
-  if (value == null) return ''
-  return String(value)
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (value == null) {
+    return '';
+  }
+  return String(value);
 }
 
 function readOptionalString(value: unknown): string | undefined {
-  const normalized = readString(value).trim()
-  return normalized ? normalized : undefined
+  const normalized = readString(value).trim();
+  return normalized ? normalized : undefined;
 }
 
 function readNumber(value: unknown): number {
-  if (typeof value === 'number' && Number.isFinite(value)) return value
-  if (typeof value === 'string') {
-    const parsed = Number(value)
-    if (Number.isFinite(parsed)) return parsed
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
   }
-  return 0
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+  return 0;
 }
 
 function readOptionalNumber(value: unknown): number | undefined {
-  if (value == null || value === '') return undefined
-  if (typeof value === 'number' && Number.isFinite(value)) return value
-  if (typeof value === 'string') {
-    const parsed = Number(value)
-    return Number.isFinite(parsed) ? parsed : undefined
+  if (value == null || value === '') {
+    return undefined;
   }
-  return undefined
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
 }
 
 function readBoolean(value: unknown): boolean | undefined {
-  if (typeof value === 'boolean') return value
-  if (typeof value === 'string') {
-    if (value === 'true') return true
-    if (value === 'false') return false
+  if (typeof value === 'boolean') {
+    return value;
   }
-  return undefined
+  if (typeof value === 'string') {
+    if (value === 'true') return true;
+    if (value === 'false') return false;
+  }
+  return undefined;
 }
 
 function normalizeTaskRow(raw: unknown): TaskRow | null {
-  const row = asRecord(raw)
-  if (!row) return null
+  const row = asRecord(raw);
+  if (!row) {
+    return null;
+  }
 
   return {
     id: readString(row.id),
@@ -218,769 +173,719 @@ function normalizeTaskRow(raw: unknown): TaskRow | null {
     status: readString(row.status),
     is_milestone: readBoolean(row.is_milestone),
     is_merge_point: readBoolean(row.is_merge_point),
-  }
+  };
 }
 
 function normalizeTaskRows(payload: unknown): TaskRow[] {
-  if (!Array.isArray(payload)) return []
+  if (!Array.isArray(payload)) {
+    return [];
+  }
+
   return payload
     .map((row) => normalizeTaskRow(row))
-    .filter((row): row is TaskRow => row !== null)
+    .filter((row): row is TaskRow => row !== null);
 }
 
 function readTooltipValue(payload: SCurveTooltipEntry[] | undefined, key: SCurveSeriesKey): number | null {
-  const value = payload?.find((entry) => entry.dataKey === key)?.value
-  if (typeof value === 'number' && Number.isFinite(value)) return value
+  const value = payload?.find((entry) => entry.dataKey === key)?.value;
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
   if (typeof value === 'string') {
-    const parsed = Number(value)
-    return Number.isFinite(parsed) ? parsed : null
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
   }
-  return null
+  return null;
 }
 
-// ═══════════════════════════════════════════════════════════════
-// Date Utilities
-// ═══════════════════════════════════════════════════════════════
+function startOfDay(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
 
-/** Parse VARCHAR date from DB to local Date — 与 Gantt 胶囊同源，避免 UTC 偏移 */
-const parseDate = (dateStr?: string | null): Date | null => {
-  if (!dateStr || dateStr.trim() === '') return null
-  const parts = dateStr.split('-')
+function parseDate(dateStr?: string | null): Date | null {
+  if (!dateStr || dateStr.trim() === '') {
+    return null;
+  }
+
+  const parts = dateStr.split('-');
   if (parts.length === 3) {
-    const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]))
-    return isNaN(d.getTime()) ? null : d
+    const date = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+    return Number.isNaN(date.getTime()) ? null : startOfDay(date);
   }
-  const d = new Date(dateStr)
-  if (isNaN(d.getTime())) return null
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate())
+
+  const date = new Date(dateStr);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  return startOfDay(date);
 }
 
-/**
- * 叶子任务过滤：保留所有有 baseline 日期的任务（用于图表曲线）
- */
+function addDays(date: Date, days: number): Date {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return startOfDay(next);
+}
+
+function diffDays(later: Date, earlier: Date): number {
+  return Math.round((startOfDay(later).getTime() - startOfDay(earlier).getTime()) / 86400000);
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function roundTo(value: number, digits = 2): number {
+  const factor = 10 ** digits;
+  return Math.round(value * factor) / factor;
+}
+
+function fmtShort(date: Date): string {
+  return `${String(date.getMonth() + 1).padStart(2, '0')}/${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function fmtLong(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function toIsoDate(date: Date): string {
+  return fmtLong(date);
+}
+
+function isOnOrBefore(date: Date | null, cutoff: Date): boolean {
+  return !!date && date.getTime() <= cutoff.getTime();
+}
+
 function filterLeafTasks(tasks: TaskRow[]): TaskRow[] {
-  return tasks.filter(t =>
-    !!t.baseline_start &&
-    !!t.baseline_end
-  )
+  return tasks.filter((task) => !!task.baseline_start && !!task.baseline_end);
 }
 
-/** Get the Monday of the week containing this date */
-const getWeekStart = (d: Date): Date => {
-  const result = new Date(d)
-  const day = result.getDay()
-  const diff = day === 0 ? -6 : 1 - day
-  result.setDate(result.getDate() + diff)
-  result.setHours(0, 0, 0, 0)
-  return result
+function getTaskDateRange(task: TaskRow): { baselineStart: Date; baselineEnd: Date } | null {
+  const baselineStart = parseDate(task.baseline_start);
+  const baselineEnd = parseDate(task.baseline_end);
+  if (!baselineStart || !baselineEnd) {
+    return null;
+  }
+
+  return {
+    baselineStart,
+    baselineEnd: baselineEnd < baselineStart ? baselineStart : baselineEnd,
+  };
 }
 
-/** Difference in calendar days */
-const diffDays = (a: Date, b: Date): number =>
-  Math.round((a.getTime() - b.getTime()) / (1000 * 60 * 60 * 24))
-
-/** Difference in weeks (floored) */
-const diffWeeks = (a: Date, b: Date): number =>
-  Math.floor(diffDays(a, b) / 7)
-
-/** Format date to MM/DD */
-const fmtShort = (d: Date): string =>
-  `${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`
-
-// ═══════════════════════════════════════════════════════════════
-// Milestone Extraction — 从 tasks 表模糊匹配 5 个关键节点
-// ═══════════════════════════════════════════════════════════════
-
-/** 从 tasks 数组中模糊匹配出 5 个里程碑节点 */
-function extractMilestonesFromTasks(
-  tasks: TaskRow[],
-): ExtractedMilestone[] {
-  const results: ExtractedMilestone[] = []
-
-  for (const node of SCURVE_MILESTONES) {
-    const matched = tasks.find((t) => {
-      const canonicalId = (t.stage || t.id || '').replace(/\s+/g, '')
-      return node.stageIds.includes(canonicalId)
-    })
-
-    if (matched) {
-      const baselineDate = parseDate(matched.baseline_start)
-      const actualDate = parseDate(matched.actual_end)
-      if (baselineDate) {
-        results.push({
-          date: baselineDate,
-          actualDate,
-          progress: node.progress,
-          milestoneId: node.id,
-          shortLabel: node.shortLabel,
-          task: matched,
-        })
-      }
-    }
-  }
-
-  return results.sort((a, b) => a.date.getTime() - b.date.getTime())
+function getEffectiveTaskWeight(task: TaskRow): number {
+  const range = getTaskDateRange(task);
+  const durationFromDates = range ? Math.max(diffDays(range.baselineEnd, range.baselineStart) + 1, 1) : 1;
+  const duration = Math.max(task.duration_days || durationFromDates, 1);
+  const baseWeight = task.weight && task.weight > 0 ? task.weight : 1;
+  return roundTo(Math.max(baseWeight * duration, 0.5), 3);
 }
 
-// ═══════════════════════════════════════════════════════════════
-// Core Computation Engine
-// ═══════════════════════════════════════════════════════════════
-
-/**
- * Build weekly S-curve data purely from the tasks table.
- *
- * Planned line: linear interpolation between 5 milestone tasks mapped to
- * fixed progress gates (项目立项=0%, 模具FAI=25%, T0综合=50%, T0闭环=75%, SPC=100%).
- *
- * Actual line: weighted progress from ALL tasks, bucketed by week.
- * If a milestone task has actual_end, the actual line reaches that gate's %.
- */
-function buildSCurveData(
-  tasks: TaskRow[],
-): { points: SCurvePoint[]; metrics: SCurveMetrics } {
-  const emptyMetrics: SCurveMetrics = {
-    deltaQ: 0, deltaT: 0, predictedMpDate: null,
-    actualProgress: 0, plannedProgress: 0, totalCompletion: 0,
-    currentStageId: 'unknown', currentStageComplete: false, doneCount: 0, taskCount: 0,
-    targetDate: null,
+function getPlannedTaskRatioAtDate(task: TaskRow, date: Date): number {
+  const range = getTaskDateRange(task);
+  if (!range) {
+    return 0;
   }
 
-  if (tasks.length === 0) return { points: [], metrics: emptyMetrics }
-
-  // ══════════════════════════════════════════════════════════════
-  // SINGLE SOURCE OF TRUTH
-  // ══════════════════════════════════════════════════════════════
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-
-  // 开发模式：图表显示未来周的数据点（不截断），方便看完整曲线
-  const isDev = import.meta.env.DEV
-
-  const leafTasks = filterLeafTasks(tasks)
-  const totalTasks = leafTasks.length
-  if (totalTasks === 0) return { points: [], metrics: emptyMetrics }
-
-  // ══════════════════════════════════════════════════════════════
-  // UNIFIED COMPLETION LOGIC — 一个闸门，零例外
-  //
-  // isCompletedByDate(t, cutoff): actual_end 存在 且 <= cutoff
-  // 图表曲线、摘要卡片、doneCount 全部用这一个函数
-  //
-  // totalCompletion: 全案达成率（不受日期门控，纯粹看有多少任务有 actual_end）
-  // ══════════════════════════════════════════════════════════════
-  const isCompletedByDate = (t: TaskRow, cutoff: Date): boolean => {
-    const d = parseDate(t.actual_end)
-    return !!d && d <= cutoff
+  if (date < range.baselineStart) {
+    return 0;
+  }
+  if (date >= range.baselineEnd) {
+    return 1;
   }
 
-  const doneCount = leafTasks.filter(t => isCompletedByDate(t, today)).length
-  const totalCompletionCount = leafTasks.filter(t => !!t.actual_end).length
+  const totalDays = Math.max(diffDays(range.baselineEnd, range.baselineStart) + 1, 1);
+  const elapsedDays = Math.max(diffDays(date, range.baselineStart) + 1, 0);
+  return clamp(elapsedDays / totalDays, 0, 1);
+}
 
-  // ── 诊断日志 ──
-  if (typeof console !== 'undefined') {
-    const allWithActualEnd = leafTasks.filter(t => !!t.actual_end)
-    console.log(
-      `[S曲线·单一真相] ` +
-      `模式=${isDev ? 'DEV(全量)' : 'PROD(today门控)'}, ` +
-      `叶子=${totalTasks}, 有actual_end=${allWithActualEnd.length}, ` +
-      `已完成=${doneCount}`
-    )
+function getActualTaskRatioAtDate(task: TaskRow, date: Date, today: Date): number {
+  const currentProgress = clamp((task.progress || 0) / 100, 0, 1);
+  const actualEnd = parseDate(task.actual_end);
+  if (actualEnd && date >= actualEnd) {
+    return 1;
   }
 
-  // ── Milestones ──
-  const milestones = extractMilestonesFromTasks(tasks)
-  if (milestones.length < 2) return { points: [], metrics: emptyMetrics }
-
-  const firstMs = milestones[0]
-  const lastMs = milestones[milestones.length - 1]
-
-  // ══════════════════════════════════════════════════════════════
-  // X-AXIS: 从第一个里程碑到最后一个叶子任务的 max(baseline_end, actual_end)
-  // 再加 1 周 padding，不再用 +52 周的无限延伸
-  // ══════════════════════════════════════════════════════════════
-  let latestDate = lastMs.date
-  for (const t of leafTasks) {
-    const bEnd = parseDate(t.baseline_end)
-    const aEnd = parseDate(t.actual_end)
-    if (bEnd && bEnd > latestDate) latestDate = bEnd
-    if (aEnd && aEnd > latestDate) latestDate = aEnd
+  const actualStart = parseDate(task.actual_start) ?? actualEnd;
+  if (!actualStart || date < actualStart) {
+    return 0;
   }
 
-  const weekStart0 = getWeekStart(firstMs.date)
-  const dataEndWeek = diffWeeks(latestDate, weekStart0)
-  const totalWeeks = dataEndWeek + 2 // +2 周 padding，不多不少
-
-  // ══════════════════════════════════════════════════════════════
-  // ACTUAL CURVE — 严格日期比较（actual_end <= weekDate）
-  // 使用周起始日（weekDate）作为截止点，而非周末日（weekEndDate）
-  // Dev:  不截断未来周，显示完整曲线直到 100%
-  // Prod: 未来周返回 -1（null）
-  // ══════════════════════════════════════════════════════════════
-  const actualByWeek = (weekIdx: number): number => {
-    const weekDate = new Date(weekStart0.getTime() + weekIdx * 7 * 86400000)
-    if (!isDev && weekDate > today) return -1
-
-    const count = leafTasks.filter(t => isCompletedByDate(t, weekDate)).length
-    return (count / totalTasks) * 100
+  const cappedDate = date > today ? today : date;
+  if (cappedDate < actualStart) {
+    return 0;
   }
 
-  // ══════════════════════════════════════════════════════════════
-  // PLANNED CURVE — 简单计数法（使用周起始日作为截止点）
-  // ══════════════════════════════════════════════════════════════
-  const plannedByWeek = (weekIdx: number): number => {
-    const weekDate = new Date(weekStart0.getTime() + weekIdx * 7 * 86400000)
-    const count = leafTasks.filter(t => {
-      const d = parseDate(t.baseline_end)
-      return !!d && d <= weekDate
-    }).length
-    return (count / totalTasks) * 100
+  if (actualEnd) {
+    const totalDays = Math.max(diffDays(actualEnd, actualStart) + 1, 1);
+    const elapsedDays = Math.max(diffDays(cappedDate, actualStart) + 1, 0);
+    return clamp(elapsedDays / totalDays, 0, 1);
   }
 
-  // ── Build data points ──
-  const points: SCurvePoint[] = []
-  const actuals: { week: number; value: number }[] = []
+  if (currentProgress <= 0) {
+    return 0;
+  }
 
-  for (let w = 0; w <= totalWeeks; w++) {
-    const weekDate = new Date(weekStart0.getTime() + w * 7 * 86400000)
-    const planned = Math.round(plannedByWeek(w) * 100) / 100
-    const rawActual = actualByWeek(w)
-    const actual = rawActual >= 0 ? Math.round(rawActual * 100) / 100 : null
+  const elapsedWindow = Math.max(diffDays(today, actualStart) + 1, 1);
+  const elapsedDays = Math.max(diffDays(cappedDate, actualStart) + 1, 0);
+  return clamp(currentProgress * (elapsedDays / elapsedWindow), 0, currentProgress);
+}
 
-    let milestoneId: SCurveMilestoneId | undefined
-    let milestoneShortLabel: string | undefined
-    for (const m of milestones) {
-      if (diffWeeks(m.date, weekStart0) === w) {
-        milestoneId = m.milestoneId
-        milestoneShortLabel = m.shortLabel
-        break
-      }
+function findBoundaryDates(tasks: TaskRow[]): {
+  chartStart: Date | null;
+  baselineStart: Date | null;
+  baselineEnd: Date | null;
+} {
+  let baselineStart: Date | null = null;
+  let baselineEnd: Date | null = null;
+
+  for (const task of tasks) {
+    const range = getTaskDateRange(task);
+    if (!range) {
+      continue;
     }
 
-    if (actual !== null) actuals.push({ week: w, value: actual })
-
-    points.push({
-      week: w,
-      dateLabel: fmtShort(weekDate),
-      timestamp: weekDate.getTime(),
-      planned,
-      actual,
-      forecast: null,
-      milestoneId,
-      milestoneShortLabel,
-      isForecastMilestone: false,
-    })
-  }
-
-  // ── 注入精确 TODAY 数据点 ──
-  const todayFractionalWeek = diffDays(today, weekStart0) / 7
-  const todayExistsAsWeekPoint = points.some(p => p.dateLabel === fmtShort(today))
-  if (!todayExistsAsWeekPoint) {
-    const plannedAtToday = leafTasks.filter(t => {
-      const d = parseDate(t.baseline_end)
-      return !!d && d <= today
-    }).length / totalTasks * 100
-    const actualAtToday = (doneCount / totalTasks) * 100
-
-    points.push({
-      week: todayFractionalWeek,
-      dateLabel: fmtShort(today),
-      timestamp: today.getTime(),
-      planned: Math.round(plannedAtToday * 100) / 100,
-      actual: Math.round(actualAtToday * 100) / 100,
-      forecast: null,
-      milestoneId: undefined,
-      milestoneShortLabel: undefined,
-      isForecastMilestone: false,
-    })
-    actuals.push({ week: todayFractionalWeek, value: Math.round(actualAtToday * 100) / 100 })
-    points.sort((a, b) => a.timestamp - b.timestamp)
-    actuals.sort((a, b) => a.week - b.week)
-  }
-
-  // ── Metrics at today — 统一闸门，摘要与曲线同源 ──
-  const plannedTodayCount = leafTasks.filter(t => {
-    const d = parseDate(t.baseline_end)
-    return !!d && d <= today
-  }).length
-  const plannedToday = (plannedTodayCount / totalTasks) * 100
-  const actualToday = (doneCount / totalTasks) * 100
-  const totalCompletion = (totalCompletionCount / totalTasks) * 100
-  const deltaQ = Math.round((plannedToday - actualToday) * 100) / 100
-
-  // ── ΔT 偏差：逐日搜索 ──
-  let deltaT = 0
-  if (actualToday > 0) {
-    const maxSearchDays = diffDays(latestDate, weekStart0) + 14
-    for (let d = 0; d <= maxSearchDays; d++) {
-      const searchDate = new Date(weekStart0.getTime() + d * 86400000)
-      const plannedAtDate = leafTasks.filter(t => {
-        const bl = parseDate(t.baseline_end)
-        return !!bl && bl <= searchDate
-      }).length / totalTasks * 100
-      if (plannedAtDate >= actualToday) {
-        deltaT = diffDays(today, searchDate)
-        break
-      }
+    if (!baselineStart || range.baselineStart < baselineStart) {
+      baselineStart = range.baselineStart;
     }
-  }
-
-  if (typeof console !== 'undefined') {
-    console.log(
-      `[S曲线] plannedToday: ${plannedTodayCount}/${totalTasks} = ${plannedToday.toFixed(1)}%, ` +
-      `actual: ${doneCount}/${totalTasks} = ${actualToday.toFixed(1)}%, ΔT=${deltaT}d`
-    )
-  }
-
-  // ══════════════════════════════════════════════════════════════
-  // FORECAST — 21工序逻辑预测完工日期
-  //
-  // 旧逻辑（76叶子任务）在"四合一"后产生"斜率消失"：
-  //   4个前置完成后，进度停在5.26%不动，velocity≈0 → 预测线断流
-  //
-  // 新逻辑：用21工序模型计算速度
-  //   总工序 = 4(前置) + 14(泳道四合一) + 3(后续) = 21
-  //   泳道四合一：4条泳道各14道工序，取每道工序的max(actual_end)
-  //   完成判定：21工序中有多少在today之前完成
-  //   速度 = 已完成工序数 / 已用天数
-  //   预测完工 = today + 剩余工序 / 速度
-  // ══════════════════════════════════════════════════════════════
-  let predictedMpDate: Date | null = null
-
-  // 检查是否所有叶子任务都有 actual_end（100% 数据模式）
-  const allHaveActualEnd = leafTasks.every(t => !!t.actual_end)
-  if (allHaveActualEnd) {
-    let latest = new Date(0)
-    for (const t of leafTasks) {
-      const d = parseDate(t.actual_end)!
-      if (d > latest) latest = d
-    }
-    predictedMpDate = latest
-  } else {
-    // ── 21工序模型 ──
-    // 前置工序: 项目立项 + 2D图纸 + 3D图纸 + MTD = 4道
-    const PREP_STAGE_IDS = ['project_launch', 'drawing_2d', 'drawing_3d', 'mtd']
-    const prepTasks = leafTasks.filter(t => {
-      const canonicalId = ((t.stage || t.id) || '').trim()
-      return PREP_STAGE_IDS.includes(canonicalId)
-    })
-    // 泳道工序: 4条泳道各有14道工序，四合一后算14道
-    const TRACKS = ['cavity_core', 'cavity_insert', 'lifter', 'slider']
-    const trackTasks = leafTasks.filter(t => t.track && TRACKS.includes(t.track))
-    // 后续节点: 非前置、非泳道的任务
-    const postTasks = leafTasks.filter(t => {
-      const canonicalId = ((t.stage || t.id) || '').trim()
-      const isPrepTask = PREP_STAGE_IDS.includes(canonicalId)
-      const isTrack = t.track && TRACKS.includes(t.track)
-      return !isPrepTask && !isTrack
-    })
-
-    // 获取泳道中每道工序的唯一名称列表（用第一条泳道的工序名）
-    const firstTrackTasks = trackTasks
-      .filter(t => t.track === TRACKS[0])
-      .sort((a, b) => {
-        const da = parseDate(a.baseline_start)
-        const db = parseDate(b.baseline_start)
-        return (da?.getTime() || 0) - (db?.getTime() || 0)
-      })
-
-    // 计算21工序的完成数和baseline_end
-    // 结构: { name, baseline_end, actual_end, completed }
-    type Process21 = { name: string; baselineEnd: Date | null; actualEnd: Date | null; completed: boolean }
-    const processes21: Process21[] = []
-
-    // 1) 前置工序 (4道)
-    for (const t of prepTasks) {
-      const ae = parseDate(t.actual_end)
-      processes21.push({
-        name: t.name || t.stage || t.id,
-        baselineEnd: parseDate(t.baseline_end),
-        actualEnd: ae,
-        completed: !!ae && ae <= today,
-      })
-    }
-
-    // 2) 泳道四合一 (14道) — 每道工序取4条泳道中最晚的actual_end
-    for (const refTask of firstTrackTasks) {
-      const refCanonicalId = ((refTask.stage || refTask.id) || '').trim()
-      const refName = (refTask.name || '').trim()
-      // 找到4条泳道中同工序的兄弟任务，优先使用stage/id，仅在缺失时回退到英文name
-      const siblings = trackTasks.filter(t => {
-        const taskCanonicalId = ((t.stage || t.id) || '').trim()
-        if (refCanonicalId) {
-          return taskCanonicalId === refCanonicalId
-        }
-        return !!refName && (t.name || '').trim() === refName
-      })
-
-      // 取最晚的 baseline_end
-      let latestBE: Date | null = null
-      for (const s of siblings) {
-        const be = parseDate(s.baseline_end)
-        if (be && (!latestBE || be > latestBE)) latestBE = be
-      }
-
-      // 四合一完成判定：所有4条泳道都完成了这道工序
-      const allSiblingsComplete = siblings.length >= 4 &&
-        siblings.every(s => {
-          const ae = parseDate(s.actual_end)
-          return !!ae && ae <= today
-        })
-
-      // 取最晚的 actual_end 作为四合一的完成日期
-      let latestAE: Date | null = null
-      if (allSiblingsComplete) {
-        for (const s of siblings) {
-          const ae = parseDate(s.actual_end)
-          if (ae && (!latestAE || ae > latestAE)) latestAE = ae
-        }
-      }
-
-      processes21.push({
-        name: `${refTask.name || refTask.stage || refTask.id}(4-in-1)`,
-        baselineEnd: latestBE,
-        actualEnd: latestAE,
-        completed: allSiblingsComplete,
-      })
-    }
-
-    // 3) 后续节点
-    for (const t of postTasks) {
-      const ae = parseDate(t.actual_end)
-      processes21.push({
-        name: t.name || t.stage || t.id,
-        baselineEnd: parseDate(t.baseline_end),
-        actualEnd: ae,
-        completed: !!ae && ae <= today,
-      })
-    }
-
-    const total21 = processes21.length
-    const done21 = processes21.filter(p => p.completed).length
-
-    console.log(
-      `[S曲线·21工序预测] 总工序=${total21}, 已完成=${done21}, ` +
-      `前置=${prepTasks.length}, 泳道合一=${firstTrackTasks.length}, 后续=${postTasks.length}`
-    )
-
-    // ── 速度计算 ──
-    // 项目开始日期 = 第一个里程碑日期
-    const projectStart = firstMs.date
-    const elapsedDays = diffDays(today, projectStart)
-
-    if (done21 > 0 && elapsedDays > 0 && done21 < total21) {
-      // 速度 = 已完成工序数 / 已用天数
-      const velocityPerDay = done21 / elapsedDays
-      const remaining21 = total21 - done21
-      const daysToFinish = Math.ceil(remaining21 / velocityPerDay)
-      predictedMpDate = new Date(today.getTime() + daysToFinish * 86400000)
-
-      // 预测线：从today的actual点 → 100% at predictedMpDate
-      // 用每周步进来生成forecast数据点
-      const lastActual = actuals[actuals.length - 1]
-      if (lastActual) {
-        // 在today的数据点上设置forecast起点（与actual重合）
-        const todayPoint = points.find(p => p.dateLabel === fmtShort(today))
-        if (todayPoint) todayPoint.forecast = todayPoint.actual
-
-        const predictedWeek = (predictedMpDate.getTime() - weekStart0.getTime()) / (7 * 86400000)
-        const startWeek = lastActual.week
-        const startPct = lastActual.value
-        const weekSpan = predictedWeek - startWeek
-
-        if (weekSpan > 0) {
-          const pctPerWeek = (100 - startPct) / weekSpan
-          // 生成中间点（每周一个）
-          const maxForecastWeek = Math.ceil(predictedWeek) + 1
-          for (let fw = Math.ceil(startWeek) + 1; fw <= maxForecastWeek; fw++) {
-            const pct = Math.min(100, startPct + pctPerWeek * (fw - startWeek))
-            const existing = points.find(p => p.week === fw)
-            if (existing) {
-              existing.forecast = Math.round(pct * 100) / 100
-            } else {
-              const weekDate = new Date(weekStart0.getTime() + fw * 7 * 86400000)
-              points.push({
-                week: fw,
-                dateLabel: fmtShort(weekDate),
-                timestamp: weekDate.getTime(),
-                planned: 100,
-                actual: null,
-                forecast: Math.round(pct * 100) / 100,
-                milestoneId: pct >= 100 ? FORECAST_COMPLETION_MILESTONE_ID : undefined,
-                isForecastMilestone: pct >= 100,
-              })
-            }
-          }
-        }
-      }
-
-      console.log(
-        `[S曲线·21工序预测] 速度=${velocityPerDay.toFixed(3)}工序/天, ` +
-        `剩余=${remaining21}工序, 预计${daysToFinish}天后完工, ` +
-        `预测完工=${fmtShort(predictedMpDate)}`
-      )
-    } else if (done21 >= total21) {
-      // 全部完成
-      let latest = new Date(0)
-      for (const p of processes21) {
-        if (p.actualEnd && p.actualEnd > latest) latest = p.actualEnd
-      }
-      predictedMpDate = latest
-    }
-  }
-
-  points.sort((a, b) => a.week - b.week)
-
-  // ── Current stage ──
-  let currentStageId: SCurveMilestoneId | 'unknown' = milestones[0]?.milestoneId ?? 'unknown'
-  let currentStageComplete = false
-  for (const ms of milestones) {
-    if (ms.actualDate) {
-      const nextStageId = getNextSCurveMilestoneId(ms.milestoneId)
-      currentStageId = nextStageId ?? ms.milestoneId
-      currentStageComplete = nextStageId === null
+    if (!baselineEnd || range.baselineEnd > baselineEnd) {
+      baselineEnd = range.baselineEnd;
     }
   }
 
   return {
+    baselineStart,
+    baselineEnd,
+    chartStart: baselineStart ? addDays(baselineStart, -1) : null,
+  };
+}
+
+function extractMilestonesFromTasks(tasks: TaskRow[]): ExtractedMilestone[] {
+  const results: ExtractedMilestone[] = [];
+
+  for (const node of SCURVE_MILESTONES) {
+    const matched = tasks.find((task) => {
+      const canonicalId = (task.stage || task.id || '').replace(/\s+/g, '');
+      return node.stageIds.includes(canonicalId);
+    });
+
+    if (!matched) {
+      continue;
+    }
+
+    const baselineDate = parseDate(matched.baseline_end) ?? parseDate(matched.baseline_start);
+    if (!baselineDate) {
+      continue;
+    }
+
+    results.push({
+      date: baselineDate,
+      actualDate: parseDate(matched.actual_end),
+      milestoneId: node.id,
+      shortLabel: node.shortLabel,
+      label: getSCurveMilestoneLabel(node.id),
+      task: matched,
+    });
+  }
+
+  return results.sort((a, b) => a.date.getTime() - b.date.getTime());
+}
+
+function sumWeightedProgress(
+  tasks: TaskRow[],
+  weights: Map<string, number>,
+  getRatio: (task: TaskRow) => number,
+): number {
+  return tasks.reduce((sum, task) => sum + (weights.get(task.id) ?? 0) * getRatio(task), 0);
+}
+
+function buildSCurveData(
+  tasks: TaskRow[],
+): { points: SCurvePoint[]; metrics: SCurveMetrics; milestones: ExtractedMilestone[] } {
+  const emptyMetrics: SCurveMetrics = {
+    deltaQ: 0,
+    deltaT: 0,
+    predictedMpDate: null,
+    actualProgress: 0,
+    plannedProgress: 0,
+    forecastAtTarget: null,
+    totalCompletion: 0,
+    currentStageId: 'unknown',
+    currentStageComplete: false,
+    doneCount: 0,
+    taskCount: 0,
+    targetDate: null,
+    spi: 1,
+    forecastSlipDays: 0,
+    totalWeight: 0,
+    earnedWeight: 0,
+    plannedWeight: 0,
+  };
+
+  const today = startOfDay(new Date());
+  const leafTasks = filterLeafTasks(tasks);
+  if (leafTasks.length === 0) {
+    return { points: [], metrics: emptyMetrics, milestones: [] };
+  }
+
+  const milestones = extractMilestonesFromTasks(leafTasks);
+  const bounds = findBoundaryDates(leafTasks);
+  if (!bounds.chartStart || !bounds.baselineStart || !bounds.baselineEnd) {
+    return { points: [], metrics: emptyMetrics, milestones };
+  }
+
+  const targetDate = milestones[milestones.length - 1]?.date ?? bounds.baselineEnd;
+  const weights = new Map(leafTasks.map((task) => [task.id, getEffectiveTaskWeight(task)]));
+  const totalWeight = Array.from(weights.values()).reduce((sum, weight) => sum + weight, 0);
+  if (totalWeight <= 0) {
+    return { points: [], metrics: emptyMetrics, milestones };
+  }
+
+  const plannedWeightAt = (date: Date) =>
+    sumWeightedProgress(leafTasks, weights, (task) => getPlannedTaskRatioAtDate(task, date));
+  const actualWeightAt = (date: Date) =>
+    sumWeightedProgress(leafTasks, weights, (task) => getActualTaskRatioAtDate(task, date, today));
+  const progressFromWeight = (weight: number) => roundTo((weight / totalWeight) * 100);
+
+  const plannedProgressLookup = new Map<string, number>();
+  const baselineDailyIncrements: number[] = [];
+  const timelineDates: Date[] = [];
+  let previousPlanned = 0;
+
+  for (let date = bounds.chartStart; date.getTime() <= targetDate.getTime(); date = addDays(date, 1)) {
+    const isoDate = toIsoDate(date);
+    const plannedWeight = date < bounds.baselineStart ? 0 : plannedWeightAt(date);
+    const plannedProgress = progressFromWeight(plannedWeight);
+
+    plannedProgressLookup.set(isoDate, plannedProgress);
+    baselineDailyIncrements.push(Math.max(0, roundTo(plannedProgress - previousPlanned, 4)));
+    timelineDates.push(date);
+    previousPlanned = plannedProgress;
+  }
+
+  const plannedWeightToday = plannedWeightAt(today);
+  const actualWeightToday = actualWeightAt(today);
+  const plannedToday = progressFromWeight(plannedWeightToday);
+  const actualToday = progressFromWeight(actualWeightToday);
+  const deltaQ = roundTo(plannedToday - actualToday);
+  const doneCount = leafTasks.filter((task) => isOnOrBefore(parseDate(task.actual_end), today)).length;
+
+  let plannedDateForActual = bounds.baselineStart;
+  if (actualToday > 0) {
+    for (const date of timelineDates) {
+      const plannedProgress = plannedProgressLookup.get(toIsoDate(date)) ?? 0;
+      if (plannedProgress >= actualToday) {
+        plannedDateForActual = date;
+        break;
+      }
+    }
+  }
+
+  const deltaT = actualToday > 0 ? diffDays(today, plannedDateForActual) : 0;
+  const spiRaw = plannedWeightToday > 0.0001 ? actualWeightToday / plannedWeightToday : actualToday > 0 ? 1 : 1;
+  const spi = actualToday >= 100 ? 1 : clamp(roundTo(spiRaw, 3), MIN_SPI, MAX_SPI);
+
+  const forecastLookup = new Map<string, number>();
+  let predictedMpDate: Date | null = null;
+  const todayIso = toIsoDate(today);
+
+  if (actualToday > 0) {
+    forecastLookup.set(todayIso, actualToday);
+  }
+
+  if (actualToday >= 99.95) {
+    const latestActualEnd = leafTasks.reduce<Date | null>((latest, task) => {
+      const actualEnd = parseDate(task.actual_end);
+      if (!actualEnd) {
+        return latest;
+      }
+      if (!latest || actualEnd > latest) {
+        return actualEnd;
+      }
+      return latest;
+    }, null);
+    predictedMpDate = latestActualEnd ?? today;
+  } else {
+    const targetIso = toIsoDate(targetDate);
+    const targetIndex = timelineDates.findIndex((date) => toIsoDate(date) === targetIso);
+    const todayIndex = timelineDates.findIndex((date) => toIsoDate(date) === todayIso);
+    const templateStartIndex = todayIndex >= 0 ? todayIndex + 1 : 0;
+    const remainingTemplate = targetIndex >= 0 ? baselineDailyIncrements.slice(templateStartIndex, targetIndex + 1) : [];
+    const remainingPlannedProgress = Math.max(0, 100 - plannedToday);
+
+    if (remainingTemplate.length > 0 && remainingPlannedProgress > 0.0001) {
+      const verticalScale = Math.max((100 - actualToday) / remainingPlannedProgress, 0);
+      let forecastDate = today;
+      let forecastProgress = actualToday;
+      let templateCursor = 0;
+      let guard = 0;
+
+      while (forecastProgress < 99.95 && guard < 1600) {
+        guard += 1;
+        forecastDate = addDays(forecastDate, 1);
+
+        let templateBudget = spi;
+        let templateDelta = 0;
+        while (templateBudget > 0.000001 && templateCursor < remainingTemplate.length) {
+          const bucketIndex = Math.floor(templateCursor);
+          const bucketRemaining = 1 - (templateCursor - bucketIndex);
+          const consumed = Math.min(templateBudget, bucketRemaining);
+          templateDelta += remainingTemplate[bucketIndex] * consumed;
+          templateCursor += consumed;
+          templateBudget -= consumed;
+        }
+
+        if (templateDelta <= 0.000001) {
+          const elapsedDays = Math.max(diffDays(today, bounds.baselineStart), 1);
+          const actualRate = Math.max(actualToday / elapsedDays, 0.12);
+          forecastProgress = Math.min(100, roundTo(forecastProgress + actualRate));
+        } else {
+          forecastProgress = Math.min(100, roundTo(forecastProgress + templateDelta * verticalScale));
+        }
+
+        forecastLookup.set(toIsoDate(forecastDate), forecastProgress);
+        if (forecastProgress >= 99.95) {
+          predictedMpDate = forecastDate;
+        }
+      }
+
+      predictedMpDate = predictedMpDate ?? forecastDate;
+    } else {
+      const elapsedDays = Math.max(diffDays(today, bounds.baselineStart), 1);
+      const actualRate = Math.max(actualToday / elapsedDays, 0.12);
+      const remainingDays = Math.max(1, Math.ceil((100 - actualToday) / actualRate));
+      let forecastDate = today;
+
+      for (let day = 1; day <= remainingDays; day += 1) {
+        forecastDate = addDays(today, day);
+        const progressRatio = day / remainingDays;
+        const easedRatio = 1 - (1 - progressRatio) ** 1.6;
+        const forecastProgress = roundTo(actualToday + (100 - actualToday) * easedRatio);
+        forecastLookup.set(toIsoDate(forecastDate), Math.min(100, forecastProgress));
+      }
+
+      predictedMpDate = forecastDate;
+    }
+  }
+
+  const forecastAtTarget = forecastLookup.get(toIsoDate(targetDate)) ?? null;
+  const domainEnd = [targetDate, today, predictedMpDate].reduce((latest, current) => {
+    if (!current) {
+      return latest;
+    }
+    if (!latest || current > latest) {
+      return current;
+    }
+    return latest;
+  }, bounds.baselineEnd as Date | null) ?? bounds.baselineEnd;
+
+  const milestoneLookup = new Map<string, ExtractedMilestone>();
+  for (const milestone of milestones) {
+    milestoneLookup.set(toIsoDate(milestone.date), milestone);
+  }
+
+  const points: SCurvePoint[] = [];
+  let axisIndex = 0;
+  for (let date = bounds.chartStart; date.getTime() <= domainEnd.getTime(); date = addDays(date, 1)) {
+    const isoDate = toIsoDate(date);
+    const plannedWeight = date < bounds.baselineStart ? 0 : plannedWeightAt(date);
+    const actualWeight = date.getTime() <= today.getTime() ? actualWeightAt(date) : null;
+    const milestone = milestoneLookup.get(isoDate);
+    const forecastProgress = forecastLookup.get(isoDate) ?? null;
+    const plannedProgress = progressFromWeight(plannedWeight);
+    const actualProgress = actualWeight == null ? null : progressFromWeight(actualWeight);
+
+    points.push({
+      week: axisIndex,
+      dateLabel: fmtShort(date),
+      dateIso: isoDate,
+      timestamp: date.getTime(),
+      planned: plannedProgress,
+      actual: actualProgress,
+      forecast: forecastProgress,
+      plannedWeight: roundTo(plannedWeight, 3),
+      actualWeight: actualWeight == null ? null : roundTo(actualWeight, 3),
+      forecastWeight:
+        forecastProgress == null ? null : roundTo((forecastProgress / 100) * totalWeight, 3),
+      variance: actualProgress == null ? null : roundTo(plannedProgress - actualProgress),
+      isToday: isoDate === todayIso,
+      milestoneId:
+        milestone?.milestoneId ??
+        (predictedMpDate && isoDate === toIsoDate(predictedMpDate)
+          ? FORECAST_COMPLETION_MILESTONE_ID
+          : undefined),
+      milestoneShortLabel:
+        milestone?.shortLabel ??
+        (predictedMpDate && isoDate === toIsoDate(predictedMpDate) ? 'FCST' : undefined),
+      isForecastMilestone: !!predictedMpDate && isoDate === toIsoDate(predictedMpDate),
+    });
+
+    axisIndex += 1;
+  }
+
+  let currentStageId: SCurveMilestoneId | 'unknown' = milestones[0]?.milestoneId ?? 'unknown';
+  let currentStageComplete = false;
+  for (const milestone of milestones) {
+    if (isOnOrBefore(milestone.actualDate, today)) {
+      const nextStageId = getNextSCurveMilestoneId(milestone.milestoneId);
+      currentStageId = nextStageId ?? milestone.milestoneId;
+      currentStageComplete = nextStageId === null;
+    }
+  }
+
+  const forecastSlipDays =
+    predictedMpDate && predictedMpDate.getTime() > targetDate.getTime()
+      ? diffDays(predictedMpDate, targetDate)
+      : 0;
+
+  return {
     points,
+    milestones,
     metrics: {
       deltaQ,
       deltaT,
       predictedMpDate,
-      actualProgress: Math.round(actualToday * 100) / 100,
-      plannedProgress: Math.round(plannedToday * 100) / 100,
-      totalCompletion: Math.round(totalCompletion * 100) / 100,
+      actualProgress: actualToday,
+      plannedProgress: plannedToday,
+      forecastAtTarget,
+      totalCompletion: actualToday,
       currentStageId,
       currentStageComplete,
       doneCount,
-      taskCount: totalTasks,
-      targetDate: lastMs.date,
+      taskCount: leafTasks.length,
+      targetDate,
+      spi,
+      forecastSlipDays,
+      totalWeight: roundTo(totalWeight, 3),
+      earnedWeight: roundTo(actualWeightToday, 3),
+      plannedWeight: roundTo(plannedWeightToday, 3),
     },
-  }
+  };
 }
 
+function SCurveTooltip({ active, payload }: SCurveTooltipProps) {
+  if (!active || !payload?.length) {
+    return null;
+  }
 
-
-// ═══════════════════════════════════════════════════════════════
-// Custom Tooltip Component
-// ═══════════════════════════════════════════════════════════════
-
-function SCurveTooltip({ active, payload, label }: SCurveTooltipProps) {
-  if (!active || !payload?.length) return null
-
-  const planned = readTooltipValue(payload, 'planned')
-  const actual = readTooltipValue(payload, 'actual')
-  const forecast = readTooltipValue(payload, 'forecast')
-  const milestoneId = payload[0]?.payload?.milestoneId
-  const milestoneLabel = milestoneId ? getSCurveMilestoneBadgeLabel(milestoneId) : undefined
+  const point = payload[0]?.payload;
+  const planned = readTooltipValue(payload, 'planned');
+  const actual = readTooltipValue(payload, 'actual');
+  const forecast = readTooltipValue(payload, 'forecast');
+  const milestoneId = point?.milestoneId;
+  const milestoneLabel = milestoneId ? getSCurveMilestoneBadgeLabel(milestoneId) : undefined;
+  const variance = point?.variance;
 
   return (
-    <div className="bg-gray-900/95 border border-white/10 rounded-xl p-4 backdrop-blur-xl shadow-[0_8px_32px_rgba(0,0,0,0.5)]">
-      <div className="font-bold text-white mb-2 flex items-center gap-2">
-        {label}
+    <div className="rounded-xl border border-white/10 bg-gray-900/95 p-4 backdrop-blur-xl shadow-[0_8px_32px_rgba(0,0,0,0.5)]">
+      <div className="mb-2 flex items-center gap-2 font-bold text-white">
+        <span>{point?.dateIso ?? point?.dateLabel}</span>
         {milestoneLabel && (
-          <span className="text-[10px] px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-400 font-medium">
+          <span className="rounded bg-cyan-500/20 px-1.5 py-0.5 text-[10px] font-medium text-cyan-400">
             {milestoneLabel}
           </span>
         )}
       </div>
+
       <div className="space-y-2">
         {planned != null && (
           <div className="flex items-center gap-3">
-            <div className="w-3 h-3 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.6)]" />
-            <span className="text-gray-400 text-sm">计划:</span>
-            <span className="text-cyan-400 font-bold">{planned.toFixed(1)}%</span>
+            <div className="h-3 w-3 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.6)]" />
+            <span className="text-sm text-gray-400">基线累计</span>
+            <span className="font-bold text-cyan-400">{planned.toFixed(1)}%</span>
           </div>
         )}
+
         {actual != null && (
           <div className="flex items-center gap-3">
-            <div className="w-3 h-3 rounded-full bg-yellow-400 shadow-[0_0_8px_rgba(250,204,21,0.6)]" />
-            <span className="text-gray-400 text-sm">实际:</span>
-            <span className="text-yellow-400 font-bold">{actual.toFixed(1)}%</span>
+            <div className="h-3 w-3 rounded-full bg-yellow-400 shadow-[0_0_8px_rgba(250,204,21,0.6)]" />
+            <span className="text-sm text-gray-400">实际累计</span>
+            <span className="font-bold text-yellow-400">{actual.toFixed(1)}%</span>
           </div>
         )}
-        {forecast != null && actual == null && (
+
+        {forecast != null && (
           <div className="flex items-center gap-3">
-            <div className="w-3 h-3 rounded-full bg-orange-400 shadow-[0_0_8px_rgba(255,156,110,0.6)]" />
-            <span className="text-gray-400 text-sm">预测:</span>
-            <span className="text-orange-400 font-bold">{forecast.toFixed(1)}%</span>
+            <div className="h-3 w-3 rounded-full bg-orange-400 shadow-[0_0_8px_rgba(251,146,60,0.6)]" />
+            <span className="text-sm text-gray-400">SPI 预测</span>
+            <span className="font-bold text-orange-400">{forecast.toFixed(1)}%</span>
           </div>
         )}
-        {actual != null && planned != null && (
-          <div className="pt-2 border-t border-white/10">
+
+        {variance != null && actual != null && planned != null && (
+          <div className="border-t border-white/10 pt-2">
             <div className="flex items-center gap-2">
               <TrendingUp
-                className={cn('w-4 h-4', actual >= planned ? 'text-emerald-400' : 'text-red-400 rotate-180')}
+                className={cn('h-4 w-4', variance <= 0 ? 'text-emerald-400' : 'rotate-180 text-red-400')}
               />
-              <span className="text-gray-400 text-sm">偏差:</span>
-              <span className={cn('font-bold', actual >= planned ? 'text-emerald-400' : 'text-red-400')}>
-                {actual >= planned ? '+' : ''}{(actual - planned).toFixed(1)}%
+              <span className="text-sm text-gray-400">ΔQ</span>
+              <span className={cn('font-bold', variance <= 0 ? 'text-emerald-400' : 'text-red-400')}>
+                {variance > 0 ? '+' : ''}
+                {variance.toFixed(1)}%
               </span>
             </div>
           </div>
         )}
       </div>
     </div>
-  )
+  );
 }
 
-// ═══════════════════════════════════════════════════════════════
-// Main Component
-// ═══════════════════════════════════════════════════════════════
+export function LogitechSCurve({
+  projectId,
+  moldNumber,
+  className = '',
+  taskItems,
+  disableRemoteFetch = false,
+  fillHeight = false,
+}: LogitechSCurveProps) {
+  const hasInjectedTasks = Array.isArray(taskItems) && taskItems.length > 0;
+  const [tasks, setTasks] = useState<TaskRow[]>(() => taskItems ?? []);
+  const [loading, setLoading] = useState(() => !hasInjectedTasks && !disableRemoteFetch);
+  const [error, setError] = useState<string | null>(null);
 
-export function LogitechSCurve({ projectId, moldNumber, className = '' }: LogitechSCurveProps) {
-  const [tasks, setTasks] = useState<TaskRow[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-
-  // ── Fetch ALL tasks for this project via local API (避免浏览器直连 Supabase 的跨域/网络问题) ──
   useEffect(() => {
-    let cancelled = false
-    let retryTimer: number | null = null
+    if (!taskItems) {
+      return;
+    }
+    setTasks(taskItems);
+    setError(null);
+    setLoading(false);
+  }, [taskItems]);
+
+  useEffect(() => {
+    if (disableRemoteFetch || hasInjectedTasks) {
+      return;
+    }
+
+    let cancelled = false;
+    let retryTimer: number | null = null;
 
     const clearRetry = () => {
       if (retryTimer !== null) {
-        window.clearTimeout(retryTimer)
-        retryTimer = null
+        window.clearTimeout(retryTimer);
+        retryTimer = null;
       }
-    }
+    };
 
     const scheduleRetry = () => {
       if (cancelled || retryTimer !== null) {
-        return
+        return;
       }
 
       retryTimer = window.setTimeout(() => {
-        retryTimer = null
-        void fetchData(false)
-      }, SCURVE_RETRY_DELAY_MS)
-    }
+        retryTimer = null;
+        void fetchData(false);
+      }, SCURVE_RETRY_DELAY_MS);
+    };
 
     async function fetchData(showLoading: boolean) {
       if (showLoading) {
-        setLoading(true)
+        setLoading(true);
       }
+
       try {
-        const res = await apiFetch(`/api/tasks?projectId=${encodeURIComponent(projectId)}`)
-        if (!res.ok) {
-          throw new Error('S-curve data load failed')
+        const response = await apiFetch(`/api/tasks?projectId=${encodeURIComponent(projectId)}`);
+        if (!response.ok) {
+          throw new Error('S-curve data load failed');
         }
-        const taskRows = normalizeTaskRows(await res.json())
+        const taskRows = normalizeTaskRows(await response.json());
         if (!cancelled) {
-          setTasks(taskRows)
-          setError(null)
-          clearRetry()
+          setTasks(taskRows);
+          setError(null);
+          clearRetry();
         }
-      } catch (error: unknown) {
+      } catch {
         if (!cancelled) {
-          setError('数据加载失败，请稍后重试')
-          scheduleRetry()
+          setError('S 曲线数据加载失败，已进入重试等待。');
+          scheduleRetry();
         }
       } finally {
-        if (!cancelled) setLoading(false)
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     }
 
-    void fetchData(true)
+    void fetchData(true);
     return () => {
-      cancelled = true
-      clearRetry()
-    }
-  }, [projectId])
+      cancelled = true;
+      clearRetry();
+    };
+  }, [disableRemoteFetch, hasInjectedTasks, projectId]);
 
-  // ── Compute S-curve (purely from tasks) ──
-  const { points, metrics } = useMemo(
-    () => buildSCurveData(tasks),
-    [tasks],
-  )
+  const { points, metrics, milestones } = useMemo(() => buildSCurveData(tasks), [tasks]);
 
-  // ── Find today's label for reference line ──
-  // 因为 buildSCurveData 已经注入了精确的 today 数据点，
-  // 直接用 today 的 dateLabel 即可
   const todayLabel = useMemo(() => {
-    if (points.length === 0) return ''
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    return fmtShort(today)
-  }, [points])
+    const today = startOfDay(new Date());
+    return fmtShort(today);
+  }, []);
 
-  // ── Debug: log matched milestones ──
-  useEffect(() => {
-    if (tasks.length > 0) {
-      const ms = extractMilestonesFromTasks(tasks)
-      const leaves = filterLeafTasks(tasks)
-      console.log(`[S曲线] projectId=${projectId}, 总行=${tasks.length}, 叶子工序=${leaves.length}, 里程碑=${ms.length}:`,
-        ms.map((m) => `${getSCurveMilestoneLabel(m.milestoneId)}(${m.task.name_cn} → ${m.date.toISOString().slice(0, 10)})`))
-    }
-  }, [tasks, projectId])
-
-  // ── Render ──
   if (loading) {
     return (
-      <div className={cn('rounded-2xl bg-[#1a1a1a] border border-white/10 p-6 flex items-center justify-center', className)}>
-        <span className="inline-block w-5 h-5 border-2 border-white/20 border-t-cyan-400 rounded-full animate-spin mr-3" />
-        <span className="text-white/40 text-sm">加载 S 曲线数据…</span>
+      <div className={cn('flex items-center justify-center rounded-2xl border border-white/10 bg-[#1a1a1a] p-6', className)}>
+        <span className="mr-3 inline-block h-5 w-5 animate-spin rounded-full border-2 border-white/20 border-t-cyan-400" />
+        <span className="text-sm text-white/40">正在生成交付审计 S 曲线...</span>
       </div>
-    )
+    );
   }
 
   if (error) {
     return (
-      <div className={cn('rounded-2xl bg-[#1a1a1a] border border-white/10 p-6', className)}>
+      <div className={cn('rounded-2xl border border-white/10 bg-[#1a1a1a] p-6', className)}>
         <div className="flex items-center gap-3 text-white/40">
-          <AlertTriangle className="w-5 h-5 text-amber-400" />
+          <AlertTriangle className="h-5 w-5 text-amber-400" />
           <span className="text-sm">{error}</span>
         </div>
       </div>
-    )
+    );
   }
 
   if (points.length === 0) {
-    // Show diagnostic info to help debug
-    const ms = extractMilestonesFromTasks(tasks)
     return (
-      <div className={cn('rounded-2xl bg-[#1a1a1a] border border-white/10 p-6', className)}>
-        <div className="flex items-center gap-3 text-white/40 mb-3">
-          <AlertTriangle className="w-5 h-5 text-amber-400" />
-          <span className="text-sm">
-            暂无里程碑数据 — 在 {tasks.length} 行中过滤出 {filterLeafTasks(tasks).length} 个叶子工序，匹配到 {ms.length}/5 个里程碑节点
-          </span>
+      <div className={cn('rounded-2xl border border-white/10 bg-[#1a1a1a] p-6', className)}>
+        <div className="mb-3 flex items-center gap-3 text-white/40">
+          <AlertTriangle className="h-5 w-5 text-amber-400" />
+          <span className="text-sm">当前没有足够的任务日期数据，无法生成 S 曲线。</span>
         </div>
         {tasks.length > 0 && (
-          <div className="text-[10px] text-white/20 space-y-1">
-            <div>需要匹配的关键词: 项目立项 / 模具FaiCpk报告 / T0综合报告 / T0问题闭环报告 / 巡检SPC数据</div>
-            <div>已有工序名: {tasks.slice(0, 8).map((t) => t.name_cn).join(', ')}{tasks.length > 8 ? '…' : ''}</div>
+          <div className="space-y-1 text-[10px] text-white/20">
+            <div>要求至少存在 baseline_start / baseline_end。</div>
+            <div>当前任务数：{tasks.length}</div>
           </div>
         )}
       </div>
-    )
+    );
   }
 
-  const isAhead = metrics.deltaQ <= 0
-  const isWayAhead = metrics.deltaQ < -20 // 超前 20% 以上
-  // ── Issue 1 Fix: 预测延误判定 ──
-  // 即使当前 ΔQ 显示"正常"，如果预测完工日超过目标日期，状态应为"预测延误"
   const isPredictedLate = !!(
     metrics.predictedMpDate &&
     metrics.targetDate &&
-    metrics.predictedMpDate > metrics.targetDate
-  )
-  const statusColor = isPredictedLate ? 'text-orange-400' : isAhead ? 'text-emerald-400' : 'text-red-400'
-
-  // Decide X-axis tick interval based on total weeks
-  const totalWeeks = points.length
-  const tickInterval = totalWeeks > 30 ? 3 : totalWeeks > 16 ? 2 : 1
+    metrics.predictedMpDate.getTime() > metrics.targetDate.getTime()
+  );
+  const statusColor = isPredictedLate ? 'text-orange-400' : metrics.deltaQ <= 0 ? 'text-emerald-400' : 'text-red-400';
+  const tickInterval =
+    points.length > 150 ? 13 : points.length > 110 ? 10 : points.length > 80 ? 7 : points.length > 45 ? 4 : 2;
+  const responsiveContainerProps = fillHeight
+    ? { width: '100%', height: '100%' }
+    : { width: '100%', aspect: 4.8 };
+  const targetLabel = metrics.targetDate ? fmtShort(metrics.targetDate) : null;
+  const predictedLabel = metrics.predictedMpDate ? fmtShort(metrics.predictedMpDate) : null;
 
   return (
-    <div className={cn('relative rounded-2xl bg-[#1a1a1a] border border-white/10 backdrop-blur-xl p-4', className)}>
-      {/* ── Header ── */}
-      <div className="flex items-center justify-between mb-3">
+    <div
+      className={cn(
+        'relative rounded-2xl border border-white/10 bg-[#1a1a1a] p-4 backdrop-blur-xl',
+        fillHeight && 'flex h-full flex-col',
+        className,
+      )}
+    >
+      <div className="mb-3 flex flex-wrap items-start justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-cyan-500/20 flex items-center justify-center">
-            <Activity className="w-5 h-5 text-cyan-400" />
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-cyan-500/20">
+            <Activity className="h-5 w-5 text-cyan-400" />
           </div>
           <div>
-            <h3 className="text-lg font-semibold text-white">项目进度 S 曲线</h3>
+            <h3 className="text-lg font-semibold text-white">项目进度 S 曲线审计</h3>
             <p className="text-sm text-gray-400">
               {projectId}
               {moldNumber && moldNumber !== projectId && (
@@ -990,102 +895,108 @@ export function LogitechSCurve({ projectId, moldNumber, className = '' }: Logite
           </div>
         </div>
 
-        {/* ── Metric Cards ── */}
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-4">
           <div className="text-right">
-            <div className="text-[10px] text-gray-500 uppercase tracking-wider">实际进度</div>
-            <div className="text-2xl font-bold text-yellow-400 tabular-nums">
-              {metrics.actualProgress.toFixed(1)}%
+            <div className="text-[10px] uppercase tracking-wider text-gray-500">实际累计</div>
+            <div className="text-2xl font-bold tabular-nums text-yellow-400">{metrics.actualProgress.toFixed(1)}%</div>
+          </div>
+
+          <div className="h-10 w-px bg-white/10" />
+          <div className="text-right">
+            <div className="flex items-center justify-end gap-1 text-[10px] uppercase tracking-wider text-gray-500">
+              <Target className="h-3 w-3" />
+              ΔQ 偏差
+            </div>
+            <div className={cn('text-2xl font-bold tabular-nums', statusColor)}>
+              {metrics.deltaQ > 0 ? '+' : ''}
+              {metrics.deltaQ.toFixed(1)}%
             </div>
           </div>
 
-          <div className="w-px h-10 bg-white/10" />
+          <div className="h-10 w-px bg-white/10" />
           <div className="text-right">
-            <div className="text-[10px] text-gray-500 uppercase tracking-wider flex items-center gap-1 justify-end">
-              <Target className="w-3 h-3" /> ΔQ 偏差
-            </div>
-            <div className={cn('text-2xl font-bold tabular-nums', statusColor)}>
-              {metrics.deltaQ > 0 ? '+' : ''}{metrics.deltaQ.toFixed(1)}%
-            </div>
-          </div>
-          <div className="w-px h-10 bg-white/10" />
-          <div className="text-right">
-            <div className="text-[10px] text-gray-500 uppercase tracking-wider flex items-center gap-1 justify-end">
-              <Clock className="w-3 h-3" /> ΔT 偏差
+            <div className="flex items-center justify-end gap-1 text-[10px] uppercase tracking-wider text-gray-500">
+              <Clock className="h-3 w-3" />
+              ΔT 偏差
             </div>
             <div className={cn('text-2xl font-bold tabular-nums', metrics.deltaT > 0 ? 'text-red-400' : 'text-emerald-400')}>
-              {metrics.deltaT > 0 ? '+' : ''}{metrics.deltaT}d
+              {metrics.deltaT > 0 ? '+' : ''}
+              {metrics.deltaT}d
             </div>
           </div>
+
+          <div className="h-10 w-px bg-white/10" />
+          <div className="text-right">
+            <div className="text-[10px] uppercase tracking-wider text-gray-500">SPI</div>
+            <div className={cn('text-2xl font-bold tabular-nums', metrics.spi < 1 ? 'text-orange-400' : 'text-cyan-400')}>
+              {metrics.spi.toFixed(2)}
+            </div>
+          </div>
+
           {metrics.predictedMpDate && (
             <>
-              <div className="w-px h-10 bg-white/10" />
+              <div className="h-10 w-px bg-white/10" />
               <div className="text-right">
-                <div className="text-[10px] text-gray-500 uppercase tracking-wider">预测完工</div>
-                <div className="text-lg font-bold tabular-nums" style={{ color: isPredictedLate ? '#ff6b6b' : '#ff9c6e' }}>
+                <div className="text-[10px] uppercase tracking-wider text-gray-500">预测完工</div>
+                <div className="text-lg font-bold tabular-nums" style={{ color: isPredictedLate ? '#ff6b6b' : '#fb923c' }}>
                   {fmtShort(metrics.predictedMpDate)}
                 </div>
               </div>
             </>
           )}
+
           {metrics.targetDate && (
             <>
-              <div className="w-px h-10 bg-white/10" />
+              <div className="h-10 w-px bg-white/10" />
               <div className="text-right">
-                <div className="text-[10px] text-gray-500 uppercase tracking-wider">目标结案</div>
-                <div className="text-lg font-bold tabular-nums text-cyan-400">
-                  {fmtShort(metrics.targetDate)}
-                </div>
+                <div className="text-[10px] uppercase tracking-wider text-gray-500">目标结案</div>
+                <div className="text-lg font-bold tabular-nums text-cyan-400">{fmtShort(metrics.targetDate)}</div>
               </div>
             </>
           )}
         </div>
       </div>
 
-      {/* ── Chart ── */}
-      <div className="relative">
-        <ResponsiveContainer width="100%" aspect={5}>
-          <ComposedChart
-            data={points}
-            margin={{ top: 20, right: 30, left: 20, bottom: 20 }}
-          >
+      <div className={cn('relative', fillHeight && 'min-h-0 flex-1')}>
+        <ResponsiveContainer {...responsiveContainerProps}>
+          <ComposedChart data={points} margin={{ top: 28, right: 28, left: 16, bottom: 24 }}>
             <defs>
               <filter id="glow-cyan" x="-50%" y="-50%" width="200%" height="200%">
-                <feGaussianBlur stdDeviation="4" result="coloredBlur" />
+                <feGaussianBlur result="coloredBlur" stdDeviation="4" />
                 <feMerge>
                   <feMergeNode in="coloredBlur" />
                   <feMergeNode in="SourceGraphic" />
                 </feMerge>
               </filter>
               <filter id="glow-yellow" x="-50%" y="-50%" width="200%" height="200%">
-                <feGaussianBlur stdDeviation="3" result="coloredBlur" />
+                <feGaussianBlur result="coloredBlur" stdDeviation="3" />
                 <feMerge>
                   <feMergeNode in="coloredBlur" />
                   <feMergeNode in="SourceGraphic" />
                 </feMerge>
               </filter>
               <filter id="glow-orange" x="-50%" y="-50%" width="200%" height="200%">
-                <feGaussianBlur stdDeviation="3" result="coloredBlur" />
+                <feGaussianBlur result="coloredBlur" stdDeviation="3" />
                 <feMerge>
                   <feMergeNode in="coloredBlur" />
                   <feMergeNode in="SourceGraphic" />
                 </feMerge>
               </filter>
               <linearGradient id="actual-gradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#facc15" stopOpacity={0.8} />
-                <stop offset="100%" stopColor="#f59e0b" stopOpacity={0.6} />
+                <stop offset="0%" stopColor="#facc15" stopOpacity={0.82} />
+                <stop offset="100%" stopColor="#f59e0b" stopOpacity={0.62} />
               </linearGradient>
               <linearGradient id="area-planned" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#22d3ee" stopOpacity={0.08} />
+                <stop offset="0%" stopColor="#22d3ee" stopOpacity={0.1} />
                 <stop offset="100%" stopColor="#22d3ee" stopOpacity={0} />
               </linearGradient>
             </defs>
 
-            <CartesianGrid
-              strokeDasharray="3 3"
-              stroke="rgba(255,255,255,0.05)"
-              vertical={false}
-            />
+            <CartesianGrid stroke="rgba(255,255,255,0.05)" strokeDasharray="3 3" vertical={false} />
+
+            {targetLabel && predictedLabel && isPredictedLate && targetLabel !== predictedLabel && (
+              <ReferenceArea x1={targetLabel} x2={predictedLabel} fill="rgba(239,68,68,0.08)" strokeOpacity={0} />
+            )}
 
             <XAxis
               dataKey="dateLabel"
@@ -1093,6 +1004,7 @@ export function LogitechSCurve({ projectId, moldNumber, className = '' }: Logite
               tick={{ fill: '#9ca3af', fontSize: 11 }}
               axisLine={{ stroke: '#374151' }}
               interval={tickInterval}
+              minTickGap={18}
             />
 
             <YAxis
@@ -1101,67 +1013,80 @@ export function LogitechSCurve({ projectId, moldNumber, className = '' }: Logite
               axisLine={{ stroke: '#374151' }}
               domain={[0, 100]}
               ticks={[0, 25, 50, 75, 100]}
-              tickFormatter={(v: number) => `${v}%`}
+              tickFormatter={(value: number) => `${value}%`}
             />
-
-            {/* Today reference line */}
-            {todayLabel && (
-              <ReferenceLine
-                x={todayLabel}
-                stroke="#22d3ee"
-                strokeWidth={2}
-                strokeDasharray="5 5"
-                label={{
-                  value: 'TODAY',
-                  position: 'top',
-                  fill: '#22d3ee',
-                  fontSize: 10,
-                  fontWeight: 'bold',
-                }}
-              />
-            )}
-
-            {/* Milestone reference lines */}
-            {points
-              .filter((p: SCurvePoint) => p.milestoneId && !p.isForecastMilestone)
-              .map((p: SCurvePoint) => (
-                <ReferenceLine
-                  key={`${p.milestoneId}-${p.week}`}
-                  x={p.dateLabel}
-                  stroke="rgba(255,255,255,0.15)"
-                  strokeDasharray="2 4"
-                  label={{
-                    value: p.milestoneShortLabel!,
-                    position: 'insideTopRight',
-                    fill: '#6b7280',
-                    fontSize: 9,
-                  }}
-                />
-              ))}
 
             <Tooltip content={<SCurveTooltip />} />
 
             <Legend
-              wrapperStyle={{ paddingTop: '20px', display: 'flex', justifyContent: 'flex-end' }}
-              iconType="line"
+              wrapperStyle={{ paddingTop: '18px', display: 'flex', justifyContent: 'flex-end' }}
               align="right"
+              iconType="line"
               payload={[
-                { value: 'planned', type: 'line', color: '#22d3ee', id: 'planned-line' },
-                { value: 'actual', type: 'line', color: '#facc15', id: 'actual-line' },
-                { value: 'forecast', type: 'line', color: '#ff9c6e', id: 'forecast-line' },
+                { value: '基线', type: 'line', color: '#22d3ee', id: 'planned-line' },
+                { value: '实际', type: 'line', color: '#facc15', id: 'actual-line' },
+                { value: '预测', type: 'line', color: '#fb923c', id: 'forecast-line' },
               ]}
-              formatter={(value: string) => {
-                const labels: Record<string, { text: string; color: string }> = {
-                  planned: { text: '计划曲线', color: '#22d3ee' },
-                  actual: { text: '实际曲线', color: '#facc15' },
-                  forecast: { text: '预测趋势', color: '#ff9c6e' },
-                }
-                const l = labels[value]
-                return l ? <span style={{ color: l.color, fontSize: '12px', fontWeight: 700 }}>{l.text}</span> : value
+              formatter={(value: string) => <span style={{ color: '#e5e7eb', fontSize: '12px', fontWeight: 700 }}>{value}</span>}
+            />
+
+            <ReferenceLine
+              x={todayLabel}
+              stroke="#22d3ee"
+              strokeWidth={2}
+              strokeDasharray="5 5"
+              label={{
+                value: 'TODAY',
+                position: 'top',
+                fill: '#22d3ee',
+                fontSize: 10,
+                fontWeight: 'bold',
               }}
             />
 
-            {/* Planned area fill — legendType="none" to avoid duplicate legend entry */}
+            {targetLabel && (
+              <ReferenceLine
+                x={targetLabel}
+                stroke="rgba(34,211,238,0.45)"
+                strokeDasharray="4 4"
+                label={{
+                  value: 'TARGET',
+                  position: 'insideTopRight',
+                  fill: '#67e8f9',
+                  fontSize: 9,
+                }}
+              />
+            )}
+
+            {predictedLabel && (
+              <ReferenceLine
+                x={predictedLabel}
+                stroke="rgba(251,146,60,0.65)"
+                strokeDasharray="6 4"
+                label={{
+                  value: 'FCST',
+                  position: 'insideTopLeft',
+                  fill: '#fdba74',
+                  fontSize: 9,
+                }}
+              />
+            )}
+
+            {milestones.map((milestone, index) => (
+              <ReferenceLine
+                key={`${milestone.milestoneId}-${milestone.date.getTime()}`}
+                x={fmtShort(milestone.date)}
+                stroke="rgba(255,255,255,0.16)"
+                strokeDasharray="2 4"
+                label={{
+                  value: milestone.shortLabel,
+                  position: index % 2 === 0 ? 'insideTopLeft' : 'insideTopRight',
+                  fill: '#94a3b8',
+                  fontSize: 9,
+                }}
+              />
+            ))}
+
             <Area
               type="monotone"
               dataKey="planned"
@@ -1170,7 +1095,6 @@ export function LogitechSCurve({ projectId, moldNumber, className = '' }: Logite
               legendType="none"
             />
 
-            {/* Planned Line – Cyan dashed with glow */}
             <Line
               type="monotone"
               dataKey="planned"
@@ -1182,108 +1106,98 @@ export function LogitechSCurve({ projectId, moldNumber, className = '' }: Logite
               style={{ filter: 'url(#glow-cyan)' }}
             />
 
-            {/* Actual Line – Yellow solid with glow */}
             <Line
               type="monotone"
               dataKey="actual"
               stroke="url(#actual-gradient)"
               strokeWidth={4}
-              dot={{ fill: '#facc15', r: 4, strokeWidth: 0 }}
+              dot={{ fill: '#facc15', r: 3.6, strokeWidth: 0 }}
               activeDot={{ r: 7, fill: '#facc15', stroke: '#fff', strokeWidth: 2 }}
               style={{ filter: 'url(#glow-yellow)' }}
               connectNulls={false}
             />
 
-            {/* Forecast Line – Orange dashed with glow */}
             <Line
               type="monotone"
               dataKey="forecast"
-              stroke="#ff9c6e"
+              stroke="#fb923c"
               strokeWidth={2.5}
               strokeDasharray="6 4"
               dot={false}
-              activeDot={{ r: 5, fill: '#ff9c6e', stroke: '#fff', strokeWidth: 2 }}
-              connectNulls={true}
+              activeDot={{ r: 5, fill: '#fb923c', stroke: '#fff', strokeWidth: 2 }}
+              connectNulls
               style={{ filter: 'url(#glow-orange)' }}
             />
           </ComposedChart>
         </ResponsiveContainer>
       </div>
 
-      {/* ── Status Bar ── */}
-      <div className="mt-3 grid grid-cols-3 gap-2">
-        <div className="rounded-lg bg-cyan-500/10 border border-cyan-500/20 p-2">
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
-            <span className="text-[10px] text-gray-400 uppercase tracking-wider">当前阶段</span>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {milestones.map((milestone) => (
+          <div
+            key={milestone.milestoneId}
+            className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs text-slate-300"
+          >
+            <span className="font-semibold text-cyan-300">{milestone.shortLabel}</span>
+            <span>{milestone.label}</span>
+            <span className="font-mono text-slate-500">{fmtShort(milestone.date)}</span>
           </div>
-          <div className="mt-1 text-sm font-semibold text-cyan-400 truncate">
+        ))}
+      </div>
+
+      <div className="mt-3 grid gap-2 md:grid-cols-4">
+        <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/10 p-3">
+          <div className="flex items-center gap-2">
+            <div className="h-2 w-2 animate-pulse rounded-full bg-cyan-400" />
+            <span className="text-[10px] uppercase tracking-wider text-gray-400">当前阶段</span>
+          </div>
+          <div className="mt-1 text-sm font-semibold text-cyan-400">
             {formatSCurveCurrentStageLabel(metrics.currentStageId, metrics.currentStageComplete)}
           </div>
         </div>
 
-        <div className="rounded-lg bg-yellow-500/10 border border-yellow-500/20 p-2">
+        <div className="rounded-lg border border-yellow-500/20 bg-yellow-500/10 p-3">
           <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-yellow-400" />
-            <span className="text-[10px] text-gray-400 uppercase tracking-wider">任务数</span>
+            <div className="h-2 w-2 rounded-full bg-yellow-400" />
+            <span className="text-[10px] uppercase tracking-wider text-gray-400">权重进度</span>
           </div>
           <div className="mt-1 text-sm font-semibold text-yellow-400 tabular-nums">
-            {metrics.doneCount}/{metrics.taskCount}
-            <span className="text-gray-500 text-xs ml-1">完成</span>
+            {metrics.earnedWeight.toFixed(1)} / {metrics.totalWeight.toFixed(1)}
+          </div>
+          <div className="mt-1 text-[11px] text-gray-500">
+            任务完成 {metrics.doneCount}/{metrics.taskCount}
           </div>
         </div>
 
-        <div className={cn('rounded-lg p-2 border',
-          metrics.deltaQ < 0 ? 'bg-emerald-500/10 border-emerald-500/20'
-          : metrics.deltaQ === 0 ? 'bg-cyan-500/10 border-cyan-500/20'
-          : 'bg-red-500/10 border-red-500/20'
-        )}>
+        <div className="rounded-lg border border-orange-500/20 bg-orange-500/10 p-3">
           <div className="flex items-center gap-2">
-            <div className={cn('w-2 h-2 rounded-full',
-              metrics.deltaQ < 0 ? 'bg-emerald-400' : metrics.deltaQ === 0 ? 'bg-cyan-400' : 'bg-red-400 animate-pulse'
-            )} />
-            <span className="text-[10px] text-gray-400 uppercase tracking-wider">实际状态</span>
+            <div className="h-2 w-2 rounded-full bg-orange-400" />
+            <span className="text-[10px] uppercase tracking-wider text-gray-400">目标日预测值</span>
           </div>
-          <div className={cn('mt-1 text-sm font-semibold',
-            metrics.deltaQ < 0 ? 'text-emerald-400' : metrics.deltaQ === 0 ? 'text-cyan-400' : 'text-red-400'
-          )}>
-            {metrics.deltaQ < 0
-              ? `超前 ${Math.abs(metrics.deltaQ).toFixed(1)}%`
-              : metrics.deltaQ === 0
-                ? '进度同步'
-                : `落后 ${metrics.deltaQ.toFixed(1)}%`}
+          <div className="mt-1 text-sm font-semibold text-orange-400 tabular-nums">
+            {metrics.forecastAtTarget == null ? 'N/A' : `${metrics.forecastAtTarget.toFixed(1)}%`}
+          </div>
+          <div className="mt-1 text-[11px] text-gray-500">SPI 拉伸剩余基线后的落点</div>
+        </div>
+
+        <div
+          className={cn(
+            'rounded-lg border p-3',
+            isPredictedLate ? 'border-red-500/20 bg-red-500/10' : 'border-emerald-500/20 bg-emerald-500/10',
+          )}
+        >
+          <div className="flex items-center gap-2">
+            <div className={cn('h-2 w-2 rounded-full', isPredictedLate ? 'bg-red-400 animate-pulse' : 'bg-emerald-400')} />
+            <span className="text-[10px] uppercase tracking-wider text-gray-400">审计结论</span>
+          </div>
+          <div className={cn('mt-1 text-sm font-semibold', isPredictedLate ? 'text-red-400' : 'text-emerald-400')}>
+            {isPredictedLate ? `预计延误 ${metrics.forecastSlipDays} 天` : '按当前效率仍可收敛'}
+          </div>
+          <div className="mt-1 text-[11px] text-gray-500">
+            {metrics.deltaQ > 0 ? `当前落后 ${metrics.deltaQ.toFixed(1)}%` : `当前领先 ${Math.abs(metrics.deltaQ).toFixed(1)}%`}
           </div>
         </div>
       </div>
-
-      {/* ── 算法说明 ── */}
-      <details className="mt-4 group">
-        <summary className="text-[11px] text-white/25 cursor-pointer hover:text-white/40 transition-colors select-none">
-          ℹ 指标算法说明
-        </summary>
-        <div className="mt-2 rounded-lg bg-white/[0.02] border border-white/[0.06] p-4 text-[11px] leading-relaxed text-white/35 space-y-3">
-          <div>
-            <span className="text-cyan-400/60 font-bold">ΔQ 偏差</span>
-            <span className="mx-1">=</span>
-            计划进度 − 实际进度。计划进度按 baseline_end ≤ 今天的叶子任务占比计算；实际进度按 actual_end ≤ 今天的叶子任务占比计算。ΔQ {'>'} 0 表示落后于计划。
-          </div>
-          <div>
-            <span className="text-cyan-400/60 font-bold">ΔT 偏差</span>
-            <span className="mx-1">=</span>
-            在计划曲线上找到与当前实际进度相同的日期，与今天的天数差。ΔT {'>'} 0 表示实际进度对应的计划日期在今天之后（即落后）。
-          </div>
-          <div>
-            <span className="text-orange-400/60 font-bold">预测完工</span>
-            <span className="mx-1">—</span>
-            采用 21 工序模型：将 {metrics.taskCount} 个叶子任务压缩为 4 道前置 + 14 道泳道四合一 + 后续节点 ≈ 21 道超级工序。泳道四合一要求 4 条泳道全部完成同一工序才算达成。速度 = 已完成工序数 ÷ 已用天数，预测完工 = 今天 + 剩余工序 ÷ 速度。
-          </div>
-          <div>
-            <span className="text-red-400/60 font-bold">状态判定</span>
-            <span className="mx-1">—</span>
-            若预测完工日期超过目标结案日期，状态为"预测延误"；否则按 ΔQ 判断"进度正常"或"延迟"。
-          </div>
-        </div>
-      </details>
     </div>
-  )
+  );
 }

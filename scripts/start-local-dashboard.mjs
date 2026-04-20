@@ -235,9 +235,11 @@ async function waitForServices(apiHealthUrl, preferredPort, apiProcessInfo, vite
       try {
         const response = await fetchWithTimeout(apiHealthUrl, 2000);
         const payload = await response.json();
-        if (payload?.ok === true && payload?.api === true) {
+        const apiAvailable = payload?.api === true;
+        if (apiAvailable) {
           apiReady = true;
-          log(`api ready at ${apiHealthUrl}`);
+          const dbState = payload?.ok === true ? "db-ready" : "db-degraded";
+          log(`api ready at ${apiHealthUrl} (${dbState})`);
         }
       } catch {
       }

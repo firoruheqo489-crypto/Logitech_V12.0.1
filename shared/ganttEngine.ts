@@ -52,6 +52,7 @@ export interface TaskNode {
   /** V4.5: 全线延期传导后的预测开始/结束日期（仅当存在前置延迟时存在） */
   predictedStart?: string;
   predictedEnd?: string;
+  predecessors?: string[];
 }
 
 export interface DependencyEdge {
@@ -418,6 +419,15 @@ export function getGanttData(
   // ── Step 4 (V4.5): Excel 日期唯一真理 — 不覆盖 baseline/actual，仅附加 isOverdue 与预测线 ──
   const taskMap = new Map(inputTasks.map((t) => [t.id, t]));
 
+  const predecessorMap = new Map<string, string[]>();
+  for (const dependency of allDeps) {
+    const predecessors = predecessorMap.get(dependency.taskId) ?? [];
+    if (!predecessors.includes(dependency.predecessorId)) {
+      predecessors.push(dependency.predecessorId);
+      predecessorMap.set(dependency.taskId, predecessors);
+    }
+  }
+
   const updatedTasks = inputTasks.map((task) => {
     const baselineEnd = task.baselineEnd ? new Date(task.baselineEnd) : null;
     const actualEnd = task.actualEnd ? new Date(task.actualEnd) : null;
@@ -426,7 +436,11 @@ export function getGanttData(
       actualEnd &&
       actualEnd.getTime() > baselineEnd.getTime()
     );
-    return { ...task, isOverdue };
+    return {
+      ...task,
+      isOverdue,
+      predecessors: predecessorMap.get(task.id) ?? [],
+    };
   });
 
   // 全线延期传导：按 stageOrder 顺序，前置的“预测结束日”作为本任务预测开始；保持工期间隔
