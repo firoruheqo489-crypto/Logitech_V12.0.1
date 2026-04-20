@@ -18,10 +18,11 @@ describe('project progress module scaffold', () => {
     expect(source).toContain('<Route path={"/dashboard/progress"} component={ProjectProgress} />');
   });
 
-  it('adds the project progress tab immediately after dimension analysis', async () => {
+  it('keeps project progress behind converter tab after dimension analysis', async () => {
     const source = await loadSource('./pages/dashboard/DashboardHome.tsx');
 
-    expect(source).toMatch(/'dimension-analysis',\s*'project-progress',\s*'mold-reliability'/s);
+    expect(source).toMatch(/'dimension-analysis',\s*'docx-converter',\s*'project-progress',\s*'mold-reliability'/s);
+    expect(source).toContain("'docx-converter': 'DOCX转Excel'");
     expect(source).toContain("'project-progress': '项目进度看板'");
     expect(source).toContain("if (tab === 'project-progress')");
     expect(source).toContain("setLocation(nextUrl);");

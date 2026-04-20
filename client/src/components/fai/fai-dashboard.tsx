@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { FAISidebar, computeAggregatedStatus } from "./fai-sidebar"
 import { ToleranceMap } from "./tolerance-map"
 import { DiagnosticAssertion } from "./diagnostic-assertion"
@@ -12,6 +12,13 @@ import {
   generateCavityData,
   generateSPCChartData,
 } from "@/lib/fai-mock-data"
+import { deleteAssetViaServer, uploadAssetViaServer } from "@/lib/ossUpload"
+import {
+  deleteFaiDimensionState,
+  fetchFaiDimensionState,
+  type FaiDimensionRemoteState,
+  saveFaiDimensionState,
+} from "@/lib/fai-dimension-state-api"
 import CyberConfirmDialog from "@/components/ui/CyberConfirmDialog"
 import { Activity, BarChart3, Gauge, Trash2, UploadCloud } from "lucide-react"
 
@@ -31,6 +38,22 @@ type ParsedFaiData = {
   cavityMatrix: { cavity: string; value: number }[]
   cavityShots?: { cavity: string; shot: 1 | 2 | 3; value: number }[]
 }
+
+type PersistedFaiPayload = {
+  version: number
+  fileName: string
+  selectedFai: string
+  data: ParsedFaiData[]
+  savedAt: string
+}
+
+const FAI_REMOTE_PAYLOAD_VERSION = 1
+const FAI_REMOTE_CATEGORY = "fai-dimension"
+const FAI_DEFAULT_ENTITY_ID = "dimension-analyzer"
+const FAI_DEFAULT_SLOT = "parsed-json"
+const FAI_LOCAL_FALLBACK_STORAGE_KEY = "fai_dimension_state_fallback_v1"
+const FAI_LOCAL_SNAPSHOT_STORAGE_KEY = "fai_dimension_snapshot_v1"
+const FAI_DEFAULT_TRIAL_STAGE = "T0"
 
 const DIM_HEADER_CANDIDATES = ["Dim. #", "Dim #", "Dim.#", "Dim#"]
 const CAVITY_HEADER_CANDIDATES = ["Cavity #", "Cavity#", "Cavity"]
@@ -56,6 +79,269 @@ function roundToFour(value: number): number {
 
 function roundToThree(value: number): number {
   return Number(Math.round((value + Number.EPSILON) * 1000) / 1000)
+}
+
+function toErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message
+  }
+  return fallback
+}
+
+function normalizeTrialStage(value: string | undefined): string {
+  const normalized = String(value ?? "")
+    .trim()
+    .toUpperCase()
+  return /^T\d+$/.test(normalized) ? normalized : FAI_DEFAULT_TRIAL_STAGE
+}
+
+function normalizeFaiId(value: unknown): string {
+  return String(value ?? "").trim()
+}
+
+function sanitizeParsedCavityMatrix(
+  value: unknown
+): { cavity: string; value: number }[] {
+  if (!Array.isArray(value)) return []
+
+  return value
+    .map((item) => {
+      if (!item || typeof item !== "object") return null
+      const record = item as Record<string, unknown>
+      const cavity = String(record.cavity ?? "").trim() || "CAV?"
+      const parsedValue = toNumberOrNaN(record.value)
+      if (Number.isNaN(parsedValue)) return null
+      return {
+        cavity,
+        value: roundToThree(parsedValue),
+      }
+    })
+    .filter((item): item is { cavity: string; value: number } => item !== null)
+}
+
+function sanitizeParsedCavityShots(
+  value: unknown
+): { cavity: string; shot: 1 | 2 | 3; value: number }[] {
+  if (!Array.isArray(value)) return []
+
+  return value
+    .map((item) => {
+      if (!item || typeof item !== "object") return null
+      const record = item as Record<string, unknown>
+      const cavity = String(record.cavity ?? "").trim() || "CAV?"
+      const shotValue = Number(record.shot)
+      if (shotValue !== 1 && shotValue !== 2 && shotValue !== 3) return null
+      const parsedValue = toNumberOrNaN(record.value)
+      if (Number.isNaN(parsedValue)) return null
+
+      return {
+        cavity,
+        shot: shotValue as 1 | 2 | 3,
+        value: roundToThree(parsedValue),
+      }
+    })
+    .filter((item): item is { cavity: string; shot: 1 | 2 | 3; value: number } => item !== null)
+}
+
+function sanitizeParsedWorkbookData(value: unknown): ParsedFaiData[] {
+  if (!Array.isArray(value)) return []
+
+  const sanitized: ParsedFaiData[] = []
+
+  value.forEach((item) => {
+    if (!item || typeof item !== "object") return
+
+    const record = item as Record<string, unknown>
+    const faiId = normalizeFaiId(record.faiId)
+    if (!faiId) return
+
+    const nominalRaw = toNumberOrNaN(record.nominal)
+    const uslRaw = toNumberOrNaN(record.usl)
+    const lslRaw = toNumberOrNaN(record.lsl)
+
+    const nominal = Number.isNaN(nominalRaw) ? 0 : roundToThree(nominalRaw)
+    const usl = Number.isNaN(uslRaw) ? nominal : roundToThree(uslRaw)
+    const lsl = Number.isNaN(lslRaw) ? nominal : roundToThree(lslRaw)
+
+    const flatValues = Array.isArray(record.flatValues)
+      ? record.flatValues
+          .map((entry) => toNumberOrNaN(entry))
+          .filter((entry) => !Number.isNaN(entry))
+          .map((entry) => roundToThree(entry))
+      : []
+
+    const cavityMatrix = sanitizeParsedCavityMatrix(record.cavityMatrix)
+    const cavityShots = sanitizeParsedCavityShots(record.cavityShots)
+
+    sanitized.push({
+      faiId,
+      nominal,
+      usl,
+      lsl,
+      flatValues,
+      cavityMatrix,
+      cavityShots: cavityShots.length > 0 ? cavityShots : undefined,
+    })
+  })
+
+  return sanitized
+}
+
+function normalizePersistedPayload(
+  payload: unknown,
+  fallbackFileName: string,
+  fallbackSelectedFai: string
+): {
+  fileName: string
+  selectedFai: string
+  data: ParsedFaiData[]
+} {
+  let fileName = String(fallbackFileName ?? "").trim()
+  let selectedFai = String(fallbackSelectedFai ?? "").trim()
+  let dataSource: unknown = payload
+
+  if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+    const record = payload as Record<string, unknown>
+    const maybeFileName = String(record.fileName ?? "").trim()
+    const maybeSelectedFai = String(record.selectedFai ?? "").trim()
+    if (maybeFileName) fileName = maybeFileName
+    if (maybeSelectedFai) selectedFai = maybeSelectedFai
+
+    if (Array.isArray(record.data)) {
+      dataSource = record.data
+    } else if (Array.isArray(record.parsedWorkbookData)) {
+      dataSource = record.parsedWorkbookData
+    }
+  }
+
+  const data = sanitizeParsedWorkbookData(dataSource)
+  const resolvedSelectedFai = data.some((item) => item.faiId === selectedFai)
+    ? selectedFai
+    : (data[0]?.faiId ?? "fai1")
+
+  return {
+    fileName,
+    selectedFai: resolvedSelectedFai,
+    data,
+  }
+}
+
+function readLocalFaiFallbackState(
+  storageKey: string,
+  scope: string
+): FaiDimensionRemoteState | null {
+  if (typeof window === "undefined") {
+    return null
+  }
+
+  try {
+    const raw = window.localStorage.getItem(storageKey)
+    if (!raw) return null
+
+    const parsed = JSON.parse(raw) as Partial<FaiDimensionRemoteState> | null
+    if (!parsed || typeof parsed !== "object") return null
+
+    const normalizedScope = String(parsed.scope ?? "").trim() || scope
+    const fileName = String(parsed.fileName ?? "").trim()
+    const assetUrl = String(parsed.assetUrl ?? "").trim()
+    const selectedFai = String(parsed.selectedFai ?? "").trim() || "fai1"
+    const updatedAt = String(parsed.updatedAt ?? "").trim() || undefined
+
+    if (!assetUrl) return null
+
+    return {
+      scope: normalizedScope,
+      fileName,
+      assetUrl,
+      selectedFai,
+      updatedAt,
+    }
+  } catch {
+    return null
+  }
+}
+
+function writeLocalFaiFallbackState(
+  storageKey: string,
+  state: FaiDimensionRemoteState
+): boolean {
+  if (typeof window === "undefined") {
+    return false
+  }
+
+  try {
+    window.localStorage.setItem(
+      storageKey,
+      JSON.stringify({
+        scope: state.scope,
+        fileName: state.fileName,
+        assetUrl: state.assetUrl,
+        selectedFai: state.selectedFai,
+        updatedAt: new Date().toISOString(),
+      })
+    )
+    return true
+  } catch {
+    return false
+  }
+}
+
+function clearLocalFaiFallbackState(storageKey: string): void {
+  if (typeof window === "undefined") {
+    return
+  }
+  window.localStorage.removeItem(storageKey)
+}
+
+function writeLocalFaiSnapshotState(
+  storageKey: string,
+  payload: PersistedFaiPayload
+): void {
+  if (typeof window === "undefined") {
+    return
+  }
+  try {
+    window.localStorage.setItem(storageKey, JSON.stringify(payload))
+  } catch {
+  }
+}
+
+function readLocalFaiSnapshotState(storageKey: string): PersistedFaiPayload | null {
+  if (typeof window === "undefined") {
+    return null
+  }
+  try {
+    const raw = window.localStorage.getItem(storageKey)
+    if (!raw) return null
+
+    const parsed = JSON.parse(raw) as unknown
+    if (!parsed || typeof parsed !== "object") return null
+    const record = parsed as Record<string, unknown>
+
+    const normalized = normalizePersistedPayload(
+      parsed,
+      String(record.fileName ?? "").trim(),
+      String(record.selectedFai ?? "").trim()
+    )
+    if (normalized.data.length === 0) return null
+
+    return {
+      version: Number(record.version) || FAI_REMOTE_PAYLOAD_VERSION,
+      fileName: normalized.fileName,
+      selectedFai: normalized.selectedFai,
+      data: normalized.data,
+      savedAt: String(record.savedAt ?? "").trim() || new Date().toISOString(),
+    }
+  } catch {
+    return null
+  }
+}
+
+function clearLocalFaiSnapshotState(storageKey: string): void {
+  if (typeof window === "undefined") {
+    return
+  }
+  window.localStorage.removeItem(storageKey)
 }
 
 function normalizeHeaderKey(value: string): string {
@@ -340,7 +626,15 @@ function buildCavityPointsFromShots(
   })
 }
 
-export function FAIDashboard() {
+export function FAIDashboard({
+  moldId,
+  moldNo,
+  trialStage,
+}: {
+  moldId?: string
+  moldNo?: string
+  trialStage?: string
+} = {}) {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [selectedFAI, setSelectedFAI] = useState("fai1")
   const [parsedWorkbookData, setParsedWorkbookData] = useState<ParsedFaiData[]>([])
@@ -348,12 +642,137 @@ export function FAIDashboard() {
   const [parseError, setParseError] = useState("")
   const [isParsing, setIsParsing] = useState(false)
   const [showClearConfirm, setShowClearConfirm] = useState(false)
+  const [remoteAssetUrl, setRemoteAssetUrl] = useState("")
+
+  const normalizedMoldId = (moldId || "").trim() || FAI_DEFAULT_ENTITY_ID
+  const normalizedMoldNo = (moldNo || "").trim() || "NO.-"
+  const normalizedTrialStage = normalizeTrialStage(trialStage)
+  const faiScope = `dimension-analyzer:${normalizedMoldId}:${normalizedMoldNo}:${normalizedTrialStage}`
+  const fallbackStorageKey = `${FAI_LOCAL_FALLBACK_STORAGE_KEY}:${faiScope}`
+  const snapshotStorageKey = `${FAI_LOCAL_SNAPSHOT_STORAGE_KEY}:${faiScope}`
+  const remoteEntityId = `${normalizedMoldId}__${normalizedMoldNo.replace(/[^\w.-]+/g, "-")}`
+  const remoteSlot = `${FAI_DEFAULT_SLOT}-${normalizedTrialStage.toLowerCase()}`
 
   const hasUploadedDataset = parsedWorkbookData.length > 0
   const parsedPointTotal = useMemo(
     () => parsedWorkbookData.reduce((sum, item) => sum + item.flatValues.length, 0),
     [parsedWorkbookData]
   )
+
+  useEffect(() => {
+    setParsedWorkbookData([])
+    setUploadedFileName("")
+    setSelectedFAI("fai1")
+    setParseError("")
+    setRemoteAssetUrl("")
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ""
+    }
+
+    let cancelled = false
+    void (async () => {
+      try {
+        let persistedState: FaiDimensionRemoteState | null = null
+
+        try {
+          persistedState = await fetchFaiDimensionState({ scope: faiScope })
+        } catch (error) {
+          console.warn("Failed to load server-side FAI state, fallback to local pointer:", error)
+        }
+
+        if (!persistedState?.assetUrl) {
+          persistedState = readLocalFaiFallbackState(fallbackStorageKey, faiScope)
+        }
+
+        if (!persistedState?.assetUrl) {
+          const snapshot = readLocalFaiSnapshotState(snapshotStorageKey)
+          if (!snapshot) {
+            return
+          }
+
+          if (cancelled) {
+            return
+          }
+
+          setParsedWorkbookData(snapshot.data)
+          setUploadedFileName(snapshot.fileName)
+          setSelectedFAI(snapshot.selectedFai)
+          setRemoteAssetUrl("")
+          return
+        }
+
+        const response = await fetch(persistedState.assetUrl, { cache: "no-store" })
+        if (!response.ok) {
+          throw new Error(`Failed to download persisted dataset (${response.status})`)
+        }
+
+        const payload = (await response.json()) as unknown
+        const normalized = normalizePersistedPayload(
+          payload,
+          persistedState.fileName,
+          persistedState.selectedFai
+        )
+        if (normalized.data.length === 0) {
+          throw new Error("Persisted dataset is empty.")
+        }
+
+        if (cancelled) {
+          return
+        }
+
+        setParsedWorkbookData(normalized.data)
+        setUploadedFileName(normalized.fileName)
+        setSelectedFAI(normalized.selectedFai)
+        setRemoteAssetUrl(persistedState.assetUrl)
+        writeLocalFaiSnapshotState(snapshotStorageKey, {
+          version: FAI_REMOTE_PAYLOAD_VERSION,
+          fileName: normalized.fileName,
+          selectedFai: normalized.selectedFai,
+          data: normalized.data,
+          savedAt: new Date().toISOString(),
+        })
+      } catch (error) {
+        if (cancelled) {
+          return
+        }
+        const snapshot = readLocalFaiSnapshotState(snapshotStorageKey)
+        if (snapshot) {
+          setParsedWorkbookData(snapshot.data)
+          setUploadedFileName(snapshot.fileName)
+          setSelectedFAI(snapshot.selectedFai)
+          setRemoteAssetUrl("")
+          return
+        }
+        console.error("Failed to hydrate persisted FAI dimension state:", error)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [faiScope, fallbackStorageKey, snapshotStorageKey])
+
+  useEffect(() => {
+    if (!hasUploadedDataset || !remoteAssetUrl) {
+      return
+    }
+
+    const statePayload: FaiDimensionRemoteState = {
+      scope: faiScope,
+      fileName: uploadedFileName || "FAI Dataset",
+      assetUrl: remoteAssetUrl,
+      selectedFai: selectedFAI,
+    }
+
+    void saveFaiDimensionState(statePayload)
+      .then(() => {
+        clearLocalFaiFallbackState(fallbackStorageKey)
+      })
+      .catch((error) => {
+        console.error("Failed to sync selected FAI state, fallback to local pointer:", error)
+        writeLocalFaiFallbackState(fallbackStorageKey, statePayload)
+      })
+  }, [faiScope, fallbackStorageKey, hasUploadedDataset, remoteAssetUrl, selectedFAI, uploadedFileName])
 
   const analyzedData = useMemo(() => {
     if (!hasUploadedDataset) {
@@ -507,14 +926,40 @@ export function FAIDashboard() {
   }
 
   const handleClearUploadedData = () => {
+    const lastAssetUrl = remoteAssetUrl
+
     setParsedWorkbookData([])
     setUploadedFileName("")
     setParseError("")
     setShowClearConfirm(false)
     setSelectedFAI("fai1")
+    setRemoteAssetUrl("")
     if (fileInputRef.current) {
       fileInputRef.current.value = ""
     }
+    clearLocalFaiFallbackState(fallbackStorageKey)
+    clearLocalFaiSnapshotState(snapshotStorageKey)
+
+    void (async () => {
+      try {
+        await deleteFaiDimensionState({ scope: faiScope })
+        return
+      } catch (error) {
+        console.warn("Failed to delete server-side FAI state, fallback to direct OSS delete:", error)
+      }
+
+      if (!lastAssetUrl) {
+        return
+      }
+
+      try {
+        await deleteAssetViaServer(lastAssetUrl)
+      } catch (error) {
+        setParseError(
+          `Local data cleared, but cloud delete failed: ${toErrorMessage(error, "delete request failed.")}`
+        )
+      }
+    })()
   }
 
   const handleFileUpload = async (file?: File) => {
@@ -638,11 +1083,65 @@ export function FAIDashboard() {
 
       setParsedWorkbookData(finalParsedData)
       setUploadedFileName(file.name)
-      setSelectedFAI(finalParsedData[0]?.faiId ?? "fai1")
+      const nextSelectedFai = finalParsedData[0]?.faiId ?? "fai1"
+      setSelectedFAI(nextSelectedFai)
+
+      try {
+        const payload: PersistedFaiPayload = {
+          version: FAI_REMOTE_PAYLOAD_VERSION,
+          fileName: file.name,
+          selectedFai: nextSelectedFai,
+          data: finalParsedData,
+          savedAt: new Date().toISOString(),
+        }
+        writeLocalFaiSnapshotState(snapshotStorageKey, payload)
+
+        const payloadBlob = new Blob([JSON.stringify(payload)], {
+          type: "application/json",
+        })
+        const baseName = file.name.replace(/\.[^.]+$/, "") || "fai-dimension"
+        const payloadFile = new File([payloadBlob], `${baseName}-parsed.json`, {
+          type: "application/json",
+        })
+
+        const uploaded = await uploadAssetViaServer({
+          file: payloadFile,
+          category: FAI_REMOTE_CATEGORY,
+          entityId: remoteEntityId,
+          slot: remoteSlot,
+        })
+
+        const statePayload: FaiDimensionRemoteState = {
+          scope: faiScope,
+          fileName: file.name,
+          assetUrl: uploaded.url,
+          selectedFai: nextSelectedFai,
+        }
+
+        setRemoteAssetUrl(uploaded.url)
+
+        try {
+          await saveFaiDimensionState(statePayload)
+          clearLocalFaiFallbackState(fallbackStorageKey)
+        } catch (error) {
+          console.warn("Failed to save server-side FAI state, fallback to local pointer:", error)
+          const savedToLocalFallback = writeLocalFaiFallbackState(fallbackStorageKey, statePayload)
+          if (!savedToLocalFallback) {
+            throw error
+          }
+        }
+
+      } catch (error) {
+        console.error("Parsed Excel but failed to persist FAI state:", error)
+        setParseError(
+          `Excel parsed, but cloud save failed: ${toErrorMessage(error, "upload request failed.")}`
+        )
+      }
     } catch (error) {
       setParsedWorkbookData([])
       setUploadedFileName("")
       setSelectedFAI("fai1")
+      setRemoteAssetUrl("")
       setParseError(error instanceof Error ? error.message : "Excel parse failed.")
     } finally {
       setIsParsing(false)
@@ -694,8 +1193,9 @@ export function FAIDashboard() {
                 FAI DIMENSION ANALYZER
               </h1>
               <p className="text-xs text-muted-foreground font-mono">
-                {faiItem.label} &mdash; {faiItem.cavities} {hasUploadedDataset ? "POINTS" : "CAVITIES"} &mdash; SPEC:{" "}
-                {spec.lsl} ~ {spec.usl} {spec.unit}
+                {normalizedMoldId} / {normalizedMoldNo} / {normalizedTrialStage} &mdash; {faiItem.label} &mdash;{" "}
+                {faiItem.cavities} {hasUploadedDataset ? "POINTS" : "CAVITIES"} &mdash; SPEC: {spec.lsl} ~ {spec.usl}{" "}
+                {spec.unit}
               </p>
               {hasUploadedDataset ? (
                 <p className="text-[11px] font-mono text-cyan-300/90">
@@ -794,6 +1294,7 @@ export function FAIDashboard() {
               usl={spec.usl}
               lsl={spec.lsl}
               faiLabel={faiItem.label}
+              sampleValues={analyzedData.sampleValues}
             />
           </div>
         </main>

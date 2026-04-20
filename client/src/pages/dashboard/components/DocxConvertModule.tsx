@@ -1,0 +1,1436 @@
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Download, ExternalLink, FileSpreadsheet, ImageIcon, Loader2, Trash2, UploadCloud, X } from 'lucide-react';
+import { toast } from 'sonner';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import CyberConfirmDialog from '@/components/ui/CyberConfirmDialog';
+import { deleteAssetViaServer, uploadAssetViaServer } from '@/lib/ossUpload';
+import AssetDrawerWorkspace, { buildAssetPanelKey, type AssetPanelItem } from './AssetDrawerWorkspace';
+import {
+  deleteDashboardDocxConverterState,
+  fetchDashboardDocxConverterState,
+  saveDashboardDocxConverterState,
+  type DocxConverterRemoteStageState,
+} from '../lib/docx-converter-state-api';
+import {
+  parseDocxReport,
+  type ParseProgress,
+  type ParseResult,
+  type ParsedImage,
+} from '../lib/docxConvertParser';
+import { exportDocxParseResultToXlsx } from '../lib/docxConvertExporter';
+
+interface DocxConvertModuleProps {
+  panels: AssetPanelItem[];
+}
+
+type TrialStage = string;
+
+interface TrialStageViewState {
+  fileName: string | null;
+  fileUrl: string | null;
+  progress: ParseProgress | null;
+  result: ParseResult | null;
+  error: string | null;
+  isParsing: boolean;
+}
+
+const DEFAULT_TRIAL_STAGES: TrialStage[] = ['T0', 'T1', 'T2', 'T3'];
+const TRIAL_STAGE_PATTERN = /^T\d+$/;
+const DOCX_MIME_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+const DOCX_CONVERTER_LOCAL_CACHE_PREFIX = 'dashboard-docx-converter-state:v1:';
+const DOCX_CONVERTER_IDB_NAME = 'dashboard-docx-converter-cache-v1';
+const DOCX_CONVERTER_IDB_STORE = 'stage-results';
+
+const STAGE_LABELS: Record<ParseProgress['stage'], string> = {
+  unzipping: '解压 DOCX',
+  'parsing-xml': '解析 XML',
+  'extracting-images': '提取图片',
+  rendering: '渲染预览',
+  done: '完成',
+};
+
+const COLUMN_WIDTH_CLASSES: Record<number, string> = {
+  0: 'w-[3%]',
+  1: 'w-[20%]',
+  2: 'w-[7%]',
+  3: 'w-[15%]',
+  4: 'w-[15%]',
+  5: 'w-[5%]',
+  6: 'w-[18%]',
+  7: 'w-[8%]',
+  8: 'w-[9%]',
+};
+
+function trimDocxName(fileName: string): string {
+  return fileName.replace(/\.docx$/i, '') || 'qe-report';
+}
+
+function isDocxFile(file: File): boolean {
+  return file.name.toLowerCase().endsWith('.docx');
+}
+
+function createTrialStageLabel(index: number): TrialStage {
+  return `T${index}`;
+}
+
+function createEmptyTrialStageState(): TrialStageViewState {
+  return {
+    fileName: null,
+    fileUrl: null,
+    progress: null,
+    result: null,
+    error: null,
+    isParsing: false,
+  };
+}
+
+function normalizeTrialStages(value: unknown): TrialStage[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return Array.from(
+    new Set(
+      value
+        .map((stage) => String(stage ?? '').trim().toUpperCase())
+        .filter((stage): stage is TrialStage => TRIAL_STAGE_PATTERN.test(stage)),
+    ),
+  ).sort((a, b) => Number.parseInt(a.slice(1), 10) - Number.parseInt(b.slice(1), 10));
+}
+
+function createStageStateMap(
+  trialStages: TrialStage[],
+  remoteStageStateByTrial?: Record<string, DocxConverterRemoteStageState>,
+): Record<TrialStage, TrialStageViewState> {
+  const normalizedTrialStages = normalizeTrialStages(trialStages);
+  const normalizedRemoteStageState = remoteStageStateByTrial || {};
+
+  const result = normalizedTrialStages.reduce(
+    (acc, stage) => {
+      const remoteState = normalizedRemoteStageState[stage];
+      acc[stage] = {
+        ...createEmptyTrialStageState(),
+        fileName: remoteState?.fileName || null,
+        fileUrl: remoteState?.fileUrl || null,
+        result: remoteState?.result ?? null,
+      };
+      return acc;
+    },
+    {} as Record<TrialStage, TrialStageViewState>,
+  );
+
+  return result;
+}
+
+type DocxConverterLocalSnapshot = {
+  moldId: string;
+  moldNo?: string;
+  trialStages: string[];
+  activeTrial: string;
+  stageStateByTrial: Record<string, DocxConverterRemoteStageState>;
+  updatedAt?: string;
+};
+
+type StageResultCacheRecord = {
+  key: string;
+  result: ParseResult;
+  updatedAt: string;
+};
+
+function buildLocalSnapshotKey(identity: { moldId: string; moldNo?: string }): string {
+  return `${DOCX_CONVERTER_LOCAL_CACHE_PREFIX}${identity.moldId}::${identity.moldNo || ''}`;
+}
+
+function buildStageResultCacheKey(identity: { moldId: string; moldNo?: string }, stage: string): string {
+  return `${identity.moldId}::${identity.moldNo || ''}::${stage}`;
+}
+
+function openDocxConverterCacheDb(): Promise<IDBDatabase | null> {
+  if (typeof window === 'undefined' || typeof window.indexedDB === 'undefined') {
+    return Promise.resolve(null);
+  }
+
+  return new Promise((resolve) => {
+    const request = window.indexedDB.open(DOCX_CONVERTER_IDB_NAME, 1);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(DOCX_CONVERTER_IDB_STORE)) {
+        db.createObjectStore(DOCX_CONVERTER_IDB_STORE, { keyPath: 'key' });
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => resolve(null);
+  });
+}
+
+async function setStageResultCache(
+  identity: { moldId: string; moldNo?: string },
+  stage: string,
+  result: ParseResult,
+): Promise<void> {
+  const db = await openDocxConverterCacheDb();
+  if (!db) {
+    return;
+  }
+
+  await new Promise<void>((resolve) => {
+    const tx = db.transaction(DOCX_CONVERTER_IDB_STORE, 'readwrite');
+    const store = tx.objectStore(DOCX_CONVERTER_IDB_STORE);
+    const key = buildStageResultCacheKey(identity, stage);
+    const value: StageResultCacheRecord = {
+      key,
+      result,
+      updatedAt: new Date().toISOString(),
+    };
+    store.put(value);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => resolve();
+    tx.onabort = () => resolve();
+  });
+}
+
+async function getStageResultCache(
+  identity: { moldId: string; moldNo?: string },
+  stage: string,
+): Promise<ParseResult | null> {
+  const db = await openDocxConverterCacheDb();
+  if (!db) {
+    return null;
+  }
+
+  return new Promise((resolve) => {
+    const tx = db.transaction(DOCX_CONVERTER_IDB_STORE, 'readonly');
+    const store = tx.objectStore(DOCX_CONVERTER_IDB_STORE);
+    const key = buildStageResultCacheKey(identity, stage);
+    const request = store.get(key);
+    request.onsuccess = () => {
+      const record = request.result as StageResultCacheRecord | undefined;
+      resolve(record?.result || null);
+    };
+    request.onerror = () => resolve(null);
+  });
+}
+
+async function deleteStageResultCache(identity: { moldId: string; moldNo?: string }, stage: string): Promise<void> {
+  const db = await openDocxConverterCacheDb();
+  if (!db) {
+    return;
+  }
+
+  await new Promise<void>((resolve) => {
+    const tx = db.transaction(DOCX_CONVERTER_IDB_STORE, 'readwrite');
+    const store = tx.objectStore(DOCX_CONVERTER_IDB_STORE);
+    const key = buildStageResultCacheKey(identity, stage);
+    store.delete(key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => resolve();
+    tx.onabort = () => resolve();
+  });
+}
+
+function readLocalSnapshot(identity: { moldId: string; moldNo?: string }): DocxConverterLocalSnapshot | null {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  const key = buildLocalSnapshotKey(identity);
+  const raw = window.localStorage.getItem(key);
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as Partial<DocxConverterLocalSnapshot>;
+    const trialStages = normalizeTrialStages(parsed.trialStages);
+    const fallbackTrialStages = trialStages.length > 0 ? trialStages : [...DEFAULT_TRIAL_STAGES];
+    const stageStateByTrial =
+      parsed.stageStateByTrial && typeof parsed.stageStateByTrial === 'object'
+        ? (parsed.stageStateByTrial as Record<string, DocxConverterRemoteStageState>)
+        : {};
+    const activeTrialRaw = String(parsed.activeTrial || '').trim();
+    const activeTrial = fallbackTrialStages.includes(activeTrialRaw) ? activeTrialRaw : fallbackTrialStages[0];
+
+    return {
+      moldId: identity.moldId,
+      moldNo: identity.moldNo,
+      trialStages: fallbackTrialStages,
+      activeTrial,
+      stageStateByTrial,
+      updatedAt: typeof parsed.updatedAt === 'string' ? parsed.updatedAt : undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeLocalSnapshot(snapshot: DocxConverterLocalSnapshot): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  const key = buildLocalSnapshotKey({ moldId: snapshot.moldId, moldNo: snapshot.moldNo });
+  try {
+    window.localStorage.setItem(
+      key,
+      JSON.stringify({
+        ...snapshot,
+        updatedAt: new Date().toISOString(),
+      }),
+    );
+  } catch {
+    // Ignore localStorage quota or browser restrictions.
+  }
+}
+
+function deleteLocalSnapshot(identity: { moldId: string; moldNo?: string }): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  const key = buildLocalSnapshotKey(identity);
+  try {
+    window.localStorage.removeItem(key);
+  } catch {
+    // Ignore browser localStorage restrictions.
+  }
+}
+
+function hasSnapshotContent(snapshot: DocxConverterLocalSnapshot | null | undefined): boolean {
+  if (!snapshot) {
+    return false;
+  }
+  return Object.keys(snapshot.stageStateByTrial || {}).length > 0;
+}
+
+function hasParseResultImages(result: ParseResult | null | undefined): boolean {
+  if (!result) {
+    return false;
+  }
+
+  return result.rows.some((row) => row.some((cell) => cell.images.length > 0));
+}
+
+function sanitizeParseResultForRemote(result: ParseResult | null): ParseResult | null {
+  if (!result) {
+    return null;
+  }
+
+  const sanitizedRows = result.rows.map((row) =>
+    row.map((cell) => ({
+      text: cell.text,
+      images: [],
+    })),
+  );
+
+  const hasAnyContent = sanitizedRows.some((row) => row.some((cell) => cell.text.trim().length > 0));
+  if (!hasAnyContent) {
+    return null;
+  }
+
+  return {
+    headers: result.headers.slice(0, 9),
+    rows: sanitizedRows,
+    columnCount: 9,
+  };
+}
+
+async function fetchDocxFileFromUrl(fileUrl: string, fallbackName: string): Promise<File> {
+  const response = await fetch(fileUrl);
+  if (!response.ok) {
+    throw new Error(`下载 DOCX 失败 (${response.status})`);
+  }
+
+  const blob = await response.blob();
+  const name = fallbackName.toLowerCase().endsWith('.docx') ? fallbackName : `${fallbackName}.docx`;
+  return new File([blob], name, {
+    type: blob.type || DOCX_MIME_TYPE,
+  });
+}
+
+function sanitizeStageStateByTrial(
+  trialStages: TrialStage[],
+  stageStateByTrial: Record<TrialStage, TrialStageViewState>,
+): Record<TrialStage, DocxConverterRemoteStageState> {
+  return trialStages.reduce((acc, stage) => {
+    const stageState = stageStateByTrial[stage];
+    if (!stageState) {
+      return acc;
+    }
+
+    const fileName = (stageState.fileName || '').trim();
+    const fileUrl = (stageState.fileUrl || '').trim();
+    const result = stageState.result;
+    if (!fileName && !fileUrl && !result) {
+      return acc;
+    }
+
+    acc[stage] = {
+      fileName: fileName || undefined,
+      fileUrl: fileUrl || undefined,
+      result: sanitizeParseResultForRemote(result),
+    };
+    return acc;
+  }, {} as Record<TrialStage, DocxConverterRemoteStageState>);
+}
+
+function buildLocalStageStateByTrial(
+  trialStages: TrialStage[],
+  stageStateByTrial: Record<TrialStage, TrialStageViewState>,
+): Record<TrialStage, DocxConverterRemoteStageState> {
+  return trialStages.reduce((acc, stage) => {
+    const stageState = stageStateByTrial[stage];
+    if (!stageState) {
+      return acc;
+    }
+
+    const fileName = (stageState.fileName || '').trim();
+    const fileUrl = (stageState.fileUrl || '').trim();
+    const result = stageState.result;
+    if (!fileName && !fileUrl && !result) {
+      return acc;
+    }
+
+    acc[stage] = {
+      fileName: fileName || undefined,
+      fileUrl: fileUrl || undefined,
+      result,
+    };
+    return acc;
+  }, {} as Record<TrialStage, DocxConverterRemoteStageState>);
+}
+
+function computeParseResultScore(result: ParseResult | null | undefined): number {
+  if (!result) {
+    return 0;
+  }
+
+  let score = 0;
+  for (const row of result.rows) {
+    for (const cell of row) {
+      if (cell.text.trim()) {
+        score += 1;
+      }
+      score += cell.images.length * 10;
+    }
+  }
+  return score;
+}
+
+function pickPreferredResult(
+  localResult: ParseResult | null | undefined,
+  remoteResult: ParseResult | null | undefined,
+): ParseResult | null {
+  if (!localResult && !remoteResult) {
+    return null;
+  }
+  if (!localResult) {
+    return remoteResult || null;
+  }
+  if (!remoteResult) {
+    return localResult;
+  }
+
+  const localHasImages = hasParseResultImages(localResult);
+  const remoteHasImages = hasParseResultImages(remoteResult);
+  if (localHasImages && !remoteHasImages) {
+    return localResult;
+  }
+  if (!localHasImages && remoteHasImages) {
+    return remoteResult;
+  }
+
+  return computeParseResultScore(localResult) >= computeParseResultScore(remoteResult) ? localResult : remoteResult;
+}
+
+function mergeStageStateByTrial(
+  localStageStateByTrial: Record<string, DocxConverterRemoteStageState>,
+  remoteStageStateByTrial: Record<string, DocxConverterRemoteStageState>,
+): Record<string, DocxConverterRemoteStageState> {
+  const stages = Array.from(new Set([...Object.keys(localStageStateByTrial), ...Object.keys(remoteStageStateByTrial)]));
+
+  return stages.reduce((acc, stage) => {
+    const local = localStageStateByTrial[stage];
+    const remote = remoteStageStateByTrial[stage];
+    const mergedFileName = (remote?.fileName || local?.fileName || '').trim();
+    const mergedFileUrl = (remote?.fileUrl || local?.fileUrl || '').trim();
+    const mergedResult = pickPreferredResult(local?.result, remote?.result);
+
+    if (!mergedFileName && !mergedFileUrl && !mergedResult) {
+      return acc;
+    }
+
+    acc[stage] = {
+      fileName: mergedFileName || undefined,
+      fileUrl: mergedFileUrl || undefined,
+      result: mergedResult,
+    };
+    return acc;
+  }, {} as Record<string, DocxConverterRemoteStageState>);
+}
+
+function normalizeDueDateLines(text: string): string[] {
+  const normalized = text.replace(/[，；]/g, ' ').replace(/\s+/g, ' ').trim();
+  const dateMatches = normalized.match(/\d{4}-\d{1,2}-\d{1,2}/g);
+  if (dateMatches && dateMatches.length > 0) {
+    return dateMatches;
+  }
+  return text
+    .split(/\r?\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function normalizeStatusLines(text: string): string[] {
+  const normalized = text.replace(/[，；]/g, ' ').replace(/\s+/g, ' ').trim();
+  const taggedMatches = normalized.match(/[A-Za-z0-9_-]+:(?:open|close)/gi);
+  if (taggedMatches && taggedMatches.length > 0) {
+    return taggedMatches;
+  }
+  return text
+    .split(/\r?\n+|\s+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function TAxisButton({
+  label,
+  active,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-md border px-4 py-1.5 text-xs font-mono whitespace-nowrap transition-colors ${
+        active
+          ? 'border-cyan-500/80 bg-cyan-950/30 text-cyan-300'
+          : 'border-slate-700 bg-slate-900 text-slate-400 hover:border-cyan-500/50 hover:text-cyan-300'
+      }`}
+    >
+      {label}
+    </button>
+  );
+}
+
+function DocxConvertPanel({ panel }: { panel: AssetPanelItem }) {
+  const [trialStagesState, setTrialStagesState] = useState<TrialStage[]>(DEFAULT_TRIAL_STAGES);
+  const [activeTrial, setActiveTrial] = useState<TrialStage>(DEFAULT_TRIAL_STAGES[0]);
+  const [stageStateByTrial, setStageStateByTrial] = useState<Record<TrialStage, TrialStageViewState>>(() =>
+    createStageStateMap(DEFAULT_TRIAL_STAGES),
+  );
+  const [isDragging, setIsDragging] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [previewImage, setPreviewImage] = useState<ParsedImage | null>(null);
+  const [isRemoteSyncing, setIsRemoteSyncing] = useState(false);
+  const [isHydrated, setIsHydrated] = useState(false);
+  const [isOfflineFallbackMode, setIsOfflineFallbackMode] = useState(false);
+  const [showDeleteTrialConfirm, setShowDeleteTrialConfirm] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const canPersistRef = useRef(false);
+  const persistTimerRef = useRef<number | null>(null);
+  const hydratedByStageUrlRef = useRef<Record<string, string>>({});
+
+  const currentStageState = stageStateByTrial[activeTrial] || createEmptyTrialStageState();
+  const fileName = currentStageState.fileName;
+  const progress = currentStageState.progress;
+  const result = currentStageState.result;
+  const error = currentStageState.error;
+  const isParsing = currentStageState.isParsing;
+
+  const panelIdentity = useMemo(
+    () => ({
+      moldId: panel.moldId.trim(),
+      moldNo: panel.moldNo.trim(),
+    }),
+    [panel.moldId, panel.moldNo],
+  );
+  const assetEntityId = useMemo(
+    () => (panelIdentity.moldNo ? `${panelIdentity.moldId}__${panelIdentity.moldNo}` : panelIdentity.moldId),
+    [panelIdentity.moldId, panelIdentity.moldNo],
+  );
+
+  const patchTrialState = useCallback((trialStage: TrialStage, patch: Partial<TrialStageViewState>) => {
+    setStageStateByTrial((prev) => {
+      const current = prev[trialStage] || createEmptyTrialStageState();
+      const nextFileUrl =
+        Object.prototype.hasOwnProperty.call(patch, 'fileUrl') && typeof patch.fileUrl === 'string'
+          ? patch.fileUrl
+          : current.fileUrl;
+      if (nextFileUrl && current.fileUrl !== nextFileUrl) {
+        delete hydratedByStageUrlRef.current[trialStage];
+      }
+      return {
+        ...prev,
+        [trialStage]: {
+          ...current,
+          ...patch,
+        },
+      };
+    });
+  }, []);
+
+  const stats = useMemo(() => {
+    if (!result) {
+      return { rows: 0, images: 0, openIssues: 0 };
+    }
+    let imageCount = 0;
+    let openCount = 0;
+    for (const row of result.rows) {
+      for (const cell of row) {
+        imageCount += cell.images.length;
+      }
+      const status = row[7]?.text?.toLowerCase() || '';
+      if (status.includes('open')) {
+        openCount += 1;
+      }
+    }
+    return { rows: result.rows.length, images: imageCount, openIssues: openCount };
+  }, [result]);
+  const lastTrialStage = trialStagesState[trialStagesState.length - 1] || '';
+  const canDeleteActiveTrial =
+    trialStagesState.length > 1 && activeTrial === lastTrialStage && !isParsing;
+
+  const persistPayloadJson = useMemo(() => {
+    const trialStages = normalizeTrialStages(trialStagesState);
+    const stageState = sanitizeStageStateByTrial(trialStages, stageStateByTrial);
+    const normalizedActiveTrial =
+      trialStages.includes(activeTrial) && activeTrial ? activeTrial : trialStages[0] || DEFAULT_TRIAL_STAGES[0];
+
+    return JSON.stringify({
+      moldId: panelIdentity.moldId,
+      moldNo: panelIdentity.moldNo,
+      trialStages,
+      activeTrial: normalizedActiveTrial,
+      stageStateByTrial: stageState,
+    });
+  }, [activeTrial, panelIdentity.moldId, panelIdentity.moldNo, stageStateByTrial, trialStagesState]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setIsRemoteSyncing(true);
+    setIsHydrated(false);
+    canPersistRef.current = false;
+    hydratedByStageUrlRef.current = {};
+
+    const applySnapshot = (snapshot: {
+      trialStages: TrialStage[];
+      activeTrial: TrialStage;
+      stageStateByTrial: Record<TrialStage, TrialStageViewState>;
+    }) => {
+      setTrialStagesState(snapshot.trialStages);
+      setActiveTrial(snapshot.activeTrial);
+      setStageStateByTrial(snapshot.stageStateByTrial);
+    };
+
+    void (async () => {
+      const localSnapshot = readLocalSnapshot(panelIdentity);
+      try {
+        const remote = await fetchDashboardDocxConverterState(panelIdentity);
+        if (cancelled) {
+          return;
+        }
+
+        if (!remote) {
+          if (localSnapshot) {
+            const localTrialStages = normalizeTrialStages(localSnapshot.trialStages);
+            const trialStages = localTrialStages.length > 0 ? localTrialStages : [...DEFAULT_TRIAL_STAGES];
+            const active =
+              trialStages.includes(localSnapshot.activeTrial) && localSnapshot.activeTrial
+                ? localSnapshot.activeTrial
+                : trialStages[0] || DEFAULT_TRIAL_STAGES[0];
+            applySnapshot({
+              trialStages,
+              activeTrial: active,
+              stageStateByTrial: createStageStateMap(trialStages, localSnapshot.stageStateByTrial),
+            });
+            setIsOfflineFallbackMode(true);
+            return;
+          }
+
+          const trialStages = [...DEFAULT_TRIAL_STAGES];
+          applySnapshot({
+            trialStages,
+            activeTrial: trialStages[0],
+            stageStateByTrial: createStageStateMap(trialStages),
+          });
+          setIsOfflineFallbackMode(false);
+          return;
+        }
+
+        const remoteHasContent = Object.keys(remote.stageStateByTrial || {}).length > 0;
+        const localHasContent = hasSnapshotContent(localSnapshot);
+        const mergedStageStateByTrial = mergeStageStateByTrial(
+          localSnapshot?.stageStateByTrial || {},
+          remote.stageStateByTrial || {},
+        );
+        const mergedTrialStages = normalizeTrialStages([
+          ...(remote.trialStages || []),
+          ...(localSnapshot?.trialStages || []),
+          ...Object.keys(mergedStageStateByTrial),
+        ]);
+        const trialStages = mergedTrialStages.length > 0 ? mergedTrialStages : [...DEFAULT_TRIAL_STAGES];
+        const preferredActiveTrial = remoteHasContent
+          ? remote.activeTrial
+          : localSnapshot?.activeTrial || remote.activeTrial;
+        const active =
+          trialStages.includes(preferredActiveTrial) && preferredActiveTrial
+            ? preferredActiveTrial
+            : trialStages[0] || DEFAULT_TRIAL_STAGES[0];
+
+        applySnapshot({
+          trialStages,
+          activeTrial: active,
+          stageStateByTrial: createStageStateMap(trialStages, mergedStageStateByTrial),
+        });
+        writeLocalSnapshot({
+          moldId: panelIdentity.moldId,
+          moldNo: panelIdentity.moldNo,
+          trialStages,
+          activeTrial: active,
+          stageStateByTrial: mergedStageStateByTrial,
+        });
+        setIsOfflineFallbackMode(!remoteHasContent && localHasContent);
+
+        // Hydrate full image results from IndexedDB when OSS is unavailable.
+        void Promise.all(
+          trialStages.map(async (stage) => ({
+            stage,
+            result: await getStageResultCache(panelIdentity, stage),
+          })),
+        ).then((items) => {
+          if (cancelled) {
+            return;
+          }
+
+          setStageStateByTrial((prev) => {
+            let changed = false;
+            const next = { ...prev };
+
+            for (const item of items) {
+              if (!item.result) {
+                continue;
+              }
+
+              const current = next[item.stage] || createEmptyTrialStageState();
+              const preferred = pickPreferredResult(current.result, item.result);
+              if (preferred !== current.result) {
+                next[item.stage] = {
+                  ...current,
+                  result: preferred,
+                };
+                changed = true;
+              }
+            }
+
+            return changed ? next : prev;
+          });
+        });
+      } catch {
+        if (cancelled) {
+          return;
+        }
+
+        if (localSnapshot) {
+          const localTrialStages = normalizeTrialStages(localSnapshot.trialStages);
+          const trialStages = localTrialStages.length > 0 ? localTrialStages : [...DEFAULT_TRIAL_STAGES];
+          const active =
+            trialStages.includes(localSnapshot.activeTrial) && localSnapshot.activeTrial
+              ? localSnapshot.activeTrial
+              : trialStages[0] || DEFAULT_TRIAL_STAGES[0];
+          applySnapshot({
+            trialStages,
+            activeTrial: active,
+            stageStateByTrial: createStageStateMap(trialStages, localSnapshot.stageStateByTrial),
+          });
+          setIsOfflineFallbackMode(true);
+
+          void Promise.all(
+            trialStages.map(async (stage) => ({
+              stage,
+              result: await getStageResultCache(panelIdentity, stage),
+            })),
+          ).then((items) => {
+            if (cancelled) {
+              return;
+            }
+
+            setStageStateByTrial((prev) => {
+              let changed = false;
+              const next = { ...prev };
+
+              for (const item of items) {
+                if (!item.result) {
+                  continue;
+                }
+
+                const current = next[item.stage] || createEmptyTrialStageState();
+                const preferred = pickPreferredResult(current.result, item.result);
+                if (preferred !== current.result) {
+                  next[item.stage] = {
+                    ...current,
+                    result: preferred,
+                  };
+                  changed = true;
+                }
+              }
+
+              return changed ? next : prev;
+            });
+          });
+          return;
+        }
+
+        const trialStages = [...DEFAULT_TRIAL_STAGES];
+        applySnapshot({
+          trialStages,
+          activeTrial: trialStages[0],
+          stageStateByTrial: createStageStateMap(trialStages),
+        });
+        setIsOfflineFallbackMode(true);
+      } finally {
+        if (cancelled) {
+          return;
+        }
+
+        setIsHydrated(true);
+        setIsRemoteSyncing(false);
+        window.setTimeout(() => {
+          canPersistRef.current = true;
+        }, 0);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (persistTimerRef.current) {
+        window.clearTimeout(persistTimerRef.current);
+        persistTimerRef.current = null;
+      }
+    };
+  }, [panelIdentity]);
+
+  useEffect(() => {
+    if (!isHydrated) {
+      return;
+    }
+
+    const current = stageStateByTrial[activeTrial];
+    if (!current || current.isParsing) {
+      return;
+    }
+
+    const fileUrl = (current.fileUrl || '').trim();
+    if (!fileUrl) {
+      return;
+    }
+
+    const shouldHydrate = !current.result || !hasParseResultImages(current.result);
+    if (!shouldHydrate) {
+      return;
+    }
+
+    if (hydratedByStageUrlRef.current[activeTrial] === fileUrl) {
+      return;
+    }
+    hydratedByStageUrlRef.current[activeTrial] = fileUrl;
+
+    const fallbackName = current.fileName || `${activeTrial}.docx`;
+    patchTrialState(activeTrial, {
+      isParsing: true,
+      progress: { stage: 'unzipping', message: '正在从 OSS 回填解析...', progress: 0 },
+    });
+
+    void (async () => {
+      try {
+        const remoteFile = await fetchDocxFileFromUrl(fileUrl, fallbackName);
+        const parsed = await parseDocxReport(remoteFile, (next) => {
+          patchTrialState(activeTrial, { progress: next });
+        });
+        patchTrialState(activeTrial, {
+          result: parsed,
+          error: null,
+          progress: { stage: 'done', message: '远端回填完成', progress: 100 },
+        });
+      } catch (hydrateError) {
+        const message = hydrateError instanceof Error ? hydrateError.message : '远端回填失败';
+        patchTrialState(activeTrial, {
+          error: `远端回填失败: ${message}`,
+          progress: null,
+        });
+      } finally {
+        patchTrialState(activeTrial, { isParsing: false });
+      }
+    })();
+  }, [activeTrial, isHydrated, patchTrialState, stageStateByTrial]);
+
+  useEffect(() => {
+    if (trialStagesState.length === 0) {
+      return;
+    }
+
+    if (trialStagesState.includes(activeTrial)) {
+      return;
+    }
+
+    setActiveTrial(trialStagesState[0]);
+  }, [activeTrial, trialStagesState]);
+
+  useEffect(() => {
+    if (!isHydrated || !canPersistRef.current) {
+      return;
+    }
+
+    if (persistTimerRef.current) {
+      window.clearTimeout(persistTimerRef.current);
+    }
+
+    persistTimerRef.current = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const payload = JSON.parse(persistPayloadJson) as {
+            moldId: string;
+            moldNo?: string;
+            trialStages: string[];
+            activeTrial: string;
+            stageStateByTrial: Record<string, DocxConverterRemoteStageState>;
+          };
+          const localTrialStages = normalizeTrialStages(trialStagesState);
+          const normalizedLocalTrialStages = localTrialStages.length > 0 ? localTrialStages : [...DEFAULT_TRIAL_STAGES];
+          const normalizedLocalActiveTrial =
+            normalizedLocalTrialStages.includes(activeTrial) && activeTrial
+              ? activeTrial
+              : normalizedLocalTrialStages[0] || DEFAULT_TRIAL_STAGES[0];
+          const localStageStateByTrial = buildLocalStageStateByTrial(
+            normalizedLocalTrialStages,
+            stageStateByTrial,
+          );
+
+          const hasAnyStageData = Object.keys(payload.stageStateByTrial || {}).length > 0;
+          if (!hasAnyStageData) {
+            deleteLocalSnapshot({
+              moldId: payload.moldId,
+              moldNo: payload.moldNo,
+            });
+
+            await deleteDashboardDocxConverterState({
+              moldId: payload.moldId,
+              moldNo: payload.moldNo,
+            });
+            setIsOfflineFallbackMode(false);
+            return;
+          }
+
+          writeLocalSnapshot({
+            moldId: payload.moldId,
+            moldNo: payload.moldNo,
+            trialStages: normalizedLocalTrialStages,
+            activeTrial: normalizedLocalActiveTrial,
+            stageStateByTrial: localStageStateByTrial,
+          });
+
+          await saveDashboardDocxConverterState({
+            moldId: payload.moldId,
+            moldNo: payload.moldNo,
+            trialStages: payload.trialStages,
+            activeTrial: payload.activeTrial,
+            stageStateByTrial: payload.stageStateByTrial,
+          });
+          setIsOfflineFallbackMode(false);
+        } catch {
+          setIsOfflineFallbackMode(true);
+        }
+      })();
+    }, 500);
+
+    return () => {
+      if (persistTimerRef.current) {
+        window.clearTimeout(persistTimerRef.current);
+        persistTimerRef.current = null;
+      }
+    };
+  }, [activeTrial, isHydrated, persistPayloadJson, stageStateByTrial, trialStagesState]);
+
+  const handleParse = useCallback(
+    async (nextFile: File) => {
+      const trialStage = activeTrial;
+      if (!isDocxFile(nextFile)) {
+        patchTrialState(trialStage, { error: '只支持 .docx 文件' });
+        return;
+      }
+
+      const previousFileUrl = stageStateByTrial[trialStage]?.fileUrl || null;
+
+      patchTrialState(trialStage, {
+        fileName: nextFile.name,
+        result: null,
+        error: null,
+        isParsing: true,
+        progress: { stage: 'unzipping', message: '开始处理...', progress: 0 },
+      });
+
+      try {
+        const parsed = await parseDocxReport(nextFile, (next) => {
+          patchTrialState(trialStage, { progress: next });
+        });
+        void setStageResultCache(panelIdentity, trialStage, parsed);
+
+        let uploadedUrl: string | null = null;
+        try {
+          const uploaded = await uploadAssetViaServer({
+            file: nextFile,
+            category: 'docx-converter',
+            entityId: assetEntityId,
+            slot: trialStage,
+          });
+          uploadedUrl = uploaded.url;
+        } catch {
+          toast.error('DOCX 上传 OSS 失败', {
+            description: `${trialStage} 已保留解析结果，但文件未同步到远端 OSS。`,
+            position: 'bottom-right',
+          });
+        }
+
+        patchTrialState(trialStage, {
+          fileName: nextFile.name,
+          fileUrl: uploadedUrl,
+          result: parsed,
+          progress: { stage: 'done', message: '解析完成', progress: 100 },
+          error: uploadedUrl ? null : 'OSS 上传失败：仅本地显示解析结果',
+        });
+
+        if (previousFileUrl && uploadedUrl && previousFileUrl !== uploadedUrl) {
+          void deleteAssetViaServer(previousFileUrl).catch(() => undefined);
+        }
+      } catch (parseError) {
+        const message = parseError instanceof Error ? parseError.message : '解析失败';
+        patchTrialState(trialStage, { error: message, progress: null });
+      } finally {
+        patchTrialState(trialStage, { isParsing: false });
+      }
+    },
+    [activeTrial, assetEntityId, patchTrialState, stageStateByTrial],
+  );
+
+  const handleClear = useCallback(() => {
+      const trialStage = activeTrial;
+      const previousFileUrl = stageStateByTrial[trialStage]?.fileUrl || null;
+      delete hydratedByStageUrlRef.current[trialStage];
+      patchTrialState(trialStage, createEmptyTrialStageState());
+      void deleteStageResultCache(panelIdentity, trialStage);
+      if (previousFileUrl) {
+        void deleteAssetViaServer(previousFileUrl).catch(() => undefined);
+      }
+  }, [activeTrial, panelIdentity, patchTrialState, stageStateByTrial]);
+
+  const handleExport = useCallback(async () => {
+    if (!result) {
+      return;
+    }
+
+    setIsExporting(true);
+    try {
+      const fallbackName = fileName || `${activeTrial}-qe-report.docx`;
+      const filename = `${trimDocxName(fallbackName)}.xlsx`;
+      await exportDocxParseResultToXlsx(result, filename);
+    } catch (exportError) {
+      const message = exportError instanceof Error ? exportError.message : '导出失败';
+      patchTrialState(activeTrial, { error: message });
+    } finally {
+      setIsExporting(false);
+    }
+  }, [activeTrial, fileName, patchTrialState, result]);
+
+  const handleFileInputChange = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      const nextFile = event.target.files?.[0];
+      if (nextFile) {
+        void handleParse(nextFile);
+      }
+      event.target.value = '';
+    },
+    [handleParse],
+  );
+
+  const onDrop = useCallback(
+    (event: React.DragEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      event.stopPropagation();
+      setIsDragging(false);
+      if (isParsing) {
+        return;
+      }
+      const nextFile = event.dataTransfer.files?.[0];
+      if (nextFile) {
+        void handleParse(nextFile);
+      }
+    },
+    [handleParse, isParsing],
+  );
+
+  const handleAddTrialStage = useCallback(() => {
+    const maxStageIndex = trialStagesState.reduce((maxValue, stage) => {
+      const parsed = Number.parseInt(stage.replace(/^T/, ''), 10);
+      return Number.isFinite(parsed) ? Math.max(maxValue, parsed) : maxValue;
+    }, 0);
+    const nextStage = createTrialStageLabel(maxStageIndex + 1);
+
+    setTrialStagesState((prev) => [...prev, nextStage]);
+    setStageStateByTrial((prev) => ({
+      ...prev,
+      [nextStage]: createEmptyTrialStageState(),
+    }));
+    setActiveTrial(nextStage);
+  }, [trialStagesState]);
+
+  const handleRequestDeleteTrialStage = useCallback(() => {
+    if (trialStagesState.length <= 1) {
+      toast.warning('至少保留一个轮次');
+      return;
+    }
+    if (activeTrial !== lastTrialStage) {
+      toast.warning(`仅允许从最后轮次开始删除，请先切换到 ${lastTrialStage}`);
+      return;
+    }
+    setShowDeleteTrialConfirm(true);
+  }, [activeTrial, lastTrialStage, trialStagesState.length]);
+
+  const deleteCurrentTrialStage = useCallback(() => {
+    if (trialStagesState.length <= 1) {
+      setShowDeleteTrialConfirm(false);
+      return;
+    }
+    if (activeTrial !== lastTrialStage) {
+      setShowDeleteTrialConfirm(false);
+      return;
+    }
+
+    const deletingTrial = activeTrial;
+    const currentIndex = trialStagesState.indexOf(deletingTrial);
+    const nextTrialStages = trialStagesState.filter((stage) => stage !== deletingTrial);
+    const nextActiveTrial =
+      trialStagesState[currentIndex - 1] ||
+      trialStagesState[currentIndex + 1] ||
+      nextTrialStages[0] ||
+      DEFAULT_TRIAL_STAGES[0];
+    const deletedFileUrl = stageStateByTrial[deletingTrial]?.fileUrl || null;
+
+    setTrialStagesState(nextTrialStages);
+    setStageStateByTrial((prev) => {
+      const next = { ...prev };
+      delete next[deletingTrial];
+      return next;
+    });
+    delete hydratedByStageUrlRef.current[deletingTrial];
+    void deleteStageResultCache(panelIdentity, deletingTrial);
+
+    if (deletedFileUrl) {
+      void deleteAssetViaServer(deletedFileUrl).catch(() => undefined);
+    }
+
+    setActiveTrial(nextActiveTrial);
+    setShowDeleteTrialConfirm(false);
+  }, [activeTrial, lastTrialStage, panelIdentity, stageStateByTrial, trialStagesState]);
+
+  return (
+    <div className="space-y-5">
+      <section className="rounded-2xl border border-white/[0.06] bg-[#0b1220] p-5">
+        <div className="mb-4 flex items-start justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-white/10 text-cyan-300">
+              <FileSpreadsheet className="h-5 w-5" />
+            </div>
+            <div>
+              <div className="mb-1 text-[11px] font-mono tracking-[0.22em] text-cyan-400/80">
+                {panel.moldId} / {panel.moldNo}
+              </div>
+              <h2 className="text-lg font-bold text-white">DOCX 转 Excel</h2>
+              <p className="text-xs text-slate-400">上传 DOCX，自动解析 9 列问题表并导出带图片的 Excel。</p>
+            </div>
+          </div>
+          {(fileName || result) && (
+            <Button variant="ghost" size="sm" className="text-slate-300 hover:text-white" onClick={handleClear}>
+              <X className="mr-1 h-4 w-4" />
+              清空
+            </Button>
+          )}
+        </div>
+
+        <div className="mb-4 flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
+          <span className="rounded border border-slate-700 px-2 py-0.5">
+            远端状态: {isRemoteSyncing ? '同步中' : isOfflineFallbackMode ? '离线兜底' : '已连接'}
+          </span>
+          <span className="rounded border border-slate-700 px-2 py-0.5">当前轮次: {activeTrial}</span>
+          <span className="rounded border border-slate-700 px-2 py-0.5">OSS 文件: {currentStageState.fileUrl ? '已上传' : '未上传'}</span>
+        </div>
+
+        <div className="border-b border-slate-800/80 pb-4">
+          <div className="flex flex-wrap items-center gap-2">
+            {trialStagesState.map((stage) => (
+              <TAxisButton key={stage} label={stage} active={stage === activeTrial} onClick={() => setActiveTrial(stage)} />
+            ))}
+            <button
+              type="button"
+              onClick={handleAddTrialStage}
+              className="rounded-md border border-slate-700 bg-slate-900 px-4 py-1.5 text-xs font-mono text-cyan-400 transition-colors hover:border-cyan-500/50"
+            >
+              +
+            </button>
+            <button
+              type="button"
+              onClick={handleRequestDeleteTrialStage}
+              disabled={!canDeleteActiveTrial}
+              className={`rounded-md border px-3 py-1.5 text-xs font-mono transition-colors ${
+                canDeleteActiveTrial
+                  ? 'border-rose-500/60 bg-rose-950/20 text-rose-300 hover:border-rose-400 hover:text-rose-200'
+                  : 'cursor-not-allowed border-slate-700 bg-slate-900 text-slate-600'
+              }`}
+              title={
+                canDeleteActiveTrial
+                  ? `删除当前轮次 ${activeTrial}`
+                  : `仅支持删除最后轮次（当前最后为 ${lastTrialStage || 'T0'}）`
+              }
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+
+        <div
+          role="button"
+          tabIndex={0}
+          onDrop={onDrop}
+          onDragOver={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (!isParsing) {
+              setIsDragging(true);
+            }
+          }}
+          onDragLeave={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            setIsDragging(false);
+          }}
+          onClick={() => {
+            if (!isParsing) {
+              fileInputRef.current?.click();
+            }
+          }}
+          onKeyDown={(event) => {
+            if ((event.key === 'Enter' || event.key === ' ') && !isParsing) {
+              event.preventDefault();
+              fileInputRef.current?.click();
+            }
+          }}
+          className={`mt-4 rounded-xl border-2 border-dashed px-6 py-10 text-center transition ${
+            isDragging
+              ? 'border-cyan-300 bg-cyan-500/10'
+              : 'border-white/10 bg-slate-900/60 hover:border-white/20 hover:bg-slate-900/80'
+          } ${isParsing ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'}`}
+        >
+          <UploadCloud className="mx-auto mb-3 h-9 w-9 text-slate-300" />
+          <p className="text-sm font-medium text-white">
+            {fileName ? `当前文件: ${fileName}` : `拖拽 DOCX 到此处，或点击选择文件（${activeTrial}）`}
+          </p>
+          <p className="mt-1 text-xs text-slate-400">仅支持 .docx，解析成功后会自动上传 OSS 并保存远端状态。</p>
+        </div>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+          className="hidden"
+          onChange={handleFileInputChange}
+        />
+      </section>
+
+      {(progress || error) && (
+        <section className="rounded-2xl border border-white/[0.06] bg-[#0b1220] p-4">
+          {progress && (
+            <>
+              <div className="mb-2 flex items-center justify-between text-xs text-slate-300">
+                <span>
+                  处理进度: {STAGE_LABELS[progress.stage]}
+                </span>
+                <span>{progress.progress}%</span>
+              </div>
+              <div className="h-2 w-full overflow-hidden rounded-full bg-slate-800">
+                <div className="h-full bg-cyan-400 transition-all" style={{ width: `${progress.progress}%` }} />
+              </div>
+              <p className="mt-2 text-xs text-slate-400">{progress.message}</p>
+            </>
+          )}
+          {error && <p className="mt-2 rounded-md bg-rose-500/10 px-3 py-2 text-sm text-rose-300">{error}</p>}
+        </section>
+      )}
+
+      {result && (
+        <section className="rounded-2xl border border-white/[0.06] bg-[#0b1220] p-4">
+          <div className="mb-6 flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-slate-300">
+              <span>轮次: {activeTrial}</span>
+              <span>行数: {stats.rows}</span>
+              <span>图片: {stats.images}</span>
+              <span>Open: {stats.openIssues}</span>
+            </div>
+            <Button onClick={handleExport} disabled={isExporting} className="bg-emerald-600 text-white hover:bg-emerald-700">
+              {isExporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
+              导出 XLSX
+            </Button>
+          </div>
+
+          <div className="max-h-[68vh] overflow-y-auto overflow-x-hidden rounded-xl border border-white/[0.08]">
+            <table className="w-full table-fixed border-collapse text-sm">
+              <thead className="sticky top-0 z-10 bg-slate-900">
+                <tr>
+                  {result.headers.map((header, index) => (
+                    <th
+                      key={`${header}-${index}`}
+                      className={`border-b border-r border-white/[0.08] px-3 py-2 text-left text-xs font-semibold text-slate-200 last:border-r-0 ${
+                        index === 6 ? 'whitespace-nowrap' : ''
+                      } ${COLUMN_WIDTH_CLASSES[index] || ''}`}
+                    >
+                      {header || `Col ${index + 1}`}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {result.rows.map((row, rowIndex) => (
+                  <tr key={`row-${rowIndex}`} className={rowIndex % 2 === 0 ? 'bg-slate-900/40' : 'bg-slate-900/20'}>
+                    {row.map((cell, cellIndex) => {
+                      const isDueDate = cellIndex === 6;
+                      const isStatus = cellIndex === 7;
+                      const statusValue = (cell.text || '').trim();
+                      const isLink = cellIndex === 8 && /^https?:\/\//i.test(statusValue);
+
+                      return (
+                        <td
+                          key={`cell-${rowIndex}-${cellIndex}`}
+                          className={`border-r border-t border-white/[0.08] px-3 py-2 align-top text-slate-200 last:border-r-0 ${COLUMN_WIDTH_CLASSES[cellIndex] || ''}`}
+                        >
+                          {cellIndex === 2 ? (
+                            cell.images.length > 0 ? (
+                              <div className="flex flex-wrap gap-1.5">
+                                {cell.images.map((image, imageIndex) => (
+                                  <button
+                                    key={`img-${rowIndex}-${imageIndex}`}
+                                    type="button"
+                                    className="h-14 w-14 overflow-hidden rounded-md border border-white/20"
+                                    onClick={() => setPreviewImage(image)}
+                                    aria-label={`预览图片 ${imageIndex + 1}`}
+                                  >
+                                    <img
+                                      src={`data:${image.mimeType};base64,${image.base64}`}
+                                      alt={`图片 ${imageIndex + 1}`}
+                                      className="h-full w-full object-cover"
+                                    />
+                                  </button>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-xs text-slate-500">
+                                <ImageIcon className="h-3.5 w-3.5" />
+                                无
+                              </span>
+                            )
+                          ) : isStatus ? (
+                            <div className="space-y-1.5">
+                              {(normalizeStatusLines(statusValue).length > 0 ? normalizeStatusLines(statusValue) : ['-']).map(
+                                (statusLine, statusIndex) => {
+                                  const lower = statusLine.toLowerCase();
+                                  const isCloseLine = lower.includes('close');
+                                  const isOpenLine = lower.includes('open');
+                                  const statusClass = isCloseLine
+                                    ? 'bg-emerald-600 text-white'
+                                    : isOpenLine
+                                      ? 'bg-rose-600 text-white'
+                                      : 'bg-slate-700 text-slate-100';
+                                  return (
+                                    <div key={`status-${rowIndex}-${statusIndex}`}>
+                                      <Badge className={`whitespace-nowrap ${statusClass}`}>{statusLine}</Badge>
+                                    </div>
+                                  );
+                                },
+                              )}
+                            </div>
+                          ) : isDueDate ? (
+                            <div className="space-y-1">
+                              {(normalizeDueDateLines(statusValue).length > 0 ? normalizeDueDateLines(statusValue) : ['-']).map(
+                                (dateValue, dateIndex) => (
+                                  <div key={`due-${rowIndex}-${dateIndex}`} className="whitespace-nowrap text-sm text-slate-200">
+                                    {dateValue}
+                                  </div>
+                                ),
+                              )}
+                            </div>
+                          ) : isLink ? (
+                            <a
+                              href={statusValue}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-1 text-cyan-300 underline decoration-dotted hover:decoration-solid"
+                            >
+                              <span className="max-w-[160px] truncate">{statusValue}</span>
+                              <ExternalLink className="h-3 w-3" />
+                            </a>
+                          ) : (
+                            <span className="whitespace-pre-wrap break-words text-sm text-slate-200">{statusValue || '-'}</span>
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      <Dialog open={Boolean(previewImage)} onOpenChange={(open) => !open && setPreviewImage(null)}>
+        <DialogContent className="max-w-3xl bg-slate-950 text-white">
+          <DialogHeader>
+            <DialogTitle>图片预览</DialogTitle>
+          </DialogHeader>
+          {previewImage && (
+            <img
+              src={`data:${previewImage.mimeType};base64,${previewImage.base64}`}
+              alt="图片预览"
+              className="w-full rounded-md border border-white/10"
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <CyberConfirmDialog
+        open={showDeleteTrialConfirm}
+        title="删除轮次确认"
+        message={`将删除当前轮次 ${activeTrial} 的数据（含本地缓存与 OSS 文件引用）。\n该操作不可撤销，是否继续？`}
+        onCancel={() => setShowDeleteTrialConfirm(false)}
+        onConfirm={deleteCurrentTrialStage}
+        confirmText="确认删除"
+        cancelText="取消"
+      />
+    </div>
+  );
+}
+
+export default function DocxConvertModule({ panels }: DocxConvertModuleProps) {
+  return (
+    <AssetDrawerWorkspace
+      panels={panels}
+      badgeLabel="DOCX CONVERTER"
+      drawerTitle="DOCX 转 Excel"
+      drawerDescription="选择 mold/no 后在当前区域上传 DOCX 并导出带图片的 Excel。"
+      emptyMessage="暂无可用于 DOCX 转换的模具面板。"
+      icon={FileSpreadsheet}
+      renderPanel={(panel) => <DocxConvertPanel key={buildAssetPanelKey(panel)} panel={panel} />}
+    />
+  );
+}

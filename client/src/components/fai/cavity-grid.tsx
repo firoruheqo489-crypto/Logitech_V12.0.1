@@ -17,9 +17,9 @@ interface CavityGridProps {
   usl: number
   lsl: number
   faiLabel?: string
+  sampleValues?: number[]
 }
 
-// Color mapping for the 3 states: OK=green, +NG=red (>USL), -NG=deep blue (<LSL)
 const statusConfig: Record<
   CavityStatus,
   { border: string; bg: string; text: string; badgeBg: string; badgeText: string; barBg: string }
@@ -59,12 +59,34 @@ const weakOkConfig = {
   barBg: "bg-amber-400/70",
 }
 
-export function CavityGrid({ cavities, usl, lsl, faiLabel }: CavityGridProps) {
+export function CavityGrid({ cavities, usl, lsl, faiLabel, sampleValues }: CavityGridProps) {
   const okCount = cavities.filter((c) => c.status === "OK").length
   const plusNgCount = cavities.filter((c) => c.status === "+NG").length
   const minusNgCount = cavities.filter((c) => c.status === "-NG").length
-  const range = usl - lsl
-  const safeRange = range === 0 ? 0.000001 : range
+
+  const valuesForYellow =
+    sampleValues && sampleValues.length > 0
+      ? sampleValues
+      : cavities.map((c) => c.value)
+
+  const toleranceWidth = usl - lsl
+  const yellowLowerBound = lsl + toleranceWidth * 0.2
+  const yellowUpperBound = usl - toleranceWidth * 0.2
+  const isYellowByTolerance = (value: number) => {
+    if (toleranceWidth <= 0) {
+      return false
+    }
+
+    return (
+      (value >= lsl && value <= yellowLowerBound) ||
+      (value >= yellowUpperBound && value <= usl)
+    )
+  }
+  const yellowCount =
+    toleranceWidth > 0 ? valuesForYellow.filter((value) => isYellowByTolerance(value)).length : 0
+  const yellowRate = valuesForYellow.length > 0 ? ((yellowCount / valuesForYellow.length) * 100).toFixed(1) : "0.0"
+
+  const safeRange = toleranceWidth === 0 ? 0.000001 : toleranceWidth
   const centerValue = (usl + lsl) / 2
   const halfRange = safeRange / 2
   const getScorePercent = (value: number) => {
@@ -72,8 +94,7 @@ export function CavityGrid({ cavities, usl, lsl, faiLabel }: CavityGridProps) {
     const score = Math.max(0, 1 - normalizedDeviation)
     return score * 100
   }
-  const weakOkCount = cavities.filter((c) => c.status === "OK" && getScorePercent(c.value) < 50).length
-  const weakOkRate = cavities.length > 0 ? ((weakOkCount / cavities.length) * 100).toFixed(1) : "0.0"
+
   const yieldRate = cavities.length > 0 ? ((okCount / cavities.length) * 100).toFixed(1) : "0.0"
   const normalizedFaiLabel = (faiLabel ?? "").trim()
   const isFaiPrefixedLabel = normalizedFaiLabel.toUpperCase().startsWith("FAI")
@@ -81,7 +102,6 @@ export function CavityGrid({ cavities, usl, lsl, faiLabel }: CavityGridProps) {
 
   return (
     <div className="rounded-lg border border-border bg-card p-4">
-      {/* Header */}
       <div className="mb-3 flex items-center justify-between">
         <h3 className="text-xs font-bold tracking-wider text-muted-foreground uppercase font-mono">
           CAVITY TEST MATRIX{" "}
@@ -98,40 +118,31 @@ export function CavityGrid({ cavities, usl, lsl, faiLabel }: CavityGridProps) {
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1.5">
             <div className="h-2 w-2 rounded-full bg-green-500" />
-            <span className="text-xs text-muted-foreground font-mono">
-              OK: {okCount}
-            </span>
+            <span className="text-xs text-muted-foreground font-mono">OK: {okCount}</span>
           </div>
           <div className="flex items-center gap-1.5">
             <div className="h-2 w-2 rounded-full bg-red-500" />
-            <span className="text-xs text-muted-foreground font-mono">
-              +NG: {plusNgCount}
-            </span>
+            <span className="text-xs text-muted-foreground font-mono">+NG: {plusNgCount}</span>
           </div>
           <div className="flex items-center gap-1.5">
             <div className="h-2 w-2 rounded-full bg-blue-600" />
-            <span className="text-xs text-muted-foreground font-mono">
-              -NG: {minusNgCount}
-            </span>
+            <span className="text-xs text-muted-foreground font-mono">-NG: {minusNgCount}</span>
           </div>
           <div className="flex items-center gap-1.5">
             <div className="h-2 w-2 rounded-full bg-amber-400" />
             <span className="text-xs text-muted-foreground font-mono">
-              LOW&lt;50%: {weakOkCount} ({weakOkRate}%)
+              边缘黄区: {yellowCount} ({yellowRate}%)
             </span>
           </div>
-          <span className="text-xs text-muted-foreground font-mono">
-            YIELD: {yieldRate}%
-          </span>
+          <span className="text-xs text-muted-foreground font-mono">YIELD: {yieldRate}%</span>
         </div>
       </div>
 
-      {/* Grid */}
       <div className="grid grid-cols-4 gap-2 xl:grid-cols-8">
         {cavities.map((cavity) => {
           const scorePercent = getScorePercent(cavity.value)
-          const isWeakOk = cavity.status === "OK" && scorePercent < 50
-          const cfg = isWeakOk ? weakOkConfig : statusConfig[cavity.status]
+          const isYellowWarning = cavity.status === "OK" && isYellowByTolerance(cavity.value)
+          const cfg = isYellowWarning ? weakOkConfig : statusConfig[cavity.status]
           return (
             <div
               key={cavity.id}
@@ -139,17 +150,14 @@ export function CavityGrid({ cavities, usl, lsl, faiLabel }: CavityGridProps) {
                 "group relative rounded-md border px-2.5 py-2 transition-all hover:scale-[1.02]",
                 cfg.border,
                 cfg.bg,
-                isWeakOk && "hover:border-amber-400/55",
-                cavity.status === "OK" && !isWeakOk && "hover:border-green-500/40",
+                isYellowWarning && "hover:border-amber-400/55",
+                cavity.status === "OK" && !isYellowWarning && "hover:border-green-500/40",
                 cavity.status === "+NG" && "hover:border-red-500/50",
                 cavity.status === "-NG" && "hover:border-blue-600/50"
               )}
             >
-              {/* Cavity Label */}
               <div className="mb-1.5 flex items-center justify-between">
-                <span className="text-xs font-bold font-mono text-muted-foreground">
-                  {cavity.label}
-                </span>
+                <span className="text-xs font-bold font-mono text-muted-foreground">{cavity.label}</span>
                 <Badge
                   className={cn(
                     "h-4 px-1.5 text-[10px] font-bold font-mono border-0",
@@ -161,12 +169,8 @@ export function CavityGrid({ cavities, usl, lsl, faiLabel }: CavityGridProps) {
                 </Badge>
               </div>
 
-              {/* Value */}
-              <p className={cn("text-sm font-bold font-mono", cfg.text)}>
-                {cavity.value.toFixed(3)}
-              </p>
+              <p className={cn("text-sm font-bold font-mono", cfg.text)}>{cavity.value.toFixed(3)}</p>
 
-              {/* Mini deviation bar */}
               <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-secondary">
                 <div
                   className={cn("h-full rounded-full transition-all", cfg.barBg)}

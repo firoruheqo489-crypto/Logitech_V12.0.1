@@ -15,9 +15,21 @@ import { getGanttDataHandler, postGanttImportHandler, patchProjectImageHandler, 
 import { listDashboardProjects, getDashboardProject, batchReplaceDashboardProjects, clearDashboardProjects, getDashboardHealthCheck, getLatestDashboardHealthCheck, runDashboardHealthCheck, ensureDashboardHealthTable, ensureDashboardModuleOrderTable } from "./routes/dashboard.js";
 import { listDashboardProjectAssets, upsertDashboardProjectAsset, deleteDashboardProjectAsset, ensureDashboardProjectAssetsTable } from "./routes/dashboard-assets.js";
 import { deleteDashboardPartFaiState, ensureDashboardPartFaiTable, getDashboardPartFaiState, upsertDashboardPartFaiState } from "./routes/dashboard-part-fai.js";
+import {
+  deleteDashboardFaiDimensionState,
+  ensureDashboardFaiDimensionTable,
+  getDashboardFaiDimensionState,
+  upsertDashboardFaiDimensionState,
+} from "./routes/dashboard-fai-dimension-state.js";
 import { deleteDashboardMoldTrialEvidenceState, ensureDashboardMoldTrialEvidenceTable, getDashboardMoldTrialEvidenceState, upsertDashboardMoldTrialEvidenceState } from "./routes/dashboard-mold-trial-evidence.js";
 import { deleteDashboardToolingFaiState, ensureDashboardToolingFaiTable, getDashboardToolingFaiState, upsertDashboardToolingFaiState } from "./routes/dashboard-tooling-fai.js";
 import { ensureDashboardMachineSheetTable, getDashboardMachineSheetState, upsertDashboardMachineSheetState } from "./routes/dashboard-machine-sheet.js";
+import {
+  deleteDashboardDocxConverterState,
+  ensureDashboardDocxConverterTable,
+  getDashboardDocxConverterState,
+  upsertDashboardDocxConverterState,
+} from "./routes/dashboard-docx-converter-state.js";
 import { listDashboardProductData, batchUpsertDashboardProductData, ensureDashboardProductDataTable } from "./routes/dashboard-product-data.js";
 import { listDashboardProductDocs, upsertDashboardProductDoc, deleteDashboardProductDoc } from "./routes/dashboard-product-docs.js";
 import { getProgressNotes, getLatestProgressBackup, saveProgressNotes, upsertProgressNote, createProgressBackup, restoreLatestProgressNotes, deleteProgressNote, getProgressNoteAuditLogs, ensureBackupTable, ensureProgressAuditTable } from "./routes/progress-notes.js";
@@ -57,8 +69,10 @@ async function startServer() {
     { name: "dashboard_product_data", run: ensureDashboardProductDataTable },
     { name: "dashboard_tooling_fai", run: ensureDashboardToolingFaiTable },
     { name: "dashboard_part_fai", run: ensureDashboardPartFaiTable },
+    { name: "dashboard_fai_dimension", run: ensureDashboardFaiDimensionTable },
     { name: "dashboard_mold_trial_evidence", run: ensureDashboardMoldTrialEvidenceTable },
     { name: "dashboard_machine_sheet", run: ensureDashboardMachineSheetTable },
+    { name: "dashboard_docx_converter", run: ensureDashboardDocxConverterTable },
     { name: "dashboard_health", run: ensureDashboardHealthTable },
     { name: "dashboard_module_order", run: ensureDashboardModuleOrderTable },
     { name: "progress_backup", run: ensureBackupTable },
@@ -190,11 +204,17 @@ async function startServer() {
   app.get("/api/dashboard/part-fai-state", getDashboardPartFaiState);
   app.put("/api/dashboard/part-fai-state", upsertDashboardPartFaiState);
   app.delete("/api/dashboard/part-fai-state", deleteDashboardPartFaiState);
+  app.get("/api/dashboard/fai-dimension-state", getDashboardFaiDimensionState);
+  app.put("/api/dashboard/fai-dimension-state", upsertDashboardFaiDimensionState);
+  app.delete("/api/dashboard/fai-dimension-state", deleteDashboardFaiDimensionState);
   app.get("/api/dashboard/mold-trial-evidence-state", getDashboardMoldTrialEvidenceState);
   app.put("/api/dashboard/mold-trial-evidence-state", upsertDashboardMoldTrialEvidenceState);
   app.delete("/api/dashboard/mold-trial-evidence-state", deleteDashboardMoldTrialEvidenceState);
   app.get("/api/dashboard/machine-sheet-state", getDashboardMachineSheetState);
   app.put("/api/dashboard/machine-sheet-state", upsertDashboardMachineSheetState);
+  app.get("/api/dashboard/docx-converter-state", getDashboardDocxConverterState);
+  app.put("/api/dashboard/docx-converter-state", upsertDashboardDocxConverterState);
+  app.delete("/api/dashboard/docx-converter-state", deleteDashboardDocxConverterState);
   app.delete("/api/dashboard/projects", clearDashboardProjects);
   app.get("/api/dashboard/health-check", getDashboardHealthCheck);
   app.get("/api/dashboard/health-check/latest", getLatestDashboardHealthCheck);

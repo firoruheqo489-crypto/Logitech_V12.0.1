@@ -51,6 +51,7 @@ const ProductStandardDrawerWorkspace = lazy(() => import('./components/ProductSt
 const ProcessDrawerWorkspace = lazy(() => import('./components/ProcessDrawerWorkspace'));
 const ProgressLogsDrawerWorkspace = lazy(() => import('./components/ProgressLogsDrawerWorkspace'));
 const FaiDimensionAnalyzer = lazy(() => import('./components/FaiDimensionAnalyzer'));
+const DocxConvertModule = lazy(() => import('./components/DocxConvertModule'));
 
 function LazyWorkspace({ children }: { children: React.ReactNode }) {
   return (
@@ -127,6 +128,7 @@ const DASHBOARD_TABS = [
   'product-standard',
   'mold-trial-database',
   'dimension-analysis',
+  'docx-converter',
   'project-progress',
   'mold-reliability',
   'spc-calculator',
@@ -739,6 +741,7 @@ export default function DashboardHome() {
               'product-standard': '产品标准',
               'mold-trial-database': '试模数据库',
               'dimension-analysis': '尺寸分析',
+              'docx-converter': 'DOCX转Excel',
               'project-progress': '项目进度看板',
               'mold-reliability': '模具可靠性',
               'spc-calculator': 'SPC计算器',
@@ -895,7 +898,13 @@ export default function DashboardHome() {
 
         {selectedTab === 'dimension-analysis' && (
           <LazyWorkspace>
-            <FaiDimensionAnalyzer />
+            <FaiDimensionAnalyzer panels={currentModuleTrialPanels} />
+          </LazyWorkspace>
+        )}
+
+        {selectedTab === 'docx-converter' && (
+          <LazyWorkspace>
+            <DocxConvertModule panels={currentModuleTrialPanels} />
           </LazyWorkspace>
         )}
 
