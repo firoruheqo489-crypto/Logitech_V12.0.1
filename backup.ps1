@@ -13,7 +13,7 @@ $TempDir = Join-Path $env:TEMP "${ProjectName}_$Timestamp"
 New-Item -ItemType Directory -Force -Path $TempDir | Out-Null
 
 Write-Host "[1/3] 建立临时安全区: 剥离无价值与高风险目录..." -ForegroundColor Cyan
-$ExcludeDirs = ".git", "node_modules", "dist", ".next", "build", ".cache", "tmp"
+$ExcludeDirs = ".git", "node_modules", "dist", ".next", "build", ".cache", "tmp", ".pnpm-store", "artifacts", ".rollback", ".release-worktrees"
 $ExcludeFiles = "*.zip", "backup.ps1", ".DS_Store"
 robocopy . $TempDir /MIR /XD $ExcludeDirs /XF $ExcludeFiles /NFL /NDL /NJH /NJS /R:0 /W:0 | Out-Null
 
