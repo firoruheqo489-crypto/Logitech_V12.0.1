@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -1174,14 +1174,20 @@ export function summarizeDimensionRowsByDimTypes(
   rows: FaiDataRow[],
   expectedDimTypes: string[]
 ): FaiParseSummary {
+  const filteredRows = filterDimensionRowsByDimTypes(rows, expectedDimTypes);
+  return summarizeParsedRows(filteredRows);
+}
+
+function filterDimensionRowsByDimTypes(
+  rows: FaiDataRow[],
+  expectedDimTypes: string[]
+): FaiDataRow[] {
   const allowedTypes = new Set(
     expectedDimTypes.map(value => normalizeDimTypeKey(value))
   );
-  const filteredRows = rows.filter(row => {
+  return rows.filter(row => {
     return allowedTypes.has(normalizeDimTypeKey(row.dimType));
   });
-
-  return summarizeParsedRows(filteredRows);
 }
 
 function getJudgeBadgeClass(judge: string): string {
@@ -1242,6 +1248,7 @@ export default function PartFaiParserSection({
   const [isColumnPanelOpen, setIsColumnPanelOpen] = useState(false);
   const [isHydrated, setIsHydrated] = useState(false);
   const [canPersistRemoteState, setCanPersistRemoteState] = useState(false);
+  const [isHcfNgDetailsOpen, setIsHcfNgDetailsOpen] = useState(false);
   const loadRequestIdRef = useRef(0);
   const visibleColumns = PART_FAI_COLUMNS.filter(
     column => !hiddenColumns.includes(column.id)
@@ -1258,15 +1265,30 @@ export default function PartFaiParserSection({
       : activeFilter === "unqualified"
         ? faiData.filter(row => row.isNG)
         : faiData;
-  const hcfFocusSummary = summarizeDimensionRowsByDimTypes(faiData, [
-    "HCF+CP",
-    "HCF",
-  ]);
+  const hcfFocusDimTypes = useMemo(() => ["HCF+CP", "HCF"], []);
+  const hcfFocusRows = useMemo(
+    () => filterDimensionRowsByDimTypes(faiData, hcfFocusDimTypes),
+    [faiData, hcfFocusDimTypes]
+  );
+  const hcfFocusUnqualifiedRows = useMemo(
+    () =>
+      hcfFocusRows.filter(row => {
+        return (
+          getJudgeStatus(row.judgeFos) === "ng" ||
+          getJudgeStatus(row.judgeGtol) === "ng"
+        );
+      }),
+    [hcfFocusRows]
+  );
+  const hcfFocusSummary = useMemo(
+    () => summarizeParsedRows(hcfFocusRows),
+    [hcfFocusRows]
+  );
   const hasDimTypeMetadata = faiData.some(
     row => normalizeDimTypeKey(row.dimType).length > 0
   );
   const needsDimTypeReparse =
-    fileName && faiData.length > 0 && !hasDimTypeMetadata;
+    Boolean(fileName) && faiData.length > 0 && !hasDimTypeMetadata;
 
   const clearParsedData = () => {
     setFaiData([]);
@@ -1278,6 +1300,7 @@ export default function PartFaiParserSection({
     setActiveFilter("all");
     setHiddenColumns([]);
     setIsColumnPanelOpen(false);
+    setIsHcfNgDetailsOpen(false);
 
     if (inputRef.current) {
       inputRef.current.value = "";
@@ -1296,6 +1319,7 @@ export default function PartFaiParserSection({
     setFileName("");
     setActiveFilter("all");
     setHiddenColumns([]);
+    setIsHcfNgDetailsOpen(false);
     setIsColumnPanelOpen(false);
 
     void (async () => {
@@ -1704,7 +1728,7 @@ export default function PartFaiParserSection({
                   清除当前结果后重新上传同一份 Excel，HCF+CP 统计会正常显示。
                 </div>
               ) : null}
-              <div className="mt-3 grid grid-cols-2 gap-3 xl:grid-cols-4">
+            <div className="mt-3 grid grid-cols-2 gap-3 xl:grid-cols-4">
                 <div className="rounded-xl border border-fuchsia-500/20 bg-slate-950/40 p-3">
                   <div className="text-[10px] font-semibold uppercase tracking-widest text-fuchsia-200/80">
                     Total Rows
@@ -1721,14 +1745,29 @@ export default function PartFaiParserSection({
                     {needsDimTypeReparse ? "--" : hcfFocusSummary.qualifiedRows}
                   </div>
                 </div>
-                <div className="rounded-xl border border-rose-500/20 bg-slate-950/40 p-3">
+                <button
+                  type="button"
+                  disabled={needsDimTypeReparse}
+                  onClick={() => {
+                    if (needsDimTypeReparse) return;
+                    setIsHcfNgDetailsOpen(current => !current);
+                  }}
+                  className={`rounded-xl border border-rose-500/20 bg-slate-950/40 p-3 text-left transition ${
+                    needsDimTypeReparse
+                      ? "cursor-not-allowed opacity-60"
+                      : "hover:border-rose-400/40 hover:bg-rose-500/8"
+                  }`}
+                >
                   <div className="text-[10px] font-semibold uppercase tracking-widest text-rose-200/80">
                     Unqualified Rows
                   </div>
                   <div className="mt-2 text-2xl font-mono text-rose-300">
                     {needsDimTypeReparse ? "--" : hcfFocusSummary.ngRows}
                   </div>
-                </div>
+                  <div className="mt-2 text-[10px] font-mono uppercase tracking-[0.2em] text-rose-200/60">
+                    Click To View Values
+                  </div>
+                </button>
                 <div className="rounded-xl border border-cyan-500/20 bg-slate-950/40 p-3">
                   <div className="text-[10px] font-semibold uppercase tracking-widest text-cyan-200/80">
                     Qualified Rate
@@ -1742,6 +1781,60 @@ export default function PartFaiParserSection({
                   </div>
                 </div>
               </div>
+              {isHcfNgDetailsOpen && !needsDimTypeReparse ? (
+                <div className="mt-3 rounded-xl border border-rose-500/20 bg-slate-950/70 p-3">
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <div className="text-[11px] font-mono uppercase tracking-[0.2em] text-rose-200/80">
+                      HCF+CP + HCF NG Values ({hcfFocusUnqualifiedRows.length})
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsHcfNgDetailsOpen(false)}
+                      className="rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-300 transition hover:border-slate-600 hover:text-white"
+                    >
+                      Close
+                    </button>
+                  </div>
+                  {hcfFocusUnqualifiedRows.length === 0 ? (
+                    <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200">
+                      当前 HCF+CP + HCF 子集中没有 NG 项。
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full border-collapse text-xs">
+                        <thead className="bg-slate-900/80 text-slate-300">
+                          <tr>
+                            <th className="border border-slate-800 px-2 py-1.5 text-left">Dim. #</th>
+                            <th className="border border-slate-800 px-2 py-1.5 text-left">Dim. Type</th>
+                            <th className="border border-slate-800 px-2 py-1.5 text-left">Cavity</th>
+                            <th className="border border-slate-800 px-2 py-1.5 text-left">Judge FOS</th>
+                            <th className="border border-slate-800 px-2 py-1.5 text-left">Judge G-Tol</th>
+                            <th className="border border-slate-800 px-2 py-1.5 text-left">FOS Shots</th>
+                            <th className="border border-slate-800 px-2 py-1.5 text-left">G-Tol Shots</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {hcfFocusUnqualifiedRows.map((row, rowIndex) => (
+                            <tr key={`${row.dim}-${row.cavity}-${rowIndex}`} className="odd:bg-slate-900/30">
+                              <td className="border border-slate-800 px-2 py-1.5 text-slate-200">{row.dim || "--"}</td>
+                              <td className="border border-slate-800 px-2 py-1.5 text-slate-300">{row.dimType || "--"}</td>
+                              <td className="border border-slate-800 px-2 py-1.5 text-slate-300">{row.cavity || "--"}</td>
+                              <td className="border border-slate-800 px-2 py-1.5 text-slate-300">{row.judgeFos || "--"}</td>
+                              <td className="border border-slate-800 px-2 py-1.5 text-slate-300">{row.judgeGtol || "--"}</td>
+                              <td className="border border-slate-800 px-2 py-1.5 text-slate-300">
+                                {row.fosShots.map(value => formatNumber(value)).join(" / ")}
+                              </td>
+                              <td className="border border-slate-800 px-2 py-1.5 text-slate-300">
+                                {row.gtolShots.map(value => formatNumber(value)).join(" / ")}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              ) : null}
             </div>
 
             <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900/60">
@@ -1861,12 +1954,26 @@ export default function PartFaiParserSection({
                   </thead>
                   <tbody>
                     {filteredRows.map((row, index) => {
+                      const fosJudgeStatus = getJudgeStatus(row.judgeFos);
+                      const gtolJudgeStatus = getJudgeStatus(row.judgeGtol);
                       const rowValueClass = row.isNG
                         ? "text-red-400"
                         : "text-slate-300";
                       const rowMutedValueClass = row.isNG
                         ? "text-red-300"
                         : "text-slate-400";
+                      const fosShotValueClass =
+                        fosJudgeStatus === "ok"
+                          ? "text-emerald-300"
+                          : fosJudgeStatus === "ng"
+                            ? "text-red-300"
+                            : "text-slate-200";
+                      const gtolShotValueClass =
+                        gtolJudgeStatus === "ok"
+                          ? "text-emerald-300"
+                          : gtolJudgeStatus === "ng"
+                            ? "text-red-300"
+                            : "text-slate-200";
 
                       return (
                         <tr
@@ -1967,7 +2074,7 @@ export default function PartFaiParserSection({
                                     className="px-3 py-2"
                                   >
                                     <span
-                                      className={`inline-flex min-w-[74px] items-center justify-center rounded-md px-2.5 py-1.5 font-mono text-xs tabular-nums ${row.isNG ? "text-red-300" : "text-slate-200"}`}
+                                      className={`inline-flex min-w-[74px] items-center justify-center rounded-md px-2.5 py-1.5 font-mono text-xs tabular-nums ${fosShotValueClass}`}
                                     >
                                       {formatNumber(row.fosShots[shotIndex])}
                                     </span>
@@ -1999,7 +2106,7 @@ export default function PartFaiParserSection({
                                     className="px-3 py-2"
                                   >
                                     <span
-                                      className={`inline-flex min-w-[74px] items-center justify-center rounded-md px-2.5 py-1.5 font-mono text-xs tabular-nums ${row.isNG ? "text-red-300" : "text-slate-200"}`}
+                                      className={`inline-flex min-w-[74px] items-center justify-center rounded-md px-2.5 py-1.5 font-mono text-xs tabular-nums ${gtolShotValueClass}`}
                                     >
                                       {formatNumber(row.gtolShots[shotIndex])}
                                     </span>
