@@ -741,7 +741,7 @@ export default function DashboardHome() {
               'product-standard': '产品标准',
               'mold-trial-database': '试模数据库',
               'dimension-analysis': '尺寸分析',
-              'docx-converter': 'DOCX转Excel',
+              'docx-converter': '问题解析',
               'project-progress': '项目进度看板',
               'mold-reliability': '模具可靠性',
               'spc-calculator': 'SPC计算器',

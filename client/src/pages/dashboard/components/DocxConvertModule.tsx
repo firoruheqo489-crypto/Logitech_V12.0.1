@@ -577,20 +577,40 @@ function DocxConvertPanel({ panel }: { panel: AssetPanelItem }) {
 
   const stats = useMemo(() => {
     if (!result) {
-      return { rows: 0, images: 0, openIssues: 0 };
+      return {
+        openCount: 0,
+        closeCount: 0,
+        unresolvedOpenCount: 0,
+        openRatePercent: "0.0%",
+      };
     }
-    let imageCount = 0;
+
     let openCount = 0;
+    let closeCount = 0;
     for (const row of result.rows) {
-      for (const cell of row) {
-        imageCount += cell.images.length;
-      }
-      const status = row[7]?.text?.toLowerCase() || '';
-      if (status.includes('open')) {
-        openCount += 1;
+      const statusLines = normalizeStatusLines(row[7]?.text || '');
+      for (const line of statusLines) {
+        const lower = line.toLowerCase();
+        if (lower.includes('open')) {
+          openCount += 1;
+        }
+        if (lower.includes('close')) {
+          closeCount += 1;
+        }
       }
     }
-    return { rows: result.rows.length, images: imageCount, openIssues: openCount };
+
+    const unresolvedOpenCount = Math.max(0, openCount - closeCount);
+    const totalTagged = openCount + closeCount;
+    const openRatePercent =
+      totalTagged > 0 ? `${((openCount / totalTagged) * 100).toFixed(1)}%` : "0.0%";
+
+    return {
+      openCount,
+      closeCount,
+      unresolvedOpenCount,
+      openRatePercent,
+    };
   }, [result]);
   const lastTrialStage = trialStagesState[trialStagesState.length - 1] || '';
   const canDeleteActiveTrial =
@@ -1149,7 +1169,7 @@ function DocxConvertPanel({ panel }: { panel: AssetPanelItem }) {
               <div className="mb-1 text-[11px] font-mono tracking-[0.22em] text-cyan-400/80">
                 {panel.moldId} / {panel.moldNo}
               </div>
-              <h2 className="text-lg font-bold text-white">DOCX 转 Excel</h2>
+              <h2 className="text-lg font-bold text-white">问题解析</h2>
               <p className="text-xs text-slate-400">上传 DOCX，自动解析 9 列问题表并导出带图片的 Excel。</p>
             </div>
           </div>
@@ -1274,9 +1294,9 @@ function DocxConvertPanel({ panel }: { panel: AssetPanelItem }) {
           <div className="mb-6 flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
             <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-slate-300">
               <span>轮次: {activeTrial}</span>
-              <span>行数: {stats.rows}</span>
-              <span>图片: {stats.images}</span>
-              <span>Open: {stats.openIssues}</span>
+              <span>Open: {stats.openCount}</span>
+              <span>Close: {stats.closeCount}</span>
+              <span>Open待关闭: {stats.unresolvedOpenCount}</span>
             </div>
             <Button onClick={handleExport} disabled={isExporting} className="bg-emerald-600 text-white hover:bg-emerald-700">
               {isExporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
@@ -1284,7 +1304,7 @@ function DocxConvertPanel({ panel }: { panel: AssetPanelItem }) {
             </Button>
           </div>
 
-          <div className="max-h-[68vh] overflow-y-auto overflow-x-hidden rounded-xl border border-white/[0.08]">
+          <div className="rounded-xl border border-white/[0.08]">
             <table className="w-full table-fixed border-collapse text-sm">
               <thead className="sticky top-0 z-10 bg-slate-900">
                 <tr>
@@ -1425,8 +1445,8 @@ export default function DocxConvertModule({ panels }: DocxConvertModuleProps) {
   return (
     <AssetDrawerWorkspace
       panels={panels}
-      badgeLabel="DOCX CONVERTER"
-      drawerTitle="DOCX 转 Excel"
+      badgeLabel="问题解析"
+      drawerTitle="问题解析"
       drawerDescription="选择 mold/no 后在当前区域上传 DOCX 并导出带图片的 Excel。"
       emptyMessage="暂无可用于 DOCX 转换的模具面板。"
       icon={FileSpreadsheet}
