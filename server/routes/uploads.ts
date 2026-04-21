@@ -38,6 +38,7 @@ const UPLOADS_ROUTE_ERROR_MESSAGES: Record<UploadsRouteErrorCode, string> = {
 const UPLOADS_TEMP_DIR = path.resolve(process.cwd(), 'uploads_temp');
 const MAX_UPLOAD_FILE_SIZE_BYTES = 20 * 1024 * 1024;
 const ALLOWED_UPLOAD_RULES: Record<string, ReadonlySet<string>> = {
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': new Set(['.docx']),
   'application/pdf': new Set(['.pdf']),
   'image/jpeg': new Set(['.jpeg', '.jpg']),
   'image/png': new Set(['.png']),

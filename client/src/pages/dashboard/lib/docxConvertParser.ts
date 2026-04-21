@@ -37,6 +37,25 @@ const EXPECTED_HEADERS = [
   'Reference Link',
 ];
 
+const HEADER_ALIAS_RULES: Array<{ canonicalIndex: number; patterns: RegExp[] }> = [
+  { canonicalIndex: 0, patterns: [/^no\b/i, /序号|编号|項次|no\./i] },
+  { canonicalIndex: 1, patterns: [/issue|description/i, /问题|異常|不良|描述|现象/i] },
+  { canonicalIndex: 2, patterns: [/picture|photo|image/i, /图片|照片|图像/i] },
+  { canonicalIndex: 3, patterns: [/root\s*cause|cause/i, /根因|原因/i] },
+  { canonicalIndex: 4, patterns: [/solution|action/i, /对策|措施|改善|方案/i] },
+  { canonicalIndex: 5, patterns: [/owner|pic|assignee/i, /负责人|责任人|担当/i] },
+  { canonicalIndex: 6, patterns: [/due|date|deadline/i, /截止|日期|完成时间|完成日期/i] },
+  { canonicalIndex: 7, patterns: [/status|open|close/i, /状态|开|关|已关闭|待关闭/i] },
+  { canonicalIndex: 8, patterns: [/reference|link|url/i, /参考|链接|备注/i] },
+];
+
+type HeaderCandidate = {
+  table: Element;
+  headerRowIndex: number;
+  headers: string[];
+  score: number;
+};
+
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
   const chunkSize = 0x8000;
@@ -165,20 +184,170 @@ function getGridSpan(cell: Element): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
 }
 
-function buildCanonicalHeaders(headers: string[]): string[] {
-  const looksLikeHeaders =
-    headers.filter((h) => h.trim().length > 0).length >= 5 &&
-    headers.some((h) => /issue|pictures|root|solution|owner|due|status|reference|no\./i.test(h));
+function expandHeaderTexts(cells: Element[]): string[] {
+  const texts: string[] = [];
+  for (const cell of cells) {
+    const span = getGridSpan(cell);
+    const text = collectTextWithParagraphs(cell).trim();
+    for (let step = 0; step < span; step += 1) {
+      texts.push(text);
+    }
+  }
+  return texts;
+}
 
-  if (!looksLikeHeaders) {
+function normalizeHeaderToken(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[：:]/g, ' ')
+    .replace(/[^a-z0-9\u4e00-\u9fa5]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function matchesHeaderAlias(value: string, canonicalIndex: number): boolean {
+  const normalized = normalizeHeaderToken(value);
+  if (!normalized) {
+    return false;
+  }
+
+  const rule = HEADER_ALIAS_RULES.find((item) => item.canonicalIndex === canonicalIndex);
+  if (!rule) {
+    return false;
+  }
+  return rule.patterns.some((pattern) => pattern.test(normalized));
+}
+
+function scoreHeaderRow(headers: string[]): number {
+  if (headers.length < 7) {
+    return 0;
+  }
+
+  let score = 0;
+  for (let index = 0; index < EXPECTED_HEADERS.length; index += 1) {
+    if (headers.some((header) => matchesHeaderAlias(header, index))) {
+      score += 1;
+    }
+  }
+  return score;
+}
+
+function chooseHeaderCandidate(tables: HTMLCollectionOf<Element>): HeaderCandidate | null {
+  let best: HeaderCandidate | null = null;
+
+  for (let tableIndex = 0; tableIndex < tables.length; tableIndex += 1) {
+    const table = tables[tableIndex];
+    const rows = Array.from(table.children).filter(
+      (node) => node.localName === 'tr' && node.namespaceURI?.includes('wordprocessingml'),
+    );
+    if (rows.length === 0) {
+      continue;
+    }
+
+    const rowScanLimit = Math.min(rows.length, 4);
+    for (let rowIndex = 0; rowIndex < rowScanLimit; rowIndex += 1) {
+      const row = rows[rowIndex];
+      const rowCells = Array.from(row.children).filter(
+        (node) => node.localName === 'tc' && node.namespaceURI?.includes('wordprocessingml'),
+      );
+      if (rowCells.length === 0) {
+        continue;
+      }
+
+      const headerTexts = expandHeaderTexts(rowCells).slice(0, 12);
+      const score = scoreHeaderRow(headerTexts);
+      if (score === 0) {
+        continue;
+      }
+
+      const candidate: HeaderCandidate = {
+        table,
+        headerRowIndex: rowIndex,
+        headers: headerTexts,
+        score,
+      };
+
+      if (!best || candidate.score > best.score) {
+        best = candidate;
+      }
+    }
+  }
+
+  return best;
+}
+
+function buildCanonicalColumnMapping(headers: string[]): number[] {
+  const mapping = Array.from({ length: EXPECTED_HEADERS.length }, () => -1);
+  const used = new Set<number>();
+  const limitedHeaders = headers.slice(0, 12);
+
+  for (let canonicalIndex = 0; canonicalIndex < EXPECTED_HEADERS.length; canonicalIndex += 1) {
+    const candidates: number[] = [];
+    for (let sourceIndex = 0; sourceIndex < limitedHeaders.length; sourceIndex += 1) {
+      if (matchesHeaderAlias(limitedHeaders[sourceIndex] || '', canonicalIndex)) {
+        candidates.push(sourceIndex);
+      }
+    }
+    if (candidates.length === 0) {
+      continue;
+    }
+
+    candidates.sort((left, right) => {
+      const leftDistance = Math.abs(left - canonicalIndex);
+      const rightDistance = Math.abs(right - canonicalIndex);
+      if (leftDistance !== rightDistance) {
+        return leftDistance - rightDistance;
+      }
+      return left - right;
+    });
+
+    const preferred = candidates.find((value) => !used.has(value));
+    const picked = preferred ?? candidates[0];
+    mapping[canonicalIndex] = picked;
+    used.add(picked);
+  }
+
+  if (mapping[5] >= 0 && mapping[6] < 0) {
+    const ownerCandidate = mapping[5] + 1;
+    if (ownerCandidate >= 0 && ownerCandidate < limitedHeaders.length && !used.has(ownerCandidate)) {
+      mapping[6] = ownerCandidate;
+      used.add(ownerCandidate);
+    }
+  }
+
+  for (let canonicalIndex = 0; canonicalIndex < EXPECTED_HEADERS.length; canonicalIndex += 1) {
+    if (mapping[canonicalIndex] >= 0) {
+      continue;
+    }
+    if (canonicalIndex < limitedHeaders.length && !used.has(canonicalIndex)) {
+      mapping[canonicalIndex] = canonicalIndex;
+      used.add(canonicalIndex);
+    }
+  }
+
+  return mapping;
+}
+
+function buildCanonicalHeaders(headers: string[]): string[] {
+  const score = scoreHeaderRow(headers);
+  if (score < 3) {
     return [...EXPECTED_HEADERS];
   }
+  return [...EXPECTED_HEADERS];
+}
 
-  const next = headers.slice(0, 9);
-  while (next.length < 9) {
-    next.push(EXPECTED_HEADERS[next.length] || '');
-  }
-  return next;
+function resequenceNoColumn(rows: ParsedRow[]): ParsedRow[] {
+  return rows.map((row, index) => {
+    if (row.length === 0) {
+      return row;
+    }
+    const nextRow = row.slice();
+    nextRow[0] = {
+      ...nextRow[0],
+      text: String(index + 1),
+    };
+    return nextRow;
+  });
 }
 
 export async function parseDocxReport(
@@ -212,40 +381,13 @@ export async function parseDocxReport(
 
   let targetTable: Element | null = null;
   let headers: string[] = [];
+  let headerRowIndex = 0;
 
-  for (let i = 0; i < tables.length; i += 1) {
-    const rows = Array.from(tables[i].children).filter(
-      (node) => node.localName === 'tr' && node.namespaceURI?.includes('wordprocessingml'),
-    );
-    if (rows.length === 0) {
-      continue;
-    }
-
-    const firstRowCells = Array.from(rows[0].children).filter(
-      (node) => node.localName === 'tc' && node.namespaceURI?.includes('wordprocessingml'),
-    );
-
-    const firstRowTexts: string[] = [];
-    for (const cell of firstRowCells) {
-      const span = getGridSpan(cell);
-      const text = collectTextWithParagraphs(cell);
-      firstRowTexts.push(text);
-      for (let step = 1; step < span; step += 1) {
-        firstRowTexts.push('');
-      }
-    }
-
-    const normalized = firstRowTexts.map((value) => value.trim().toLowerCase());
-    const expected = EXPECTED_HEADERS.map((value) => value.toLowerCase());
-    const matchCount = expected.filter(
-      (value, index) => normalized[index] && normalized[index].includes(value.split(' ')[0]),
-    ).length;
-
-    if (firstRowTexts.length >= 9 && matchCount >= 5) {
-      targetTable = tables[i];
-      headers = firstRowTexts.slice(0, 9);
-      break;
-    }
+  const bestCandidate = chooseHeaderCandidate(tables);
+  if (bestCandidate && bestCandidate.score >= 3) {
+    targetTable = bestCandidate.table;
+    headers = bestCandidate.headers.slice(0, 9);
+    headerRowIndex = bestCandidate.headerRowIndex;
   }
 
   if (!targetTable) {
@@ -280,6 +422,7 @@ export async function parseDocxReport(
 
       targetTable = tables[i];
       headers = firstRowTexts.slice(0, 9);
+      headerRowIndex = 0;
       break;
     }
   }
@@ -292,16 +435,18 @@ export async function parseDocxReport(
   const rows = Array.from(targetTable.children).filter(
     (node) => node.localName === 'tr' && node.namespaceURI?.includes('wordprocessingml'),
   );
+  const columnMapping = buildCanonicalColumnMapping(headers);
 
   const parsedRows: ParsedRow[] = [];
   const imageCache = new Map<string, ParsedImage>();
 
-  for (let rowIndex = 1; rowIndex < rows.length; rowIndex += 1) {
+  for (let rowIndex = headerRowIndex + 1; rowIndex < rows.length; rowIndex += 1) {
     const cells = Array.from(rows[rowIndex].children).filter(
       (node) => node.localName === 'tc' && node.namespaceURI?.includes('wordprocessingml'),
     );
 
-    const parsedCells: ParsedCell[] = [];
+    const parsedCellsByOrder: ParsedCell[] = [];
+    const expandedCells: ParsedCell[] = [];
     for (const cell of cells) {
       const span = getGridSpan(cell);
       const text = collectTextWithParagraphs(cell);
@@ -337,27 +482,42 @@ export async function parseDocxReport(
         images.push(nextImage);
       }
 
-      parsedCells.push({ text, images });
+      const parsedCell: ParsedCell = { text, images };
+      parsedCellsByOrder.push(parsedCell);
+      expandedCells.push(parsedCell);
       for (let step = 1; step < span; step += 1) {
-        parsedCells.push({ text: '', images: [] });
+        expandedCells.push({ text: '', images: [] });
       }
     }
 
-    const hasContent = parsedCells.some((cell) => cell.text.trim() !== '' || cell.images.length > 0);
+    const hasContent = parsedCellsByOrder.some((cell) => cell.text.trim() !== '' || cell.images.length > 0);
     if (!hasContent) {
       continue;
     }
 
-    while (parsedCells.length < 9) {
-      parsedCells.push({ text: '', images: [] });
+    if (parsedCellsByOrder.length >= EXPECTED_HEADERS.length) {
+      const normalizedRow = parsedCellsByOrder.slice(0, EXPECTED_HEADERS.length);
+      while (normalizedRow.length < EXPECTED_HEADERS.length) {
+        normalizedRow.push({ text: '', images: [] });
+      }
+      parsedRows.push(normalizedRow);
+      continue;
     }
-    parsedRows.push(parsedCells.slice(0, 9));
+
+    const normalizedRow: ParsedRow = Array.from({ length: EXPECTED_HEADERS.length }, () => ({ text: '', images: [] }));
+    for (let canonicalIndex = 0; canonicalIndex < EXPECTED_HEADERS.length; canonicalIndex += 1) {
+      const sourceIndex = columnMapping[canonicalIndex];
+      if (sourceIndex >= 0 && sourceIndex < expandedCells.length) {
+        normalizedRow[canonicalIndex] = expandedCells[sourceIndex];
+      }
+    }
+    parsedRows.push(normalizedRow);
   }
 
   onProgress?.({ stage: 'rendering', message: '正在生成预览...', progress: 92 });
   return {
     headers: buildCanonicalHeaders(headers),
-    rows: parsedRows,
+    rows: resequenceNoColumn(parsedRows),
     columnCount: 9,
   };
 }

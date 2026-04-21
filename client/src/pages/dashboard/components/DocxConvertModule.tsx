@@ -36,6 +36,14 @@ interface TrialStageViewState {
   isParsing: boolean;
 }
 
+type StatusDisplayMode = 'all' | 'open' | 'close';
+type StatusToken = {
+  raw: string;
+  state: 'open' | 'close';
+  stage: number;
+  index: number;
+};
+
 const DEFAULT_TRIAL_STAGES: TrialStage[] = ['T0', 'T1', 'T2', 'T3'];
 const TRIAL_STAGE_PATTERN = /^T\d+$/;
 const DOCX_MIME_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
@@ -52,8 +60,8 @@ const STAGE_LABELS: Record<ParseProgress['stage'], string> = {
 };
 
 const COLUMN_WIDTH_CLASSES: Record<number, string> = {
-  0: 'w-[3%]',
-  1: 'w-[20%]',
+  0: 'w-[5%]',
+  1: 'w-[18%]',
   2: 'w-[7%]',
   3: 'w-[15%]',
   4: 'w-[15%]',
@@ -494,6 +502,72 @@ function normalizeStatusLines(text: string): string[] {
     .filter(Boolean);
 }
 
+function parseStatusTokens(text: string): StatusToken[] {
+  const lines = normalizeStatusLines(text);
+  const tokens: StatusToken[] = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const raw = lines[index];
+    const match = raw.match(/(?:[A-Za-z_-]*?)(\d+)?:(open|close)\b/i);
+    if (!match || !match[2]) {
+      continue;
+    }
+    const state = match[2].toLowerCase() as 'open' | 'close';
+    const stage = match[1] ? Number.parseInt(match[1], 10) : 0;
+    tokens.push({ raw, state, stage: Number.isFinite(stage) ? stage : 0, index });
+  }
+  return tokens;
+}
+
+function getDisplayStatusLines(text: string, mode: StatusDisplayMode): string[] {
+  const lines = normalizeStatusLines(text);
+  if (mode === 'all') {
+    return lines;
+  }
+
+  const tokens = parseStatusTokens(text)
+    .filter((token) => token.state === mode)
+    .sort((left, right) => {
+      if (left.stage !== right.stage) {
+        return right.stage - left.stage;
+      }
+      return left.index - right.index;
+    });
+
+  return tokens.map((token) => token.raw);
+}
+
+function resolveRowFinalStatus(text: string): 'open' | 'close' | null {
+  const normalized = text.replace(/[锛岋紱]/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!normalized) {
+    return null;
+  }
+
+  const tagged = [...normalized.matchAll(/(?:[A-Za-z_-]*?)(\d+)?:(open|close)\b/gi)];
+  if (tagged.length > 0) {
+    let bestMatch: RegExpMatchArray | null = null;
+    let bestStage = Number.NEGATIVE_INFINITY;
+    for (const match of tagged) {
+      const stage = match[1] ? Number.parseInt(match[1], 10) : Number.NEGATIVE_INFINITY;
+      if (!bestMatch || stage >= bestStage) {
+        bestMatch = match;
+        bestStage = stage;
+      }
+    }
+    if (bestMatch && bestMatch[2]) {
+      const status = bestMatch[2].toLowerCase();
+      return status === 'open' || status === 'close' ? status : null;
+    }
+  }
+
+  const lower = normalized.toLowerCase();
+  const openIndex = lower.lastIndexOf('open');
+  const closeIndex = lower.lastIndexOf('close');
+  if (openIndex === -1 && closeIndex === -1) {
+    return null;
+  }
+  return openIndex > closeIndex ? 'open' : 'close';
+}
+
 function TAxisButton({
   label,
   active,
@@ -531,6 +605,8 @@ function DocxConvertPanel({ panel }: { panel: AssetPanelItem }) {
   const [isHydrated, setIsHydrated] = useState(false);
   const [isOfflineFallbackMode, setIsOfflineFallbackMode] = useState(false);
   const [showDeleteTrialConfirm, setShowDeleteTrialConfirm] = useState(false);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [statusDisplayMode, setStatusDisplayMode] = useState<StatusDisplayMode>('all');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const canPersistRef = useRef(false);
   const persistTimerRef = useRef<number | null>(null);
@@ -587,20 +663,20 @@ function DocxConvertPanel({ panel }: { panel: AssetPanelItem }) {
 
     let openCount = 0;
     let closeCount = 0;
+    let unresolvedOpenCount = 0;
     for (const row of result.rows) {
-      const statusLines = normalizeStatusLines(row[7]?.text || '');
-      for (const line of statusLines) {
-        const lower = line.toLowerCase();
-        if (lower.includes('open')) {
-          openCount += 1;
-        }
-        if (lower.includes('close')) {
-          closeCount += 1;
-        }
+      const tokens = parseStatusTokens(row[7]?.text || '');
+      const hasOpen = tokens.some((token) => token.state === 'open');
+      const hasClose = tokens.some((token) => token.state === 'close');
+      if (hasOpen) {
+        openCount += 1;
+        unresolvedOpenCount += 1;
+      }
+      if (hasClose) {
+        closeCount += 1;
       }
     }
 
-    const unresolvedOpenCount = Math.max(0, openCount - closeCount);
     const totalTagged = openCount + closeCount;
     const openRatePercent =
       totalTagged > 0 ? `${((openCount / totalTagged) * 100).toFixed(1)}%` : "0.0%";
@@ -612,6 +688,45 @@ function DocxConvertPanel({ panel }: { panel: AssetPanelItem }) {
       openRatePercent,
     };
   }, [result]);
+
+  const displayRows = useMemo(() => {
+    if (!result) {
+      return [] as ParseResult['rows'];
+    }
+
+    if (statusDisplayMode === 'all') {
+      return result.rows;
+    }
+
+    const ranked = result.rows
+      .map((row, originalIndex) => {
+        const statusText = row[7]?.text || '';
+        const tokens = parseStatusTokens(statusText).filter((token) => token.state === statusDisplayMode);
+        if (tokens.length === 0) {
+          return null;
+        }
+        const maxStage = tokens.reduce((max, token) => Math.max(max, token.stage), 0);
+        return {
+          row,
+          originalIndex,
+          maxStage,
+          tokenCount: tokens.length,
+        };
+      })
+      .filter((item): item is { row: ParseResult['rows'][number]; originalIndex: number; maxStage: number; tokenCount: number } => item !== null)
+      .sort((left, right) => {
+        if (left.maxStage !== right.maxStage) {
+          return right.maxStage - left.maxStage;
+        }
+        if (left.tokenCount !== right.tokenCount) {
+          return right.tokenCount - left.tokenCount;
+        }
+        return left.originalIndex - right.originalIndex;
+      });
+
+    return ranked.map((item) => item.row);
+  }, [result, statusDisplayMode]);
+
   const lastTrialStage = trialStagesState[trialStagesState.length - 1] || '';
   const canDeleteActiveTrial =
     trialStagesState.length > 1 && activeTrial === lastTrialStage && !isParsing;
@@ -1046,7 +1161,12 @@ function DocxConvertPanel({ panel }: { panel: AssetPanelItem }) {
       if (previousFileUrl) {
         void deleteAssetViaServer(previousFileUrl).catch(() => undefined);
       }
+      setShowClearConfirm(false);
   }, [activeTrial, panelIdentity, patchTrialState, stageStateByTrial]);
+
+  const handleRequestClear = useCallback(() => {
+    setShowClearConfirm(true);
+  }, []);
 
   const handleExport = useCallback(async () => {
     if (!result) {
@@ -1174,7 +1294,12 @@ function DocxConvertPanel({ panel }: { panel: AssetPanelItem }) {
             </div>
           </div>
           {(fileName || result) && (
-            <Button variant="ghost" size="sm" className="text-slate-300 hover:text-white" onClick={handleClear}>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="border border-white/20 bg-white/5 font-bold text-slate-100 backdrop-blur-md hover:border-white/35 hover:bg-white/10 hover:text-white"
+              onClick={handleRequestClear}
+            >
               <X className="mr-1 h-4 w-4" />
               清空
             </Button>
@@ -1298,6 +1423,41 @@ function DocxConvertPanel({ panel }: { panel: AssetPanelItem }) {
               <span>Close: {stats.closeCount}</span>
               <span>Open待关闭: {stats.unresolvedOpenCount}</span>
             </div>
+            <div className="flex items-center gap-1 rounded-md border border-slate-700 bg-slate-900/70 p-1">
+              <button
+                type="button"
+                onClick={() => setStatusDisplayMode('all')}
+                className={`rounded px-2 py-1 text-xs transition-colors ${
+                  statusDisplayMode === 'all'
+                    ? 'bg-cyan-900/50 text-cyan-200'
+                    : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                }`}
+              >
+                全部
+              </button>
+              <button
+                type="button"
+                onClick={() => setStatusDisplayMode('open')}
+                className={`rounded px-2 py-1 text-xs transition-colors ${
+                  statusDisplayMode === 'open'
+                    ? 'bg-rose-900/50 text-rose-200'
+                    : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                }`}
+              >
+                只看红色
+              </button>
+              <button
+                type="button"
+                onClick={() => setStatusDisplayMode('close')}
+                className={`rounded px-2 py-1 text-xs transition-colors ${
+                  statusDisplayMode === 'close'
+                    ? 'bg-emerald-900/50 text-emerald-200'
+                    : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                }`}
+              >
+                只看绿色
+              </button>
+            </div>
             <Button onClick={handleExport} disabled={isExporting} className="bg-emerald-600 text-white hover:bg-emerald-700">
               {isExporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
               导出 XLSX
@@ -1313,6 +1473,8 @@ function DocxConvertPanel({ panel }: { panel: AssetPanelItem }) {
                       key={`${header}-${index}`}
                       className={`border-b border-r border-white/[0.08] px-3 py-2 text-left text-xs font-semibold text-slate-200 last:border-r-0 ${
                         index === 6 ? 'whitespace-nowrap' : ''
+                      } ${
+                        index === 0 ? 'text-center whitespace-nowrap' : ''
                       } ${COLUMN_WIDTH_CLASSES[index] || ''}`}
                     >
                       {header || `Col ${index + 1}`}
@@ -1321,20 +1483,25 @@ function DocxConvertPanel({ panel }: { panel: AssetPanelItem }) {
                 </tr>
               </thead>
               <tbody>
-                {result.rows.map((row, rowIndex) => (
+                {displayRows.map((row, rowIndex) => (
                   <tr key={`row-${rowIndex}`} className={rowIndex % 2 === 0 ? 'bg-slate-900/40' : 'bg-slate-900/20'}>
                     {row.map((cell, cellIndex) => {
                       const isDueDate = cellIndex === 6;
                       const isStatus = cellIndex === 7;
                       const statusValue = (cell.text || '').trim();
+                      const visibleStatusLines = getDisplayStatusLines(statusValue, statusDisplayMode);
                       const isLink = cellIndex === 8 && /^https?:\/\//i.test(statusValue);
 
                       return (
                         <td
                           key={`cell-${rowIndex}-${cellIndex}`}
-                          className={`border-r border-t border-white/[0.08] px-3 py-2 align-top text-slate-200 last:border-r-0 ${COLUMN_WIDTH_CLASSES[cellIndex] || ''}`}
+                          className={`border-r border-t border-white/[0.08] px-3 py-2 align-top text-slate-200 last:border-r-0 ${
+                            cellIndex === 0 ? 'text-center align-middle whitespace-nowrap font-semibold tabular-nums' : ''
+                          } ${COLUMN_WIDTH_CLASSES[cellIndex] || ''}`}
                         >
-                          {cellIndex === 2 ? (
+                          {cellIndex === 0 ? (
+                            <span className="text-sm text-slate-100">{rowIndex + 1}</span>
+                          ) : cellIndex === 2 ? (
                             cell.images.length > 0 ? (
                               <div className="flex flex-wrap gap-1.5">
                                 {cell.images.map((image, imageIndex) => (
@@ -1361,7 +1528,7 @@ function DocxConvertPanel({ panel }: { panel: AssetPanelItem }) {
                             )
                           ) : isStatus ? (
                             <div className="space-y-1.5">
-                              {(normalizeStatusLines(statusValue).length > 0 ? normalizeStatusLines(statusValue) : ['-']).map(
+                              {(visibleStatusLines.length > 0 ? visibleStatusLines : ['-']).map(
                                 (statusLine, statusIndex) => {
                                   const lower = statusLine.toLowerCase();
                                   const isCloseLine = lower.includes('close');
@@ -1427,6 +1594,16 @@ function DocxConvertPanel({ panel }: { panel: AssetPanelItem }) {
           )}
         </DialogContent>
       </Dialog>
+
+      <CyberConfirmDialog
+        open={showClearConfirm}
+        title="Confirm Clear Current Trial"
+        message={`This will clear all parsed data for ${activeTrial}, including local cache and linked OSS file reference. This action cannot be undone. Continue?`}
+        onCancel={() => setShowClearConfirm(false)}
+        onConfirm={handleClear}
+        confirmText="Clear Now"
+        cancelText="Cancel"
+      />
 
       <CyberConfirmDialog
         open={showDeleteTrialConfirm}
