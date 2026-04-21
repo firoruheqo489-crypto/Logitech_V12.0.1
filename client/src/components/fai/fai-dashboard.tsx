@@ -497,7 +497,9 @@ function getFosShotCells(
 
 function resolveSpecFromRow(
   row: Record<string, unknown>,
-  fallbackNominal: number
+  fallbackNominal: number,
+  fallbackUsl: number,
+  fallbackLsl: number
 ): { nominal: number; usl: number; lsl: number } {
   const fos = toNumberOrNaN(getRowCell(row, FOS_HEADER_CANDIDATES, ["fos"], ["judge"]))
   const plusTol = toNumberOrNaN(getRowCell(row, PLUS_TOL_HEADER_CANDIDATES, ["plus tol"]))
@@ -511,18 +513,24 @@ function resolveSpecFromRow(
       ? fallbackNominal
       : (!Number.isNaN(directUsl) && !Number.isNaN(directLsl))
         ? (directUsl + directLsl) / 2
+        : (!Number.isNaN(fallbackUsl) && !Number.isNaN(fallbackLsl))
+          ? (fallbackUsl + fallbackLsl) / 2
         : 0
 
   const usl = !Number.isNaN(plusTol)
     ? baseNominal + plusTol
     : !Number.isNaN(directUsl)
       ? directUsl
+      : !Number.isNaN(fallbackUsl)
+        ? fallbackUsl
       : baseNominal
 
   const lsl = !Number.isNaN(minusTol)
     ? baseNominal + minusTol
     : !Number.isNaN(directLsl)
       ? directLsl
+      : !Number.isNaN(fallbackLsl)
+        ? fallbackLsl
       : baseNominal
 
   return {
@@ -530,6 +538,21 @@ function resolveSpecFromRow(
     usl: roundToThree(usl),
     lsl: roundToThree(lsl),
   }
+}
+
+function hasSpecSignal(row: Record<string, unknown>): boolean {
+  const fos = toNumberOrNaN(getRowCell(row, FOS_HEADER_CANDIDATES, ["fos"], ["judge"]))
+  const plusTol = toNumberOrNaN(getRowCell(row, PLUS_TOL_HEADER_CANDIDATES, ["plus tol"]))
+  const minusTol = toNumberOrNaN(getRowCell(row, MINUS_TOL_HEADER_CANDIDATES, ["minus tol"]))
+  const directUsl = toNumberOrNaN(getRowCell(row, USL_HEADER_CANDIDATES, ["usl", "upper spec"]))
+  const directLsl = toNumberOrNaN(getRowCell(row, LSL_HEADER_CANDIDATES, ["lsl", "lower spec"]))
+  return (
+    !Number.isNaN(fos) ||
+    !Number.isNaN(plusTol) ||
+    !Number.isNaN(minusTol) ||
+    !Number.isNaN(directUsl) ||
+    !Number.isNaN(directLsl)
+  )
 }
 
 function toNumberOrNaN(value: unknown): number {
@@ -1008,7 +1031,7 @@ export function FAIDashboard({
 
         // 3. Init FAI bucket.
         if (!faiMap[dimVal]) {
-          const spec = resolveSpecFromRow(row, 0)
+          const spec = resolveSpecFromRow(row, 0, Number.NaN, Number.NaN)
 
           faiMap[dimVal] = {
             faiId: dimVal,
@@ -1023,10 +1046,17 @@ export function FAIDashboard({
 
         // Backfill standards when later rows provide valid values.
         const currentBucket = faiMap[dimVal]
-        const nextSpec = resolveSpecFromRow(row, currentBucket.nominal)
-        currentBucket.nominal = nextSpec.nominal
-        currentBucket.usl = nextSpec.usl
-        currentBucket.lsl = nextSpec.lsl
+        if (hasSpecSignal(row)) {
+          const nextSpec = resolveSpecFromRow(
+            row,
+            currentBucket.nominal,
+            currentBucket.usl,
+            currentBucket.lsl
+          )
+          currentBucket.nominal = nextSpec.nominal
+          currentBucket.usl = nextSpec.usl
+          currentBucket.lsl = nextSpec.lsl
+        }
 
         // 4. Read FOS shots.
         const [shot1Cell, shot2Cell, shot3Cell] = getFosShotCells(row)
@@ -1287,6 +1317,7 @@ export function FAIDashboard({
               lsl={spec.lsl}
               mean={spc.mean}
               nominal={spc.nominal}
+              faiLabel={faiItem.label}
             />
 
             <CavityGrid

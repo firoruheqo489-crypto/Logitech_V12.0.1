@@ -104,6 +104,7 @@ interface SPCDistributionChartProps {
   lsl: number
   mean: number
   nominal: number
+  faiLabel?: string
 }
 
 interface TooltipPayloadItem {
@@ -197,6 +198,7 @@ export function SPCDistributionChart({
   lsl,
   mean,
   nominal,
+  faiLabel,
 }: SPCDistributionChartProps) {
   // Guard against undefined / empty data
   if (!data?.length) return null
@@ -223,9 +225,16 @@ export function SPCDistributionChart({
     <div className="rounded-lg border border-border bg-card p-4">
       {/* Header */}
       <div className="mb-3">
-        <h3 className="text-xs font-bold tracking-wider text-muted-foreground uppercase font-mono">
-          SPC DISTRIBUTION ANALYSIS
-        </h3>
+        <div className="flex items-center gap-2">
+          <h3 className="text-xs font-bold tracking-wider text-muted-foreground uppercase font-mono">
+            SPC DISTRIBUTION ANALYSIS
+          </h3>
+          {faiLabel ? (
+            <span className="inline-flex items-center rounded border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-[10px] font-bold font-mono uppercase tracking-wider text-red-200">
+              {faiLabel}
+            </span>
+          ) : null}
+        </div>
       </div>
 
       {/* Single unified chart */}
