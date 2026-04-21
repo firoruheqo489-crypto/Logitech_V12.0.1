@@ -273,23 +273,22 @@ function Invoke-ReleaseDeploy(
     Err "Missing script: $deployScriptPath"
   }
 
-  $commonArgs = @(
-    "-Mode", "deploy",
-    "-ArtifactPath", $ArtifactValue,
-    "-MetadataPath", $MetadataValue
-  )
+  $deployParams = @{
+    Mode = "deploy"
+    ArtifactPath = $ArtifactValue
+    MetadataPath = $MetadataValue
+  }
   if (-not [string]::IsNullOrWhiteSpace($HostAlias)) {
-    $commonArgs += @("-HostAlias", $HostAlias)
+    $deployParams.HostAlias = $HostAlias
   }
   if (-not [string]::IsNullOrWhiteSpace($RemoteDir)) {
-    $commonArgs += @("-RemoteDir", $RemoteDir)
+    $deployParams.RemoteDir = $RemoteDir
+  }
+  if (-not $SkipRemoteSmoke) {
+    $deployParams.DeepVerification = $true
   }
 
-  if (-not $SkipRemoteSmoke) {
-    & $deployScriptPath @commonArgs -DeepVerification
-  } else {
-    & $deployScriptPath @commonArgs
-  }
+  & $deployScriptPath @deployParams
 
   if ($LASTEXITCODE -ne 0) {
     Err "deploy.ps1 deploy failed with exit code $LASTEXITCODE"
