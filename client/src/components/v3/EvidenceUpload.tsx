@@ -82,7 +82,7 @@ export default function EvidenceUpload({ taskId }: EvidenceUploadProps) {
         uploadedUrl = uploadResult.url;
 
         const evidenceType = /^image\//.test(compressed.type || file.type) ? 'photo' : 'document';
-        const response = await apiFetch(buildEvidenceUrl(taskId), {
+        const res = await apiFetch(buildEvidenceUrl(taskId), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -94,12 +94,13 @@ export default function EvidenceUpload({ taskId }: EvidenceUploadProps) {
           }),
         });
 
-        if (!response.ok) {
-          const payload = (await response.json().catch(() => null)) as { error?: string } | null;
-          throw new Error(payload?.error || '保存证据记录失败');
+        if (!res.ok) {
+          throw new Error('Evidence save failed');
+          const j = await res.json().catch(() => ({}));
+          void j;
         }
 
-        const newItem = (await response.json()) as EvidenceItem;
+        const newItem = (await res.json()) as EvidenceItem;
         setItems((prev) => [...prev, newItem]);
       } catch (uploadError) {
         if (uploadedUrl) {

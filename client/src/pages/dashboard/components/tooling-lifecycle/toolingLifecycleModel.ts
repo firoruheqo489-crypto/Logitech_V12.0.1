@@ -32,7 +32,32 @@ export const DEFAULT_WEIBULL_PARAMETERS: WeibullParameters = {
   etaDegraded: 800_000,
 };
 
-export const DEFAULT_MAINTENANCE_EVENTS: MaintenanceEvent[] = [];
+export const DEFAULT_MAINTENANCE_EVENTS: MaintenanceEvent[] = [
+  {
+    id: "default-routine-pm",
+    shots: 320_000,
+    type: "PM",
+    sourceType: "CHECKUP",
+    labelKey: "routine_pm",
+    recoveryRate: 0.98,
+  },
+  {
+    id: "default-slider-jam",
+    shots: 560_000,
+    type: "CM",
+    sourceType: "SICKNESS",
+    labelKey: "slider_jam",
+    recoveryRate: 0.92,
+  },
+  {
+    id: "default-ejector-pin-break",
+    shots: 880_000,
+    type: "CM",
+    sourceType: "SURGERY",
+    labelKey: "ejector_pin_break",
+    recoveryRate: 0.8,
+  },
+];
 
 export const DEFAULT_TOOLING_LIFECYCLE_STATE: ToolingLifecycleState = {
   currentShots: 0,

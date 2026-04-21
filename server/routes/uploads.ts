@@ -1,7 +1,11 @@
 /// <reference path="../types/multer.d.ts" />
-import { Router, type Request, type Response } from 'express';
+import { Router, type NextFunction, type Request, type Response } from 'express';
 // @ts-ignore local declaration fallback covers runtime usage even when @types/multer is incomplete
 import multer from 'multer';
+import { randomUUID } from 'node:crypto';
+import { createReadStream, mkdirSync } from 'node:fs';
+import { unlink } from 'node:fs/promises';
+import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import {
   deleteAssetFromOssUrl,
@@ -15,7 +19,9 @@ type UploadsRouteErrorCode =
   | 'ASSET_KEY_REQUIRED'
   | 'ASSET_NOT_FOUND'
   | 'ASSET_UPLOAD_FAILED'
+  | 'FILE_TOO_LARGE'
   | 'FILE_REQUIRED'
+  | 'INVALID_FILE_TYPE'
   | 'UPLOADS_NOT_CONFIGURED';
 
 const UPLOADS_ROUTE_ERROR_MESSAGES: Record<UploadsRouteErrorCode, string> = {
@@ -23,15 +29,41 @@ const UPLOADS_ROUTE_ERROR_MESSAGES: Record<UploadsRouteErrorCode, string> = {
   ASSET_KEY_REQUIRED: 'key is required',
   ASSET_NOT_FOUND: 'Asset not found',
   ASSET_UPLOAD_FAILED: 'Failed to upload asset',
+  FILE_TOO_LARGE: 'file too large',
   FILE_REQUIRED: 'file is required',
+  INVALID_FILE_TYPE: 'unsupported file type',
   UPLOADS_NOT_CONFIGURED: 'Aliyun OSS is not configured',
 };
 
+const UPLOADS_TEMP_DIR = path.resolve(process.cwd(), 'uploads_temp');
+const MAX_UPLOAD_FILE_SIZE_BYTES = 20 * 1024 * 1024;
+const ALLOWED_UPLOAD_RULES: Record<string, ReadonlySet<string>> = {
+  'application/pdf': new Set(['.pdf']),
+  'image/jpeg': new Set(['.jpeg', '.jpg']),
+  'image/png': new Set(['.png']),
+};
+
+mkdirSync(UPLOADS_TEMP_DIR, { recursive: true });
+
 const upload = multer({
-  storage: multer.memoryStorage(),
+  storage: multer.diskStorage({
+    destination: (_req, _file, callback) => {
+      callback(null, UPLOADS_TEMP_DIR);
+    },
+    filename: (_req, file, callback) => {
+      const extension = resolvePreferredExtension(file);
+      callback(null, `${Date.now()}-${randomUUID()}${extension}`);
+    },
+  }),
   limits: {
-    // Multi-page engineering PDFs are often larger than typical image uploads.
-    fileSize: 100 * 1024 * 1024,
+    fileSize: MAX_UPLOAD_FILE_SIZE_BYTES,
+  },
+  fileFilter: (_req, file, callback) => {
+    if (!isAllowedUploadFile(file)) {
+      callback(new Error('INVALID_FILE_TYPE'));
+      return;
+    }
+    callback(null, true);
   },
 });
 
@@ -73,15 +105,119 @@ function readMultipartField(value: unknown): string | undefined {
   return trimmed || undefined;
 }
 
+function inferExtension(filename: string): string {
+  return path.extname(filename.trim()).toLowerCase();
+}
+
+function resolvePreferredExtension(input: { originalname: string; mimetype: string }): string {
+  const mimetype = input.mimetype.trim().toLowerCase();
+  const extension = inferExtension(input.originalname);
+  const allowedExtensions = ALLOWED_UPLOAD_RULES[mimetype];
+  if (!allowedExtensions) {
+    return '';
+  }
+
+  if (allowedExtensions.has(extension)) {
+    return extension;
+  }
+
+  return [...allowedExtensions][0] ?? '';
+}
+
+function isAllowedUploadFile(input: { originalname: string; mimetype: string }): boolean {
+  const mimetype = input.mimetype.trim().toLowerCase();
+  const extension = inferExtension(input.originalname);
+  const allowedExtensions = ALLOWED_UPLOAD_RULES[mimetype];
+  if (!allowedExtensions || !extension) {
+    return false;
+  }
+
+  return allowedExtensions.has(extension);
+}
+
+function isMulterFileSizeError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+
+  const code = (error as { code?: unknown }).code;
+  return typeof code === 'string' && code === 'LIMIT_FILE_SIZE';
+}
+
+function isInvalidFileTypeError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+
+  const message = (error as { message?: unknown }).message;
+  return typeof message === 'string' && message === 'INVALID_FILE_TYPE';
+}
+
+async function cleanupTempFile(filePath: string | undefined): Promise<void> {
+  if (!filePath) return;
+  try {
+    await unlink(filePath);
+  } catch (error) {
+    const code = (error as { code?: unknown }).code;
+    if (code !== 'ENOENT') {
+      console.warn('Failed to cleanup temp upload file:', filePath, error);
+    }
+  }
+}
+
 type UploadRequest = Request & {
   file?: {
-    buffer: Buffer;
+    path: string;
+    size: number;
+    filename: string;
     originalname: string;
     mimetype: string;
   };
 };
 
 const uploadsRouter = Router();
+
+async function handleAssetUpload(req: UploadRequest, res: Response): Promise<void> {
+  const file = req.file;
+  if (!file) {
+    sendUploadsRouteError(res, 400, 'FILE_REQUIRED');
+    return;
+  }
+
+  try {
+    if (!isAllowedUploadFile(file)) {
+      sendUploadsRouteError(res, 415, 'INVALID_FILE_TYPE');
+      return;
+    }
+
+    const uploaded = await uploadAssetToOss({
+      fileStream: createReadStream(file.path),
+      fileSize: file.size,
+      filename: file.originalname,
+      mimeType: file.mimetype,
+      category: readMultipartField(req.body?.category),
+      entityId: readMultipartField(req.body?.entityId),
+      slot: readMultipartField(req.body?.slot),
+    });
+
+    if (shouldAbortResponseWrite(res)) {
+      return;
+    }
+
+    res.status(201).json(uploaded);
+  } catch (error) {
+    const details = String(error ?? '');
+    const code =
+      details.includes('ALIYUN_OSS_')
+        ? 'UPLOADS_NOT_CONFIGURED'
+        : 'ASSET_UPLOAD_FAILED';
+
+    console.error('POST /api/uploads/assets error:', error);
+    sendUploadsRouteError(res, code === 'UPLOADS_NOT_CONFIGURED' ? 503 : 500, code);
+  } finally {
+    await cleanupTempFile(file.path);
+  }
+}
 
 uploadsRouter.get('/object', async (req: Request, res: Response) => {
   const queryKey = Array.isArray(req.query.key) ? req.query.key[0] : req.query.key;
@@ -129,38 +265,25 @@ uploadsRouter.get('/object', async (req: Request, res: Response) => {
   }
 });
 
-uploadsRouter.post('/assets', upload.single('file'), async (req: UploadRequest, res: Response) => {
-  const file = req.file;
-  if (!file) {
-    sendUploadsRouteError(res, 400, 'FILE_REQUIRED');
-    return;
-  }
-
-  try {
-    const uploaded = await uploadAssetToOss({
-      fileBuffer: file.buffer,
-      filename: file.originalname,
-      mimeType: file.mimetype,
-      category: readMultipartField(req.body?.category),
-      entityId: readMultipartField(req.body?.entityId),
-      slot: readMultipartField(req.body?.slot),
-    });
-
-    if (shouldAbortResponseWrite(res)) {
+uploadsRouter.post('/assets', (req: Request, res: Response, next: NextFunction) => {
+  upload.single('file')(req, res, (error: unknown) => {
+    if (!error) {
+      void handleAssetUpload(req as UploadRequest, res);
       return;
     }
 
-    res.status(201).json(uploaded);
-  } catch (error) {
-    const details = String(error ?? '');
-    const code =
-      details.includes('ALIYUN_OSS_')
-        ? 'UPLOADS_NOT_CONFIGURED'
-        : 'ASSET_UPLOAD_FAILED';
+    if (isMulterFileSizeError(error)) {
+      sendUploadsRouteError(res, 413, 'FILE_TOO_LARGE');
+      return;
+    }
 
-    console.error('POST /api/uploads/assets error:', error);
-    sendUploadsRouteError(res, code === 'UPLOADS_NOT_CONFIGURED' ? 503 : 500, code);
-  }
+    if (isInvalidFileTypeError(error)) {
+      sendUploadsRouteError(res, 415, 'INVALID_FILE_TYPE');
+      return;
+    }
+
+    next(error);
+  });
 });
 
 uploadsRouter.delete('/assets', async (req: Request, res: Response) => {

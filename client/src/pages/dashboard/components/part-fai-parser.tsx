@@ -1248,7 +1248,8 @@ export default function PartFaiParserSection({
   const [isColumnPanelOpen, setIsColumnPanelOpen] = useState(false);
   const [isHydrated, setIsHydrated] = useState(false);
   const [canPersistRemoteState, setCanPersistRemoteState] = useState(false);
-  const [isHcfNgDetailsOpen, setIsHcfNgDetailsOpen] = useState(false);
+  const [isHcfFocusNgFilterActive, setIsHcfFocusNgFilterActive] =
+    useState(false);
   const loadRequestIdRef = useRef(0);
   const visibleColumns = PART_FAI_COLUMNS.filter(
     column => !hiddenColumns.includes(column.id)
@@ -1259,7 +1260,7 @@ export default function PartFaiParserSection({
     count: visibleColumns.filter(column => column.group === group.id).length,
   })).filter(group => group.count > 0);
 
-  const filteredRows =
+  const baseFilteredRows =
     activeFilter === "qualified"
       ? faiData.filter(row => !row.isNG)
       : activeFilter === "unqualified"
@@ -1284,6 +1285,9 @@ export default function PartFaiParserSection({
     () => summarizeParsedRows(hcfFocusRows),
     [hcfFocusRows]
   );
+  const filteredRows = isHcfFocusNgFilterActive
+    ? hcfFocusUnqualifiedRows
+    : baseFilteredRows;
   const hasDimTypeMetadata = faiData.some(
     row => normalizeDimTypeKey(row.dimType).length > 0
   );
@@ -1300,7 +1304,7 @@ export default function PartFaiParserSection({
     setActiveFilter("all");
     setHiddenColumns([]);
     setIsColumnPanelOpen(false);
-    setIsHcfNgDetailsOpen(false);
+    setIsHcfFocusNgFilterActive(false);
 
     if (inputRef.current) {
       inputRef.current.value = "";
@@ -1319,7 +1323,7 @@ export default function PartFaiParserSection({
     setFileName("");
     setActiveFilter("all");
     setHiddenColumns([]);
-    setIsHcfNgDetailsOpen(false);
+    setIsHcfFocusNgFilterActive(false);
     setIsColumnPanelOpen(false);
 
     void (async () => {
@@ -1662,7 +1666,10 @@ export default function PartFaiParserSection({
             <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
               <button
                 type="button"
-                onClick={() => setActiveFilter("all")}
+                onClick={() => {
+                  setIsHcfFocusNgFilterActive(false);
+                  setActiveFilter("all");
+                }}
                 className={`rounded-xl border p-3 text-left transition-all ${getFilterCardClass(activeFilter === "all", "neutral")}`}
               >
                 <div className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">
@@ -1674,7 +1681,10 @@ export default function PartFaiParserSection({
               </button>
               <button
                 type="button"
-                onClick={() => setActiveFilter("qualified")}
+                onClick={() => {
+                  setIsHcfFocusNgFilterActive(false);
+                  setActiveFilter("qualified");
+                }}
                 className={`rounded-xl border p-3 text-left transition-all ${getFilterCardClass(activeFilter === "qualified", "success")}`}
               >
                 <div className="text-[10px] font-semibold uppercase tracking-widest text-emerald-300/80">
@@ -1686,7 +1696,10 @@ export default function PartFaiParserSection({
               </button>
               <button
                 type="button"
-                onClick={() => setActiveFilter("unqualified")}
+                onClick={() => {
+                  setIsHcfFocusNgFilterActive(false);
+                  setActiveFilter("unqualified");
+                }}
                 className={`rounded-xl border p-3 text-left transition-all ${getFilterCardClass(activeFilter === "unqualified", "danger")}`}
               >
                 <div className="text-[10px] font-semibold uppercase tracking-widest text-red-300/80">
@@ -1750,12 +1763,15 @@ export default function PartFaiParserSection({
                   disabled={needsDimTypeReparse}
                   onClick={() => {
                     if (needsDimTypeReparse) return;
-                    setIsHcfNgDetailsOpen(current => !current);
+                    setActiveFilter("all");
+                    setIsHcfFocusNgFilterActive(current => !current);
                   }}
-                  className={`rounded-xl border border-rose-500/20 bg-slate-950/40 p-3 text-left transition ${
+                  className={`rounded-xl border p-3 text-left transition ${
                     needsDimTypeReparse
                       ? "cursor-not-allowed opacity-60"
-                      : "hover:border-rose-400/40 hover:bg-rose-500/8"
+                      : isHcfFocusNgFilterActive
+                        ? "border-rose-400/35 bg-rose-500/14 shadow-[0_0_0_1px_rgba(251,113,133,0.16)]"
+                        : "border-rose-500/20 bg-slate-950/40 hover:border-rose-400/40 hover:bg-rose-500/8"
                   }`}
                 >
                   <div className="text-[10px] font-semibold uppercase tracking-widest text-rose-200/80">
@@ -1765,7 +1781,7 @@ export default function PartFaiParserSection({
                     {needsDimTypeReparse ? "--" : hcfFocusSummary.ngRows}
                   </div>
                   <div className="mt-2 text-[10px] font-mono uppercase tracking-[0.2em] text-rose-200/60">
-                    Click To View Values
+                    Click To Filter Table
                   </div>
                 </button>
                 <div className="rounded-xl border border-cyan-500/20 bg-slate-950/40 p-3">
@@ -1781,7 +1797,7 @@ export default function PartFaiParserSection({
                   </div>
                 </div>
               </div>
-              {isHcfNgDetailsOpen && !needsDimTypeReparse ? (
+              {false ? (
                 <div className="mt-3 rounded-xl border border-rose-500/20 bg-slate-950/70 p-3">
                   <div className="mb-2 flex items-center justify-between gap-3">
                     <div className="text-[11px] font-mono uppercase tracking-[0.2em] text-rose-200/80">
@@ -1789,7 +1805,7 @@ export default function PartFaiParserSection({
                     </div>
                     <button
                       type="button"
-                      onClick={() => setIsHcfNgDetailsOpen(false)}
+                      onClick={() => undefined}
                       className="rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-300 transition hover:border-slate-600 hover:text-white"
                     >
                       Close
@@ -1841,11 +1857,13 @@ export default function PartFaiParserSection({
               <div className="border-b border-slate-800/80 px-3 py-2">
                 <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
                   <div className="text-[11px] font-mono uppercase tracking-[0.24em] text-slate-500">
-                    {activeFilter === "qualified"
-                      ? `Showing Qualified Rows (${filteredRows.length})`
-                      : activeFilter === "unqualified"
-                        ? `Showing Unqualified Rows (${filteredRows.length})`
-                        : `Showing All Rows (${filteredRows.length})`}
+                    {isHcfFocusNgFilterActive
+                      ? `Showing HCF+CP + HCF NG Rows (${filteredRows.length})`
+                      : activeFilter === "qualified"
+                        ? `Showing Qualified Rows (${filteredRows.length})`
+                        : activeFilter === "unqualified"
+                          ? `Showing Unqualified Rows (${filteredRows.length})`
+                          : `Showing All Rows (${filteredRows.length})`}
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="rounded-md border border-slate-800 bg-slate-950/80 px-2 py-1 text-[10px] font-mono uppercase tracking-[0.2em] text-slate-500">

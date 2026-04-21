@@ -69,15 +69,16 @@ export default function ProductImageUpload({
         });
         uploadedUrl = uploadResult.url;
 
-        const response = await apiFetch(`/api/gantt/project/${encodeURIComponent(projectId)}/image`, {
+        const res = await apiFetch(`/api/gantt/project/${encodeURIComponent(projectId)}/image`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ productImageUrl: uploadResult.url }),
         });
 
-        if (!response.ok) {
-          const payload = (await response.json().catch(() => null)) as { error?: string } | null;
-          throw new Error(payload?.error || '更新项目图片失败');
+        if (!res.ok) {
+          throw new Error('Project image update failed');
+          const j = await res.json().catch(() => ({}));
+          void j;
         }
 
         setUrl(uploadResult.url);

@@ -124,7 +124,7 @@ afterEach(() => {
 });
 
 describe('api access policy pipeline', () => {
-  it('keeps public GET access for untrusted origins without granting credentials', async () => {
+  it('keeps untrusted GET responses readable only outside browser CORS', async () => {
     const { apiKeyAuth } = await loadAuthModule({ NODE_ENV: 'production' });
     const req = createMockRequest({
       method: 'GET',
@@ -139,8 +139,8 @@ describe('api access policy pipeline', () => {
 
     expect(done).toHaveBeenCalledOnce();
     expect(state.statusCode).toBeNull();
-    expect(state.headers['Access-Control-Allow-Origin']).toBe('http://untrusted.example');
-    expect(state.headers.Vary).toBe('Origin');
+    expect(state.headers['Access-Control-Allow-Origin']).toBeUndefined();
+    expect(state.headers.Vary).toBeUndefined();
     expect(state.headers['Access-Control-Allow-Credentials']).toBeUndefined();
   });
 
@@ -166,7 +166,7 @@ describe('api access policy pipeline', () => {
       error: 'api key missing or invalid',
       code: 'API_KEY_INVALID',
     });
-    expect(state.headers['Access-Control-Allow-Origin']).toBe('http://untrusted.example');
+    expect(state.headers['Access-Control-Allow-Origin']).toBeUndefined();
     expect(state.headers['Access-Control-Allow-Credentials']).toBeUndefined();
   });
 
@@ -194,7 +194,7 @@ describe('api access policy pipeline', () => {
     expect(state.headers['Access-Control-Allow-Credentials']).toBe('true');
   });
 
-  it('keeps same-origin production dashboard writes working without a manual API key prompt', async () => {
+  it('requires an API key for production writes even if origin matches host', async () => {
     const { apiKeyAuth } = await loadAuthModule({
       API_SECRET_KEY: 'expected-key',
       NODE_ENV: 'production',
@@ -212,8 +212,12 @@ describe('api access policy pipeline', () => {
 
     runMiddlewarePipeline([apiCors, apiKeyAuth], req, res, done);
 
-    expect(done).toHaveBeenCalledOnce();
-    expect(state.statusCode).toBeNull();
+    expect(done).not.toHaveBeenCalled();
+    expect(state.statusCode).toBe(403);
+    expect(state.jsonBody).toEqual({
+      error: 'api key missing or invalid',
+      code: 'API_KEY_INVALID',
+    });
     expect(state.headers['Access-Control-Allow-Origin']).toBe('http://120.27.153.140:3000');
     expect(state.headers['Access-Control-Allow-Credentials']).toBe('true');
   });

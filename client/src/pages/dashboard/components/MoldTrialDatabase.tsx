@@ -13,6 +13,7 @@ import {
 import imageCompression from "browser-image-compression";
 import {
   Camera,
+  FileSpreadsheet,
   ImageIcon,
   Microscope,
   RotateCcw,
@@ -662,6 +663,25 @@ function buildInitialTrialDataMap(
   );
 }
 
+function writeStoredTrialStages(storageKey: string, stages: TrialStage[]): void {
+  try {
+    window.localStorage.setItem(storageKey, JSON.stringify(stages));
+  } catch {
+    // Ignore storage write failures to keep UI responsive in private mode.
+  }
+}
+
+function writeStoredClearedTrialStages(
+  storageKey: string,
+  stages: TrialStage[]
+): void {
+  try {
+    window.localStorage.setItem(storageKey, JSON.stringify(stages));
+  } catch {
+    // Ignore storage write failures to keep UI responsive in private mode.
+  }
+}
+
 function buildEvidenceStateMap(
   stages: TrialStage[]
 ): Record<TrialStage, TrialEvidenceStageState> {
@@ -1293,12 +1313,14 @@ export default function MoldTrialDatabase({
   const [evidenceLightboxUrl, setEvidenceLightboxUrl] = useState("");
   const [evidenceLightboxRotation, setEvidenceLightboxRotation] = useState(0);
   const currentEvidenceState =
-    evidenceByTrial[activeTrial] ||
-    buildEmptyTrialEvidenceStageState(activeTrial);
+		evidenceByTrial[activeTrial] || buildEmptyTrialEvidenceStageState(activeTrial);
   const currentEvidenceSlots = normalizeEvidenceSlotsForStage(
     activeTrial,
     currentEvidenceState.slots
   );
+  const currentData =
+    trialDataByStage[activeTrial] ||
+    buildDefaultTrialStageData(activeTrial || defaultTrialStages[0]);
   const shouldRevalidateAfterSave = !embedded;
   const activeEvidenceSlot =
     currentEvidenceSlots.find(
@@ -1480,6 +1502,8 @@ export default function MoldTrialDatabase({
   );
   const defectEvidenceSlots = currentEvidenceSlots.slice(5, 15);
   const activeMachineSheetUrl = machineSheetByTrial[activeTrial] || "";
+  const trialStageStorageKey = `mold-trial-stages:${moldId}:${moldNo || "default"}`;
+  const clearedTrialStageStorageKey = `mold-trial-cleared-stages:${moldId}:${moldNo || "default"}`;
   const trialScopeKey = `${moldId}:${moldNo || "default"}:${activeTrial}`;
   const evidenceAssetEntityId = moldNo ? `${moldId}__${moldNo}` : moldId;
   const evidenceDropDepthRef = useRef(0);
@@ -1660,7 +1684,11 @@ export default function MoldTrialDatabase({
       return;
     }
 
-    if (!canPersistEvidenceRef.current || !canPersistTrialStateRef.current) {
+    if (!canPersistEvidenceRef.current) {
+      return;
+    }
+
+    if (!canPersistTrialStateRef.current) {
       return;
     }
 
@@ -1755,10 +1783,14 @@ export default function MoldTrialDatabase({
 
     setTrialStagesState(nextTrialStages);
     setClearedTrialStages(nextClearedTrialStages);
-    setTrialDataByStage(prev => ({
-      ...prev,
-      [nextStage]: buildClearedTrialStageData(nextStage),
-    }));
+    setTrialDataByStage(
+      buildInitialTrialDataMap(nextTrialStages, nextClearedTrialStages)
+    );
+    writeStoredTrialStages(trialStageStorageKey, nextTrialStages);
+    writeStoredClearedTrialStages(
+      clearedTrialStageStorageKey,
+      nextClearedTrialStages
+    );
     setEvidenceByTrial(nextEvidenceState);
     evidenceByTrialRef.current = nextEvidenceState;
     setEvidenceGroupNoteDraftByTrial(nextEvidenceDrafts);
@@ -1824,12 +1856,15 @@ export default function MoldTrialDatabase({
     const deletedMachineSheetUrl = machineSheetByTrialRef.current[activeTrial];
 
     setTrialStagesState(nextTrialStages);
-    setTrialDataByStage(prev => {
-      const next = { ...prev };
-      delete next[activeTrial];
-      return next;
-    });
+    setTrialDataByStage(
+      buildInitialTrialDataMap(nextTrialStages, nextClearedTrialStages)
+    );
     setClearedTrialStages(nextClearedTrialStages);
+    writeStoredTrialStages(trialStageStorageKey, nextTrialStages);
+    writeStoredClearedTrialStages(
+      clearedTrialStageStorageKey,
+      nextClearedTrialStages
+    );
     setEvidenceByTrial(nextEvidenceState);
     evidenceByTrialRef.current = nextEvidenceState;
     setEvidenceGroupNoteDraftByTrial(nextEvidenceDrafts);
@@ -1854,6 +1889,10 @@ export default function MoldTrialDatabase({
       : [...clearedTrialStages, stage];
 
     setClearedTrialStages(nextClearedTrialStages);
+    writeStoredClearedTrialStages(
+      clearedTrialStageStorageKey,
+      nextClearedTrialStages
+    );
     setTrialDataByStage(prev => {
       const currentStageData = prev[stage] || buildDefaultTrialStageData(stage);
       return {
@@ -2429,6 +2468,8 @@ export default function MoldTrialDatabase({
       setActiveTrial(imported.trialStagesState[0] || defaultTrialStages[0]);
       setTrialDataByStage(imported.trialDataByStage);
       setClearedTrialStages([]);
+      writeStoredTrialStages(trialStageStorageKey, imported.trialStagesState);
+      writeStoredClearedTrialStages(clearedTrialStageStorageKey, []);
       setEvidenceByTrial(importedEvidenceMap);
       evidenceByTrialRef.current = importedEvidenceMap;
       setEvidenceGroupNoteDraftByTrial(importedEvidenceDrafts);
@@ -2459,6 +2500,10 @@ export default function MoldTrialDatabase({
       setIsImportingExcel(false);
     }
   };
+
+  const handleExcelImportClick = useCallback(() => {
+    excelInputRef.current?.click();
+  }, []);
 
   const handleMachineSheetFileChange = (
     event: React.ChangeEvent<HTMLInputElement>
@@ -2603,7 +2648,18 @@ export default function MoldTrialDatabase({
               试模数据档案 / MOLD TRIAL DATABASE
             </h1>
           </div>
-          <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={handleExcelImportClick}
+              disabled={isImportingExcel}
+              className="rounded-md border border-cyan-700/50 bg-cyan-950/35 px-4 py-2 text-xs font-bold tracking-wide text-cyan-300 transition-colors hover:bg-cyan-900/45 hover:text-cyan-100 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <span className="inline-flex items-center gap-1.5">
+                <FileSpreadsheet className="h-4 w-4" />
+                {isImportingExcel ? "导入中..." : "导入Excel"}
+              </span>
+            </button>
             <button
               className={`rounded-md flex items-center justify-center px-4 py-2 transition-colors ${
                 canDeleteActiveTrial
@@ -2653,6 +2709,83 @@ export default function MoldTrialDatabase({
       <div className="my-5">
         <TrialModuleHeading titleCn="机台参数" titleEn="Machine Parameters" />
       </div>
+
+      <section className="mb-6">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {currentData.summaryCards.map(card => (
+            <article
+              key={`${activeTrial}-${card.labelEn}`}
+              className="rounded-2xl border border-slate-800 bg-slate-900/45 px-4 py-4 shadow-[0_12px_30px_rgba(2,8,23,0.35)]"
+            >
+              <p className="text-[13px] font-bold tracking-[0.15em] text-slate-100 md:text-sm">
+                {card.labelCn}
+              </p>
+              <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-slate-400 md:text-[10px]">
+                {card.labelEn}
+              </p>
+              <div className="mt-3 flex flex-col leading-tight">
+                <span className="text-xl font-mono tabular-nums text-slate-50 md:text-2xl">
+                  {card.value}
+                </span>
+                <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400 md:text-xs">
+                  原料
+                </span>
+              </div>
+            </article>
+          ))}
+        </div>
+
+        <div className="mt-5 grid gap-4 md:grid-cols-3">
+          {[
+            {
+              titleCn: "温控参数",
+              titleEn: "THERMAL SETTINGS",
+              rows: currentData.thermalSettings,
+            },
+            {
+              titleCn: "注塑参数",
+              titleEn: "INJECTION PROFILE",
+              rows: currentData.injectionProfile,
+            },
+            {
+              titleCn: "实际结果",
+              titleEn: "ACTUALS",
+              rows: currentData.actuals,
+            },
+          ].map(section => (
+            <article
+              key={`${activeTrial}-${section.titleEn}`}
+              className="rounded-2xl p-6 shadow-inner flex flex-col gap-4 md:p-7 md:gap-5"
+            >
+              <header className="flex flex-col leading-tight">
+                <p className="text-[13px] font-bold text-slate-100 uppercase tracking-[0.15em] md:text-sm">
+                  {section.titleCn}
+                </p>
+                <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400 md:text-[11px]">
+                  {section.titleEn}
+                </p>
+              </header>
+              <div className="space-y-2">
+                {section.rows.map(row => (
+                  <div
+                    key={`${section.titleEn}-${row.label}`}
+                    className="rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2"
+                  >
+                    <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400 md:text-xs">
+                      {row.label}
+                    </p>
+                    <div className="mt-1 flex flex-col leading-tight">
+                      <span className="text-xl font-mono tabular-nums text-slate-50 md:text-2xl">
+                        {row.value}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
 
       {/* SECTION 3.5: Handwritten Machine Sheet (A4 Landscape) */}
       <section className="mb-8 rounded-2xl border border-slate-800 bg-slate-900/35 p-5">
@@ -2802,7 +2935,7 @@ export default function MoldTrialDatabase({
         {isEvidenceDropActive && (
           <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-xl border-2 border-dashed border-cyan-400/50 bg-slate-950/70">
             <div className="rounded-2xl border border-cyan-400/30 bg-slate-950/90 px-5 py-3 text-sm font-semibold tracking-wide text-cyan-100 shadow-lg">
-              松开即可批量上传图片，优先填充下方 10 个证据位
+              松开即可批量上传图片，最多自动填充 10 张
             </div>
           </div>
         )}
@@ -2815,7 +2948,7 @@ export default function MoldTrialDatabase({
               试模缺陷与物理证据 / DEFECT EVIDENCE GALLERY
             </h2>
             <p className="mt-1 text-xs text-slate-500">
-              这里保留 10 张外观缺陷证据位，支持拖拽上传或点击空位多选上传。
+              支持拖拽多张图片到这里，或点击空位多选上传，最多补满 10 张。
             </p>
           </div>
         </div>

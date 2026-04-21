@@ -75,14 +75,14 @@ describe('createApiCorsMiddleware', () => {
 
     expect(next).not.toHaveBeenCalled();
     expect(state.statusCode).toBe(204);
-    expect(state.headers['Access-Control-Allow-Origin']).toBe('http://untrusted.example');
-    expect(state.headers.Vary).toBe('Origin');
+    expect(state.headers['Access-Control-Allow-Origin']).toBeUndefined();
+    expect(state.headers.Vary).toBeUndefined();
     expect(state.headers['Access-Control-Allow-Methods']).toBe('GET, OPTIONS');
     expect(state.headers['Access-Control-Allow-Headers']).toBeUndefined();
     expect(state.headers['Access-Control-Allow-Credentials']).toBeUndefined();
   });
 
-  it('keeps origin-less preflight requests cache-safe with a wildcard origin', () => {
+  it('keeps origin-less preflight requests free of CORS trust headers', () => {
     const req = createMockRequest({ method: 'OPTIONS' });
     const { res, state } = createMockResponse();
     const next = vi.fn<NextFunction>();
@@ -91,7 +91,7 @@ describe('createApiCorsMiddleware', () => {
 
     expect(next).not.toHaveBeenCalled();
     expect(state.statusCode).toBe(204);
-    expect(state.headers['Access-Control-Allow-Origin']).toBe('*');
+    expect(state.headers['Access-Control-Allow-Origin']).toBeUndefined();
     expect(state.headers.Vary).toBeUndefined();
     expect(state.headers['Access-Control-Allow-Methods']).toBe('GET, OPTIONS');
   });
@@ -113,7 +113,7 @@ describe('createApiCorsMiddleware', () => {
     expect(state.headers['Access-Control-Allow-Credentials']).toBe('true');
   });
 
-  it('keeps public GET access for untrusted origins without credentials', () => {
+  it('does not grant browser CORS access for untrusted origins', () => {
     const req = createMockRequest({
       method: 'GET',
       origin: 'http://untrusted.example',
@@ -125,8 +125,8 @@ describe('createApiCorsMiddleware', () => {
 
     expect(next).toHaveBeenCalledOnce();
     expect(state.statusCode).toBeNull();
-    expect(state.headers['Access-Control-Allow-Origin']).toBe('http://untrusted.example');
-    expect(state.headers.Vary).toBe('Origin');
+    expect(state.headers['Access-Control-Allow-Origin']).toBeUndefined();
+    expect(state.headers.Vary).toBeUndefined();
     expect(state.headers['Access-Control-Allow-Credentials']).toBeUndefined();
   });
 });

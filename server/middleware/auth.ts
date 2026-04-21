@@ -5,9 +5,10 @@
  * POST / PUT / PATCH / DELETE → 强制校验 x-api-key
  */
 
-import type { Request, Response, NextFunction } from 'express';
+import type { NextFunction, Request, Response } from 'express';
 
 const API_KEY = process.env.API_SECRET_KEY || '';
+const IS_DEV_API_MODE = process.env.DEV_API === '1';
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1']);
 
 type AuthErrorCode = 'API_KEY_INVALID' | 'API_KEY_NOT_CONFIGURED';
@@ -34,8 +35,7 @@ function extractHostname(input: string): string {
 }
 
 function isLocalDevelopmentRequest(req: Request): boolean {
-  const isDevRuntime = process.env.DEV_API === '1' || process.env.NODE_ENV !== 'production';
-  if (!isDevRuntime) return false;
+  if (!IS_DEV_API_MODE) return false;
 
   const candidates = [
     req.headers.origin,
@@ -48,35 +48,6 @@ function isLocalDevelopmentRequest(req: Request): boolean {
     .filter(Boolean);
 
   return candidates.some((hostname) => LOCAL_HOSTS.has(hostname));
-}
-
-function isSameOriginBrowserWriteRequest(req: Request): boolean {
-  const requestHosts = [
-    req.headers['x-forwarded-host'],
-    req.headers.host,
-    req.hostname,
-  ]
-    .filter((value): value is string => typeof value === 'string')
-    .map(extractHostname)
-    .filter(Boolean);
-
-  if (requestHosts.length === 0) {
-    return false;
-  }
-
-  const browserHosts = [
-    req.headers.origin,
-    req.headers.referer,
-  ]
-    .filter((value): value is string => typeof value === 'string')
-    .map(extractHostname)
-    .filter(Boolean);
-
-  if (browserHosts.length === 0) {
-    return false;
-  }
-
-  return browserHosts.some((hostname) => requestHosts.includes(hostname));
 }
 
 function sendAuthError(res: Response, status: number, code: AuthErrorCode): void {
@@ -94,12 +65,6 @@ export function apiKeyAuth(req: Request, res: Response, next: NextFunction): voi
 
   // Keep localhost validation friction-free during local development sessions.
   if (isLocalDevelopmentRequest(req)) {
-    next();
-    return;
-  }
-
-  // Allow same-origin browser writes while still rejecting cross-origin and direct scripted writes.
-  if (isSameOriginBrowserWriteRequest(req)) {
     next();
     return;
   }

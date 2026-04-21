@@ -1,5 +1,5 @@
-import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
+import type { Cell } from 'exceljs';
 import type { ParseResult, ParsedImage } from './docxConvertParser';
 
 const PX_PER_COL_UNIT = 7;
@@ -83,7 +83,7 @@ function normalizeImageExtension(ext: string): 'png' | 'jpeg' | 'gif' {
 }
 
 function writeNormalCell(
-  excelCell: ExcelJS.Cell,
+  excelCell: Cell,
   cellText: string,
   columnIndex: number,
 ): void {
@@ -106,6 +106,7 @@ function writeNormalCell(
 }
 
 export async function exportDocxParseResultToXlsx(result: ParseResult, filename = 'qe-report.xlsx'): Promise<void> {
+  const { default: ExcelJS } = await import('exceljs');
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'DOCX Converter';
   workbook.created = new Date();

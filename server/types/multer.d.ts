@@ -1,13 +1,28 @@
 declare module 'multer' {
-  import type { RequestHandler } from 'express';
+  import type { Request, RequestHandler } from 'express';
 
   export interface MulterFile {
-    buffer: Buffer;
+    buffer?: Buffer;
     originalname: string;
     mimetype: string;
     size: number;
     fieldname: string;
     encoding: string;
+    destination?: string;
+    filename?: string;
+    path?: string;
+  }
+
+  export type FileFilterCallback = (error: Error | null, acceptFile?: boolean) => void;
+
+  export type DiskStorageFilenameCallback = (error: Error | null, filename: string) => void;
+  export type DiskStorageDestinationCallback = (error: Error | null, destination: string) => void;
+
+  export interface DiskStorageOptions {
+    destination?:
+      | string
+      | ((req: Request, file: MulterFile, callback: DiskStorageDestinationCallback) => void);
+    filename?: (req: Request, file: MulterFile, callback: DiskStorageFilenameCallback) => void;
   }
 
   export interface MulterOptions {
@@ -15,6 +30,7 @@ declare module 'multer' {
     limits?: {
       fileSize?: number;
     };
+    fileFilter?: (req: Request, file: MulterFile, callback: FileFilterCallback) => void;
   }
 
   export interface MulterInstance {
@@ -24,6 +40,7 @@ declare module 'multer' {
   export interface MulterStatic {
     (options?: MulterOptions): MulterInstance;
     memoryStorage(): unknown;
+    diskStorage(options: DiskStorageOptions): unknown;
   }
 
   const multer: MulterStatic;

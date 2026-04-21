@@ -1,4 +1,6 @@
 declare module 'ali-oss' {
+  type OssPutInput = Buffer | NodeJS.ReadableStream | string;
+
   export interface OssClientOptions {
     region: string;
     bucket: string;
@@ -21,7 +23,7 @@ declare module 'ali-oss' {
 
   export default class OSS {
     constructor(options: OssClientOptions);
-    put(name: string, file: Buffer, options?: PutOptions): Promise<PutResult>;
+    put(name: string, file: OssPutInput, options?: PutOptions): Promise<PutResult>;
     delete(name: string): Promise<unknown>;
     signatureUrl(name: string, options?: SignatureUrlOptions): string;
   }

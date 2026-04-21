@@ -796,7 +796,7 @@ export function LogitechSCurve({
         }
       } catch {
         if (!cancelled) {
-          setError('S 曲线数据加载失败，已进入重试等待。');
+          setError('数据加载失败，请稍后重试');
           scheduleRetry();
         }
       } finally {

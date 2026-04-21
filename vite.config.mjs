@@ -52,9 +52,57 @@ export default defineConfig({
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
     chunkSizeWarningLimit: 1000,
-    minify: false,
-    cssMinify: false,
+    minify: "esbuild",
+    cssMinify: "esbuild",
     target: "esnext",
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes("node_modules")) return;
+
+          if (id.includes("/xlsx/")) {
+            return "vendor-xlsx";
+          }
+
+          if (id.includes("/exceljs/")) {
+            return "vendor-exceljs";
+          }
+
+          if (id.includes("/jszip/")) {
+            return "vendor-jszip";
+          }
+
+          if (
+            id.includes("/jspdf/") ||
+            id.includes("/html2canvas/") ||
+            id.includes("/html2pdf.js/")
+          ) {
+            return "vendor-pdf-export";
+          }
+
+          if (id.includes("/pdfjs-dist/")) {
+            return "vendor-pdf-viewer";
+          }
+
+          if (
+            id.includes("/recharts/") ||
+            id.includes("/d3-") ||
+            id.includes("/internmap/") ||
+            id.includes("/victory-vendor/")
+          ) {
+            return "vendor-charts";
+          }
+
+          if (
+            id.includes("/react/") ||
+            id.includes("/react-dom/") ||
+            id.includes("/scheduler/")
+          ) {
+            return "vendor-react-core";
+          }
+        },
+      },
+    },
   },
   worker: {
     format: "es",

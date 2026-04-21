@@ -24,13 +24,7 @@ function handleTrustedPreflight(res: Response, origin: string): void {
   res.sendStatus(204);
 }
 
-function handlePublicPreflight(res: Response, origin: string | undefined): void {
-  if (origin) {
-    applyOriginHeader(res, origin);
-  } else {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-  }
-
+function handleUntrustedPreflight(res: Response): void {
   res.setHeader('Access-Control-Allow-Methods', PUBLIC_READ_METHODS);
   res.sendStatus(204);
 }
@@ -46,15 +40,13 @@ export function createApiCorsMiddleware(trustedOrigins: ReadonlySet<string>): Re
         return;
       }
 
-      handlePublicPreflight(res, origin);
+      handleUntrustedPreflight(res);
       return;
     }
 
-    if (origin) {
+    if (isTrustedOrigin && origin) {
       applyOriginHeader(res, origin);
-      if (isTrustedOrigin) {
-        res.setHeader('Access-Control-Allow-Credentials', 'true');
-      }
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
     }
 
     next();

@@ -24,11 +24,12 @@ export default function CyberConfirmDialog({
 }: CyberConfirmDialogProps) {
   useEffect(() => {
     if (!open) return
-    const handler = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onCancel()
-      if (allowEnterConfirm && event.key === "Enter") {
-        event.preventDefault()
-        onConfirm()
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onCancel();
+      if (e.key === 'Enter') {
+        if (!allowEnterConfirm) return
+        e.preventDefault()
+        onConfirm();
       }
     }
     window.addEventListener("keydown", handler)

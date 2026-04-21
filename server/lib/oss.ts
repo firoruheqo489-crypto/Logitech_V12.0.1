@@ -20,7 +20,9 @@ type OssStreamClient = OssClient & {
 };
 
 type UploadAssetOptions = {
-  fileBuffer: Buffer;
+  fileBuffer?: Buffer;
+  fileStream?: NodeJS.ReadableStream;
+  fileSize?: number;
   filename: string;
   mimeType?: string;
   category?: string;
@@ -203,6 +205,11 @@ function isNotFoundError(error: unknown): boolean {
 
 export async function uploadAssetToOss(options: UploadAssetOptions): Promise<UploadedAsset> {
   const mimeType = options.mimeType?.trim() || 'application/octet-stream';
+  const fileContent = options.fileBuffer ?? options.fileStream;
+  if (!fileContent) {
+    throw new Error('file content is required');
+  }
+
   const objectKey = buildObjectKey({
     filename: options.filename,
     mimeType,
@@ -213,18 +220,23 @@ export async function uploadAssetToOss(options: UploadAssetOptions): Promise<Upl
 
   const client = getClient();
 
-  await client.put(objectKey, options.fileBuffer, {
+  await client.put(objectKey, fileContent, {
     headers: {
       'Cache-Control': 'public, max-age=31536000, immutable',
       'Content-Type': mimeType,
     },
   });
 
+  const resolvedSize =
+    typeof options.fileSize === 'number'
+      ? options.fileSize
+      : options.fileBuffer?.byteLength ?? 0;
+
   return {
     url: buildAssetProxyUrl(objectKey),
     objectKey,
     mimeType,
-    size: options.fileBuffer.byteLength,
+    size: resolvedSize,
   };
 }
 

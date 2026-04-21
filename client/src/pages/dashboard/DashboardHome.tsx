@@ -12,8 +12,6 @@ import ProjectCard from './components/ProjectCard';
 import MobileProjectCard from './components/MobileProjectCard';
 import SearchBar from './components/SearchBar';
 import { AdminButton } from './components/AdminButton';
-import { AdminModal } from './components/AdminModal';
-import { ProductModuleAdminModal } from './components/ProductModuleAdminModal';
 
 import { transformDataToProject } from './lib/dataTransformer';
 import { fetchDashboardProjectData, fetchDashboardProgressEntries, type DashboardProgressEntry } from './lib/dashboardApi';
@@ -25,9 +23,7 @@ import { apiFetch } from '@/lib/api';
 import { getModuleTheme, getThemeGlowClass, orderModuleNamesForDisplay } from '@/lib/theme';
 import CyberConfirmDialog from '@/components/ui/CyberConfirmDialog';
 import ProjectLobby from '@/components/ProjectLobby';
-import VDISurfaceGrid, { type MaterialType } from '@/components/VDISurfaceGrid';
-import DefectLab from '@/components/DefectLab';
-import FmeaIssueWorkspace from '@/components/FmeaIssueWorkspace';
+import type { MaterialType } from '@/components/VDISurfaceGrid';
 import type { ProductModuleRecord } from './types/product-module';
 import {
   buildProductModuleLookupKey,
@@ -52,6 +48,17 @@ const ProcessDrawerWorkspace = lazy(() => import('./components/ProcessDrawerWork
 const ProgressLogsDrawerWorkspace = lazy(() => import('./components/ProgressLogsDrawerWorkspace'));
 const FaiDimensionAnalyzer = lazy(() => import('./components/FaiDimensionAnalyzer'));
 const DocxConvertModule = lazy(() => import('./components/DocxConvertModule'));
+const FmeaIssueWorkspace = lazy(() => import('@/components/FmeaIssueWorkspace'));
+const VDISurfaceGrid = lazy(() => import('@/components/VDISurfaceGrid'));
+const DefectLab = lazy(() => import('@/components/DefectLab'));
+const AdminModal = lazy(() =>
+  import('./components/AdminModal').then((module) => ({ default: module.AdminModal })),
+);
+const ProductModuleAdminModal = lazy(() =>
+  import('./components/ProductModuleAdminModal').then((module) => ({
+    default: module.ProductModuleAdminModal,
+  })),
+);
 
 function LazyWorkspace({ children }: { children: React.ReactNode }) {
   return (
@@ -855,11 +862,13 @@ export default function DashboardHome() {
         )}
 
         {selectedTab === 'fmea' && (
-          <FmeaIssueWorkspace
-            projectName={activeModule || ''}
-            projectIds={currentModuleMoldIds}
-            defaultProductName={currentModuleData[0]?.identity?.productName?.trim() || ''}
-          />
+          <LazyWorkspace>
+            <FmeaIssueWorkspace
+              projectName={activeModule || ''}
+              projectIds={currentModuleMoldIds}
+              defaultProductName={currentModuleData[0]?.identity?.productName?.trim() || ''}
+            />
+          </LazyWorkspace>
         )}
 
         {/* Product module drawer workspace */}
@@ -929,22 +938,26 @@ export default function DashboardHome() {
       </main>
 
       {isAdminMode && selectedTab === 'defect-library' && (
-        <VDISurfaceGrid
-          onClose={() => setActiveTab('overview')}
-          selectedMat={defectMaterial}
-          onMatChange={setDefectMaterial}
-          currentVDI={defectVDI}
-          onVDIChange={setDefectVDI}
-        />
+        <LazyWorkspace>
+          <VDISurfaceGrid
+            onClose={() => setActiveTab('overview')}
+            selectedMat={defectMaterial}
+            onMatChange={setDefectMaterial}
+            currentVDI={defectVDI}
+            onVDIChange={setDefectVDI}
+          />
+        </LazyWorkspace>
       )}
 
       {isAdminMode && selectedTab === 'injection-clinic' && (
-        <DefectLab
-          onClose={() => setActiveTab('overview')}
-          material={defectMaterial}
-          vdi={defectVDI}
-          assetId={currentModuleData[0]?.identity?.moldNumber?.trim() || currentModuleMoldIds[0] || 'LA26006'}
-        />
+        <LazyWorkspace>
+          <DefectLab
+            onClose={() => setActiveTab('overview')}
+            material={defectMaterial}
+            vdi={defectVDI}
+            assetId={currentModuleData[0]?.identity?.moldNumber?.trim() || currentModuleMoldIds[0] || 'LA26006'}
+          />
+        </LazyWorkspace>
       )}
 
       {isAdminMode && (
@@ -958,13 +971,23 @@ export default function DashboardHome() {
           }}
         />
       )}
-      <AdminModal open={isAdminModalOpen} onOpenChange={setIsAdminModalOpen} onDataUpdate={handleDataUpdate} onDataClear={handleClearData} lastUpdated={new Date().toLocaleDateString('zh-CN')} />
-      <ProductModuleAdminModal
-        open={isProductAdminModalOpen}
-        onOpenChange={setIsProductAdminModalOpen}
-        lastUpdated={productModuleLastUpdated}
-        onUploadSuccess={loadProductModuleRows}
-      />
+      {isAdminMode && (
+        <Suspense fallback={null}>
+          <AdminModal
+            open={isAdminModalOpen}
+            onOpenChange={setIsAdminModalOpen}
+            onDataUpdate={handleDataUpdate}
+            onDataClear={handleClearData}
+            lastUpdated={new Date().toLocaleDateString('zh-CN')}
+          />
+          <ProductModuleAdminModal
+            open={isProductAdminModalOpen}
+            onOpenChange={setIsProductAdminModalOpen}
+            lastUpdated={productModuleLastUpdated}
+            onUploadSuccess={loadProductModuleRows}
+          />
+        </Suspense>
+      )}
 
       <CyberConfirmDialog
         open={showDuplicateUploadConfirm}

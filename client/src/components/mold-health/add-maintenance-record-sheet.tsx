@@ -408,7 +408,7 @@ export default function AddMaintenanceRecordSheet({
               <div className="space-y-2">
                 <FieldLabel zh="症状" en="SYMPTOM" />
                 <Input
-                  value={formState.symptom}
+                  value={form.symptom}
                   required
                   onChange={(event) => update("symptom", event.target.value)}
                   className="h-11 border-slate-700 bg-slate-950/70 text-slate-100"

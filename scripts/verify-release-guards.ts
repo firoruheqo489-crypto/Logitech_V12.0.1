@@ -408,7 +408,8 @@ async function verifyApiCors(): Promise<void> {
     middleware(req as never, res as never, () => { nextCalls += 1; });
     assert.equal(nextCalls, 0);
     assert.equal(state.statusCode, 204);
-    assert.equal(state.headers["Access-Control-Allow-Origin"], "http://untrusted.example");
+    assert.equal(state.headers["Access-Control-Allow-Origin"], undefined);
+    assert.equal(state.headers.Vary, undefined);
     assert.equal(state.headers["Access-Control-Allow-Methods"], "GET, OPTIONS");
     assert.equal(state.headers["Access-Control-Allow-Headers"], undefined);
     assert.equal(state.headers["Access-Control-Allow-Credentials"], undefined);
@@ -421,7 +422,7 @@ async function verifyApiCors(): Promise<void> {
     middleware(req as never, res as never, () => { nextCalls += 1; });
     assert.equal(nextCalls, 0);
     assert.equal(state.statusCode, 204);
-    assert.equal(state.headers["Access-Control-Allow-Origin"], "*");
+    assert.equal(state.headers["Access-Control-Allow-Origin"], undefined);
     assert.equal(state.headers.Vary, undefined);
     assert.equal(state.headers["Access-Control-Allow-Methods"], "GET, OPTIONS");
   }
@@ -442,7 +443,8 @@ async function verifyApiCors(): Promise<void> {
     let nextCalls = 0;
     middleware(req as never, res as never, () => { nextCalls += 1; });
     assert.equal(nextCalls, 1);
-    assert.equal(state.headers["Access-Control-Allow-Origin"], "http://untrusted.example");
+    assert.equal(state.headers["Access-Control-Allow-Origin"], undefined);
+    assert.equal(state.headers.Vary, undefined);
     assert.equal(state.headers["Access-Control-Allow-Credentials"], undefined);
   }
 }
@@ -480,7 +482,8 @@ async function verifyApiAccessPolicy(): Promise<void> {
     const nextCalls = runPipeline([apiCors, apiKeyAuth], req, res);
     assert.equal(nextCalls, 1);
     assert.equal(state.statusCode, null);
-    assert.equal(state.headers["Access-Control-Allow-Origin"], "http://untrusted.example");
+    assert.equal(state.headers["Access-Control-Allow-Origin"], undefined);
+    assert.equal(state.headers.Vary, undefined);
     assert.equal(state.headers["Access-Control-Allow-Credentials"], undefined);
   }
 
@@ -502,7 +505,7 @@ async function verifyApiAccessPolicy(): Promise<void> {
       error: "api key missing or invalid",
       code: "API_KEY_INVALID",
     });
-    assert.equal(state.headers["Access-Control-Allow-Origin"], "http://untrusted.example");
+    assert.equal(state.headers["Access-Control-Allow-Origin"], undefined);
     assert.equal(state.headers["Access-Control-Allow-Credentials"], undefined);
   }
 
@@ -539,6 +542,7 @@ async function verifyApiAccessPolicy(): Promise<void> {
       headers: {
         host: "120.27.153.140:3000",
         origin: "http://120.27.153.140:3000",
+        "x-api-key": "expected-key",
       },
       hostname: "120.27.153.140",
     });

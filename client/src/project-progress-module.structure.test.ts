@@ -22,7 +22,7 @@ describe('project progress module scaffold', () => {
     const source = await loadSource('./pages/dashboard/DashboardHome.tsx');
 
     expect(source).toMatch(/'dimension-analysis',\s*'docx-converter',\s*'project-progress',\s*'mold-reliability'/s);
-    expect(source).toContain("'docx-converter': 'DOCX转Excel'");
+    expect(source).toContain("'docx-converter': '问题解析'");
     expect(source).toContain("'project-progress': '项目进度看板'");
     expect(source).toContain("if (tab === 'project-progress')");
     expect(source).toContain("setLocation(nextUrl);");

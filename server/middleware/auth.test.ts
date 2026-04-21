@@ -100,7 +100,7 @@ describe('apiKeyAuth', () => {
     expect(state.statusCode).toBeNull();
   });
 
-  it('allows same-origin browser write requests in production without a manual API key', async () => {
+  it('rejects same-origin-looking production writes without API key', async () => {
     const { apiKeyAuth } = await loadAuthModule({
       API_SECRET_KEY: 'expected-key',
       NODE_ENV: 'production',
@@ -118,8 +118,12 @@ describe('apiKeyAuth', () => {
 
     apiKeyAuth(req, res, next);
 
-    expect(next).toHaveBeenCalledOnce();
-    expect(state.statusCode).toBeNull();
+    expect(next).not.toHaveBeenCalled();
+    expect(state.statusCode).toBe(403);
+    expect(state.jsonBody).toEqual({
+      error: 'api key missing or invalid',
+      code: 'API_KEY_INVALID',
+    });
   });
 
   it('returns a machine-readable 503 when the write API key is not configured', async () => {

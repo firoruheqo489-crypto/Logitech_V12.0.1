@@ -6,10 +6,10 @@ import {
 
 const SCURVE_MILESTONE_LABELS: Record<SCurveMilestoneId, string> = {
   project_launch: '项目启动',
-  mold_fai_cpk: '模具 FAI/CPK',
+  mold_fai_cpk: '模具FAI/CPK',
   t0_summary: 'T0 综合报告',
   t0_closure_report: 'T1 问题闭环',
-  spc_inspection: 'SPC 数据确认',
+  spc_inspection: '巡检SPC数据',
 };
 
 const SCURVE_MILESTONE_BADGE_LABELS: Record<SCurvePointMilestoneId, string> = {
@@ -33,5 +33,5 @@ export function formatSCurveCurrentStageLabel(
     return '待识别';
   }
 
-  return isComplete ? `${SCURVE_MILESTONE_LABELS[id]} 已完成` : SCURVE_MILESTONE_LABELS[id];
+  return isComplete ? `${SCURVE_MILESTONE_LABELS[id]} ✓` : SCURVE_MILESTONE_LABELS[id];
 }
