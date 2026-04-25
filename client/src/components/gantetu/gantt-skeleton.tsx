@@ -83,6 +83,10 @@ export function GanttSkeleton({ initialComponents, initialMilestones = [], dayWi
 
   // Phase 9 — Milestone deletion state
   const [milestoneDeletionTarget, setMilestoneDeletionTarget] = useState<Milestone | null>(null)
+  // Phase 19 — 交付死线管理面板（增/改名/改日/改类/删 集中入口）
+  const [showMilestonePanel, setShowMilestonePanel] = useState(false)
+  const [editingMilestoneId, setEditingMilestoneId] = useState<string | null>(null)
+  const [editDraft, setEditDraft] = useState<{ name: string; date: string; type: "commercial" | "technical" }>({ name: "", date: "", type: "commercial" })
 
   // Phase 17 — 左右面板垂直滚动同步，保证行块始终水平对齐
   const leftScrollRef = useRef<HTMLDivElement | null>(null)
@@ -153,15 +157,126 @@ export function GanttSkeleton({ initialComponents, initialMilestones = [], dayWi
           </h1>
 
 
-          {/* Add Milestone (ADMIN only) */}
+          {/* Phase 19 — 交付死线管理面板（新增 / 改名 / 改日期 / 改类型 / 删除） */}
           {role === "ADMIN" && (
-            <button
-              type="button"
-              onClick={handleAddMilestone}
-              className="px-3 py-1 border border-fuchsia-700/60 text-fuchsia-300 hover:bg-fuchsia-950/50 hover:border-fuchsia-500 text-[10px] rounded transition-all"
-            >
-              + 交付死线
-            </button>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowMilestonePanel((v) => !v)
+                  setEditingMilestoneId(null)
+                }}
+                className="px-3 py-1 border border-fuchsia-700/60 text-fuchsia-300 hover:bg-fuchsia-950/50 hover:border-fuchsia-500 text-[10px] rounded transition-all"
+              >
+                ◆ 交付死线 ({milestones.length})
+              </button>
+              {showMilestonePanel && (
+                <div className="absolute left-0 top-full mt-1 z-50 w-[420px] bg-[#0f1729] border border-fuchsia-800/50 rounded shadow-[0_8px_24px_rgba(0,0,0,0.6)] p-2">
+                  <div className="flex items-center justify-between px-2 py-1 border-b border-slate-800/60 mb-1">
+                    <span className="text-[10px] tracking-wider text-fuchsia-300">交付死线管理</span>
+                    <button
+                      type="button"
+                      onClick={() => { setShowMilestonePanel(false); setEditingMilestoneId(null) }}
+                      className="text-slate-500 hover:text-slate-200 text-[10px]"
+                      aria-label="关闭"
+                    >
+                      ×
+                    </button>
+                  </div>
+                  {milestones.length === 0 ? (
+                    <div className="px-2 py-3 text-[10px] text-slate-500 text-center">尚未录入交付死线</div>
+                  ) : (
+                    <ul className="max-h-72 overflow-auto">
+                      {milestones.map((m) => {
+                        const dotCls = m.type === "commercial" ? "bg-fuchsia-500" : "bg-purple-500"
+                        const isEditing = editingMilestoneId === m.id
+                        if (isEditing) {
+                          const handleSave = () => {
+                            const name = editDraft.name.trim()
+                            if (!name) return
+                            if (!/^\d{4}-\d{2}-\d{2}$/.test(editDraft.date)) return
+                            updateMilestone(m.id, { name, date: editDraft.date, type: editDraft.type })
+                            setEditingMilestoneId(null)
+                          }
+                          return (
+                            <li key={m.id} className="flex items-center gap-1.5 px-2 py-1.5 border-b border-slate-800/40 last:border-0 bg-slate-800/40">
+                              <input
+                                type="text"
+                                value={editDraft.name}
+                                onChange={(e) => setEditDraft((d) => ({ ...d, name: e.target.value }))}
+                                placeholder="名称"
+                                className="flex-1 min-w-0 bg-transparent border-0 border-b border-slate-700 focus:border-cyan-500 focus:outline-none text-[10px] text-slate-100 px-1 py-0.5"
+                                autoFocus
+                              />
+                              <input
+                                type="date"
+                                value={editDraft.date}
+                                onChange={(e) => setEditDraft((d) => ({ ...d, date: e.target.value }))}
+                                className="bg-transparent border-0 border-b border-slate-700 focus:border-cyan-500 focus:outline-none text-[10px] text-slate-300 px-1 py-0.5 font-mono w-[110px]"
+                              />
+                              <select
+                                value={editDraft.type}
+                                onChange={(e) => setEditDraft((d) => ({ ...d, type: e.target.value === "technical" ? "technical" : "commercial" }))}
+                                className="bg-slate-900 border border-slate-700 text-slate-300 text-[9px] rounded px-1 py-0.5"
+                              >
+                                <option value="commercial">商务</option>
+                                <option value="technical">技术</option>
+                              </select>
+                              <button
+                                type="button"
+                                onClick={handleSave}
+                                className="text-[9px] text-emerald-400 hover:text-emerald-300 px-1"
+                              >
+                                保存
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setEditingMilestoneId(null)}
+                                className="text-[9px] text-slate-500 hover:text-slate-300 px-1"
+                              >
+                                取消
+                              </button>
+                            </li>
+                          )
+                        }
+                        return (
+                          <li key={m.id} className="flex items-center gap-2 px-2 py-1.5 border-b border-slate-800/40 last:border-0 hover:bg-slate-800/30">
+                            <span className={`w-1.5 h-1.5 rounded-full ${dotCls}`} aria-hidden />
+                            <span className="flex-1 text-[10px] text-slate-200 truncate" title={m.name}>{m.name}</span>
+                            <span className="text-[9px] text-slate-500 font-mono">{m.date}</span>
+                            <span className="text-[8px] text-slate-600">{m.type === "commercial" ? "商务" : "技术"}</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingMilestoneId(m.id)
+                                setEditDraft({ name: m.name, date: m.date, type: m.type })
+                              }}
+                              className="text-[9px] text-slate-500 hover:text-cyan-400 px-1"
+                            >
+                              编辑
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleMilestoneDeleteRequest(m)}
+                              className="text-[9px] text-slate-500 hover:text-red-400 px-1"
+                            >
+                              删除
+                            </button>
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleAddMilestone}
+                    className="w-full mt-1 py-1.5 border border-dashed border-fuchsia-800/50 text-fuchsia-400 hover:bg-fuchsia-950/30 hover:border-fuchsia-500 text-[10px] rounded transition-all"
+                  >
+                    + 新增交付死线
+                  </button>
+                </div>
+              )}
+            </div>
           )}
 
           {/* Phase 13 — Add Component Group */}
@@ -251,26 +366,14 @@ export function GanttSkeleton({ initialComponents, initialMilestones = [], dayWi
               const labelText = m.type === "commercial" ? "text-fuchsia-200" : "text-purple-200"
               const labelBorder = m.type === "commercial" ? "border-fuchsia-700/50" : "border-purple-700/50"
               const labelGlow = m.type === "commercial" ? "shadow-[0_0_8px_rgba(217,70,239,0.4)]" : "shadow-[0_0_8px_rgba(147,51,234,0.4)]"
-              const handleEdit = () => {
-                const newDate = window.prompt(`修改 "${m.name}" 的日期 (YYYY-MM-DD)：`, m.date)
-                if (newDate && /^\d{4}-\d{2}-\d{2}$/.test(newDate)) {
-                  updateMilestone(m.id, newDate)
-                }
-              }
               return (
                 <div
                   key={m.id}
                   className={`absolute top-1.5 ${labelBg} ${labelText} text-[9px] px-2 py-1 rounded border ${labelBorder} whitespace-nowrap flex items-center gap-2 ${labelGlow}`}
                   style={{ left: `${mOffset * dayWidth + dayWidth / 2}px`, transform: "translateX(-50%)" }}
+                  title={`${m.name} · ${m.date}`}
                 >
                   <span className="font-medium">{m.name}</span>
-                  <span className="text-[7px] opacity-60">{m.date}</span>
-                  <button type="button" onClick={handleEdit} className="hover:text-white text-[8px] opacity-60 hover:opacity-100 transition-opacity">
-                    [编辑]
-                  </button>
-                  <button type="button" onClick={() => handleMilestoneDeleteRequest(m)} className="hover:text-red-400 text-[8px] opacity-60 hover:opacity-100 transition-opacity">
-                    [删除]
-                  </button>
                 </div>
               )
             })}

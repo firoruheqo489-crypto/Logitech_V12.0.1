@@ -59,7 +59,7 @@ export interface UseGanttEngineReturn {
   setRole: (role: Role) => void
   milestones: Milestone[]
   addMilestone: (name: string, date: string, type: "commercial" | "technical") => void
-  updateMilestone: (id: string, date: string) => void
+  updateMilestone: (id: string, patch: Partial<Pick<Milestone, "name" | "date" | "type">>) => void
   deleteMilestone: (id: string) => void
   collisions: CollisionState[]
 
@@ -353,11 +353,14 @@ export function useGanttEngine(initialComponents: ComponentGroup[], initialMiles
     ])
   }, [])
 
-  const updateMilestone = useCallback((id: string, date: string) => {
-    setMilestones((prev) =>
-      prev.map((m) => (m.id === id ? { ...m, date } : m)),
-    )
-  }, [])
+  const updateMilestone = useCallback(
+    (id: string, patch: Partial<Pick<Milestone, "name" | "date" | "type">>) => {
+      setMilestones((prev) =>
+        prev.map((m) => (m.id === id ? { ...m, ...patch } : m)),
+      )
+    },
+    [],
+  )
 
   const deleteMilestone = useCallback((id: string) => {
     setMilestones((prev) => prev.filter((m) => m.id !== id))
