@@ -15,7 +15,6 @@ import {
 import { Activity, AlertTriangle, Clock, Target, TrendingUp } from 'lucide-react';
 
 import { apiFetch } from '@/lib/api';
-import type { SCurvePoint, TaskItem } from '@/lib/projectProgress';
 import { cn } from '@/lib/utils';
 
 import {
@@ -23,7 +22,46 @@ import {
   SCURVE_MILESTONES,
   getNextSCurveMilestoneId,
   type SCurveMilestoneId,
+  type SCurvePointMilestoneId,
 } from './logitech-s-curve-machine';
+
+export interface TaskItem {
+  id: string;
+  project_id: string;
+  name: string;
+  name_cn: string;
+  phase: string;
+  track?: string;
+  stage?: string;
+  weight?: number;
+  duration_days: number;
+  baseline_start: string;
+  baseline_end: string;
+  actual_start?: string;
+  actual_end?: string;
+  progress: number;
+  status: string;
+  is_milestone?: boolean;
+  is_merge_point?: boolean;
+}
+
+export interface SCurvePoint {
+  week: number;
+  dateLabel: string;
+  timestamp: number;
+  planned: number;
+  actual: number | null;
+  forecast: number | null;
+  dateIso?: string;
+  plannedWeight?: number;
+  actualWeight?: number | null;
+  forecastWeight?: number | null;
+  variance?: number | null;
+  isToday?: boolean;
+  milestoneId?: SCurvePointMilestoneId;
+  milestoneShortLabel?: string;
+  isForecastMilestone?: boolean;
+}
 import {
   formatSCurveCurrentStageLabel,
   getSCurveMilestoneBadgeLabel,
