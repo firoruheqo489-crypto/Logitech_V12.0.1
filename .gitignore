@@ -123,3 +123,8 @@ scripts/out/
 
 # Webdev artifacts (checkpoint zips, migrations, etc.)
 .webdev/
+
+# 流民资产物理隔离 — gantetu2/ 是甘特图原型壳，核心逻辑已被吸收进
+# client/src/components/gantetu/、client/src/hooks/use-gantt-engine.ts、client/src/lib/gantt/，
+# 仅作本地只读参考，禁止入库以防主干熵增。
+gantetu2/
