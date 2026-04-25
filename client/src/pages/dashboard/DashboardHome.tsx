@@ -3,7 +3,6 @@
  */
 
 import React, { lazy, Suspense, useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { useLocation } from 'wouter';
 import type { ProjectData } from './types/project';
 import { calculateStats } from './lib/projectUtils';
 import FileUpload from './components/FileUpload';
@@ -38,6 +37,7 @@ import {
 } from '@/lib/dashboardProjectState';
 
 const MoldTrialDrawerWorkspace = lazy(() => import('./components/MoldTrialDrawerWorkspace'));
+const ProjectGanttWorkspace = lazy(() => import('./components/ProjectGanttWorkspace'));
 const MacroStageGateDrawerWorkspace = lazy(() => import('./components/MacroStageGateDrawerWorkspace'));
 const ReliabilityDrawerWorkspace = lazy(() => import('./components/ReliabilityDrawerWorkspace'));
 const SpcRadarDrawerWorkspace = lazy(() => import('./components/SpcRadarDrawerWorkspace'));
@@ -136,7 +136,7 @@ const DASHBOARD_TABS = [
   'mold-trial-database',
   'dimension-analysis',
   'docx-converter',
-  'project-progress',
+  'project-gantt',
   'mold-reliability',
   'spc-calculator',
   'fmea',
@@ -150,7 +150,7 @@ const DASHBOARD_TABS = [
 type DashboardTab = typeof DASHBOARD_TABS[number];
 
 const PUBLIC_DASHBOARD_TAB_LIMIT =
-  DASHBOARD_TABS.indexOf('project-progress') + 1;
+  DASHBOARD_TABS.indexOf('project-gantt') + 1;
 const PUBLIC_DASHBOARD_TABS: DashboardTab[] = [
   ...DASHBOARD_TABS.slice(0, PUBLIC_DASHBOARD_TAB_LIMIT),
 ];
@@ -210,7 +210,6 @@ function buildBatchSignature(projects: ProjectData[]): string {
 }
 
 export default function DashboardHome() {
-  const [, setLocation] = useLocation();
   const isMobile = useIsMobile();
   const [activeModule, setActiveModule] = useState<string | null>(() => {
     if (typeof window === 'undefined') return null;
@@ -591,22 +590,8 @@ export default function DashboardHome() {
   const handleShowAll = () => handleFilterChange('ALL');
 
   const handleTabSelect = useCallback((tab: DashboardTab) => {
-    if (tab === 'project-progress') {
-      if (typeof window !== 'undefined') {
-        if (activeModule) {
-          sessionStorage.setItem('dashboard_active_module', activeModule);
-        }
-        sessionStorage.setItem('dashboard_active_module_theme_key', moduleTheme.key);
-      }
-      const nextUrl = activeModule
-        ? `/dashboard/progress?module=${encodeURIComponent(activeModule)}`
-        : '/dashboard/progress';
-      setLocation(nextUrl);
-      return;
-    }
-
     setActiveTab(tab);
-  }, [activeModule, moduleTheme.key, setLocation]);
+  }, []);
 
   const tabStripRef = useRef<HTMLDivElement>(null);
 
@@ -749,7 +734,7 @@ export default function DashboardHome() {
               'mold-trial-database': '试模数据库',
               'dimension-analysis': '尺寸分析',
               'docx-converter': '问题解析',
-              'project-progress': '项目进度看板',
+              'project-gantt': '项目甘特图',
               'mold-reliability': '模具可靠性',
               'spc-calculator': 'SPC计算器',
               'fmea': 'FMEA知识库',
@@ -932,6 +917,12 @@ export default function DashboardHome() {
         {selectedTab === 'mold-trial-database' && (
           <LazyWorkspace>
             <MoldTrialDrawerWorkspace panels={currentModuleTrialPanels} />
+          </LazyWorkspace>
+        )}
+
+        {selectedTab === 'project-gantt' && (
+          <LazyWorkspace>
+            <ProjectGanttWorkspace />
           </LazyWorkspace>
         )}
 
