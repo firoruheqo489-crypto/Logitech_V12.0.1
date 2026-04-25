@@ -200,159 +200,42 @@ export function TaskTreeList(props: TaskTreeListProps) {
                       />
                     )
                   })()
-                ) : (
-                  /* 物理完成度输入 — Phase 7/8/10: 时间真空锁死 + 暗雷碰撞锁定 + 100%完工封板 */
-                  (() => {
-                    const progressOverdue = isOverdue(node)
-                    const progressCompleted = isCompleted(node)
-                    const collision = isTaskCollidingMilestone(node, milestones)
-                    const isColliding = collision !== null
-                    // USER 视角下，碰撞触发行政锁定
-                    const isAdminLockedByCollision = isColliding && role === "USER"
-                    // Phase 10: 100%完工绝对锁死（不允许将100%改回90%）
-                    const isCompletionLocked = progressCompleted
-                    const isLocked = progressOverdue || isAdminLockedByCollision || isCompletionLocked
-                    return (
-                      <div className="flex items-center gap-1.5 shrink-0 whitespace-nowrap">
-                        {/* Phase 15: 极简锁死状态 — 使用图标代替文字标签 */}
-                        {isCompletionLocked && (
-                          <span
-                            className="text-emerald-500/80"
-                            title="100%完工封板 — 历史事实已固化，不允许篡改"
-                          >
-                            <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
-                              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                            </svg>
-                          </span>
-                        )}
-                        {(progressOverdue || isAdminLockedByCollision) && !isCompletionLocked && (
-                          <span
-                            className="text-red-500/80"
-                            title={isAdminLockedByCollision ? "触碰隐蔽底线 — 已触发全局交付风险，请向项目经理申请排期解锁" : "时间真空锁死 — 必须先延期才能更新进度"}
-                          >
-                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                            </svg>
-                          </span>
-                        )}
-                        <input
-                          type="number"
-                          min={0}
-                          max={100}
-                          value={node.progress ?? 0}
-                          onChange={(e) => onUpdateProgress(node.id, Number.parseInt(e.target.value, 10) || 0)}
-                          disabled={isLocked}
-                          className={`w-12 border-0 border-b text-center text-[10px] px-1 py-0.5 font-mono focus:outline-none transition-colors ${
-                            isCompletionLocked
-                              ? "bg-transparent border-emerald-700/50 text-emerald-400/80 cursor-not-allowed"
-                              : isLocked
-                                ? "bg-transparent border-red-800/50 text-slate-600 cursor-not-allowed"
-                                : "bg-transparent border-transparent hover:border-slate-700 focus:border-cyan-500 text-slate-200"
-                          }`}
-                          aria-label={`${node.name} 完成度`}
-                          title={
-                            isCompletionLocked
-                              ? "100%完工封板：历史事实已固化，不允许篡改"
-                              : isAdminLockedByCollision
-                                ? "触碰隐蔽底线：已触发全局交付风险，请向项目经理申请排期解锁"
-                                : progressOverdue
-                                  ? "时间真空锁死：任务已逾期且未完成，必须先点击 [+延期] 将 endDate 推至 Today 之后才能更新进度"
-                                  : undefined
-                          }
-                        />
-                        <span className="text-[9px] text-slate-600 font-mono">%</span>
-                        {/* Phase 10: ADMIN专用解锁按钮 */}
-                        {isCompletionLocked && role === "ADMIN" && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (window.confirm(`确定要解除 "${node.name}" 的100%完工封板吗？此操作将被记录。`)) {
-                                onResetTaskProgress(node.id)
-                              }
-                            }}
-                            className="w-4 h-4 flex items-center justify-center text-fuchsia-500/70 hover:text-fuchsia-300 transition-colors"
-                            title="ADMIN专用：强制解除100%封板"
-                            aria-label={`解锁 ${node.name}`}
-                          >
-                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
-                            </svg>
-                          </button>
-                        )}
-                      </div>
-                    )
-                  })()
-                )}
+                ) : null}
 
-                {/* 右侧���作区 */}
+                {/* 右侧操作区 — 无完工封板门控，延期报备与 LIFO 撤销始终可用 */}
                 {!isChildRow ? (
-                  (() => {
-                    const actionCompleted = isCompleted(node)
-                    return (
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        {/* Phase 10: 100%完工后剥夺 [+延期] 按钮 */}
-                        {!actionCompleted ? (
-                          <button
-                            type="button"
-                            onClick={() => onAddDelay(node.id)}
-                            className="px-2.5 py-1 border border-slate-700/60 text-slate-500 hover:text-cyan-400 hover:border-cyan-500/70 hover:bg-cyan-950/30 text-[9px] rounded transition-all shadow-[0_0_0_rgba(6,182,212,0)] hover:shadow-[0_0_8px_rgba(6,182,212,0.3)]"
-                          >
-                            + 延期报备
-                          </button>
-                        ) : (
-                          <span
-                            className="px-2.5 py-1 text-[8px] text-emerald-500/80 bg-emerald-950/30 border border-emerald-700/40 rounded select-none"
-                            title="100%完工��板：不允许再延期"
-                          >
-                            已封板
-                          </span>
-                        )}
-                        {/* Phase 9 — 删除按钮 */}
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteClick(node.id, node.name)}
-                          title="物理销毁该工序"
-                          className="w-6 h-6 flex items-center justify-center text-slate-700 hover:text-red-500 hover:bg-red-950/30 rounded transition-all"
-                          aria-label={`删除 ${node.name}`}
-                        >
-                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                          </svg>
-                        </button>
-                      </div>
-                    )
-                  })()
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => onAddDelay(node.id)}
+                      className="px-2.5 py-1 border border-slate-700/60 text-slate-500 hover:text-cyan-400 hover:border-cyan-500/70 hover:bg-cyan-950/30 text-[9px] rounded transition-all shadow-[0_0_0_rgba(6,182,212,0)] hover:shadow-[0_0_8px_rgba(6,182,212,0.3)]"
+                    >
+                      + 延期报备
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteClick(node.id, node.name)}
+                      title="物理销毁该工序"
+                      className="w-6 h-6 flex items-center justify-center text-slate-700 hover:text-red-500 hover:bg-red-950/30 rounded transition-all"
+                      aria-label={`删除 ${node.name}`}
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
+                  </div>
                 ) : isLastChildOfParent ? (
-                  (() => {
-                    // Phase 10: 父节点100%完工���禁用LIFO删除
-                    const parentNode = allRoots.find((r) => r.id === node.parentId)
-                    const parentCompleted = parentNode ? isCompleted(parentNode) : false
-                    if (parentCompleted) {
-                      return (
-                        <span
-                          className="w-5 h-5 flex items-center justify-center text-emerald-800/50 select-none flex-shrink-0"
-                          title="父工序已100%完工封板，延期记录不可删除"
-                        >
-                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                          </svg>
-                        </span>
-                      )
-                    }
-                    return (
-                      <button
-                        type="button"
-                        onClick={() => onDeleteLastDelay(node.id)}
-                        title="LIFO 撤销本次延期"
-                        className="w-5 h-5 flex items-center justify-center text-slate-700 hover:text-rose-400 transition-colors flex-shrink-0"
-                        aria-label={`撤销 ${node.name}`}
-                      >
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
-                    )
-                  })()
+                  <button
+                    type="button"
+                    onClick={() => onDeleteLastDelay(node.id)}
+                    title="LIFO 撤销本次延期"
+                    className="w-5 h-5 flex items-center justify-center text-slate-700 hover:text-rose-400 transition-colors flex-shrink-0"
+                    aria-label={`撤销 ${node.name}`}
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
                 ) : (
                   <span
                     className="w-5 h-5 flex items-center justify-center text-slate-800 select-none flex-shrink-0"
