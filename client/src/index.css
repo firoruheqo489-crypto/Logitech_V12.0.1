@@ -1756,3 +1756,92 @@ body::-webkit-scrollbar-button,
   width: 0;
   height: 0;
 }
+
+/* ===================== Phase 14 — Industrial Gantt Visual Layer (Enhanced) ===================== */
+/* 来源：gantetu2/app/globals.css（流民资产提取，verbatim 移植） */
+
+/* Overdue Meltdown Stripe Animation — 更强烈的视觉警报 */
+@keyframes stripe-slide {
+  0% { background-position: 0 0; }
+  100% { background-position: 40px 0; }
+}
+
+.gantt-overdue-stripe {
+  background: repeating-linear-gradient(
+    45deg,
+    #b91c1c 0px,
+    #b91c1c 10px,
+    #7f1d1d 10px,
+    #7f1d1d 20px
+  );
+  background-size: 40px 40px;
+  animation: stripe-slide 1s linear infinite;
+}
+
+/* Today Cursor Glow — 激光红线 */
+@keyframes today-pulse {
+  0%, 100% {
+    box-shadow: 0 0 15px 2px rgba(239, 68, 68, 0.8);
+    filter: brightness(1);
+  }
+  50% {
+    box-shadow: 0 0 28px 5px rgba(239, 68, 68, 0.95);
+    filter: brightness(1.2);
+  }
+}
+
+.gantt-today-cursor {
+  animation: today-pulse 1.5s ease-in-out infinite;
+}
+
+/* Status Indicator Glow — 状态灯发光 */
+@keyframes status-glow-blue {
+  0%, 100% { box-shadow: 0 0 6px 2px rgba(96, 165, 250, 0.5); }
+  50% { box-shadow: 0 0 12px 3px rgba(96, 165, 250, 0.9); }
+}
+
+@keyframes status-glow-red {
+  0%, 100% { box-shadow: 0 0 6px 2px rgba(239, 68, 68, 0.6); }
+  50% { box-shadow: 0 0 14px 4px rgba(239, 68, 68, 1); }
+}
+
+@keyframes status-glow-green {
+  0%, 100% { box-shadow: 0 0 4px 1px rgba(52, 211, 153, 0.4); }
+  50% { box-shadow: 0 0 8px 2px rgba(52, 211, 153, 0.7); }
+}
+
+.gantt-status-active {
+  animation: status-glow-blue 2s ease-in-out infinite;
+}
+
+.gantt-status-overdue {
+  animation: status-glow-red 1.2s ease-in-out infinite;
+}
+
+.gantt-status-completed {
+  animation: status-glow-green 3s ease-in-out infinite;
+}
+
+/* Milestone Wall Glow — 里程碑死墙幽光 */
+@keyframes milestone-shimmer {
+  0%, 100% {
+    opacity: 0.7;
+    filter: brightness(1);
+  }
+  50% {
+    opacity: 1;
+    filter: brightness(1.3);
+  }
+}
+
+.gantt-milestone-wall {
+  animation: milestone-shimmer 2.5s ease-in-out infinite;
+}
+
+/* Task Bar Holographic Glow — 胶囊辉光材质 */
+.gantt-task-pill {
+  box-shadow:
+    0 0 12px 2px rgba(6, 182, 212, 0.4),
+    0 0 24px 4px rgba(6, 182, 212, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
