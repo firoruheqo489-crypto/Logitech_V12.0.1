@@ -53,6 +53,8 @@ export interface UseGanttEngineReturn {
   addTaskToComponent: (componentId: string, name: string, durationDays: number, dependencyId: string | null, iterationPhase?: string) => void
   /** Phase 13 — 新增部件组 */
   addComponentGroup: (name: string) => void
+  /** Phase 21 — 删除部件组 */
+  deleteComponentGroup: (componentId: string) => void
 
   /* Phase 8 — RBAC & Milestones */
   role: Role
@@ -344,6 +346,12 @@ export function useGanttEngine(initialComponents: ComponentGroup[], initialMiles
     )
   }, [])
 
+  /* ----------------------- deleteComponentGroup ---------------------------- */
+
+  const deleteComponentGroup = useCallback((componentId: string) => {
+    setComponents((prev) => prev.filter((g) => g.id !== componentId))
+  }, [])
+
   /* -------------------------- Phase 8 — Milestones ------------------------ */
 
   const addMilestone = useCallback((name: string, date: string, type: "commercial" | "technical") => {
@@ -479,6 +487,7 @@ export function useGanttEngine(initialComponents: ComponentGroup[], initialMiles
     toggleComponentExpanded,
     addTaskToComponent,
     addComponentGroup,
+    deleteComponentGroup,
     // Phase 8
     role,
     setRole,

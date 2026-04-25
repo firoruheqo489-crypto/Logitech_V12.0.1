@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react"
 
 interface DeletionModalProps {
   /** 要删除的项目类型 */
-  itemType: "task" | "milestone"
+  itemType: "task" | "milestone" | "component"
   /** 要删除的项目名称 */
   itemName: string
   /** 确认删除回调 */
@@ -35,7 +35,7 @@ export function DeletionModal({ itemType, itemName, onConfirm, onCancel }: Delet
     return () => document.removeEventListener("keydown", handler)
   }, [onCancel])
 
-  const typeLabel = itemType === "task" ? "工序" : "里程碑"
+  const typeLabel = itemType === "task" ? "工序" : itemType === "component" ? "部件" : "里程碑"
 
   return (
     <div

@@ -1845,3 +1845,38 @@ body::-webkit-scrollbar-button,
     0 0 24px 4px rgba(6, 182, 212, 0.2),
     inset 0 1px 0 rgba(255, 255, 255, 0.15);
 }
+
+/* ===================== Phase 20 — GanttBar Design Tokens ===================== */
+
+:root {
+  --gantt-track-bg: rgba(255,255,255, 0.05);
+  --gantt-border: rgba(51,65,85, 0.5);
+  --gantt-status-pending: #4B5563;
+  --gantt-status-active: #3B82F6;
+  --gantt-status-delay: #F59E0B;
+  --gantt-status-error: #EF4444;
+  --gantt-status-completed: #10B981;
+  --gantt-text-primary: #F9FAFB;
+}
+
+/* Delay Stripe — 橙/暗橙 45° 条纹纹理 */
+.gantt-delay-stripe {
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(245,158,11,0.7),
+    rgba(245,158,11,0.7) 4px,
+    rgba(180,83,9,0.5) 4px,
+    rgba(180,83,9,0.5) 8px
+  );
+}
+
+/* Error Stripe — 红/暗红 45° 条纹纹理 */
+.gantt-error-stripe {
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(239,68,68,0.7),
+    rgba(239,68,68,0.7) 4px,
+    rgba(127,29,29,0.5) 4px,
+    rgba(127,29,29,0.5) 8px
+  );
+}

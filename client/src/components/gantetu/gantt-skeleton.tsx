@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useGanttEngine } from "@/hooks/use-gantt-engine"
 import type { CollisionState, ComponentGroup, Milestone, Role, TaskNode, ViewMode } from "@/lib/gantt/types"
 import {
@@ -29,16 +29,6 @@ interface GanttSkeletonProps {
 
 /* --------------------------------- Color --------------------------------- */
 
-const DELAY_COLORS = [
-  "bg-amber-500",
-  "bg-orange-500",
-  "bg-rose-500",
-  "bg-red-600",
-  "bg-pink-600",
-  "bg-fuchsia-600",
-  "bg-purple-600",
-] as const
-
 /* Phase 15 — 并发色谱映射引擎 (Concurrent Color Palette) */
 const COMPONENT_PALETTE = [
   { base: "text-cyan-400", bg: "bg-cyan-500", glow: "shadow-[0_0_12px_rgba(6,182,212,0.5)]", bar: "from-cyan-600 to-cyan-400", border: "border-cyan-400/40" },
@@ -49,14 +39,145 @@ const COMPONENT_PALETTE = [
   { base: "text-indigo-400", bg: "bg-indigo-500", glow: "shadow-[0_0_12px_rgba(99,102,241,0.5)]", bar: "from-indigo-600 to-indigo-400", border: "border-indigo-400/40" },
 ] as const
 
+/* ========================== Phase 20 — Entity Slider (GanttBar) ========================== */
+
+type GanttBarStatus = "pending" | "active" | "delayed" | "completed"
+
+interface GanttBarSegment {
+  widthPx: number
+  type: "base" | "delay"
+  title?: string
+}
+
+interface GanttBarProps {
+  leftPx: number
+  widthPx: number
+  progress: number
+  status: GanttBarStatus
+  label: string
+  segments?: GanttBarSegment[]
+  delayDebt?: number
+}
+
+const STATUS_FILL: Record<GanttBarStatus, string> = {
+  pending:   "bg-[var(--gantt-status-pending)]",
+  active:    "bg-gradient-to-r from-[#1d4ed8] to-[#3b82f6]",
+  delayed:   "bg-gradient-to-r from-[#b45309] to-[#f59e0b]",
+  completed: "bg-gradient-to-r from-[#047857] to-[#10b981]",
+}
+
+const STATUS_TEXT: Record<GanttBarStatus, string> = {
+  pending:   "text-slate-400",
+  active:    "text-blue-100",
+  delayed:   "text-amber-100",
+  completed: "text-emerald-100",
+}
+
+function GanttBar({ leftPx, widthPx, progress, status, label, segments, delayDebt }: GanttBarProps) {
+  const isNarrow = widthPx < 80
+  const textCls = STATUS_TEXT[status]
+  const pct = Math.max(0, Math.min(100, progress))
+
+  const baseFill = status === "completed"
+    ? "bg-gradient-to-r from-[#047857] to-[#10b981]"
+    : status === "delayed"
+      ? "bg-gradient-to-r from-[#b45309] to-[#d97706]"
+      : "bg-gradient-to-r from-[#1d4ed8] to-[#3b82f6]"
+
+  return (
+    <>
+      {/* Track — planning slot with subtle inner shadow */}
+      <div
+        className="absolute h-6 rounded overflow-hidden"
+        style={{
+          left: `${leftPx}px`,
+          width: `${widthPx}px`,
+          top: "50%",
+          transform: "translateY(-50%)",
+          background: "var(--gantt-track-bg)",
+          border: "1px solid var(--gantt-border)",
+          boxShadow: "inset 0 1px 4px rgba(0,0,0,0.4)",
+        }}
+        title={label}
+      >
+        {segments ? (
+          /* Segmented: base section + delay stripes */
+          <div className="absolute inset-0 flex">
+            {segments.map((seg, i) => {
+              const isFirst = i === 0
+              const isLast = i === segments.length - 1
+              const r = `${isFirst ? "rounded-l" : ""} ${isLast ? "rounded-r" : ""}`
+              if (seg.type === "base") {
+                return (
+                  <div key={i} className={`relative h-full overflow-hidden ${r}`} style={{ width: `${seg.widthPx}px` }} title={seg.title}>
+                    <div className={`absolute inset-0 ${baseFill}`} />
+                    {pct > 0 && (
+                      <div className={`absolute inset-y-0 left-0 ${baseFill}`} style={{ width: `${pct}%` }} />
+                    )}
+                  </div>
+                )
+              }
+              return (
+                <div key={i} className={`h-full gantt-delay-stripe ${r}`} style={{ width: `${seg.widthPx}px` }} title={seg.title} />
+              )
+            })}
+          </div>
+        ) : (
+          /* Simple mode: single fill at progress% */
+          pct > 0 && (
+            <div
+              className={`absolute inset-y-0 left-0 ${STATUS_FILL[status]} ${pct >= 100 ? "rounded" : "rounded-l"}`}
+              style={{ width: `${pct}%` }}
+            >
+              {pct < 100 && <div className="absolute right-0 inset-y-0 w-[2px] bg-white/80" />}
+            </div>
+          )
+        )}
+
+        {/* Data layer: text */}
+        {!isNarrow && (
+          <div className="absolute inset-0 z-10 flex items-center px-2 pointer-events-none overflow-hidden">
+            <span className={`text-[10px] font-medium truncate ${textCls}`} style={{ textShadow: "0 1px 2px rgba(0,0,0,0.85)" }}>
+              {label}
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Narrow fallback: text outside right */}
+      {isNarrow && (
+        <div className="absolute top-1/2 -translate-y-1/2 ml-2 pointer-events-none whitespace-nowrap" style={{ left: `${leftPx + widthPx}px` }}>
+          <span className={`text-[10px] font-medium ${textCls}`}>{label}</span>
+        </div>
+      )}
+
+      {/* Delay debt badge */}
+      {delayDebt != null && delayDebt > 0 && (
+        <span
+          className="absolute top-1/2 -translate-y-1/2 px-1 py-0.5 bg-red-900/80 text-red-200 text-[7px] font-bold rounded whitespace-nowrap z-20 border border-red-700/50"
+          style={{ left: `${leftPx + widthPx + (isNarrow ? 80 : 6)}px` }}
+        >
+          +{delayDebt}天
+        </span>
+      )}
+    </>
+  )
+}
+
+function deriveBarStatus(overdue: boolean, completed: boolean, progress: number): GanttBarStatus {
+  if (completed) return "completed"
+  if (overdue) return "delayed"
+  if (progress > 0) return "active"
+  return "pending"
+}
+
 /* ------------------------------ Component -------------------------------- */
 
-export function GanttSkeleton({ initialComponents, initialMilestones = [], dayWidth = 28 }: GanttSkeletonProps) {
+export function GanttSkeleton({ initialComponents, initialMilestones = [], dayWidth: dayWidthFallback = 28 }: GanttSkeletonProps) {
   const engine = useGanttEngine(initialComponents, initialMilestones)
   const {
     components,
     allTasks,
-    timeline,
     viewMode,
     setViewMode,
     addDelay,
@@ -68,6 +189,7 @@ export function GanttSkeleton({ initialComponents, initialMilestones = [], dayWi
     toggleComponentExpanded,
     addTaskToComponent,
     addComponentGroup,
+    deleteComponentGroup,
     role,
     milestones,
     addMilestone,
@@ -80,6 +202,19 @@ export function GanttSkeleton({ initialComponents, initialMilestones = [], dayWi
   } = engine
 
   const isMacro = viewMode === "MACRO"
+  const [selectedMonth, setSelectedMonth] = useState(() => todayIso().slice(0, 7))
+  const timeline = useMemo(() => {
+    const [year, month] = selectedMonth.split("-").map(Number)
+    const startD = new Date(Date.UTC(year, month - 1, 1))
+    const endD = new Date(Date.UTC(year, month, 0))
+    const start = startD.toISOString().slice(0, 10)
+    const end = endD.toISOString().slice(0, 10)
+    return {
+      start,
+      end,
+      totalDays: diffDays(start, end) + 1,
+    }
+  }, [selectedMonth])
 
   // Phase 9 — Milestone deletion state
   const [milestoneDeletionTarget, setMilestoneDeletionTarget] = useState<Milestone | null>(null)
@@ -87,6 +222,10 @@ export function GanttSkeleton({ initialComponents, initialMilestones = [], dayWi
   const [showMilestonePanel, setShowMilestonePanel] = useState(false)
   const [editingMilestoneId, setEditingMilestoneId] = useState<string | null>(null)
   const [editDraft, setEditDraft] = useState<{ name: string; date: string; type: "commercial" | "technical" }>({ name: "", date: "", type: "commercial" })
+
+  // Phase 21 — 部件管理面板（新增/删除集中入口）
+  const [showComponentPanel, setShowComponentPanel] = useState(false)
+  const [componentDeletionTarget, setComponentDeletionTarget] = useState<{ id: string; name: string } | null>(null)
 
   // Phase 17 — 左右面板垂直滚动同步，保证行块始终水平对齐
   const leftScrollRef = useRef<HTMLDivElement | null>(null)
@@ -145,187 +284,245 @@ export function GanttSkeleton({ initialComponents, initialMilestones = [], dayWi
     addComponentGroup(name)
   }, [addComponentGroup])
 
+  // Phase 21 — Delete component group
+  const handleConfirmComponentDeletion = useCallback(() => {
+    if (!componentDeletionTarget) return
+    deleteComponentGroup(componentDeletionTarget.id)
+    setComponentDeletionTarget(null)
+  }, [componentDeletionTarget, deleteComponentGroup])
+
+  // Phase 23 — 右侧面板宽度跟踪（用于计算动态 dayWidth）
+  const [containerWidth, setContainerWidth] = useState(0)
+  useEffect(() => {
+    const right = rightScrollRef.current
+    if (!right) return
+    const update = () => setContainerWidth(right.clientWidth)
+    update()
+    const ro = new ResizeObserver(update)
+    ro.observe(right)
+    return () => ro.disconnect()
+  }, [])
+
+  // Phase 23.3 — 日期栏只显示所选月份 1 号到最后一天，并填满右侧可视宽度
+  const dayWidth = containerWidth > 0 ? containerWidth / timeline.totalDays : dayWidthFallback
+
   return (
     <div className="flex flex-col w-full h-screen bg-[#0B0F19] text-slate-100">
-      {/* ========================== Top Header ========================== */}
+      {/* ========================== Top Header (title only after Phase 22 合并) ========================== */}
       <header className="h-12 flex-shrink-0 border-b border-slate-800/50 flex items-center justify-between px-4 bg-[#111827]">
-        <div className="flex items-center gap-6">
-          <h1 className="text-sm font-semibold tracking-wider text-slate-200">
-            <span className="text-cyan-400">工业级动态甘特图</span>
-            <span className="text-slate-500 mx-2">/</span>
-            <span className="text-slate-400 font-normal text-xs">并发部件集群</span>
-          </h1>
+        <h1 className="text-sm font-semibold tracking-wider text-slate-200">
+          <span className="text-cyan-400">工业级动态甘特图</span>
+          <span className="text-slate-500 mx-2">/</span>
+          <span className="text-slate-400 font-normal text-xs">并发部件集群</span>
+        </h1>
+        <label className="flex items-center gap-2 text-[10px] tracking-wider text-slate-500">
+          <span>月份</span>
+          <input
+            type="month"
+            value={selectedMonth}
+            onChange={(e) => {
+              setSelectedMonth(e.target.value)
+            }}
+            className="bg-slate-900 border border-cyan-800/50 text-cyan-300 px-2 py-1 rounded text-[10px] focus:outline-none focus:border-cyan-500"
+          />
+        </label>
+      </header>
 
+      {/* ========================== Main Content ========================== */}
+      <div className="flex flex-1 min-h-0 border-t border-slate-800/30">
+        {/* --------------------- Left — Component Tree (Phase 15: 物理空间解压) --------------------- */}
+        <div className="flex-1 min-w-[280px] max-w-[400px] flex-shrink border-r border-slate-800/40 flex flex-col bg-[#111827]">
+          {/* Phase 22 — 顶部控件表头：交付死线 / 部件管理 / 宏微观切换，等距排列 */}
+          <div className="h-10 sticky top-0 z-20 bg-[#0f1729] border-b border-slate-800/50 flex items-center justify-between gap-2 px-3">
+            {/* 交付死线 */}
+            {role === "ADMIN" ? (
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowMilestonePanel((v) => !v)
+                    setEditingMilestoneId(null)
+                  }}
+                  className="px-2 py-0.5 border border-fuchsia-700/60 text-fuchsia-300 hover:bg-fuchsia-950/50 hover:border-fuchsia-500 text-[10px] rounded transition-all"
+                >
+                  ◆ 交付死线 ({milestones.length})
+                </button>
+                {showMilestonePanel && (
+                  <div className="absolute left-0 top-full mt-1 z-50 w-[420px] bg-[#0f1729] border border-fuchsia-800/50 rounded shadow-[0_8px_24px_rgba(0,0,0,0.6)] p-2">
+                    <div className="flex items-center justify-between px-2 py-1 border-b border-slate-800/60 mb-1">
+                      <span className="text-[10px] tracking-wider text-fuchsia-300">交付死线管理</span>
+                      <button
+                        type="button"
+                        onClick={() => { setShowMilestonePanel(false); setEditingMilestoneId(null) }}
+                        className="text-slate-500 hover:text-slate-200 text-[10px]"
+                        aria-label="关闭"
+                      >
+                        ×
+                      </button>
+                    </div>
+                    {milestones.length === 0 ? (
+                      <div className="px-2 py-3 text-[10px] text-slate-500 text-center">尚未录入交付死线</div>
+                    ) : (
+                      <ul className="max-h-72 overflow-auto">
+                        {milestones.map((m) => {
+                          const dotCls = m.type === "commercial" ? "bg-fuchsia-500" : "bg-purple-500"
+                          const isEditing = editingMilestoneId === m.id
+                          if (isEditing) {
+                            const handleSave = () => {
+                              const name = editDraft.name.trim()
+                              if (!name) return
+                              if (!/^\d{4}-\d{2}-\d{2}$/.test(editDraft.date)) return
+                              updateMilestone(m.id, { name, date: editDraft.date, type: editDraft.type })
+                              setEditingMilestoneId(null)
+                            }
+                            return (
+                              <li key={m.id} className="flex items-center gap-1.5 px-2 py-1.5 border-b border-slate-800/40 last:border-0 bg-slate-800/40">
+                                <input
+                                  type="text"
+                                  value={editDraft.name}
+                                  onChange={(e) => setEditDraft((d) => ({ ...d, name: e.target.value }))}
+                                  placeholder="名称"
+                                  className="flex-1 min-w-0 bg-transparent border-0 border-b border-slate-700 focus:border-cyan-500 focus:outline-none text-[10px] text-slate-100 px-1 py-0.5"
+                                  autoFocus
+                                />
+                                <input
+                                  type="date"
+                                  value={editDraft.date}
+                                  onChange={(e) => setEditDraft((d) => ({ ...d, date: e.target.value }))}
+                                  className="bg-transparent border-0 border-b border-slate-700 focus:border-cyan-500 focus:outline-none text-[10px] text-slate-300 px-1 py-0.5 font-mono w-[110px]"
+                                />
+                                <select
+                                  value={editDraft.type}
+                                  onChange={(e) => setEditDraft((d) => ({ ...d, type: e.target.value === "technical" ? "technical" : "commercial" }))}
+                                  className="bg-slate-900 border border-slate-700 text-slate-300 text-[9px] rounded px-1 py-0.5"
+                                >
+                                  <option value="commercial">商务</option>
+                                  <option value="technical">技术</option>
+                                </select>
+                                <button type="button" onClick={handleSave} className="text-[9px] text-emerald-400 hover:text-emerald-300 px-1">保存</button>
+                                <button type="button" onClick={() => setEditingMilestoneId(null)} className="text-[9px] text-slate-500 hover:text-slate-300 px-1">取消</button>
+                              </li>
+                            )
+                          }
+                          return (
+                            <li key={m.id} className="flex items-center gap-2 px-2 py-1.5 border-b border-slate-800/40 last:border-0 hover:bg-slate-800/30">
+                              <span className={`w-1.5 h-1.5 rounded-full ${dotCls}`} aria-hidden />
+                              <span className="flex-1 text-[10px] text-slate-200 truncate" title={m.name}>{m.name}</span>
+                              <span className="text-[9px] text-slate-500 font-mono">{m.date}</span>
+                              <span className="text-[8px] text-slate-600">{m.type === "commercial" ? "商务" : "技术"}</span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingMilestoneId(m.id)
+                                  setEditDraft({ name: m.name, date: m.date, type: m.type })
+                                }}
+                                className="text-[9px] text-slate-500 hover:text-cyan-400 px-1"
+                              >
+                                编辑
+                              </button>
+                              <button type="button" onClick={() => handleMilestoneDeleteRequest(m)} className="text-[9px] text-slate-500 hover:text-red-400 px-1">删除</button>
+                            </li>
+                          )
+                        })}
+                      </ul>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleAddMilestone}
+                      className="w-full mt-1 py-1.5 border border-dashed border-fuchsia-800/50 text-fuchsia-400 hover:bg-fuchsia-950/30 hover:border-fuchsia-500 text-[10px] rounded transition-all"
+                    >
+                      + 新增交付死线
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : <span />}
 
-          {/* Phase 19 — 交付死线管理面板（新增 / 改名 / 改日期 / 改类型 / 删除） */}
-          {role === "ADMIN" && (
+            {/* 部件管理 */}
             <div className="relative">
               <button
                 type="button"
-                onClick={() => {
-                  setShowMilestonePanel((v) => !v)
-                  setEditingMilestoneId(null)
-                }}
-                className="px-3 py-1 border border-fuchsia-700/60 text-fuchsia-300 hover:bg-fuchsia-950/50 hover:border-fuchsia-500 text-[10px] rounded transition-all"
+                onClick={() => setShowComponentPanel((v) => !v)}
+                className="px-2 py-0.5 border border-cyan-700/50 text-cyan-400 hover:bg-cyan-950/40 hover:border-cyan-500 text-[10px] rounded transition-all"
               >
-                ◆ 交付死线 ({milestones.length})
+                ⚙ 部件管理 ({components.length})
               </button>
-              {showMilestonePanel && (
-                <div className="absolute left-0 top-full mt-1 z-50 w-[420px] bg-[#0f1729] border border-fuchsia-800/50 rounded shadow-[0_8px_24px_rgba(0,0,0,0.6)] p-2">
+              {showComponentPanel && (
+                <div className="absolute left-0 top-full mt-1 z-50 w-[300px] bg-[#0f1729] border border-cyan-800/50 rounded shadow-[0_8px_24px_rgba(0,0,0,0.6)] p-2">
                   <div className="flex items-center justify-between px-2 py-1 border-b border-slate-800/60 mb-1">
-                    <span className="text-[10px] tracking-wider text-fuchsia-300">交付死线管理</span>
+                    <span className="text-[10px] tracking-wider text-cyan-300">部件管理</span>
                     <button
                       type="button"
-                      onClick={() => { setShowMilestonePanel(false); setEditingMilestoneId(null) }}
+                      onClick={() => setShowComponentPanel(false)}
                       className="text-slate-500 hover:text-slate-200 text-[10px]"
                       aria-label="关闭"
                     >
                       ×
                     </button>
                   </div>
-                  {milestones.length === 0 ? (
-                    <div className="px-2 py-3 text-[10px] text-slate-500 text-center">尚未录入交付死线</div>
+                  {components.length === 0 ? (
+                    <div className="px-2 py-3 text-[10px] text-slate-500 text-center">尚未录入部件</div>
                   ) : (
-                    <ul className="max-h-72 overflow-auto">
-                      {milestones.map((m) => {
-                        const dotCls = m.type === "commercial" ? "bg-fuchsia-500" : "bg-purple-500"
-                        const isEditing = editingMilestoneId === m.id
-                        if (isEditing) {
-                          const handleSave = () => {
-                            const name = editDraft.name.trim()
-                            if (!name) return
-                            if (!/^\d{4}-\d{2}-\d{2}$/.test(editDraft.date)) return
-                            updateMilestone(m.id, { name, date: editDraft.date, type: editDraft.type })
-                            setEditingMilestoneId(null)
-                          }
-                          return (
-                            <li key={m.id} className="flex items-center gap-1.5 px-2 py-1.5 border-b border-slate-800/40 last:border-0 bg-slate-800/40">
-                              <input
-                                type="text"
-                                value={editDraft.name}
-                                onChange={(e) => setEditDraft((d) => ({ ...d, name: e.target.value }))}
-                                placeholder="名称"
-                                className="flex-1 min-w-0 bg-transparent border-0 border-b border-slate-700 focus:border-cyan-500 focus:outline-none text-[10px] text-slate-100 px-1 py-0.5"
-                                autoFocus
-                              />
-                              <input
-                                type="date"
-                                value={editDraft.date}
-                                onChange={(e) => setEditDraft((d) => ({ ...d, date: e.target.value }))}
-                                className="bg-transparent border-0 border-b border-slate-700 focus:border-cyan-500 focus:outline-none text-[10px] text-slate-300 px-1 py-0.5 font-mono w-[110px]"
-                              />
-                              <select
-                                value={editDraft.type}
-                                onChange={(e) => setEditDraft((d) => ({ ...d, type: e.target.value === "technical" ? "technical" : "commercial" }))}
-                                className="bg-slate-900 border border-slate-700 text-slate-300 text-[9px] rounded px-1 py-0.5"
-                              >
-                                <option value="commercial">商务</option>
-                                <option value="technical">技术</option>
-                              </select>
-                              <button
-                                type="button"
-                                onClick={handleSave}
-                                className="text-[9px] text-emerald-400 hover:text-emerald-300 px-1"
-                              >
-                                保存
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setEditingMilestoneId(null)}
-                                className="text-[9px] text-slate-500 hover:text-slate-300 px-1"
-                              >
-                                取消
-                              </button>
-                            </li>
-                          )
-                        }
-                        return (
-                          <li key={m.id} className="flex items-center gap-2 px-2 py-1.5 border-b border-slate-800/40 last:border-0 hover:bg-slate-800/30">
-                            <span className={`w-1.5 h-1.5 rounded-full ${dotCls}`} aria-hidden />
-                            <span className="flex-1 text-[10px] text-slate-200 truncate" title={m.name}>{m.name}</span>
-                            <span className="text-[9px] text-slate-500 font-mono">{m.date}</span>
-                            <span className="text-[8px] text-slate-600">{m.type === "commercial" ? "商务" : "技术"}</span>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setEditingMilestoneId(m.id)
-                                setEditDraft({ name: m.name, date: m.date, type: m.type })
-                              }}
-                              className="text-[9px] text-slate-500 hover:text-cyan-400 px-1"
-                            >
-                              编辑
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleMilestoneDeleteRequest(m)}
-                              className="text-[9px] text-slate-500 hover:text-red-400 px-1"
-                            >
-                              删除
-                            </button>
-                          </li>
-                        )
-                      })}
+                    <ul className="max-h-60 overflow-auto">
+                      {components.map((g) => (
+                        <li key={g.id} className="flex items-center gap-2 px-2 py-1.5 border-b border-slate-800/40 last:border-0 hover:bg-slate-800/30">
+                          <span className="flex-1 text-[10px] text-slate-200 truncate" title={g.name}>{g.name}</span>
+                          <span className="text-[9px] text-slate-500">{g.tasks.length} 工序</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setComponentDeletionTarget({ id: g.id, name: g.name })
+                              setShowComponentPanel(false)
+                            }}
+                            className="text-[9px] text-slate-500 hover:text-red-400 px-1"
+                          >
+                            删除
+                          </button>
+                        </li>
+                      ))}
                     </ul>
                   )}
                   <button
                     type="button"
-                    onClick={handleAddMilestone}
-                    className="w-full mt-1 py-1.5 border border-dashed border-fuchsia-800/50 text-fuchsia-400 hover:bg-fuchsia-950/30 hover:border-fuchsia-500 text-[10px] rounded transition-all"
+                    onClick={() => {
+                      handleAddComponentGroup()
+                      setShowComponentPanel(false)
+                    }}
+                    className="w-full mt-1 py-1.5 border border-dashed border-cyan-800/50 text-cyan-400 hover:bg-cyan-950/30 hover:border-cyan-500 text-[10px] rounded transition-all"
                   >
-                    + 新增交付死线
+                    + 新增部件
                   </button>
                 </div>
               )}
             </div>
-          )}
 
-          {/* Phase 13 — Add Component Group */}
-          <button
-            type="button"
-            onClick={handleAddComponentGroup}
-            className="px-3 py-1 border border-cyan-700/60 text-cyan-300 hover:bg-cyan-950/50 hover:border-cyan-500 text-[10px] rounded transition-all"
-          >
-            + 新增部件
-          </button>
-        </div>
-
-        {/* Macro/Micro Toggle */}
-        <div className="flex items-center gap-1 text-[10px]">
-          <span className="text-slate-600 mr-2">沙盘模式：</span>
-          <button
-            type="button"
-            onClick={() => setViewMode("MACRO")}
-            className={`px-3 py-1 rounded-l border transition-all ${
-              isMacro
-                ? "bg-cyan-600/80 border-cyan-400 text-white shadow-[0_0_10px_rgba(6,182,212,0.4)]"
-                : "bg-slate-900 border-slate-700 text-slate-500 hover:text-slate-300 hover:border-slate-600"
-            }`}
-          >
-            宏观大盘
-          </button>
-          <button
-            type="button"
-            onClick={() => setViewMode("MICRO")}
-            className={`px-3 py-1 rounded-r border-t border-r border-b transition-all ${
-              !isMacro
-                ? "bg-cyan-600/80 border-cyan-400 text-white shadow-[0_0_10px_rgba(6,182,212,0.4)]"
-                : "bg-slate-900 border-slate-700 text-slate-500 hover:text-slate-300 hover:border-slate-600"
-            }`}
-          >
-            微观审计
-          </button>
-        </div>
-      </header>
-
-      {/* ========================== Main Content ========================== */}
-      <div className="flex flex-1 min-h-0 border-t border-slate-800/30">
-        {/* --------------------- Left — Component Tree (Phase 15: 物理空间解压) --------------------- */}
-        <div className="min-w-[520px] w-[520px] flex-shrink-0 border-r border-slate-800/40 flex flex-col bg-[#111827]">
-          {/* Phase 18 — 交付里程碑带（左侧 placeholder、与右侧 sticky strip 高度严格对齐） */}
-          <div className="h-10 sticky top-0 z-20 bg-[#0f1729] border-b border-fuchsia-900/30 flex items-center px-4 text-[10px] tracking-wider text-fuchsia-400/70">
-            <span className="text-fuchsia-500/70 mr-2">◆</span>
-            交付里程碑
+            {/* 宏观 / 微观 */}
+            <div className="flex items-center text-[10px]">
+              <button
+                type="button"
+                onClick={() => setViewMode("MACRO")}
+                className={`px-2 py-0.5 rounded-l border transition-all ${
+                  isMacro
+                    ? "bg-cyan-600/80 border-cyan-400 text-white"
+                    : "bg-slate-900 border-slate-700 text-slate-500 hover:text-slate-300 hover:border-slate-600"
+                }`}
+              >
+                宏观大盘
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode("MICRO")}
+                className={`px-2 py-0.5 rounded-r border-t border-r border-b transition-all ${
+                  !isMacro
+                    ? "bg-cyan-600/80 border-cyan-400 text-white"
+                    : "bg-slate-900 border-slate-700 text-slate-500 hover:text-slate-300 hover:border-slate-600"
+                }`}
+              >
+                微观审计
+              </button>
+            </div>
           </div>
+          {/* Section header (仅文本描述，与右侧 ruler 对齐) */}
           <div className="h-10 border-b border-slate-800/50 sticky top-10 bg-[#0f1729] flex items-center px-4 text-[10px] tracking-wider text-slate-500 z-10">
             <span className="text-cyan-500/70 mr-2">///</span>
             {isMacro ? "部件总览（高管视图）" : "工序链路控制面板"}
@@ -352,7 +549,7 @@ export function GanttSkeleton({ initialComponents, initialMilestones = [], dayWi
           </div>
         </div>
 
-        {/* --------------------- Right — Timeline Tracks --------------------- */}
+        {/* --------------------- Right — Timeline Tracks (Phase 23.2: dayWidth 动态填充使本月刚好铺满) --------------------- */}
         <div ref={rightScrollRef} className="flex-1 overflow-auto relative bg-[#0B0F19] [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
           {/* Phase 18 — Milestone Strip：独立一行、紧贴 top-0、位于 ruler 上方 */}
           <div
@@ -459,7 +656,7 @@ export function GanttSkeleton({ initialComponents, initialMilestones = [], dayWi
                 /* MICRO: 展开显示内部工序 */
                 <div key={group.id}>
                   {/* Component header row — 与左侧 group header 高度严格对齐（均 72px） */}
-                  <div className={`min-h-[72px] border-b border-slate-800/30 bg-slate-900/50 flex items-center px-3 ${themeColor.border}`}>
+                  <div className={`min-h-[48px] border-b border-slate-800/30 bg-slate-900/50 flex items-center px-3 ${themeColor.border}`}>
                     <span className={`text-xs font-medium tracking-wide ${themeColor.base}`}>{group.name}</span>
                   </div>
                   {/* Task rows */}
@@ -477,8 +674,8 @@ export function GanttSkeleton({ initialComponents, initialMilestones = [], dayWi
                           milestones={milestones}
                         />
                       ))}
-                      {/* Placeholder row for "+新增基础工序" button alignment — 与左侧 BlackboardSpawner sticky 区实测 64px 对齐 */}
-                      <div className="min-h-[64px] border-b border-slate-800/20" />
+                      {/* Placeholder row for "+新增基础工序" button alignment */}
+                      <div className="min-h-[40px] border-b border-slate-800/20" />
                     </>
                   )}
                 </div>
@@ -495,6 +692,16 @@ export function GanttSkeleton({ initialComponents, initialMilestones = [], dayWi
           itemName={milestoneDeletionTarget.name}
           onConfirm={handleConfirmMilestoneDeletion}
           onCancel={() => setMilestoneDeletionTarget(null)}
+        />
+      )}
+
+      {/* Phase 21 — Component Deletion Modal */}
+      {componentDeletionTarget && (
+        <DeletionModal
+          itemType="component"
+          itemName={componentDeletionTarget.name}
+          onConfirm={handleConfirmComponentDeletion}
+          onCancel={() => setComponentDeletionTarget(null)}
         />
       )}
     </div>
@@ -558,9 +765,9 @@ function ComponentTreeList(props: ComponentTreeListProps) {
 
         return (
           <li key={group.id} className="border-b border-slate-800/30">
-            {/* Component Group Header — Y 轴空间释放：min-h-[72px] 强制 72px，items-center 垂直居中 */}
+            {/* Component Group Header — Y 轴空间释放：min-h-[48px] 强制 72px，items-center 垂直居中 */}
             <div
-              className={`min-h-[72px] flex items-center gap-3 py-2.5 px-4 hover:bg-slate-800/50 transition-all cursor-pointer border-l-3 whitespace-nowrap ${
+              className={`min-h-[48px] flex items-center gap-3 py-2.5 px-4 hover:bg-slate-800/50 transition-all cursor-pointer border-l-3 whitespace-nowrap ${
                 groupOverdue 
                   ? "bg-red-950/25 border-l-red-500" 
                   : groupCompleted 
@@ -600,7 +807,7 @@ function ComponentTreeList(props: ComponentTreeListProps) {
               </span>
 
               {/* Aggregate Progress — 精密进度徽章 */}
-              <span className={`text-[10px] ml-auto px-2 py-0.5 rounded shrink-0 ${
+              <span className={`text-[10px] px-2 py-0.5 rounded shrink-0 ${
                 groupCompleted 
                   ? "bg-emerald-900/50 text-emerald-300 border border-emerald-700/50" 
                   : groupOverdue
@@ -663,7 +870,7 @@ function ComponentTreeList(props: ComponentTreeListProps) {
   )
 }
 
-/* ========================== ComponentTrack (MACRO) — Phase 16: 柱体解剖学重构 ========================== */
+/* ========================== ComponentTrack (MACRO) — Phase 20: Entity Slider ========================== */
 
 interface ComponentTrackProps {
   group: ComponentGroup
@@ -676,7 +883,7 @@ interface ComponentTrackProps {
 
 function ComponentTrack({ group, timelineStart, dayWidth, role, milestones, colorIndex }: ComponentTrackProps) {
   if (group.tasks.length === 0) {
-    return <div className="min-h-[72px] border-b border-slate-800/20" />
+    return <div className="min-h-[48px] border-b border-slate-800/20" />
   }
 
   const envelopeStart = getComponentEnvelopeStart(group)
@@ -686,84 +893,20 @@ function ComponentTrack({ group, timelineStart, dayWidth, role, milestones, colo
   const progress = getComponentAggregateProgress(group)
   const isOverdueGroup = isComponentOverdue(group)
   const isCompletedGroup = isComponentCompleted(group)
-  const collision = isComponentCollidingMilestone(group, milestones)
-  const isColliding = collision !== null
 
-  // Phase 15 — 色谱遗传：健康状态使用主题色，逾期强制覆盖为红黑条纹
-  const themeColor = COMPONENT_PALETTE[colorIndex % COMPONENT_PALETTE.length]
-
-  // Phase 16 — Overflow Protocol: 极限短工序时文字外挂
   const barWidthPx = span * dayWidth
-  const isNarrow = barWidthPx < 100
   const barLeftPx = offsetDays * dayWidth
-  const barRightPx = barLeftPx + barWidthPx
-
-  // Phase 16 — 状态标签与色调（仅负责行 1，名称+进度为行 2）
-  const groupStatusLabel =
-    isOverdueGroup ? "[逾期]"
-      : isColliding && role === "ADMIN" ? `超界${collision?.overshootDays ?? 0}天`
-        : isCompletedGroup ? "[完工]"
-          : progress > 0 ? "[进行中]"
-            : "[待开始]"
-  const groupStatusClass =
-    isOverdueGroup ? "text-red-200"
-      : isColliding && role === "ADMIN" ? "text-fuchsia-200"
-        : isCompletedGroup ? "text-emerald-200"
-          : progress > 0 ? "text-cyan-100"
-            : "text-slate-100"
-
-  const barColor =
-    isOverdueGroup || (isColliding && role === "USER")
-      ? "shadow-[0_0_18px_rgba(220,38,38,0.9)] border-2 border-red-500 gantt-overdue-stripe"
-      : isColliding && role === "ADMIN"
-        ? "bg-gradient-to-r from-red-600 via-orange-500 to-fuchsia-600 shadow-[0_0_18px_rgba(239,68,68,0.6)] border border-fuchsia-400/50"
-        : isCompletedGroup
-          ? "bg-gradient-to-r from-emerald-600 to-emerald-500 shadow-[0_0_14px_rgba(52,211,153,0.5)] border border-emerald-400/30"
-          : `bg-gradient-to-r ${themeColor.bar} ${themeColor.glow} ${themeColor.border} group-hover:shadow-[0_0_20px_rgba(6,182,212,0.9)]`
+  const status = deriveBarStatus(isOverdueGroup, isCompletedGroup, progress)
 
   return (
-    <div className="min-h-[72px] flex items-center border-b border-slate-800/20 relative hover:bg-slate-900/30 transition-colors group">
-      <div
-        className={`absolute h-10 rounded-md overflow-hidden whitespace-nowrap transition-all ${barColor}`}
-        style={{
-          left: `${barLeftPx}px`,
-          width: `${barWidthPx}px`,
-          top: "50%",
-          transform: "translateY(-50%)",
-        }}
-        title={`${group.name} · ${envelopeStart} → ${envelopeEnd} · 聚合进度：${progress}%${isOverdueGroup ? " · [存在逾期工序]" : ""}${isColliding ? ` · 撞墙里程碑：${collision?.milestoneName}` : ""}`}
-      >
-        {/* Progress overlay — 白色锐边进度条 */}
-        <div
-          className="absolute inset-y-0 left-0 bg-white/30 pointer-events-none border-r-2 border-white/90"
-          style={{ width: `${progress}%` }}
-        />
-        {/* Two-line label — bar 内：行 1 状态 (span)、行 2 名称·进度 (span) */}
-        {!isNarrow && (
-          <div className="relative z-10 h-full flex flex-col justify-center items-start px-2 overflow-hidden whitespace-nowrap pointer-events-none">
-            <span className={`text-[10px] leading-tight font-bold truncate w-full text-left drop-shadow-[0_1px_2px_rgba(0,0,0,0.85)] ${groupStatusClass}`}>
-              {groupStatusLabel}
-            </span>
-            <span className="text-xs leading-tight truncate w-full text-left text-white/90 drop-shadow-[0_1px_2px_rgba(0,0,0,0.85)]">
-              {group.name} · {progress}%
-            </span>
-          </div>
-        )}
-      </div>
-      {/* Narrow-bar fallback：文字外挂在方块右侧 */}
-      {isNarrow && (
-        <div
-          className="absolute top-1/2 -translate-y-1/2 ml-2 flex flex-col items-start gap-0.5 pointer-events-none whitespace-nowrap"
-          style={{ left: `${barRightPx}px` }}
-        >
-          <span className={`text-[10px] leading-tight font-bold truncate text-left ${groupStatusClass}`}>
-            {groupStatusLabel}
-          </span>
-          <span className="text-xs leading-tight truncate text-left text-slate-300">
-            {group.name} · {progress}%
-          </span>
-        </div>
-      )}
+    <div className="min-h-[48px] flex items-center border-b border-slate-800/20 relative hover:bg-slate-900/20 transition-colors">
+      <GanttBar
+        leftPx={barLeftPx}
+        widthPx={barWidthPx}
+        progress={progress}
+        status={status}
+        label={`${group.name} · ${progress}%`}
+      />
     </div>
   )
 }
@@ -777,17 +920,14 @@ interface MilestoneLineProps {
   totalDays: number
 }
 
-// Phase 18 — MilestoneLine 只保留垂直虚线墙；标签与编辑/删除控件已迁移至顶部 sticky strip
+// Phase 20 — MilestoneLine: thin dashed yellow, no glow
 function MilestoneLine({ milestone, timelineStart, dayWidth, totalDays }: MilestoneLineProps) {
   const offset = diffDays(timelineStart, milestone.date)
   if (offset < 0 || offset >= totalDays) return null
 
-  const lineColor = milestone.type === "commercial" ? "border-fuchsia-500" : "border-purple-500"
-  const lineGlow = milestone.type === "commercial" ? "shadow-[0_0_12px_rgba(217,70,239,0.5)]" : "shadow-[0_0_12px_rgba(147,51,234,0.5)]"
-
   return (
     <div
-      className={`absolute top-0 bottom-0 border-l-2 border-dashed ${lineColor} ${lineGlow} pointer-events-none z-[8] gantt-milestone-wall`}
+      className="absolute top-0 bottom-0 border-l border-dashed border-yellow-500/40 pointer-events-none z-[8]"
       style={{ left: `${offset * dayWidth + dayWidth / 2}px` }}
       aria-label={`里程碑 ${milestone.name} 在 ${milestone.date}`}
     />
@@ -809,14 +949,12 @@ function TodayCursor({ timelineStart, dayWidth, totalDays }: TodayCursorProps) {
 
   return (
     <div
-      className="absolute top-0 bottom-0 border-l-2 border-red-500 pointer-events-none z-[5] gantt-today-cursor shadow-[0_0_15px_rgba(239,68,68,0.8)]"
+      className="absolute top-0 bottom-0 border-l-2 border-red-500/70 pointer-events-none z-[5]"
       style={{ left: `${offset * dayWidth + dayWidth / 2}px` }}
       aria-hidden="true"
     >
-      {/* 发光红色倒三角 TODAY 标签 */}
-      <div className="absolute -top-1 left-1/2 -translate-x-1/2 flex flex-col items-center">
-        <span className="text-red-500 text-[10px] font-bold drop-shadow-[0_0_6px_rgba(239,68,68,0.9)]">▼</span>
-        <span className="text-[7px] text-red-400 bg-red-950/90 px-1 py-0.5 rounded shadow-[0_0_8px_rgba(239,68,68,0.5)]">NOW</span>
+      <div className="absolute -top-0.5 left-1/2 -translate-x-1/2">
+        <span className="text-[7px] text-red-400 bg-red-950/80 px-1 py-0.5 rounded">NOW</span>
       </div>
     </div>
   )
@@ -844,167 +982,73 @@ function TaskTrack({ node, indexInParent, timelineStart, dayWidth, viewMode, rol
     const baseEndIso = hasChildren ? children[0].startDate : node.endDate
     const baseDays = Math.max(0, diffDays(node.startDate, baseEndIso))
     const overdue = isOverdue(node)
-    const collision = isTaskCollidingMilestone(node, milestones)
-    const isColliding = collision !== null
     const completed = isCompleted(node)
     const delayDebt = calculateDelayDebt(node)
     const hasDelayDebt = completed && delayDebt > 0
+    const progress = node.progress ?? 0
 
-    // Phase 16 — 总跨度（baseDays + 所有延期段）决定整条 bar 宽度
     const childrenSpanDays = children.reduce((sum, c) => sum + Math.max(0, diffDays(c.startDate, c.endDate)), 0)
     const totalBarSpan = baseDays + childrenSpanDays
     const totalBarWidthPx = totalBarSpan * dayWidth
-    const isNarrow = totalBarWidthPx < 100
     const barLeftPx = offsetDays * dayWidth
-    const barRightPx = barLeftPx + totalBarWidthPx
-    const statusLabel = overdue
-      ? "[逾期]"
-      : isColliding
-        ? `超界${collision?.overshootDays ?? 0}天`
-        : completed
-          ? "[完工]"
-          : (node.progress ?? 0) > 0
-            ? "[进行中]"
-            : "[待开始]"
-    const statusClass = overdue
-      ? "text-red-300"
-      : isColliding
-        ? "text-fuchsia-200"
-        : completed
-          ? "text-emerald-200"
-          : (node.progress ?? 0) > 0
-            ? "text-cyan-200"
-            : "text-slate-300"
+    const status = deriveBarStatus(overdue, completed, progress)
+
+    const segments: GanttBarSegment[] = []
+    if (baseDays > 0) {
+      segments.push({ widthPx: baseDays * dayWidth, type: "base", title: `${node.name} · 基准段` })
+    }
+    for (const c of children) {
+      const segDays = Math.max(0, diffDays(c.startDate, c.endDate))
+      if (segDays > 0) {
+        segments.push({ widthPx: segDays * dayWidth, type: "delay", title: `${c.name}${c.reason ? ` · ${c.reason}` : ""}` })
+      }
+    }
 
     return (
-      <div className="min-h-[72px] flex items-center border-b border-slate-800/20 relative hover:bg-slate-900/20 transition-colors" data-task-id={node.id}>
-        <div
-          className="absolute h-10 overflow-hidden whitespace-nowrap rounded-sm"
-          style={{
-            left: `${barLeftPx}px`,
-            width: `${totalBarWidthPx}px`,
-            top: "50%",
-            transform: "translateY(-50%)",
-          }}
-          title={`${node.name} · ${node.startDate} → ${node.endDate} · 完成度：${node.progress ?? 0}%`}
-        >
-          {/* Segment row — 原始 baseDays + 延期子段，铺满 bar 高度 */}
-          <div className="absolute inset-0 flex flex-row">
-            {baseDays > 0 && (
-              <div
-                className={`${
-                  isColliding || overdue
-                    ? "shadow-[0_0_10px_rgba(220,38,38,0.6)] border border-red-500"
-                    : completed
-                      ? "bg-gradient-to-r from-emerald-600 to-emerald-500"
-                      : "bg-gradient-to-r from-blue-600 to-cyan-400 shadow-[0_0_8px_rgba(6,182,212,0.5)] border border-cyan-300/30"
-                } relative overflow-hidden rounded-l-sm border-r border-[#0B0F19]`}
-                style={
-                  isColliding || overdue
-                    ? {
-                        width: `${baseDays * dayWidth}px`,
-                        backgroundImage: "repeating-linear-gradient(45deg, #b91c1c, #b91c1c 8px, #7f1d1d 8px, #7f1d1d 16px)",
-                      }
-                    : { width: `${baseDays * dayWidth}px` }
-                }
-              >
-                <div className="absolute inset-y-0 left-0 bg-white/30 rounded-l-sm border-r-2 border-white pointer-events-none" style={{ width: `${node.progress ?? 0}%` }} />
-              </div>
-            )}
-            {children.map((c, i) => {
-              const segmentSpan = Math.max(0, diffDays(c.startDate, c.endDate))
-              if (segmentSpan <= 0) return null
-              const isLast = i === children.length - 1
-              const useStripe = isColliding || overdue
-              return (
-                <div
-                  key={c.id}
-                  className={`${useStripe ? "shadow-[0_0_8px_rgba(220,38,38,0.5)] border border-red-500/50" : DELAY_COLORS[i % DELAY_COLORS.length]} ${isLast ? "rounded-r-sm" : ""} border-r border-[#0B0F19]`}
-                  style={
-                    useStripe
-                      ? { width: `${segmentSpan * dayWidth}px`, backgroundImage: "repeating-linear-gradient(45deg, #b91c1c, #b91c1c 6px, #7f1d1d 6px, #7f1d1d 12px)" }
-                      : { width: `${segmentSpan * dayWidth}px` }
-                  }
-                  title={`${c.name} · ${c.startDate} → ${c.endDate}${c.reason ? ` · ${c.reason}` : ""}`}
-                />
-              )
-            })}
-          </div>
-          {/* Two-line label overlay — 行 1 状态 (span)、行 2 名称·进度 (span) */}
-          {!isNarrow && (
-            <div className="absolute inset-0 z-10 flex flex-col justify-center items-start px-2 overflow-hidden whitespace-nowrap pointer-events-none">
-              <span className={`text-[10px] leading-tight font-bold truncate w-full text-left ${statusClass} drop-shadow-[0_1px_2px_rgba(0,0,0,0.85)]`}>
-                {statusLabel}
-              </span>
-              <span className="text-xs leading-tight truncate w-full text-left text-white/90 drop-shadow-[0_1px_2px_rgba(0,0,0,0.85)]">
-                {node.name} · {node.progress ?? 0}%
-              </span>
-            </div>
-          )}
-        </div>
-        {/* Narrow-bar fallback：文字外挂在方块右侧 */}
-        {isNarrow && (
-          <div
-            className="absolute top-1/2 -translate-y-1/2 ml-2 flex flex-col items-start gap-0.5 pointer-events-none whitespace-nowrap"
-            style={{ left: `${barRightPx}px` }}
-          >
-            <span className={`text-[10px] leading-tight font-bold truncate text-left ${statusClass}`}>
-              {statusLabel}
-            </span>
-            <span className="text-xs leading-tight truncate text-left text-slate-300">
-              {node.name} · {node.progress ?? 0}%
-            </span>
-          </div>
-        )}
-        {hasDelayDebt && (
-          <span
-            className="absolute top-1/2 -translate-y-1/2 px-1.5 py-0.5 bg-red-900/90 text-red-200 text-[8px] font-bold rounded whitespace-nowrap z-20"
-            style={{ left: `${barRightPx + (isNarrow ? 160 : 8)}px` }}
-          >
-            +{delayDebt}天
-          </span>
-        )}
+      <div className="min-h-[48px] flex items-center border-b border-slate-800/20 relative hover:bg-slate-900/20 transition-colors" data-task-id={node.id}>
+        <GanttBar
+          leftPx={barLeftPx}
+          widthPx={totalBarWidthPx}
+          progress={progress}
+          status={status}
+          label={`${node.name} · ${progress}%`}
+          segments={segments.length > 0 ? segments : undefined}
+          delayDebt={hasDelayDebt ? delayDebt : undefined}
+        />
       </div>
     )
   }
 
+  // Child (delay record) row — striped entity slider
   const span = Math.max(1, diffDays(node.startDate, node.endDate))
-  const color = DELAY_COLORS[indexInParent % DELAY_COLORS.length]
   const childBarWidthPx = span * dayWidth
-  const childIsNarrow = childBarWidthPx < 100
+  const childIsNarrow = childBarWidthPx < 80
   const childBarLeftPx = offsetDays * dayWidth
-  const childBarRightPx = childBarLeftPx + childBarWidthPx
 
   return (
-    <div className="min-h-[72px] flex items-center border-b border-slate-800/15 relative hover:bg-slate-900/10 transition-colors" data-task-id={node.id}>
+    <div className="min-h-[48px] flex items-center border-b border-slate-800/15 relative hover:bg-slate-900/10 transition-colors" data-task-id={node.id}>
       <div
-        className={`absolute h-9 rounded-sm overflow-hidden whitespace-nowrap ${color}`}
+        className="absolute h-5 rounded overflow-hidden gantt-delay-stripe"
         style={{
           left: `${childBarLeftPx}px`,
           width: `${childBarWidthPx}px`,
           top: "50%",
           transform: "translateY(-50%)",
+          border: "1px solid rgba(245,158,11,0.3)",
         }}
         title={`${node.name} · ${node.startDate} → ${node.endDate}${node.reason ? ` · ${node.reason}` : ""}`}
       >
         {!childIsNarrow && (
-          <div className="relative z-10 h-full flex flex-col justify-center items-start px-2 overflow-hidden whitespace-nowrap pointer-events-none">
-            <span className="text-[10px] leading-tight font-bold truncate w-full text-left text-white/95 drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
-              [延期]
-            </span>
-            <span className="text-xs leading-tight truncate w-full text-left text-white/90 drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">
+          <div className="absolute inset-0 z-10 flex items-center px-2 pointer-events-none overflow-hidden">
+            <span className="text-[9px] font-medium truncate text-amber-100" style={{ textShadow: "0 1px 2px rgba(0,0,0,0.8)" }}>
               {node.name}
             </span>
           </div>
         )}
       </div>
       {childIsNarrow && (
-        <div
-          className="absolute top-1/2 -translate-y-1/2 ml-2 flex flex-col items-start gap-0.5 pointer-events-none whitespace-nowrap"
-          style={{ left: `${childBarRightPx}px` }}
-        >
-          <span className="text-[10px] leading-tight font-bold truncate text-left text-amber-300/80">[延期]</span>
-          <span className="text-xs leading-tight truncate text-left text-slate-300">{node.name}</span>
+        <div className="absolute top-1/2 -translate-y-1/2 ml-2 pointer-events-none whitespace-nowrap" style={{ left: `${childBarLeftPx + childBarWidthPx}px` }}>
+          <span className="text-[9px] font-medium text-amber-200/80">{node.name}</span>
         </div>
       )}
     </div>
