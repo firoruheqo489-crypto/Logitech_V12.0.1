@@ -1,4 +1,5 @@
-import { useState, useCallback } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
+import { GANTT_ROW_H } from "@/lib/gantt/row-heights"
 import type { CollisionState, Milestone, Role, TaskNode, ViewMode } from "@/lib/gantt/types"
 import { getRoots, isCompleted, isOverdue, isTaskCollidingMilestone, type DeletionValidation } from "@/lib/gantt/utils"
 import { DeletionModal } from "./deletion-modal"
@@ -126,10 +127,10 @@ export function TaskTreeList(props: TaskTreeListProps) {
 
           return (
             <li key={node.id} className="border-b border-slate-800/30">
-              {/* ━━ Row: group scope on inner div to avoid leaking into recursive children ━━ */}
+              {/* ━━ Row: 高度从 GANTT_ROW_H.TASK 取值，与右侧 TaskTrack 物理锁死 ━━ */}
               <div
-                className="group h-10 flex items-center gap-1.5 pr-3 transition-colors hover:bg-slate-800/40"
-                style={{ paddingLeft: `${8 + depth * 14}px` }}
+                className="group flex items-center gap-1.5 pr-3 transition-colors hover:bg-slate-800/40"
+                style={{ height: GANTT_ROW_H.TASK, paddingLeft: `${8 + depth * 14}px` }}
               >
                 {/* ── Left Zone: status + toggle + name ── */}
                 {!isChildRow && (
@@ -355,7 +356,10 @@ function BlackboardSpawner({ roots, onAdd }: BlackboardSpawnerProps) {
 
   if (!open) {
     return (
-      <div className="sticky bottom-0 border-t border-slate-800/40 bg-[#0f1729] px-3 h-7 flex items-center opacity-20 hover:opacity-100 transition-opacity">
+      <div
+        className="sticky bottom-0 border-t border-slate-800/40 bg-[#0f1729] px-3 flex items-center opacity-20 hover:opacity-100 transition-opacity"
+        style={{ height: GANTT_ROW_H.SPAWNER }}
+      >
         <button
           type="button"
           onClick={() => setOpen(true)}

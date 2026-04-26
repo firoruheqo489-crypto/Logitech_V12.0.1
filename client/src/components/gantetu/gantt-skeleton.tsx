@@ -20,6 +20,8 @@ import {
 } from "@/lib/gantt/utils"
 import { TaskTreeList } from "./task-tree-list"
 import { DeletionModal } from "./deletion-modal"
+import { GANTT_ROW_H } from "@/lib/gantt/row-heights"
+import CyberPromptDialog from "@/components/ui/CyberPromptDialog"
 
 interface GanttSkeletonProps {
   initialComponents: ComponentGroup[]
@@ -227,6 +229,13 @@ export function GanttSkeleton({ initialComponents, initialMilestones = [], dayWi
   const [showComponentPanel, setShowComponentPanel] = useState(false)
   const [componentDeletionTarget, setComponentDeletionTarget] = useState<{ id: string; name: string } | null>(null)
 
+  // 统一录入弹窗状态机（取代 window.prompt）
+  type PromptKind =
+    | { kind: "milestone" }
+    | { kind: "component" }
+    | { kind: "delay"; componentId: string; parentId: string }
+  const [promptState, setPromptState] = useState<PromptKind | null>(null)
+
   // Phase 17 — 左右面板垂直滚动同步，保证行块始终水平对齐
   const leftScrollRef = useRef<HTMLDivElement | null>(null)
   const rightScrollRef = useRef<HTMLDivElement | null>(null)
@@ -266,24 +275,16 @@ export function GanttSkeleton({ initialComponents, initialMilestones = [], dayWi
     setMilestoneDeletionTarget(null)
   }, [milestoneDeletionTarget, deleteMilestone])
 
-  // Phase 8 — Milestone spawner (ADMIN only)
+  // Phase 8 — Milestone spawner (ADMIN only) — 打开统一弹窗
   const handleAddMilestone = useCallback(() => {
     if (role !== "ADMIN") return
-    const name = window.prompt("里程碑名称：", "T0 试模")
-    if (!name) return
-    const date = window.prompt("截止日期 (YYYY-MM-DD)：", todayIso())
-    if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return
-    const typeRaw = window.prompt("类型 (commercial / technical)：", "commercial")
-    const type = typeRaw === "technical" ? "technical" : "commercial"
-    addMilestone(name, date, type)
-  }, [role, addMilestone])
+    setPromptState({ kind: "milestone" })
+  }, [role])
 
-  // Phase 13 — Add component group
+  // Phase 13 — Add component group — 打开统一弹窗
   const handleAddComponentGroup = useCallback(() => {
-    const name = window.prompt("新部件名称：", "新模具")
-    if (!name) return
-    addComponentGroup(name)
-  }, [addComponentGroup])
+    setPromptState({ kind: "component" })
+  }, [])
 
   // Phase 21 — Delete component group
   const handleConfirmComponentDeletion = useCallback(() => {
@@ -344,6 +345,7 @@ export function GanttSkeleton({ initialComponents, initialMilestones = [], dayWi
             })()}
           </span>
           {/* 隐藏的真实 input，由图标按钮触发 */}
+          <svg className="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" strokeWidth="1.5"/><path d="M16 2v4M8 2v4M3 10h18" strokeWidth="1.5" strokeLinecap="round"/></svg>
           <input
             ref={monthInputRef}
             type="month"
@@ -357,11 +359,41 @@ export function GanttSkeleton({ initialComponents, initialMilestones = [], dayWi
       </header>
 
       {/* ========================== Main Content ========================== */}
-      <div className="flex flex-1 min-h-0 border-t border-slate-800/30">
+      <div className="flex flex-1 min-h-0 border-t border-slate-800/30 relative">
+        {/* 宏观 / 微观 — 浮在里程碑行右侧空白区（不随时间轴横向滚动） */}
+        <div className="absolute top-0 right-3 flex items-center z-30 text-[11px]" style={{ height: GANTT_ROW_H.CONTROL_BAR }}>
+          <button
+            type="button"
+            onClick={() => setViewMode("MACRO")}
+            className={`px-2.5 py-0.5 rounded-l border transition-all ${
+              isMacro
+                ? "bg-cyan-600/80 border-cyan-400 text-white"
+                : "bg-slate-900/80 border-slate-700 text-slate-400 hover:text-slate-200 hover:border-slate-600"
+            }`}
+          >
+            宏观大盘
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode("MICRO")}
+            className={`px-2.5 py-0.5 rounded-r border-t border-r border-b transition-all ${
+              !isMacro
+                ? "bg-cyan-600/80 border-cyan-400 text-white"
+                : "bg-slate-900/80 border-slate-700 text-slate-400 hover:text-slate-200 hover:border-slate-600"
+            }`}
+          >
+            微观审计
+          </button>
+        </div>
+
         {/* --------------------- Left — Component Tree (Phase 15: 物理空间解压) --------------------- */}
-        <div className="flex-1 min-w-[300px] max-w-[380px] flex-shrink border-r border-slate-800/40 flex flex-col bg-[#111827]">
+        <div className="flex-1 min-w-[210px] max-w-[300px] flex-shrink border-r border-slate-800/40 flex flex-col bg-[#111827]">
           {/* Phase 22 — 顶部控件表头：交付死线 / 部件管理 / 宏微观切换，等距排列 */}
-          <div className="h-10 sticky top-0 z-20 bg-[#0f1729] border-b border-slate-800/50 flex items-center justify-between gap-2 px-3 whitespace-nowrap">
+          {/* 高度从 GANTT_ROW_H.CONTROL_BAR 取值，与右侧里程碑条物理锁死 */}
+          <div
+            className="sticky top-0 z-20 bg-[#0f1729] border-b border-slate-800/50 flex items-center justify-between gap-2 px-3 whitespace-nowrap"
+            style={{ height: GANTT_ROW_H.CONTROL_BAR }}
+          >
             {/* 交付死线 */}
             {role === "ADMIN" ? (
               <div className="relative">
@@ -524,34 +556,13 @@ export function GanttSkeleton({ initialComponents, initialMilestones = [], dayWi
               )}
             </div>
 
-            {/* 宏观 / 微观 */}
-            <div className="flex items-center text-[10px]">
-              <button
-                type="button"
-                onClick={() => setViewMode("MACRO")}
-                className={`px-2 py-0.5 rounded-l border transition-all ${
-                  isMacro
-                    ? "bg-cyan-600/80 border-cyan-400 text-white"
-                    : "bg-slate-900 border-slate-700 text-slate-500 hover:text-slate-300 hover:border-slate-600"
-                }`}
-              >
-                宏观大盘
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewMode("MICRO")}
-                className={`px-2 py-0.5 rounded-r border-t border-r border-b transition-all ${
-                  !isMacro
-                    ? "bg-cyan-600/80 border-cyan-400 text-white"
-                    : "bg-slate-900 border-slate-700 text-slate-500 hover:text-slate-300 hover:border-slate-600"
-                }`}
-              >
-                微观审计
-              </button>
-            </div>
           </div>
           {/* Section header (仅文本描述，与右侧 ruler 对齐) */}
-          <div className="h-10 border-b border-slate-800/50 sticky top-10 bg-[#0f1729] flex items-center px-4 text-[10px] tracking-wider text-slate-500 z-10">
+          {/* 高度从 GANTT_ROW_H.RULER 取值，top 偏移为 CONTROL_BAR 高度 */}
+          <div
+            className="border-b border-slate-800/50 sticky bg-[#0f1729] flex items-center px-4 text-[10px] tracking-wider text-slate-500 z-10"
+            style={{ height: GANTT_ROW_H.RULER, top: GANTT_ROW_H.CONTROL_BAR }}
+          >
             <span className="text-cyan-500/70 mr-2">///</span>
             {isMacro ? "部件总览（高管视图）" : "工序链路控制面板"}
           </div>
@@ -564,7 +575,9 @@ export function GanttSkeleton({ initialComponents, initialMilestones = [], dayWi
               collisions={collisions}
               onToggleComponent={toggleComponentExpanded}
               onToggleTask={toggleExpanded}
-              onAddDelay={addDelay}
+              onRequestAddDelay={(componentId, parentId) =>
+                setPromptState({ kind: "delay", componentId, parentId })
+              }
               onUpdateDate={updateTaskDate}
               onUpdateReason={updateTaskReason}
               onUpdateProgress={updateTaskProgress}
@@ -580,9 +593,10 @@ export function GanttSkeleton({ initialComponents, initialMilestones = [], dayWi
         {/* --------------------- Right — Timeline Tracks (Phase 23.2: dayWidth 动态填充使本月刚好铺满) --------------------- */}
         <div ref={rightScrollRef} className="flex-1 overflow-auto relative bg-[#0B0F19] [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
           {/* Phase 18 — Milestone Strip：独立一行、紧贴 top-0、位于 ruler 上方 */}
+          {/* 高度从 GANTT_ROW_H.CONTROL_BAR 取值，与左侧控制栏物理锁死 */}
           <div
-            className="h-10 sticky top-0 z-20 bg-[#0f1729] border-b border-fuchsia-900/30"
-            style={{ width: `${timeline.totalDays * dayWidth}px` }}
+            className="sticky top-0 z-20 bg-[#0f1729] border-b border-fuchsia-900/30"
+            style={{ height: GANTT_ROW_H.CONTROL_BAR, width: `${timeline.totalDays * dayWidth}px` }}
           >
             {role === "ADMIN" && milestones.map((m) => {
               const mOffset = diffDays(timeline.start, m.date)
@@ -604,9 +618,14 @@ export function GanttSkeleton({ initialComponents, initialMilestones = [], dayWi
             })}
           </div>
           {/* Ruler */}
+          {/* 高度从 GANTT_ROW_H.RULER 取值，top 偏移为 CONTROL_BAR 高度 */}
           <div
-            className="h-10 border-b border-slate-800/30 sticky top-10 bg-[#0f1729] flex z-10"
-            style={{ width: `${timeline.totalDays * dayWidth}px` }}
+            className="border-b border-slate-800/30 sticky bg-[#0f1729] flex z-10"
+            style={{
+              height: GANTT_ROW_H.RULER,
+              top: GANTT_ROW_H.CONTROL_BAR,
+              width: `${timeline.totalDays * dayWidth}px`,
+            }}
           >
             {Array.from({ length: timeline.totalDays }).map((_, i) => {
               const d = new Date(`${timeline.start}T00:00:00Z`)
@@ -683,8 +702,11 @@ export function GanttSkeleton({ initialComponents, initialMilestones = [], dayWi
               ) : (
                 /* MICRO: 展开显示内部工序 */
                 <div key={group.id}>
-                  {/* Component header row — h-10 与左侧严格对齐 */}
-                  <div className={`h-10 border-b border-slate-800/30 bg-slate-900/50 flex items-center px-3 ${themeColor.border}`}>
+                  {/* Component header row — 高度从 GANTT_ROW_H.GROUP 取值，与左侧物理锁死 */}
+                  <div
+                    className={`border-b border-slate-800/30 bg-slate-900/50 flex items-center px-3 ${themeColor.border}`}
+                    style={{ height: GANTT_ROW_H.GROUP }}
+                  >
                     <span className={`text-xs font-medium tracking-wide ${themeColor.base}`}>{group.name}</span>
                   </div>
                   {/* Task rows */}
@@ -703,7 +725,11 @@ export function GanttSkeleton({ initialComponents, initialMilestones = [], dayWi
                         />
                       ))}
                       {/* Placeholder row for "+新增基础工序" button alignment */}
-                      <div className="h-10 border-b border-slate-800/20" />
+                      {/* 高度从 GANTT_ROW_H.SPAWNER 取值，与左侧 BlackboardSpawner 折叠态物理锁死 */}
+                      <div
+                        className="border-b border-slate-800/20"
+                        style={{ height: GANTT_ROW_H.SPAWNER }}
+                      />
                     </>
                   )}
                 </div>
@@ -732,6 +758,83 @@ export function GanttSkeleton({ initialComponents, initialMilestones = [], dayWi
           onCancel={() => setComponentDeletionTarget(null)}
         />
       )}
+
+      {/* 统一录入弹窗（取代 window.prompt） */}
+      {promptState?.kind === "milestone" && (
+        <CyberPromptDialog
+          open
+          title="新增交付死线"
+          subtitle="里程碑录入"
+          description="为项目录入一个关键交付节点。商业里程碑红色标识，技术里程碑紫色标识。"
+          fields={[
+            { kind: "text", name: "name", label: "里程碑名称", defaultValue: "T0 试模", required: true, maxLength: 32 },
+            { kind: "date", name: "date", label: "截止日期", defaultValue: todayIso(), required: true },
+            {
+              kind: "select",
+              name: "type",
+              label: "类型",
+              defaultValue: "commercial",
+              options: [
+                { value: "commercial", label: "商业里程碑（commercial）" },
+                { value: "technical", label: "技术里程碑（technical）" },
+              ],
+            },
+          ]}
+          confirmText="录入"
+          tone="purple"
+          onCancel={() => setPromptState(null)}
+          onConfirm={(v) => {
+            const type = v.type === "technical" ? "technical" : "commercial"
+            addMilestone(v.name.trim(), v.date, type)
+            setPromptState(null)
+          }}
+        />
+      )}
+
+      {promptState?.kind === "component" && (
+        <CyberPromptDialog
+          open
+          title="新增部件"
+          subtitle="部件录入"
+          description="为本项目新增一个部件分组。可在右侧时间轴上独立排程。"
+          fields={[
+            { kind: "text", name: "name", label: "部件名称", defaultValue: "新模具", required: true, maxLength: 32 },
+          ]}
+          confirmText="新增"
+          tone="cyan"
+          onCancel={() => setPromptState(null)}
+          onConfirm={(v) => {
+            addComponentGroup(v.name.trim())
+            setPromptState(null)
+          }}
+        />
+      )}
+
+      {promptState?.kind === "delay" && (
+        <CyberPromptDialog
+          open
+          title="延期报备"
+          subtitle="工序延期"
+          description="录入本次延期天数及原因。延期记录将作为该工序的子条目展示。"
+          fields={[
+            { kind: "number", name: "days", label: "延期天数（正整数）", defaultValue: "3", required: true, min: 1, max: 365, step: 1 },
+            { kind: "text", name: "reason", label: "延期原因（可选）", placeholder: "例：物料未到、设备故障…", maxLength: 64 },
+          ]}
+          confirmText="提交报备"
+          tone="cyan"
+          onCancel={() => setPromptState(null)}
+          onConfirm={(v) => {
+            const days = Number.parseInt(v.days, 10)
+            if (!Number.isFinite(days) || days <= 0) {
+              setPromptState(null)
+              return
+            }
+            if (promptState.kind !== "delay") return
+            addDelay(promptState.componentId, promptState.parentId, days, v.reason ?? "")
+            setPromptState(null)
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -746,7 +849,8 @@ interface ComponentTreeListProps {
   collisions: CollisionState[]
   onToggleComponent: (componentId: string) => void
   onToggleTask: (componentId: string, taskId: string) => void
-  onAddDelay: (componentId: string, parentId: string, delayDays: number, reason: string) => void
+  /** 请求打开“延期天数”录入弹窗（取代 window.prompt）。实际写入在 GanttSkeleton 弹窗 onConfirm 中进行。 */
+  onRequestAddDelay: (componentId: string, parentId: string) => void
   onUpdateDate: (componentId: string, taskId: string, start: string, end: string) => void
   onUpdateReason: (componentId: string, taskId: string, reason: string) => void
   onUpdateProgress: (componentId: string, taskId: string, progress: number) => void
@@ -766,7 +870,7 @@ function ComponentTreeList(props: ComponentTreeListProps) {
     collisions,
     onToggleComponent,
     onToggleTask,
-    onAddDelay,
+    onRequestAddDelay,
     onUpdateDate,
     onUpdateReason,
     onUpdateProgress,
@@ -793,9 +897,10 @@ function ComponentTreeList(props: ComponentTreeListProps) {
 
         return (
           <li key={group.id} className="border-b border-slate-800/30">
-            {/* Component Group Header — h-10 与右侧面板严格对齐 */}
+            {/* Component Group Header — 高度从 GANTT_ROW_H.GROUP 取值，与右侧面板物理锁死 */}
             <div
-              className={`h-10 flex items-center gap-3 py-2.5 px-4 hover:bg-slate-800/50 transition-all cursor-pointer border-l-3 whitespace-nowrap ${
+              style={{ height: GANTT_ROW_H.GROUP }}
+              className={`flex items-center gap-3 py-2.5 px-4 hover:bg-slate-800/50 transition-all cursor-pointer border-l-3 whitespace-nowrap ${
                 groupOverdue 
                   ? "bg-red-950/25 border-l-red-500" 
                   : groupCompleted 
@@ -873,13 +978,7 @@ function ComponentTreeList(props: ComponentTreeListProps) {
                   collisions={collisions}
                   colorIndex={idx}
                   onToggle={(taskId) => onToggleTask(group.id, taskId)}
-                  onAddDelay={(parentId) => {
-                    const raw = window.prompt("延期天数（正整数）：", "3")
-                    if (raw == null) return
-                    const days = Number.parseInt(raw, 10)
-                    if (!Number.isFinite(days) || days <= 0) return
-                    onAddDelay(group.id, parentId, days, "")
-                  }}
+                  onAddDelay={(parentId) => onRequestAddDelay(group.id, parentId)}
                   onUpdateDate={(taskId, start, end) => onUpdateDate(group.id, taskId, start, end)}
                   onUpdateReason={(taskId, reason) => onUpdateReason(group.id, taskId, reason)}
                   onUpdateProgress={(taskId, progress) => onUpdateProgress(group.id, taskId, progress)}
@@ -911,7 +1010,7 @@ interface ComponentTrackProps {
 
 function ComponentTrack({ group, timelineStart, dayWidth, role, milestones, colorIndex }: ComponentTrackProps) {
   if (group.tasks.length === 0) {
-    return <div className="h-10 border-b border-slate-800/20" />
+    return <div className="border-b border-slate-800/20" style={{ height: GANTT_ROW_H.GROUP }} />
   }
 
   const envelopeStart = getComponentEnvelopeStart(group)
@@ -927,7 +1026,10 @@ function ComponentTrack({ group, timelineStart, dayWidth, role, milestones, colo
   const status = deriveBarStatus(isOverdueGroup, isCompletedGroup, progress)
 
   return (
-    <div className="h-10 flex items-center border-b border-slate-800/20 relative hover:bg-slate-900/20 transition-colors">
+    <div
+      className="flex items-center border-b border-slate-800/20 relative hover:bg-slate-900/20 transition-colors"
+      style={{ height: GANTT_ROW_H.GROUP }}
+    >
       <GanttBar
         leftPx={barLeftPx}
         widthPx={barWidthPx}
@@ -1033,7 +1135,11 @@ function TaskTrack({ node, indexInParent, timelineStart, dayWidth, viewMode, rol
     }
 
     return (
-      <div className="h-10 flex items-center border-b border-slate-800/20 relative hover:bg-slate-900/20 transition-colors" data-task-id={node.id}>
+      <div
+        className="flex items-center border-b border-slate-800/20 relative hover:bg-slate-900/20 transition-colors"
+        style={{ height: GANTT_ROW_H.TASK }}
+        data-task-id={node.id}
+      >
         <GanttBar
           leftPx={barLeftPx}
           widthPx={totalBarWidthPx}
@@ -1054,7 +1160,11 @@ function TaskTrack({ node, indexInParent, timelineStart, dayWidth, viewMode, rol
   const childBarLeftPx = offsetDays * dayWidth
 
   return (
-    <div className="h-10 flex items-center border-b border-slate-800/15 relative hover:bg-slate-900/10 transition-colors" data-task-id={node.id}>
+    <div
+      className="flex items-center border-b border-slate-800/15 relative hover:bg-slate-900/10 transition-colors"
+      style={{ height: GANTT_ROW_H.TASK }}
+      data-task-id={node.id}
+    >
       <div
         className="absolute h-5 rounded overflow-hidden gantt-delay-stripe"
         style={{
