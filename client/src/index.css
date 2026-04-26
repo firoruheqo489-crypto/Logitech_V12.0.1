@@ -1801,8 +1801,8 @@ body::-webkit-scrollbar-button,
 }
 
 @keyframes status-glow-red {
-  0%, 100% { box-shadow: 0 0 6px 2px rgba(239, 68, 68, 0.6); }
-  50% { box-shadow: 0 0 14px 4px rgba(239, 68, 68, 1); }
+  0%, 100% { box-shadow: 0 0 3px 1px rgba(52, 211, 153, 0.3); }
+  50% { box-shadow: 0 0 6px 1.5px rgba(52, 211, 153, 0.5); }
 }
 
 @keyframes status-glow-green {

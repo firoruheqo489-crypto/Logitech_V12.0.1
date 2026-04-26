@@ -156,20 +156,6 @@ export function TaskTreeList(props: TaskTreeListProps) {
                   {node.name}
                 </span>
 
-                {/* 责任人徽章 — 仅顶级工序显示 */}
-                {!isChildRow && (
-                  <input
-                    type="text"
-                    value={node.assignee ?? ""}
-                    onChange={(e) => onUpdateAssignee(node.id, e.target.value)}
-                    placeholder="责任人"
-                    className={`w-14 min-w-0 shrink-0 bg-transparent border-0 border-b text-[10px] px-0.5 py-0 focus:outline-none transition-colors truncate ${
-                      node.assignee ? "border-transparent text-cyan-300/70 hover:border-slate-700 focus:border-cyan-500" : "border-red-500/50 text-red-400/60 placeholder:text-red-400/40"
-                    }`}
-                    title={node.assignee || "未指定责任人"}
-                  />
-                )}
-
                 {/* ── Right Zone ── */}
                 {isChildRow ? (
                   /* ── Child row (delay record): reason + compact date + LIFO ── */
@@ -216,8 +202,8 @@ export function TaskTreeList(props: TaskTreeListProps) {
                 ) : (
                   /* ── Parent / Leaf row: dates (default) ↔ ghost actions (hover) ── */
                   <>
-                    {/* Dates — visible by default, hidden on group-hover */}
-                    <div className="flex items-center gap-0.5 shrink-0 group-hover:hidden">
+                    {/* Dates — 始终显示 */}
+                    <div className="flex items-center gap-0.5 shrink-0">
                       <span className="relative tabular-nums text-[12px] text-slate-500 tracking-tight cursor-default">
                         {fmtDate(node.startDate)}
                         {!isParent && (
@@ -247,8 +233,8 @@ export function TaskTreeList(props: TaskTreeListProps) {
                       </span>
                     </div>
 
-                    {/* Ghost actions — hidden by default, visible on group-hover */}
-                    <div className="hidden group-hover:flex items-center gap-0.5 shrink-0">
+                    {/* Action icons — 始终显示在行尾 */}
+                    <div className="flex items-center gap-0.5 shrink-0">
                       <button
                         type="button"
                         onClick={() => onAddDelay(node.id)}

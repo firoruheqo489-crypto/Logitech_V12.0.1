@@ -1417,7 +1417,7 @@ function DocxConvertPanel({ panel }: { panel: AssetPanelItem }) {
           <div className="mb-6 flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
             <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-slate-300">
               <span>轮次: {activeTrial}</span>
-              <span>Open: {stats.openCount}</span>
+              <span>总数: {stats.openCount + stats.closeCount}</span>
               <span>Close: {stats.closeCount}</span>
               <span>Open待关闭: {stats.unresolvedOpenCount}</span>
             </div>
@@ -1487,7 +1487,7 @@ function DocxConvertPanel({ panel }: { panel: AssetPanelItem }) {
                       const isDueDate = cellIndex === 6;
                       const isStatus = cellIndex === 7;
                       const statusValue = (cell.text || '').trim();
-                      const visibleStatusLines = getDisplayStatusLines(statusValue, statusDisplayMode);
+                      const visibleStatusLines = getDisplayStatusLines(statusValue, 'all');
                       const isLink = cellIndex === 8 && /^https?:\/\//i.test(statusValue);
 
                       return (

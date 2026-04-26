@@ -64,106 +64,111 @@ interface GanttBarProps {
   delayDebt?: number
 }
 
-const STATUS_FILL: Record<GanttBarStatus, string> = {
-  pending:   "bg-gradient-to-r from-[#92400e] to-[#d97706]",
-  active:    "bg-gradient-to-r from-[#b45309] to-[#f59e0b]",
-  delayed:   "bg-gradient-to-r from-[#92400e] to-[#d97706]",
-  completed: "bg-gradient-to-r from-[#047857] to-[#10b981]",
-  overdue:   "bg-gradient-to-r from-[#991b1b] to-[#dc2626]",
+/**
+ * Lithography Glass Engine — 3-layer 物理材质渲染
+ *   Layer 1: Frosted Glass Shell (磨砂玻璃槽，承载总工期)
+ *   Layer 2: Plasma Fill (能量注入层，按进度填充)
+ *   Layer 3: Holographic Text (悬浮文本)
+ */
+const PLASMA_FILL: Record<GanttBarStatus, string> = {
+  pending:   "bg-gradient-to-r from-amber-500/80 to-orange-400/90 shadow-[0_0_12px_rgba(245,158,11,0.4)]",
+  active:    "bg-gradient-to-r from-amber-500/80 to-orange-400/90 shadow-[0_0_12px_rgba(245,158,11,0.4)]",
+  delayed:   "bg-gradient-to-r from-amber-500/80 to-orange-400/90 shadow-[0_0_12px_rgba(245,158,11,0.4)]",
+  completed: "bg-gradient-to-r from-emerald-500/70 to-emerald-400/90 shadow-[0_0_12px_rgba(16,185,129,0.3)]",
+  overdue:   "bg-gradient-to-r from-red-600/80 to-rose-500/90 shadow-[0_0_12px_rgba(239,68,68,0.45)]",
 }
 
-const STATUS_TEXT: Record<GanttBarStatus, string> = {
-  pending:   "text-amber-100",
-  active:    "text-amber-50",
-  delayed:   "text-amber-100",
-  completed: "text-emerald-100",
-  overdue:   "text-red-100",
+const PLASMA_EDGE: Record<GanttBarStatus, string> = {
+  pending:   "border-orange-200/60",
+  active:    "border-orange-200/60",
+  delayed:   "border-orange-200/60",
+  completed: "border-emerald-200/60",
+  overdue:   "border-red-200/60",
 }
 
 function GanttBar({ leftPx, widthPx, progress, status, label, segments, delayDebt }: GanttBarProps) {
-  const isNarrow = widthPx < 80
-  const textCls = STATUS_TEXT[status]
   const pct = Math.max(0, Math.min(100, progress))
 
   const isOverdueBar = status === "overdue"
-  const baseFill = status === "completed"
-    ? "bg-gradient-to-r from-[#047857] to-[#10b981]"
-    : status === "overdue"
-      ? "bg-gradient-to-r from-[#991b1b] to-[#dc2626]"
-      : "bg-gradient-to-r from-[#b45309] to-[#f59e0b]"
+  const plasmaFill = PLASMA_FILL[status]
+  const plasmaEdge = PLASMA_EDGE[status]
+
+  // Layer 1 — Glass Shell shadow stack (inset highlight + outer drop shadow + optional alarm halo)
+  const shellBoxShadow = isOverdueBar
+    ? "inset 0 1px 1px rgba(255,255,255,0.15), 0 0 12px rgba(239,68,68,0.4), 0 4px 12px rgba(0,0,0,0.3)"
+    : "inset 0 1px 1px rgba(255,255,255,0.15), 0 4px 12px rgba(0,0,0,0.3)"
 
   return (
     <>
-      {/* Track — planning slot with subtle inner shadow */}
+      {/* ============ Layer 1: Frosted Glass Shell (overflow-visible, allows text spillover) ============ */}
       <div
-        className="absolute h-6 rounded overflow-hidden"
+        className={`absolute h-6 rounded-md bg-white/[0.04] backdrop-blur-md border ${
+          isOverdueBar ? "border-red-500/50" : "border-white/[0.12]"
+        }`}
         style={{
           left: `${leftPx}px`,
           width: `${widthPx}px`,
           top: "50%",
           transform: "translateY(-50%)",
-          background: isOverdueBar ? "rgba(127,29,29,0.4)" : "var(--gantt-track-bg)",
-          border: isOverdueBar ? "2px solid rgba(220,38,38,0.7)" : "1px solid var(--gantt-border)",
-          boxShadow: isOverdueBar ? "0 0 12px rgba(239,68,68,0.4), inset 0 1px 4px rgba(0,0,0,0.4)" : "inset 0 1px 4px rgba(0,0,0,0.4)",
+          boxShadow: shellBoxShadow,
         }}
         title={label}
       >
-        {segments ? (
-          /* Segmented: base section + delay stripes */
-          <div className="absolute inset-0 flex">
-            {segments.map((seg, i) => {
-              const isFirst = i === 0
-              const isLast = i === segments.length - 1
-              const r = `${isFirst ? "rounded-l" : ""} ${isLast ? "rounded-r" : ""}`
-              if (seg.type === "base") {
+        {/* ============ Plasma Clip — 仅裁切等离子填充层，不影响文本溢出 ============ */}
+        <div className="absolute inset-0 rounded-md overflow-hidden">
+          {/* ============ Layer 2: Plasma Fill ============ */}
+          {segments ? (
+            /* Segmented mode: base segment renders progress plasma; delay segments stay striped */
+            <div className="absolute inset-0 flex">
+              {segments.map((seg, i) => {
+                if (seg.type === "base") {
+                  return (
+                    <div key={i} className="relative h-full" style={{ width: `${seg.widthPx}px` }} title={seg.title}>
+                      {pct > 0 && (
+                        <div
+                          className={`absolute inset-y-0 left-0 ${plasmaFill} ${
+                            pct < 100 ? `border-r ${plasmaEdge}` : ""
+                          }`}
+                          style={{ width: `${pct}%` }}
+                        />
+                      )}
+                    </div>
+                  )
+                }
                 return (
-                  <div key={i} className={`relative h-full overflow-hidden ${r}`} style={{ width: `${seg.widthPx}px` }} title={seg.title}>
-                    <div className={`absolute inset-0 ${baseFill}`} />
-                    {pct > 0 && (
-                      <div className={`absolute inset-y-0 left-0 ${baseFill}`} style={{ width: `${pct}%` }} />
-                    )}
-                  </div>
+                  <div
+                    key={i}
+                    className="h-full gantt-delay-stripe"
+                    style={{ width: `${seg.widthPx}px` }}
+                    title={seg.title}
+                  />
                 )
-              }
-              return (
-                <div key={i} className={`h-full gantt-delay-stripe ${r}`} style={{ width: `${seg.widthPx}px` }} title={seg.title} />
-              )
-            })}
-          </div>
-        ) : (
-          /* Simple mode: single fill at progress% */
-          pct > 0 && (
-            <div
-              className={`absolute inset-y-0 left-0 ${STATUS_FILL[status]} ${pct >= 100 ? "rounded" : "rounded-l"}`}
-              style={{ width: `${pct}%` }}
-            >
-              {pct < 100 && <div className="absolute right-0 inset-y-0 w-[2px] bg-white/80" />}
+              })}
             </div>
-          )
-        )}
-
-        {/* Data layer: text */}
-        {!isNarrow && (
-          <div className="absolute inset-0 z-10 flex items-center px-2 pointer-events-none overflow-hidden">
-            <span className="text-[12px] font-medium truncate text-white/90">
-              {label}
-            </span>
-          </div>
-        )}
-      </div>
-
-      {/* Narrow fallback: text outside right */}
-      {isNarrow && (
-        <div className="absolute top-1/2 -translate-y-1/2 ml-2 pointer-events-none whitespace-nowrap" style={{ left: `${leftPx + widthPx}px` }}>
-          <span className={`text-[12px] font-medium ${textCls}`}>{label}</span>
+          ) : (
+            /* Simple mode: single plasma fill at progress% */
+            pct > 0 && (
+              <div
+                className={`absolute inset-y-0 left-0 ${plasmaFill} ${pct < 100 ? `border-r ${plasmaEdge}` : ""}`}
+                style={{ width: `${pct}%` }}
+              />
+            )
+          )}
         </div>
-      )}
+
+        {/* ============ Layer 3: Holographic Text — 自适应外挂，绝不省略 ============ */}
+        <div className="absolute inset-y-0 left-0 flex items-center pl-2.5 pr-2 z-20 pointer-events-none w-max">
+          <span className="text-[12px] font-medium text-white tracking-wide whitespace-nowrap drop-shadow-[0_1px_1.5px_rgba(0,0,0,0.8)]">
+            {label}
+          </span>
+        </div>
+      </div>
 
       {/* Delay debt badge */}
       {delayDebt != null && delayDebt > 0 && (
         <span
-          className="absolute top-1/2 -translate-y-1/2 px-1 py-0.5 bg-red-900/80 text-red-200 text-[7px] font-bold rounded whitespace-nowrap z-20 border border-red-700/50"
-          style={{ left: `${leftPx + widthPx + (isNarrow ? 80 : 6)}px` }}
+          className="absolute top-1/2 -translate-y-1/2 px-1 py-0.5 bg-red-900/80 text-red-200 text-[7px] font-bold rounded whitespace-nowrap z-30 border border-red-700/50"
+          style={{ left: `${leftPx + widthPx + 6}px` }}
         >
           +{delayDebt}天
         </span>
@@ -351,7 +356,6 @@ export function GanttSkeleton({ initialComponents, initialMilestones = [], dayWi
           <span className="text-cyan-400">项目进度甘特图</span>
         </h1>
         <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-lg gantt-glass">
-          <span className="text-[16px] text-slate-300 font-normal">月份</span>
           <button
             type="button"
             onClick={() => {
@@ -437,7 +441,7 @@ export function GanttSkeleton({ initialComponents, initialMilestones = [], dayWi
                     setShowMilestonePanel((v) => !v)
                     setEditingMilestoneId(null)
                   }}
-                  className="px-2 py-0.5 border border-fuchsia-700/60 text-fuchsia-300 hover:bg-fuchsia-950/50 hover:border-fuchsia-500 text-[10.5px] rounded transition-all"
+                  className="px-2.5 py-1 border border-fuchsia-700/60 text-fuchsia-300 hover:bg-fuchsia-950/50 hover:border-fuchsia-500 text-[12.5px] font-bold rounded transition-all"
                 >
                   ◆ 里程碑
                 </button>
@@ -537,7 +541,7 @@ export function GanttSkeleton({ initialComponents, initialMilestones = [], dayWi
               <button
                 type="button"
                 onClick={() => setShowComponentPanel((v) => !v)}
-                className="px-2 py-0.5 border border-cyan-700/50 text-cyan-400 hover:bg-cyan-950/40 hover:border-cyan-500 text-[10.5px] rounded transition-all"
+                className="px-2.5 py-1 border border-cyan-700/50 text-cyan-400 hover:bg-cyan-950/40 hover:border-cyan-500 text-[12.5px] font-bold rounded transition-all"
               >
                 ⚙ 项目管理
               </button>
@@ -951,7 +955,7 @@ function ComponentTreeList(props: ComponentTreeListProps) {
               style={{ height: GANTT_ROW_H.GROUP }}
               className={`flex items-center gap-3 py-2.5 px-4 hover:bg-slate-800/50 transition-all cursor-pointer border-l-3 whitespace-nowrap ${
                 groupOverdue 
-                  ? "bg-red-950/25 border-l-red-500" 
+                  ? "bg-emerald-950/25 border-l-emerald-500" 
                   : groupCompleted 
                     ? "bg-emerald-950/25 border-l-emerald-500" 
                     : `${themeColor.border}`
@@ -977,14 +981,14 @@ function ComponentTreeList(props: ComponentTreeListProps) {
                   groupCompleted
                     ? "bg-emerald-500 shadow-[0_0_8px_rgba(52,211,153,0.6)]"
                     : groupOverdue
-                      ? "bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.8)] gantt-status-overdue"
+                      ? "bg-emerald-500 shadow-[0_0_10px_rgba(52,211,153,0.7)] gantt-status-overdue"
                       : `${themeColor.bg} ${themeColor.glow}`
                 }`}
                 title={groupCompleted ? "全部完工" : groupOverdue ? "存在逾期" : inProgress ? "进行中" : "待开始"}
               />
 
               {/* Component Name — Phase 15: 使用主题色渲染名称 */}
-              <span className={`text-[14px] font-medium tracking-wide shrink-0 ${groupOverdue ? "text-red-400" : groupCompleted ? "text-emerald-400" : themeColor.base}`}>
+              <span className={`text-[14px] font-medium tracking-wide shrink-0 ${groupOverdue ? "text-emerald-400" : groupCompleted ? "text-emerald-400" : themeColor.base}`}>
                 {group.name}
               </span>
 
@@ -993,7 +997,7 @@ function ComponentTreeList(props: ComponentTreeListProps) {
                 groupCompleted 
                   ? "bg-emerald-900/50 text-emerald-300 border border-emerald-700/50" 
                   : groupOverdue
-                    ? "bg-red-900/50 text-red-300 border border-red-700/50"
+                    ? "bg-emerald-900/50 text-emerald-300 border border-emerald-700/50"
                     : "bg-slate-800/50 text-slate-400 border border-slate-700/50"
               }`}>
                 {groupProgress}% · {group.tasks.length} 工序
@@ -1001,7 +1005,7 @@ function ComponentTreeList(props: ComponentTreeListProps) {
 
               {/* MACRO: Overdue Warning — 发光警报标签 */}
               {isMacro && groupOverdue && (
-                <span className="px-2 py-0.5 bg-red-900/90 text-red-200 text-[8px] rounded border border-red-500/50 shadow-[0_0_8px_rgba(239,68,68,0.4)] animate-pulse shrink-0">
+                <span className="px-2 py-0.5 bg-emerald-900/90 text-emerald-200 text-[8px] rounded border border-emerald-500/50 shadow-[0_0_8px_rgba(52,211,153,0.4)] animate-pulse shrink-0">
                   存在逾期
                 </span>
               )}
