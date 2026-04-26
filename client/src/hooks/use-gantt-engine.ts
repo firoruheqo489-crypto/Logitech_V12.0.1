@@ -46,11 +46,12 @@ export interface UseGanttEngineReturn {
   updateTaskDate: (componentId: string, taskId: string, newStart: string, newEnd: string) => void
   updateTaskReason: (componentId: string, taskId: string, reason: string) => void
   updateTaskProgress: (componentId: string, taskId: string, progress: number) => void
+  updateTaskAssignee: (componentId: string, taskId: string, assignee: string) => void
   deleteLastDelay: (componentId: string, childId: string) => void
   toggleExpanded: (componentId: string, taskId: string) => void
   toggleComponentExpanded: (componentId: string) => void
   /** Phase 13 — 在指定部件内添加工序 */
-  addTaskToComponent: (componentId: string, name: string, durationDays: number, dependencyId: string | null, iterationPhase?: string) => void
+  addTaskToComponent: (componentId: string, name: string, durationDays: number, dependencyId: string | null, iterationPhase?: string, assignee?: string) => void
   /** Phase 13 — 新增部件组 */
   addComponentGroup: (name: string) => void
   /** Phase 21 — 删除部件组 */
@@ -216,6 +217,19 @@ export function useGanttEngine(initialComponents: ComponentGroup[], initialMiles
 
   /* ----------------------- updateTaskProgress ----------------------------- */
 
+  const updateTaskAssignee = useCallback((componentId: string, taskId: string, assignee: string) => {
+    setComponents((prev) =>
+      produce(prev, (draft) => {
+        const group = draft.find((g) => g.id === componentId)
+        if (!group) return
+        const node = findNode(group.tasks, taskId)
+        if (node && !node.parentId) {
+          node.assignee = assignee
+        }
+      }),
+    )
+  }, [])
+
   const updateTaskProgress = useCallback((componentId: string, taskId: string, progress: number) => {
     const clamped = Math.max(0, Math.min(100, progress))
     setComponents((prev) =>
@@ -302,7 +316,7 @@ export function useGanttEngine(initialComponents: ComponentGroup[], initialMiles
   /* ----------------------- addTaskToComponent ----------------------------- */
 
   const addTaskToComponent = useCallback(
-    (componentId: string, name: string, durationDays: number, dependencyId: string | null, iterationPhase = "T0") => {
+    (componentId: string, name: string, durationDays: number, dependencyId: string | null, iterationPhase = "T0", assignee = "") => {
       if (!name.trim()) {
         console.warn("[v0] addTaskToComponent: name is empty")
         return
@@ -317,7 +331,7 @@ export function useGanttEngine(initialComponents: ComponentGroup[], initialMiles
           const group = draft.find((g) => g.id === componentId)
           if (!group) return
 
-          const newTask = createTopLevelTask(name.trim(), durationDays, dependencyId, group.tasks, iterationPhase)
+          const newTask = createTopLevelTask(name.trim(), durationDays, dependencyId, group.tasks, iterationPhase, assignee.trim())
           group.tasks.push(newTask)
           enforceDependencyConstraints(group.tasks)
         }),
@@ -482,6 +496,7 @@ export function useGanttEngine(initialComponents: ComponentGroup[], initialMiles
     updateTaskDate,
     updateTaskReason,
     updateTaskProgress,
+    updateTaskAssignee,
     deleteLastDelay,
     toggleExpanded,
     toggleComponentExpanded,

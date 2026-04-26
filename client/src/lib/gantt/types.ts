@@ -87,6 +87,9 @@ export interface TaskNode {
   /** Optional audit metadata — Phase 3 追责证据字段 */
   reason?: string
 
+  /** 执行人/供应商 — 责任绑定字段。顶级工序必填，延期子节点无需。 */
+  assignee?: string
+
   /**
    * Physical completion percentage (0-100).
    * Only meaningful for top-level parent nodes (基础工序).

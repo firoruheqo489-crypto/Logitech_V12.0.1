@@ -155,6 +155,15 @@ export function isOverdue(node: TaskNode): boolean {
   return node.endDate < today && progress < 100
 }
 
+/**
+ * 计算逾期天数。返回值 > 0 表示已逾期的天数。
+ * 仅对顶级工序有意义。
+ */
+export function getOverdueDays(node: TaskNode): number {
+  if (!isOverdue(node)) return 0
+  return Math.max(0, diffDays(node.endDate, todayIso()))
+}
+
 /* ---------------------- Phase 10 — Completion Lock ----------------------- */
 
 /**
@@ -551,6 +560,7 @@ export function createTopLevelTask(
   dependencyId: string | null,
   roots: TaskNode[],
   iterationPhase = "T0",
+  assignee = "",
 ): TaskNode {
   let startDate: string
   if (dependencyId) {
@@ -571,6 +581,7 @@ export function createTopLevelTask(
     id: generateId("root"),
     parentId: null,
     name,
+    assignee,
     startDate,
     endDate,
     baseStartDate: startDate,
