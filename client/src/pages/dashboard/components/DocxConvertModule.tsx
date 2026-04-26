@@ -665,14 +665,11 @@ function DocxConvertPanel({ panel }: { panel: AssetPanelItem }) {
     let closeCount = 0;
     let unresolvedOpenCount = 0;
     for (const row of result.rows) {
-      const tokens = parseStatusTokens(row[7]?.text || '');
-      const hasOpen = tokens.some((token) => token.state === 'open');
-      const hasClose = tokens.some((token) => token.state === 'close');
-      if (hasOpen) {
+      const finalStatus = resolveRowFinalStatus(row[7]?.text || '');
+      if (finalStatus === 'open') {
         openCount += 1;
         unresolvedOpenCount += 1;
-      }
-      if (hasClose) {
+      } else if (finalStatus === 'close') {
         closeCount += 1;
       }
     }
@@ -701,10 +698,11 @@ function DocxConvertPanel({ panel }: { panel: AssetPanelItem }) {
     const ranked = result.rows
       .map((row, originalIndex) => {
         const statusText = row[7]?.text || '';
-        const tokens = parseStatusTokens(statusText).filter((token) => token.state === statusDisplayMode);
-        if (tokens.length === 0) {
+        const finalStatus = resolveRowFinalStatus(statusText);
+        if (finalStatus !== statusDisplayMode) {
           return null;
         }
+        const tokens = parseStatusTokens(statusText).filter((token) => token.state === statusDisplayMode);
         const maxStage = tokens.reduce((max, token) => Math.max(max, token.stage), 0);
         return {
           row,
