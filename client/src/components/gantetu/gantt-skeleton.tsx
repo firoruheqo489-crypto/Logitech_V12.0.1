@@ -17,6 +17,9 @@ import {
   isOverdue,
   isTaskCollidingMilestone,
   todayIso,
+  getOverdueDays,
+  flatten,
+  findNode,
 } from "@/lib/gantt/utils"
 import { TaskTreeList } from "./task-tree-list"
 import { DeletionModal } from "./deletion-modal"
@@ -43,7 +46,7 @@ const COMPONENT_PALETTE = [
 
 /* ========================== Phase 20 — Entity Slider (GanttBar) ========================== */
 
-type GanttBarStatus = "pending" | "active" | "delayed" | "completed"
+type GanttBarStatus = "pending" | "active" | "delayed" | "completed" | "overdue"
 
 interface GanttBarSegment {
   widthPx: number
@@ -62,17 +65,19 @@ interface GanttBarProps {
 }
 
 const STATUS_FILL: Record<GanttBarStatus, string> = {
-  pending:   "bg-[var(--gantt-status-pending)]",
-  active:    "bg-gradient-to-r from-[#1d4ed8] to-[#3b82f6]",
-  delayed:   "bg-gradient-to-r from-[#b45309] to-[#f59e0b]",
+  pending:   "bg-gradient-to-r from-[#92400e] to-[#d97706]",
+  active:    "bg-gradient-to-r from-[#b45309] to-[#f59e0b]",
+  delayed:   "bg-gradient-to-r from-[#92400e] to-[#d97706]",
   completed: "bg-gradient-to-r from-[#047857] to-[#10b981]",
+  overdue:   "bg-gradient-to-r from-[#991b1b] to-[#dc2626]",
 }
 
 const STATUS_TEXT: Record<GanttBarStatus, string> = {
-  pending:   "text-slate-400",
-  active:    "text-blue-100",
+  pending:   "text-amber-100",
+  active:    "text-amber-50",
   delayed:   "text-amber-100",
   completed: "text-emerald-100",
+  overdue:   "text-red-100",
 }
 
 function GanttBar({ leftPx, widthPx, progress, status, label, segments, delayDebt }: GanttBarProps) {
@@ -80,11 +85,12 @@ function GanttBar({ leftPx, widthPx, progress, status, label, segments, delayDeb
   const textCls = STATUS_TEXT[status]
   const pct = Math.max(0, Math.min(100, progress))
 
+  const isOverdueBar = status === "overdue"
   const baseFill = status === "completed"
     ? "bg-gradient-to-r from-[#047857] to-[#10b981]"
-    : status === "delayed"
-      ? "bg-gradient-to-r from-[#b45309] to-[#d97706]"
-      : "bg-gradient-to-r from-[#1d4ed8] to-[#3b82f6]"
+    : status === "overdue"
+      ? "bg-gradient-to-r from-[#991b1b] to-[#dc2626]"
+      : "bg-gradient-to-r from-[#b45309] to-[#f59e0b]"
 
   return (
     <>
@@ -96,9 +102,9 @@ function GanttBar({ leftPx, widthPx, progress, status, label, segments, delayDeb
           width: `${widthPx}px`,
           top: "50%",
           transform: "translateY(-50%)",
-          background: "var(--gantt-track-bg)",
-          border: "1px solid var(--gantt-border)",
-          boxShadow: "inset 0 1px 4px rgba(0,0,0,0.4)",
+          background: isOverdueBar ? "rgba(127,29,29,0.4)" : "var(--gantt-track-bg)",
+          border: isOverdueBar ? "2px solid rgba(220,38,38,0.7)" : "1px solid var(--gantt-border)",
+          boxShadow: isOverdueBar ? "0 0 12px rgba(239,68,68,0.4), inset 0 1px 4px rgba(0,0,0,0.4)" : "inset 0 1px 4px rgba(0,0,0,0.4)",
         }}
         title={label}
       >
@@ -139,7 +145,7 @@ function GanttBar({ leftPx, widthPx, progress, status, label, segments, delayDeb
         {/* Data layer: text */}
         {!isNarrow && (
           <div className="absolute inset-0 z-10 flex items-center px-2 pointer-events-none overflow-hidden">
-            <span className={`text-[10px] font-medium truncate ${textCls}`} style={{ textShadow: "0 1px 2px rgba(0,0,0,0.85)" }}>
+            <span className="text-[12px] font-medium truncate text-white/90">
               {label}
             </span>
           </div>
@@ -149,7 +155,7 @@ function GanttBar({ leftPx, widthPx, progress, status, label, segments, delayDeb
       {/* Narrow fallback: text outside right */}
       {isNarrow && (
         <div className="absolute top-1/2 -translate-y-1/2 ml-2 pointer-events-none whitespace-nowrap" style={{ left: `${leftPx + widthPx}px` }}>
-          <span className={`text-[10px] font-medium ${textCls}`}>{label}</span>
+          <span className={`text-[12px] font-medium ${textCls}`}>{label}</span>
         </div>
       )}
 
@@ -166,9 +172,9 @@ function GanttBar({ leftPx, widthPx, progress, status, label, segments, delayDeb
   )
 }
 
-function deriveBarStatus(overdue: boolean, completed: boolean, progress: number): GanttBarStatus {
+function deriveBarStatus(_overdue: boolean, completed: boolean, progress: number): GanttBarStatus {
   if (completed) return "completed"
-  if (overdue) return "delayed"
+  // 逾期任务不再强制红色 — 统一走橙色系，只有延期报备段才允许红
   if (progress > 0) return "active"
   return "pending"
 }
@@ -186,6 +192,7 @@ export function GanttSkeleton({ initialComponents, initialMilestones = [], dayWi
     updateTaskDate,
     updateTaskReason,
     updateTaskProgress,
+    updateTaskAssignee,
     deleteLastDelay,
     toggleExpanded,
     toggleComponentExpanded,
@@ -308,12 +315,40 @@ export function GanttSkeleton({ initialComponents, initialMilestones = [], dayWi
   // Phase 23.3 — 日期栏只显示所选月份 1 号到最后一天，并填满右侧可视宽度
   const dayWidth = containerWidth > 0 ? containerWidth / timeline.totalDays : dayWidthFallback
 
+  // 依赖连线位置预计算 (MICRO 模式)
+  const { taskPositionMap, tracksContentHeight } = useMemo(() => {
+    const map = new Map<string, TaskPositionEntry>()
+    if (isMacro) return { taskPositionMap: map, tracksContentHeight: 0 }
+    let yAccum = 0
+    for (const group of components) {
+      yAccum += GANTT_ROW_H.GROUP
+      if (group.isExpanded !== false) {
+        const visible = flattenVisible(group.tasks, null, 0, [], false)
+        for (const { node } of visible) {
+          const yCenterPx = yAccum + GANTT_ROW_H.TASK / 2
+          const offsetD = diffDays(timeline.start, node.startDate)
+          const spanD = Math.max(1, diffDays(node.startDate, node.endDate))
+          map.set(node.id, {
+            yCenterPx,
+            startPx: offsetD * dayWidth,
+            endPx: (offsetD + spanD) * dayWidth,
+            depIds: node.dependencies ?? [],
+            overdueSource: isOverdue(node),
+          })
+          yAccum += GANTT_ROW_H.TASK
+        }
+        yAccum += GANTT_ROW_H.SPAWNER
+      }
+    }
+    return { taskPositionMap: map, tracksContentHeight: yAccum }
+  }, [components, isMacro, timeline.start, dayWidth])
+
   return (
     <div className="flex flex-col w-full h-screen bg-[#0B0F19] text-slate-100">
       {/* ========================== Top Header (title only after Phase 22 合并) ========================== */}
       <header className="h-12 flex-shrink-0 border-b border-slate-800/50 flex items-center justify-between px-4 bg-[#111827]">
-        <h1 className="text-sm font-semibold tracking-wider text-slate-200">
-          <span className="text-cyan-400">工业级动态甘特图</span>
+        <h1 className="text-[20px] font-semibold tracking-wide text-slate-100">
+          <span className="text-cyan-400">项目进度甘特图</span>
         </h1>
         <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-lg gantt-glass">
           <span className="text-[16px] text-slate-300 font-normal">月份</span>
@@ -332,13 +367,12 @@ export function GanttSkeleton({ initialComponents, initialMilestones = [], dayWi
               }
             }}
             className="w-7 h-7 flex items-center justify-center rounded-md text-sky-400 hover:bg-sky-500/10 hover:text-sky-300 transition-all"
-            style={{ filter: "drop-shadow(0 0 4px rgba(56,189,248,0.5))" }}
             aria-label="更换月份"
             title="点击更换月份"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18" strokeLinecap="round"/></svg>
           </button>
-          <span className="text-[16px] font-normal text-sky-200 tabular-nums tracking-wide" style={{ textShadow: "0 0 8px rgba(56,189,248,0.3)" }}>
+          <span className="text-[16px] font-normal text-sky-200 tabular-nums tracking-wide">
             {(() => {
               const [y, m] = selectedMonth.split("-")
               return `${y}年${m}月`
@@ -361,7 +395,7 @@ export function GanttSkeleton({ initialComponents, initialMilestones = [], dayWi
       {/* ========================== Main Content ========================== */}
       <div className="flex flex-1 min-h-0 border-t border-slate-800/30 relative">
         {/* 宏观 / 微观 — 浮在里程碑行右侧空白区（不随时间轴横向滚动） */}
-        <div className="absolute top-0 right-3 flex items-center z-30 text-[11px]" style={{ height: GANTT_ROW_H.CONTROL_BAR }}>
+        <div className="absolute top-0 right-3 flex items-center z-30 text-[13px] font-medium" style={{ height: GANTT_ROW_H.CONTROL_BAR }}>
           <button
             type="button"
             onClick={() => setViewMode("MACRO")}
@@ -403,14 +437,14 @@ export function GanttSkeleton({ initialComponents, initialMilestones = [], dayWi
                     setShowMilestonePanel((v) => !v)
                     setEditingMilestoneId(null)
                   }}
-                  className="px-2 py-0.5 border border-fuchsia-700/60 text-fuchsia-300 hover:bg-fuchsia-950/50 hover:border-fuchsia-500 text-[10px] rounded transition-all"
+                  className="px-2 py-0.5 border border-fuchsia-700/60 text-fuchsia-300 hover:bg-fuchsia-950/50 hover:border-fuchsia-500 text-[10.5px] rounded transition-all"
                 >
-                  ◆ 交付死线
+                  ◆ 里程碑
                 </button>
                 {showMilestonePanel && (
                   <div className="absolute left-0 top-full mt-1 z-50 w-[420px] bg-[#0f1729] border border-fuchsia-800/50 rounded shadow-[0_8px_24px_rgba(0,0,0,0.6)] p-2">
                     <div className="flex items-center justify-between px-2 py-1 border-b border-slate-800/60 mb-1">
-                      <span className="text-[10px] tracking-wider text-fuchsia-300">交付死线管理</span>
+                      <span className="text-[10px] tracking-wider text-fuchsia-300">里程碑管理</span>
                       <button
                         type="button"
                         onClick={() => { setShowMilestonePanel(false); setEditingMilestoneId(null) }}
@@ -421,7 +455,7 @@ export function GanttSkeleton({ initialComponents, initialMilestones = [], dayWi
                       </button>
                     </div>
                     {milestones.length === 0 ? (
-                      <div className="px-2 py-3 text-[10px] text-slate-500 text-center">尚未录入交付死线</div>
+                      <div className="px-2 py-3 text-[10px] text-slate-500 text-center">尚未录入里程碑</div>
                     ) : (
                       <ul className="max-h-72 overflow-auto">
                         {milestones.map((m) => {
@@ -491,7 +525,7 @@ export function GanttSkeleton({ initialComponents, initialMilestones = [], dayWi
                       onClick={handleAddMilestone}
                       className="w-full mt-1 py-1.5 border border-dashed border-fuchsia-800/50 text-fuchsia-400 hover:bg-fuchsia-950/30 hover:border-fuchsia-500 text-[10px] rounded transition-all"
                     >
-                      + 新增交付死线
+                      + 新增里程碑
                     </button>
                   </div>
                 )}
@@ -503,14 +537,14 @@ export function GanttSkeleton({ initialComponents, initialMilestones = [], dayWi
               <button
                 type="button"
                 onClick={() => setShowComponentPanel((v) => !v)}
-                className="px-2 py-0.5 border border-cyan-700/50 text-cyan-400 hover:bg-cyan-950/40 hover:border-cyan-500 text-[10px] rounded transition-all"
+                className="px-2 py-0.5 border border-cyan-700/50 text-cyan-400 hover:bg-cyan-950/40 hover:border-cyan-500 text-[10.5px] rounded transition-all"
               >
-                ⚙ 部件管理
+                ⚙ 项目管理
               </button>
               {showComponentPanel && (
                 <div className="absolute left-0 top-full mt-1 z-50 w-[300px] bg-[#0f1729] border border-cyan-800/50 rounded shadow-[0_8px_24px_rgba(0,0,0,0.6)] p-2">
                   <div className="flex items-center justify-between px-2 py-1 border-b border-slate-800/60 mb-1">
-                    <span className="text-[10px] tracking-wider text-cyan-300">部件管理</span>
+                    <span className="text-[10px] tracking-wider text-cyan-300">项目管理</span>
                     <button
                       type="button"
                       onClick={() => setShowComponentPanel(false)}
@@ -550,7 +584,7 @@ export function GanttSkeleton({ initialComponents, initialMilestones = [], dayWi
                     }}
                     className="w-full mt-1 py-1.5 border border-dashed border-cyan-800/50 text-cyan-400 hover:bg-cyan-950/30 hover:border-cyan-500 text-[10px] rounded transition-all"
                   >
-                    + 新增部件
+                    + 新增项目
                   </button>
                 </div>
               )}
@@ -586,6 +620,7 @@ export function GanttSkeleton({ initialComponents, initialMilestones = [], dayWi
               onValidateTaskDeletion={validateTaskDeletion}
               onDeleteTask={deleteTask}
               onResetTaskProgress={resetTaskProgress}
+              onUpdateAssignee={updateTaskAssignee}
             />
           </div>
         </div>
@@ -634,7 +669,8 @@ export function GanttSkeleton({ initialComponents, initialMilestones = [], dayWi
               const isMonthStart = d.getUTCDate() === 1
               const cellIso = d.toISOString().slice(0, 10)
               const isToday = cellIso === todayIso()
-              // Phase 18 — 命中里程碑日期的格子：用同色实心矩形作为虚线墙的"顶帽"
+              const isWeekend = d.getUTCDay() === 0 || d.getUTCDay() === 6
+              // Phase 18 — 命中里程碑日期的格子：用同色实心矩形作为虚线墙的“顶帽”
               const matchingMilestone = role === "ADMIN" ? milestones.find((m) => m.date === cellIso) : undefined
               const milestoneCls = matchingMilestone
                 ? matchingMilestone.type === "commercial"
@@ -644,14 +680,16 @@ export function GanttSkeleton({ initialComponents, initialMilestones = [], dayWi
               return (
                 <div
                   key={i}
-                  className={`flex-shrink-0 border-r text-[9px] flex items-center justify-center font-mono relative ${
+                  className={`flex-shrink-0 border-r text-[11px] tabular-nums flex items-center justify-center relative ${
                     milestoneCls
                       ? milestoneCls
                       : isMonthStart
                         ? "border-slate-600/60 text-slate-300 bg-slate-900/30"
                         : isToday
                           ? "border-red-500/80 text-red-400 font-bold bg-red-950/30 shadow-[inset_0_0_12px_rgba(239,68,68,0.3)]"
-                          : "border-slate-800/30 text-slate-600"
+                          : isWeekend
+                            ? "border-slate-800/30 text-slate-500 font-medium"
+                            : "border-slate-800/30 text-slate-400 font-medium"
                   }`}
                   style={{ width: `${dayWidth}px` }}
                   title={matchingMilestone ? `${matchingMilestone.name} · ${matchingMilestone.date}` : undefined}
@@ -672,6 +710,15 @@ export function GanttSkeleton({ initialComponents, initialMilestones = [], dayWi
           >
             {/* Today Vertical Line */}
             <TodayCursor timelineStart={timeline.start} dayWidth={dayWidth} totalDays={timeline.totalDays} />
+
+            {/* 依赖连线 SVG overlay (MICRO 模式) */}
+            {!isMacro && taskPositionMap.size > 0 && (
+              <DependencyConnectors
+                positionMap={taskPositionMap}
+                totalWidth={timeline.totalDays * dayWidth}
+                totalHeight={tracksContentHeight}
+              />
+            )}
 
             {/* Milestone Lines (ADMIN only) */}
             {role === "ADMIN" &&
@@ -707,7 +754,7 @@ export function GanttSkeleton({ initialComponents, initialMilestones = [], dayWi
                     className={`border-b border-slate-800/30 bg-slate-900/50 flex items-center px-3 ${themeColor.border}`}
                     style={{ height: GANTT_ROW_H.GROUP }}
                   >
-                    <span className={`text-xs font-medium tracking-wide ${themeColor.base}`}>{group.name}</span>
+                    <span className={`text-[14px] font-medium tracking-wide ${themeColor.base}`}>{group.name}</span>
                   </div>
                   {/* Task rows */}
                   {group.isExpanded !== false && (
@@ -763,9 +810,9 @@ export function GanttSkeleton({ initialComponents, initialMilestones = [], dayWi
       {promptState?.kind === "milestone" && (
         <CyberPromptDialog
           open
-          title="新增交付死线"
+          title="新增里程碑"
           subtitle="里程碑录入"
-          description="为项目录入一个关键交付节点。商业里程碑红色标识，技术里程碑紫色标识。"
+          description="为项目录入一个关键节点。商业里程碑红色标识，技术里程碑紫色标识。"
           fields={[
             { kind: "text", name: "name", label: "里程碑名称", defaultValue: "T0 试模", required: true, maxLength: 32 },
             { kind: "date", name: "date", label: "截止日期", defaultValue: todayIso(), required: true },
@@ -794,11 +841,11 @@ export function GanttSkeleton({ initialComponents, initialMilestones = [], dayWi
       {promptState?.kind === "component" && (
         <CyberPromptDialog
           open
-          title="新增部件"
-          subtitle="部件录入"
-          description="为本项目新增一个部件分组。可在右侧时间轴上独立排程。"
+          title="新增项目"
+          subtitle="项目录入"
+          description="新增一个项目分组。可在右侧时间轴上独立排程。"
           fields={[
-            { kind: "text", name: "name", label: "部件名称", defaultValue: "新模具", required: true, maxLength: 32 },
+            { kind: "text", name: "name", label: "项目名称", defaultValue: "新项目", required: true, maxLength: 32 },
           ]}
           confirmText="新增"
           tone="cyan"
@@ -855,10 +902,11 @@ interface ComponentTreeListProps {
   onUpdateReason: (componentId: string, taskId: string, reason: string) => void
   onUpdateProgress: (componentId: string, taskId: string, progress: number) => void
   onDeleteLastDelay: (componentId: string, childId: string) => void
-  onAddTaskToComponent: (componentId: string, name: string, duration: number, depId: string | null, phase?: string) => void
+  onAddTaskToComponent: (componentId: string, name: string, duration: number, depId: string | null, phase?: string, assignee?: string) => void
   onValidateTaskDeletion: (componentId: string, taskId: string) => { canDelete: boolean; reason?: string }
   onDeleteTask: (componentId: string, taskId: string) => void
   onResetTaskProgress: (componentId: string, taskId: string) => void
+  onUpdateAssignee: (componentId: string, taskId: string, assignee: string) => void
 }
 
 function ComponentTreeList(props: ComponentTreeListProps) {
@@ -879,6 +927,7 @@ function ComponentTreeList(props: ComponentTreeListProps) {
     onValidateTaskDeletion,
     onDeleteTask,
     onResetTaskProgress,
+    onUpdateAssignee,
   } = props
 
   const isMacro = viewMode === "MACRO"
@@ -935,7 +984,7 @@ function ComponentTreeList(props: ComponentTreeListProps) {
               />
 
               {/* Component Name — Phase 15: 使用主题色渲染名称 */}
-              <span className={`font-semibold tracking-wide shrink-0 ${groupOverdue ? "text-red-400" : groupCompleted ? "text-emerald-400" : themeColor.base}`}>
+              <span className={`text-[14px] font-medium tracking-wide shrink-0 ${groupOverdue ? "text-red-400" : groupCompleted ? "text-emerald-400" : themeColor.base}`}>
                 {group.name}
               </span>
 
@@ -983,7 +1032,8 @@ function ComponentTreeList(props: ComponentTreeListProps) {
                   onUpdateReason={(taskId, reason) => onUpdateReason(group.id, taskId, reason)}
                   onUpdateProgress={(taskId, progress) => onUpdateProgress(group.id, taskId, progress)}
                   onDeleteLastDelay={(childId) => onDeleteLastDelay(group.id, childId)}
-                  onAddTopLevelTask={(name, duration, depId, phase) => onAddTaskToComponent(group.id, name, duration, depId, phase)}
+                  onAddTopLevelTask={(name, duration, depId, phase, assignee) => onAddTaskToComponent(group.id, name, duration, depId, phase, assignee)}
+                  onUpdateAssignee={(taskId, assignee) => onUpdateAssignee(group.id, taskId, assignee)}
                   onValidateTaskDeletion={(taskId) => onValidateTaskDeletion(group.id, taskId)}
                   onDeleteTopLevelTask={(taskId) => onDeleteTask(group.id, taskId)}
                   onResetTaskProgress={(taskId) => onResetTaskProgress(group.id, taskId)}
@@ -1090,6 +1140,65 @@ function TodayCursor({ timelineStart, dayWidth, totalDays }: TodayCursorProps) {
   )
 }
 
+/* ========================== DependencyConnectors (SVG overlay) ========================== */
+
+interface TaskPositionEntry { yCenterPx: number; startPx: number; endPx: number; depIds: string[]; overdueSource: boolean }
+
+function DependencyConnectors({
+  positionMap,
+  totalWidth,
+  totalHeight,
+}: {
+  positionMap: Map<string, TaskPositionEntry>
+  totalWidth: number
+  totalHeight: number
+}) {
+  const paths: React.ReactNode[] = []
+  positionMap.forEach((to, toId) => {
+    for (const depId of to.depIds) {
+      const from = positionMap.get(depId)
+      if (!from) continue
+      const x1 = from.endPx
+      const y1 = from.yCenterPx
+      const x2 = to.startPx
+      const y2 = to.yCenterPx
+      if (x2 <= x1 && Math.abs(y1 - y2) < 2) continue
+      const midX = x1 + Math.min(12, Math.max(4, (x2 - x1) * 0.3))
+      const isBlocked = from.overdueSource
+      const color = isBlocked ? "rgba(239,68,68,0.7)" : "rgba(148,163,184,0.35)"
+      const width = isBlocked ? 2 : 1.5
+      const dashArray = isBlocked ? "6 3" : "4 3"
+      paths.push(
+        <g key={`${depId}->${toId}`}>
+          <path
+            d={`M ${x1} ${y1} H ${midX} V ${y2} H ${x2}`}
+            fill="none"
+            stroke={color}
+            strokeWidth={width}
+            strokeDasharray={dashArray}
+          />
+          {/* Arrowhead */}
+          <polygon
+            points={`${x2},${y2} ${x2 - 5},${y2 - 3} ${x2 - 5},${y2 + 3}`}
+            fill={color}
+          />
+          {isBlocked && (
+            <text x={(x1 + x2) / 2} y={Math.min(y1, y2) - 4} textAnchor="middle" fill="rgba(239,68,68,0.8)" fontSize="8" fontWeight="600">
+              阻断
+            </text>
+          )}
+        </g>,
+      )
+    }
+  })
+  if (paths.length === 0) return null
+  return (
+    <svg className="absolute inset-0 pointer-events-none z-[4]" width={totalWidth} height={totalHeight} style={{ overflow: "visible" }}>
+      {paths}
+    </svg>
+  )
+}
+
 /* ========================== TaskTrack (MICRO) ========================== */
 
 interface TaskTrackProps {
@@ -1149,6 +1258,37 @@ function TaskTrack({ node, indexInParent, timelineStart, dayWidth, viewMode, rol
           segments={segments.length > 0 ? segments : undefined}
           delayDebt={hasDelayDebt ? delayDebt : undefined}
         />
+        {/* 逾期暴力化：红色虚线直连“今日 NOW”轴 + 逾期天数徽章 */}
+        {overdue && (() => {
+          const overdueDays = getOverdueDays(node)
+          const todayPx = diffDays(timelineStart, todayIso()) * dayWidth + dayWidth / 2
+          const barRightPx = barLeftPx + totalBarWidthPx
+          if (todayPx <= barRightPx || overdueDays <= 0) return null
+          return (
+            <>
+              <div
+                className="absolute pointer-events-none z-[3]"
+                style={{
+                  left: `${barRightPx}px`,
+                  width: `${todayPx - barRightPx}px`,
+                  top: "50%",
+                  height: 0,
+                  borderTop: "2px dashed rgba(239,68,68,0.6)",
+                }}
+              />
+              <span
+                className="absolute text-[10px] font-bold text-red-300 bg-red-950/95 px-1.5 py-0.5 rounded border border-red-500/60 pointer-events-none z-[6] whitespace-nowrap animate-pulse"
+                style={{
+                  left: `${todayPx + 4}px`,
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                }}
+              >
+                已逾期 {overdueDays} 天
+              </span>
+            </>
+          )
+        })()}
       </div>
     )
   }
@@ -1172,13 +1312,13 @@ function TaskTrack({ node, indexInParent, timelineStart, dayWidth, viewMode, rol
           width: `${childBarWidthPx}px`,
           top: "50%",
           transform: "translateY(-50%)",
-          border: "1px solid rgba(245,158,11,0.3)",
+          border: "1px solid rgba(220,38,38,0.3)",
         }}
         title={`${node.name} · ${node.startDate} → ${node.endDate}${node.reason ? ` · ${node.reason}` : ""}`}
       >
         {!childIsNarrow && (
           <div className="absolute inset-0 z-10 flex items-center px-2 pointer-events-none overflow-hidden">
-            <span className="text-[9px] font-medium truncate text-amber-100" style={{ textShadow: "0 1px 2px rgba(0,0,0,0.8)" }}>
+            <span className="text-[9px] font-medium truncate text-amber-100">
               {node.name}
             </span>
           </div>

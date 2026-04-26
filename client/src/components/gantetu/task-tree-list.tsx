@@ -29,7 +29,8 @@ interface TaskTreeListProps {
   onUpdateReason: (id: string, reason: string) => void
   onUpdateProgress: (id: string, progress: number) => void
   onDeleteLastDelay: (childId: string) => void
-  onAddTopLevelTask: (name: string, duration: number, depId: string | null, iterationPhase: string) => void
+  onAddTopLevelTask: (name: string, duration: number, depId: string | null, iterationPhase: string, assignee: string) => void
+  onUpdateAssignee: (id: string, assignee: string) => void
   /** Phase 9 — 删除工序 */
   onValidateTaskDeletion: (taskId: string) => DeletionValidation
   onDeleteTopLevelTask: (taskId: string) => void
@@ -64,6 +65,7 @@ export function TaskTreeList(props: TaskTreeListProps) {
     onUpdateProgress,
     onDeleteLastDelay,
     onAddTopLevelTask,
+    onUpdateAssignee,
     onValidateTaskDeletion,
     onDeleteTopLevelTask,
     onResetTaskProgress,
@@ -96,7 +98,7 @@ export function TaskTreeList(props: TaskTreeListProps) {
 
   return (
     <>
-      <ul className="font-mono text-[11px]">
+      <ul className="text-[13px]">
         {nodes.map((node, i) => {
           const isParent = !!(node.children && node.children.length > 0)
           const expanded = node.isExpanded !== false
@@ -154,6 +156,19 @@ export function TaskTreeList(props: TaskTreeListProps) {
                   {node.name}
                 </span>
 
+                {/* 责任人徽章 — 仅顶级工序显示 */}
+                {!isChildRow && (
+                  <input
+                    type="text"
+                    value={node.assignee ?? ""}
+                    onChange={(e) => onUpdateAssignee(node.id, e.target.value)}
+                    placeholder="责任人"
+                    className={`w-14 min-w-0 shrink-0 bg-transparent border-0 border-b text-[10px] px-0.5 py-0 focus:outline-none transition-colors truncate ${
+                      node.assignee ? "border-transparent text-cyan-300/70 hover:border-slate-700 focus:border-cyan-500" : "border-red-500/50 text-red-400/60 placeholder:text-red-400/40"
+                    }`}
+                    title={node.assignee || "未指定责任人"}
+                  />
+                )}
 
                 {/* ── Right Zone ── */}
                 {isChildRow ? (
@@ -177,7 +192,7 @@ export function TaskTreeList(props: TaskTreeListProps) {
                           aria-label={`${node.name} 延期原因`}
                           title={parentCompleted ? "父工序已封板" : undefined}
                         />
-                        <span className="tabular-nums text-[10px] text-slate-600 shrink-0 tracking-tight">
+                        <span className="tabular-nums text-[12px] text-slate-500 shrink-0 tracking-tight">
                           {fmtDate(node.startDate)}–{fmtDate(node.endDate)}
                         </span>
                         {isLastChildOfParent ? (
@@ -203,7 +218,7 @@ export function TaskTreeList(props: TaskTreeListProps) {
                   <>
                     {/* Dates — visible by default, hidden on group-hover */}
                     <div className="flex items-center gap-0.5 shrink-0 group-hover:hidden">
-                      <span className="relative tabular-nums text-[10px] text-slate-500 tracking-tight cursor-default">
+                      <span className="relative tabular-nums text-[12px] text-slate-500 tracking-tight cursor-default">
                         {fmtDate(node.startDate)}
                         {!isParent && (
                           <input
@@ -217,7 +232,7 @@ export function TaskTreeList(props: TaskTreeListProps) {
                         )}
                       </span>
                       <span className="text-slate-700 text-[8px]">–</span>
-                      <span className="relative tabular-nums text-[10px] text-slate-500 tracking-tight cursor-default">
+                      <span className="relative tabular-nums text-[12px] text-slate-500 tracking-tight cursor-default">
                         {fmtDate(node.endDate)}
                         {!isParent && (
                           <input
@@ -280,6 +295,7 @@ export function TaskTreeList(props: TaskTreeListProps) {
                   onUpdateProgress={onUpdateProgress}
                   onDeleteLastDelay={onDeleteLastDelay}
                   onAddTopLevelTask={onAddTopLevelTask}
+                  onUpdateAssignee={onUpdateAssignee}
                   onValidateTaskDeletion={onValidateTaskDeletion}
                   onDeleteTopLevelTask={onDeleteTopLevelTask}
                   onResetTaskProgress={onResetTaskProgress}
@@ -315,7 +331,7 @@ export function TaskTreeList(props: TaskTreeListProps) {
 
 interface BlackboardSpawnerProps {
   roots: TaskNode[]
-  onAdd: (name: string, duration: number, depId: string | null, iterationPhase: string) => void
+  onAdd: (name: string, duration: number, depId: string | null, iterationPhase: string, assignee: string) => void
 }
 
 /**
@@ -325,16 +341,18 @@ interface BlackboardSpawnerProps {
 function BlackboardSpawner({ roots, onAdd }: BlackboardSpawnerProps) {
   const [open, setOpen] = useState(false)
   const [name, setName] = useState("")
+  const [assignee, setAssignee] = useState("")
   const [duration, setDuration] = useState("")
   const [depId, setDepId] = useState<string | null>(null)
   const [iterationPhase, setIterationPhase] = useState("T0") // Phase 10
-  const [errors, setErrors] = useState<{ name?: string; duration?: string }>({})
+  const [errors, setErrors] = useState<{ name?: string; duration?: string; assignee?: string }>({})
 
   const topLevelRoots = getRoots(roots)
 
   const validate = (): boolean => {
-    const errs: { name?: string; duration?: string } = {}
+    const errs: { name?: string; duration?: string; assignee?: string } = {}
     if (!name.trim()) errs.name = "必填"
+    if (!assignee.trim()) errs.assignee = "必填"
     const dur = Number.parseInt(duration, 10)
     if (!duration || !Number.isFinite(dur) || dur <= 0) errs.duration = "需 > 0"
     setErrors(errs)
@@ -344,9 +362,10 @@ function BlackboardSpawner({ roots, onAdd }: BlackboardSpawnerProps) {
   const handleSubmit = () => {
     if (!validate()) return
     const dur = Number.parseInt(duration, 10)
-    onAdd(name.trim(), dur, depId, iterationPhase)
+    onAdd(name.trim(), dur, depId, iterationPhase, assignee.trim())
     // Reset form
     setName("")
+    setAssignee("")
     setDuration("")
     setDepId(null)
     setIterationPhase("T0")
@@ -373,7 +392,7 @@ function BlackboardSpawner({ roots, onAdd }: BlackboardSpawnerProps) {
 
   return (
     <div className="sticky bottom-0 border-t border-cyan-800/30 bg-[#111827] px-4 py-4 space-y-3 shadow-[0_-4px_12px_rgba(0,0,0,0.3)]">
-      {/* 字段 1：任务名称 */}
+      {/* 字段 1：任务名称 + 责任人 */}
       <div className="flex items-center gap-3">
         <div className="flex-1 relative">
           <input
@@ -388,7 +407,20 @@ function BlackboardSpawner({ roots, onAdd }: BlackboardSpawnerProps) {
           />
           {errors.name && <span className="absolute right-1 top-1.5 text-[8px] text-rose-400">{errors.name}</span>}
         </div>
-        {/* 字段 3：标准天数 */}
+        {/* 责任人/供应商 — 强制必填 */}
+        <div className="w-24 relative">
+          <input
+            type="text"
+            value={assignee}
+            onChange={(e) => setAssignee(e.target.value)}
+            placeholder="责任人 *"
+            className={`w-full bg-transparent border-0 border-b text-slate-200 px-1 py-1.5 text-[11px] focus:outline-none transition-colors ${
+              errors.assignee ? "border-rose-500 focus:border-rose-400" : "border-slate-700 focus:border-cyan-500"
+            }`}
+          />
+          {errors.assignee && <span className="absolute right-1 top-1.5 text-[8px] text-rose-400">{errors.assignee}</span>}
+        </div>
+        {/* 标准天数 */}
         <div className="w-24 relative">
           <input
             type="number"
