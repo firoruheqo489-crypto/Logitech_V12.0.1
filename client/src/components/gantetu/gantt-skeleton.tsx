@@ -230,6 +230,7 @@ export function GanttSkeleton({ initialComponents, initialMilestones = [], dayWi
   // Phase 17 — 左右面板垂直滚动同步，保证行块始终水平对齐
   const leftScrollRef = useRef<HTMLDivElement | null>(null)
   const rightScrollRef = useRef<HTMLDivElement | null>(null)
+  const monthInputRef = useRef<HTMLInputElement | null>(null)
   useEffect(() => {
     const left = leftScrollRef.current
     const right = rightScrollRef.current
@@ -312,28 +313,55 @@ export function GanttSkeleton({ initialComponents, initialMilestones = [], dayWi
       <header className="h-12 flex-shrink-0 border-b border-slate-800/50 flex items-center justify-between px-4 bg-[#111827]">
         <h1 className="text-sm font-semibold tracking-wider text-slate-200">
           <span className="text-cyan-400">工业级动态甘特图</span>
-          <span className="text-slate-500 mx-2">/</span>
-          <span className="text-slate-400 font-normal text-xs">并发部件集群</span>
         </h1>
-        <label className="flex items-center gap-2 text-[10px] tracking-wider text-slate-500">
-          <span>月份</span>
+        <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-lg gantt-glass">
+          <span className="text-[16px] text-slate-300 font-normal">月份</span>
+          <button
+            type="button"
+            onClick={() => {
+              const el = monthInputRef.current
+              if (!el) return
+              // 优先使用原生 showPicker（Chromium / Edge / 部分 FF）
+              const anyEl = el as HTMLInputElement & { showPicker?: () => void }
+              if (typeof anyEl.showPicker === "function") {
+                anyEl.showPicker()
+              } else {
+                el.focus()
+                el.click()
+              }
+            }}
+            className="w-7 h-7 flex items-center justify-center rounded-md text-sky-400 hover:bg-sky-500/10 hover:text-sky-300 transition-all"
+            style={{ filter: "drop-shadow(0 0 4px rgba(56,189,248,0.5))" }}
+            aria-label="更换月份"
+            title="点击更换月份"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18" strokeLinecap="round"/></svg>
+          </button>
+          <span className="text-[16px] font-normal text-sky-200 tabular-nums tracking-wide" style={{ textShadow: "0 0 8px rgba(56,189,248,0.3)" }}>
+            {(() => {
+              const [y, m] = selectedMonth.split("-")
+              return `${y}年${m}月`
+            })()}
+          </span>
+          {/* 隐藏的真实 input，由图标按钮触发 */}
           <input
+            ref={monthInputRef}
             type="month"
             value={selectedMonth}
-            onChange={(e) => {
-              setSelectedMonth(e.target.value)
-            }}
-            className="bg-slate-900 border border-cyan-800/50 text-cyan-300 px-2 py-1 rounded text-[10px] focus:outline-none focus:border-cyan-500"
+            onChange={(e) => setSelectedMonth(e.target.value)}
+            className="sr-only"
+            tabIndex={-1}
+            aria-hidden="true"
           />
-        </label>
+        </div>
       </header>
 
       {/* ========================== Main Content ========================== */}
       <div className="flex flex-1 min-h-0 border-t border-slate-800/30">
         {/* --------------------- Left — Component Tree (Phase 15: 物理空间解压) --------------------- */}
-        <div className="flex-1 min-w-[280px] max-w-[400px] flex-shrink border-r border-slate-800/40 flex flex-col bg-[#111827]">
+        <div className="flex-1 min-w-[300px] max-w-[380px] flex-shrink border-r border-slate-800/40 flex flex-col bg-[#111827]">
           {/* Phase 22 — 顶部控件表头：交付死线 / 部件管理 / 宏微观切换，等距排列 */}
-          <div className="h-10 sticky top-0 z-20 bg-[#0f1729] border-b border-slate-800/50 flex items-center justify-between gap-2 px-3">
+          <div className="h-10 sticky top-0 z-20 bg-[#0f1729] border-b border-slate-800/50 flex items-center justify-between gap-2 px-3 whitespace-nowrap">
             {/* 交付死线 */}
             {role === "ADMIN" ? (
               <div className="relative">
@@ -345,7 +373,7 @@ export function GanttSkeleton({ initialComponents, initialMilestones = [], dayWi
                   }}
                   className="px-2 py-0.5 border border-fuchsia-700/60 text-fuchsia-300 hover:bg-fuchsia-950/50 hover:border-fuchsia-500 text-[10px] rounded transition-all"
                 >
-                  ◆ 交付死线 ({milestones.length})
+                  ◆ 交付死线
                 </button>
                 {showMilestonePanel && (
                   <div className="absolute left-0 top-full mt-1 z-50 w-[420px] bg-[#0f1729] border border-fuchsia-800/50 rounded shadow-[0_8px_24px_rgba(0,0,0,0.6)] p-2">
@@ -445,7 +473,7 @@ export function GanttSkeleton({ initialComponents, initialMilestones = [], dayWi
                 onClick={() => setShowComponentPanel((v) => !v)}
                 className="px-2 py-0.5 border border-cyan-700/50 text-cyan-400 hover:bg-cyan-950/40 hover:border-cyan-500 text-[10px] rounded transition-all"
               >
-                ⚙ 部件管理 ({components.length})
+                ⚙ 部件管理
               </button>
               {showComponentPanel && (
                 <div className="absolute left-0 top-full mt-1 z-50 w-[300px] bg-[#0f1729] border border-cyan-800/50 rounded shadow-[0_8px_24px_rgba(0,0,0,0.6)] p-2">
@@ -655,8 +683,8 @@ export function GanttSkeleton({ initialComponents, initialMilestones = [], dayWi
               ) : (
                 /* MICRO: 展开显示内部工序 */
                 <div key={group.id}>
-                  {/* Component header row — 与左侧 group header 高度严格对齐（均 72px） */}
-                  <div className={`min-h-[48px] border-b border-slate-800/30 bg-slate-900/50 flex items-center px-3 ${themeColor.border}`}>
+                  {/* Component header row — h-10 与左侧严格对齐 */}
+                  <div className={`h-10 border-b border-slate-800/30 bg-slate-900/50 flex items-center px-3 ${themeColor.border}`}>
                     <span className={`text-xs font-medium tracking-wide ${themeColor.base}`}>{group.name}</span>
                   </div>
                   {/* Task rows */}
@@ -675,7 +703,7 @@ export function GanttSkeleton({ initialComponents, initialMilestones = [], dayWi
                         />
                       ))}
                       {/* Placeholder row for "+新增基础工序" button alignment */}
-                      <div className="min-h-[40px] border-b border-slate-800/20" />
+                      <div className="h-10 border-b border-slate-800/20" />
                     </>
                   )}
                 </div>
@@ -765,9 +793,9 @@ function ComponentTreeList(props: ComponentTreeListProps) {
 
         return (
           <li key={group.id} className="border-b border-slate-800/30">
-            {/* Component Group Header — Y 轴空间释放：min-h-[48px] 强制 72px，items-center 垂直居中 */}
+            {/* Component Group Header — h-10 与右侧面板严格对齐 */}
             <div
-              className={`min-h-[48px] flex items-center gap-3 py-2.5 px-4 hover:bg-slate-800/50 transition-all cursor-pointer border-l-3 whitespace-nowrap ${
+              className={`h-10 flex items-center gap-3 py-2.5 px-4 hover:bg-slate-800/50 transition-all cursor-pointer border-l-3 whitespace-nowrap ${
                 groupOverdue 
                   ? "bg-red-950/25 border-l-red-500" 
                   : groupCompleted 
@@ -883,7 +911,7 @@ interface ComponentTrackProps {
 
 function ComponentTrack({ group, timelineStart, dayWidth, role, milestones, colorIndex }: ComponentTrackProps) {
   if (group.tasks.length === 0) {
-    return <div className="min-h-[48px] border-b border-slate-800/20" />
+    return <div className="h-10 border-b border-slate-800/20" />
   }
 
   const envelopeStart = getComponentEnvelopeStart(group)
@@ -899,7 +927,7 @@ function ComponentTrack({ group, timelineStart, dayWidth, role, milestones, colo
   const status = deriveBarStatus(isOverdueGroup, isCompletedGroup, progress)
 
   return (
-    <div className="min-h-[48px] flex items-center border-b border-slate-800/20 relative hover:bg-slate-900/20 transition-colors">
+    <div className="h-10 flex items-center border-b border-slate-800/20 relative hover:bg-slate-900/20 transition-colors">
       <GanttBar
         leftPx={barLeftPx}
         widthPx={barWidthPx}
@@ -1005,7 +1033,7 @@ function TaskTrack({ node, indexInParent, timelineStart, dayWidth, viewMode, rol
     }
 
     return (
-      <div className="min-h-[48px] flex items-center border-b border-slate-800/20 relative hover:bg-slate-900/20 transition-colors" data-task-id={node.id}>
+      <div className="h-10 flex items-center border-b border-slate-800/20 relative hover:bg-slate-900/20 transition-colors" data-task-id={node.id}>
         <GanttBar
           leftPx={barLeftPx}
           widthPx={totalBarWidthPx}
@@ -1026,7 +1054,7 @@ function TaskTrack({ node, indexInParent, timelineStart, dayWidth, viewMode, rol
   const childBarLeftPx = offsetDays * dayWidth
 
   return (
-    <div className="min-h-[48px] flex items-center border-b border-slate-800/15 relative hover:bg-slate-900/10 transition-colors" data-task-id={node.id}>
+    <div className="h-10 flex items-center border-b border-slate-800/15 relative hover:bg-slate-900/10 transition-colors" data-task-id={node.id}>
       <div
         className="absolute h-5 rounded overflow-hidden gantt-delay-stripe"
         style={{

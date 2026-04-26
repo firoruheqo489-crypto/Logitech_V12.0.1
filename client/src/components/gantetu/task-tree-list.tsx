@@ -4,6 +4,12 @@ import { getRoots, isCompleted, isOverdue, isTaskCollidingMilestone, type Deleti
 import { DeletionModal } from "./deletion-modal"
 import { RejectionToast } from "./rejection-toast"
 
+/** Compress ISO date 'YYYY-MM-DD' → 'MM/DD' for compact display */
+function fmtDate(iso: string): string {
+  const parts = iso.split("-")
+  return `${parts[1]}/${parts[2]}`
+}
+
 interface TaskTreeListProps {
   /** Phase 13 — 所属部件组 ID（用于工序录入时的依赖选择） */
   componentId: string
@@ -96,154 +102,161 @@ export function TaskTreeList(props: TaskTreeListProps) {
           const isChildRow = !!node.parentId
           const isLastChildOfParent = isChildRow && i === nodes.length - 1
 
-          // In MACRO mode, only show top-level roots (skip child rows entirely)
           if (isMacro && isChildRow) return null
 
-          // Phase 11 — Stealth Inputs: transparent bg, only border-b on focus
-          const dateCls = isParent
-            ? "bg-transparent border-0 border-b border-slate-800/30 text-slate-600 opacity-50 cursor-not-allowed px-1 py-0.5 text-[10px] font-mono"
-            : "bg-transparent border-0 border-b border-transparent text-slate-300 px-1 py-0.5 text-[10px] font-mono focus:outline-none focus:border-b focus:border-cyan-500 transition-colors"
-
-          // Phase 11 — Status indicator logic
           const overdue = isOverdue(node)
           const completed = isCompleted(node)
           const inProgress = !isChildRow && !completed && !overdue && (node.progress ?? 0) > 0
 
+          const dotCls = completed
+            ? "bg-emerald-500"
+            : overdue
+              ? "bg-red-500"
+              : inProgress
+                ? "bg-blue-500"
+                : "bg-slate-600"
+
+          const nameCls = completed
+            ? "text-emerald-400"
+            : overdue
+              ? "text-red-400"
+              : isChildRow
+                ? "text-slate-400"
+                : "text-slate-100"
+
           return (
             <li key={node.id} className="border-b border-slate-800/30">
+              {/* ━━ Row: group scope on inner div to avoid leaking into recursive children ━━ */}
               <div
-                className="min-h-[72px] flex flex-wrap items-center gap-x-2 gap-y-1.5 py-2 pr-3 hover:bg-slate-800/40 transition-colors whitespace-nowrap"
-                style={{ paddingLeft: `${12 + depth * 18}px` }}
+                className="group h-10 flex items-center gap-1.5 pr-3 transition-colors hover:bg-slate-800/40"
+                style={{ paddingLeft: `${8 + depth * 14}px` }}
               >
-                {/* Phase 11 — Status Indicator Light */}
+                {/* ── Left Zone: status + toggle + name ── */}
                 {!isChildRow && (
                   <span
-                    className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                      completed
-                        ? "bg-emerald-600/80"
-                        : overdue
-                          ? "bg-red-500 gantt-status-overdue"
-                          : inProgress
-                            ? "bg-blue-400 gantt-status-active"
-                            : "bg-slate-700"
-                    }`}
+                    className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotCls}`}
                     title={completed ? "已完工" : overdue ? "已逾期" : inProgress ? "进行中" : "待开始"}
                   />
                 )}
 
-                {/* Fold toggle — disabled in MACRO mode */}
                 <button
                   type="button"
                   aria-label={expanded ? "折叠" : "展开"}
                   onClick={() => onToggle(node.id)}
                   disabled={!isParent || isMacro}
-                  className="w-4 h-4 flex items-center justify-center text-slate-600 hover:text-cyan-400 disabled:opacity-20 disabled:cursor-default transition-colors"
+                  className="w-4 h-4 flex items-center justify-center text-slate-600 shrink-0 hover:text-cyan-400 disabled:opacity-20 disabled:cursor-default transition-colors text-[10px]"
                 >
-                  {!isParent ? <span className="text-slate-700">·</span> : isMacro ? "▸" : expanded ? "▾" : "▸"}
+                  {!isParent ? <span className="text-slate-700">·</span> : expanded ? "▾" : "▸"}
                 </button>
 
-                {/* Name — Phase 15: 扩展宽度，防止折叠 */}
-                <span
-                  className={`w-36 truncate shrink-0 ${
-                    completed
-                      ? "text-emerald-500/80"
-                      : overdue
-                        ? "text-red-400"
-                        : isChildRow
-                          ? "text-slate-400"
-                          : "text-slate-200"
-                  }`}
-                  title={node.name}
-                >
+                <span className={`flex-1 min-w-0 truncate ${nameCls}`} title={node.name}>
                   {node.name}
                 </span>
 
-                {/* 强制换行：上行 = 状态+名称，下行 = 日期+进度+动作 */}
-                <div className="basis-full h-0" aria-hidden />
 
-                {/* Dates */}
-                <input
-                  type="date"
-                  value={node.startDate}
-                  disabled={isParent}
-                  onChange={(e) => onUpdateDate(node.id, e.target.value, node.endDate)}
-                  className={dateCls}
-                />
-                <input
-                  type="date"
-                  value={node.endDate}
-                  disabled={isParent}
-                  onChange={(e) => onUpdateDate(node.id, node.startDate, e.target.value)}
-                  className={dateCls}
-                />
-
-                {/* 追责输入框 — 仅在子节点（延期记录）行内显示 */}
+                {/* ── Right Zone ── */}
                 {isChildRow ? (
+                  /* ── Child row (delay record): reason + compact date + LIFO ── */
                   (() => {
-                    // Phase 10: 查找父节点判断是否已封板
                     const parentNode = allRoots.find((r) => r.id === node.parentId)
                     const parentCompleted = parentNode ? isCompleted(parentNode) : false
                     return (
-                      <input
-                        type="text"
-                        value={node.reason ?? ""}
-                        onChange={(e) => onUpdateReason(node.id, e.target.value)}
-                        placeholder="输入延期原因..."
-                        disabled={parentCompleted}
-                        className={`flex-1 min-w-0 border-0 border-b focus:outline-none text-[10px] px-1.5 py-0.5 font-mono transition-colors ${
-                          parentCompleted
-                            ? "bg-transparent border-emerald-900/30 text-emerald-600/60 cursor-not-allowed"
-                            : "bg-transparent border-transparent hover:border-slate-700 focus:border-cyan-500 text-slate-400 placeholder:text-slate-700"
-                        }`}
-                        aria-label={`${node.name} 延期原因`}
-                        title={parentCompleted ? "父工序已100%完工封板，延期原因不可篡改" : undefined}
-                      />
+                      <>
+                        <input
+                          type="text"
+                          value={node.reason ?? ""}
+                          onChange={(e) => onUpdateReason(node.id, e.target.value)}
+                          placeholder="原因…"
+                          disabled={parentCompleted}
+                          className={`w-16 min-w-0 shrink bg-transparent border-0 border-b text-[10px] font-mono px-1 py-0 focus:outline-none transition-colors ${
+                            parentCompleted
+                              ? "border-emerald-900/30 text-emerald-600/60 cursor-not-allowed"
+                              : "border-transparent hover:border-slate-700 focus:border-cyan-500 text-slate-400 placeholder:text-slate-700"
+                          }`}
+                          aria-label={`${node.name} 延期原因`}
+                          title={parentCompleted ? "父工序已封板" : undefined}
+                        />
+                        <span className="tabular-nums text-[10px] text-slate-600 shrink-0 tracking-tight">
+                          {fmtDate(node.startDate)}–{fmtDate(node.endDate)}
+                        </span>
+                        {isLastChildOfParent ? (
+                          <button
+                            type="button"
+                            onClick={() => onDeleteLastDelay(node.id)}
+                            title="LIFO 撤销"
+                            className="w-5 h-5 flex items-center justify-center text-slate-700 opacity-0 group-hover:opacity-100 hover:text-rose-400 transition-all shrink-0"
+                            aria-label={`撤销 ${node.name}`}
+                          >
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        ) : (
+                          <span className="w-5 shrink-0" aria-hidden />
+                        )}
+                      </>
                     )
                   })()
-                ) : null}
-
-                {/* 右侧操作区 — 无完工封板门控，延期报备与 LIFO 撤销始终可用 */}
-                {!isChildRow ? (
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => onAddDelay(node.id)}
-                      className="px-2.5 py-1 border border-slate-700/60 text-slate-500 hover:text-cyan-400 hover:border-cyan-500/70 hover:bg-cyan-950/30 text-[9px] rounded transition-all shadow-[0_0_0_rgba(6,182,212,0)] hover:shadow-[0_0_8px_rgba(6,182,212,0.3)]"
-                    >
-                      + 延期报备
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteClick(node.id, node.name)}
-                      title="物理销毁该工序"
-                      className="w-6 h-6 flex items-center justify-center text-slate-700 hover:text-red-500 hover:bg-red-950/30 rounded transition-all"
-                      aria-label={`删除 ${node.name}`}
-                    >
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                      </svg>
-                    </button>
-                  </div>
-                ) : isLastChildOfParent ? (
-                  <button
-                    type="button"
-                    onClick={() => onDeleteLastDelay(node.id)}
-                    title="LIFO 撤销本次延期"
-                    className="w-5 h-5 flex items-center justify-center text-slate-700 hover:text-rose-400 transition-colors flex-shrink-0"
-                    aria-label={`撤销 ${node.name}`}
-                  >
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
                 ) : (
-                  <span
-                    className="w-5 h-5 flex items-center justify-center text-slate-800 select-none flex-shrink-0"
-                    title="LIFO 保护：仅允许从最后一次延期开始撤销"
-                    aria-hidden
-                  >
-                    ·
-                  </span>
+                  /* ── Parent / Leaf row: dates (default) ↔ ghost actions (hover) ── */
+                  <>
+                    {/* Dates — visible by default, hidden on group-hover */}
+                    <div className="flex items-center gap-0.5 shrink-0 group-hover:hidden">
+                      <span className="relative tabular-nums text-[10px] text-slate-500 tracking-tight cursor-default">
+                        {fmtDate(node.startDate)}
+                        {!isParent && (
+                          <input
+                            type="date"
+                            value={node.startDate}
+                            onChange={(e) => onUpdateDate(node.id, e.target.value, node.endDate)}
+                            className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                            tabIndex={-1}
+                            aria-label={`${node.name} 开始日期`}
+                          />
+                        )}
+                      </span>
+                      <span className="text-slate-700 text-[8px]">–</span>
+                      <span className="relative tabular-nums text-[10px] text-slate-500 tracking-tight cursor-default">
+                        {fmtDate(node.endDate)}
+                        {!isParent && (
+                          <input
+                            type="date"
+                            value={node.endDate}
+                            onChange={(e) => onUpdateDate(node.id, node.startDate, e.target.value)}
+                            className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                            tabIndex={-1}
+                            aria-label={`${node.name} 结束日期`}
+                          />
+                        )}
+                      </span>
+                    </div>
+
+                    {/* Ghost actions — hidden by default, visible on group-hover */}
+                    <div className="hidden group-hover:flex items-center gap-0.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => onAddDelay(node.id)}
+                        title="延期报备"
+                        className="w-6 h-6 flex items-center justify-center text-slate-600 hover:text-cyan-400 hover:bg-cyan-950/30 rounded transition-all"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <circle cx="12" cy="12" r="9" strokeWidth={1.5} />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6v6l4 2" />
+                        </svg>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteClick(node.id, node.name)}
+                        title="删除工序"
+                        className="w-6 h-6 flex items-center justify-center text-slate-600 hover:text-red-400 hover:bg-red-950/30 rounded transition-all"
+                        aria-label={`删除 ${node.name}`}
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
+                    </div>
+                  </>
                 )}
               </div>
 
@@ -342,13 +355,13 @@ function BlackboardSpawner({ roots, onAdd }: BlackboardSpawnerProps) {
 
   if (!open) {
     return (
-      <div className="sticky bottom-0 border-t border-slate-800/40 bg-[#0f1729] px-4 py-3">
+      <div className="sticky bottom-0 border-t border-slate-800/40 bg-[#0f1729] px-3 h-7 flex items-center opacity-20 hover:opacity-100 transition-opacity">
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="w-full py-2.5 border border-dashed border-slate-700/60 text-slate-500 hover:border-cyan-500/70 hover:text-cyan-400 hover:bg-cyan-950/20 text-[10px] rounded transition-all shadow-[0_0_0_rgba(6,182,212,0)] hover:shadow-[0_0_12px_rgba(6,182,212,0.2)]"
+          className="w-full py-0.5 border border-dashed border-slate-700/60 text-slate-500 hover:border-cyan-500/70 hover:text-cyan-400 hover:bg-cyan-950/20 text-[9px] rounded transition-all"
         >
-          + 新增基础工序
+          + 新增工序
         </button>
       </div>
     )
