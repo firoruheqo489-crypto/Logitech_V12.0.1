@@ -384,8 +384,8 @@ function ImageUploadZone({
 
       <CyberConfirmDialog
         open={!!pendingRemoveId}
-        title="Delete confirmation"
-        message="Delete this image? This action cannot be undone."
+        title="删除确认"
+        message="确定要删除这张图片吗？此操作不可撤销。"
         onConfirm={() => {
           const targetId = pendingRemoveId;
           setPendingRemoveId(null);
@@ -393,8 +393,8 @@ function ImageUploadZone({
           onRemove(targetId);
         }}
         onCancel={() => setPendingRemoveId(null)}
-        confirmText="Delete"
-        cancelText="Cancel"
+        confirmText="确认删除"
+        cancelText="取消"
       />
     </>
   );

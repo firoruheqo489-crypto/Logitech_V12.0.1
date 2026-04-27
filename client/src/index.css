@@ -1861,13 +1861,36 @@ body::-webkit-scrollbar-button,
 
 /* Delay Stripe — 红/暗红 45° 条纹纹理（延期报备专用红） */
 .gantt-delay-stripe {
-  background-image: repeating-linear-gradient(
-    45deg,
-    rgba(220,38,38,0.7),
-    rgba(220,38,38,0.7) 4px,
-    rgba(153,27,27,0.5) 4px,
-    rgba(153,27,27,0.5) 8px
-  );
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.14) 0%, rgba(255,255,255,0.02) 30%, rgba(0,0,0,0.12) 100%),
+    linear-gradient(135deg, rgba(127,29,29,0.96) 0%, rgba(153,27,27,0.94) 42%, rgba(69,10,10,0.98) 100%),
+    repeating-linear-gradient(
+      135deg,
+      rgba(248,113,113,0.34) 0px,
+      rgba(248,113,113,0.34) 6px,
+      rgba(127,29,29,0.08) 6px,
+      rgba(127,29,29,0.08) 12px
+    );
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.12),
+    inset 0 -1px 0 rgba(69,10,10,0.55),
+    inset 0 0 0 1px rgba(248,113,113,0.16),
+    0 6px 18px rgba(69,10,10,0.22);
+}
+
+.gantt-delay-segment-divider::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 1px;
+  bottom: 1px;
+  width: 3px;
+  background: linear-gradient(180deg, rgba(255,241,242,0.96) 0%, rgba(254,205,211,0.88) 48%, rgba(190,24,93,0.72) 100%);
+  box-shadow:
+    0 0 0 1px rgba(127,29,29,0.55),
+    0 0 10px rgba(251,113,133,0.45),
+    2px 0 12px rgba(127,29,29,0.34);
+  z-index: 2;
 }
 
 /* Error Stripe — 红/暗红 45° 条纹纹理 */

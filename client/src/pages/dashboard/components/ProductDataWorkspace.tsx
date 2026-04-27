@@ -966,8 +966,8 @@ export default function ProductDataWorkspace({
                 type="button"
                 onClick={() => setLightboxRotation((prev) => prev - 90)}
                 className="rounded-full border border-slate-700 bg-slate-800/90 p-2 transition-colors hover:bg-slate-700"
-                aria-label="Rotate left"
-                title="Rotate left"
+                aria-label="向左旋转"
+                title="向左旋转"
               >
                 <RotateCcw className="h-5 w-5 text-slate-300" />
               </button>
@@ -976,8 +976,8 @@ export default function ProductDataWorkspace({
                 type="button"
                 onClick={() => setLightboxRotation((prev) => prev + 90)}
                 className="rounded-full border border-slate-700 bg-slate-800/90 p-2 transition-colors hover:bg-slate-700"
-                aria-label="Rotate right"
-                title="Rotate right"
+                aria-label="向右旋转"
+                title="向右旋转"
               >
                 <RotateCw className="h-5 w-5 text-slate-300" />
               </button>
@@ -986,15 +986,15 @@ export default function ProductDataWorkspace({
                 type="button"
                 onClick={closeLightbox}
                 className="rounded-full border border-slate-700 bg-slate-800/90 p-2 transition-colors hover:bg-slate-700"
-                aria-label="Close preview"
-                title="Close preview"
+                aria-label="关闭预览"
+                title="关闭预览"
               >
                 <X className="h-5 w-5 text-slate-300" />
               </button>
             </div>
 
             <span className="mt-4 text-[10px] font-bold uppercase tracking-widest text-slate-500">
-              Arrow Left / Arrow Right 切换图片 · ESC 退出预览
+              左右方向键切换图片 · ESC 退出预览
             </span>
           </div>
         </div>
@@ -1002,8 +1002,8 @@ export default function ProductDataWorkspace({
 
       <CyberConfirmDialog
         open={!!pendingDeleteSlot}
-        title="Delete confirmation"
-        message="Delete this image? This action cannot be undone."
+        title="删除确认"
+        message="确定要删除这张图片吗？此操作不可撤销。"
         onConfirm={() => {
           const target = pendingDeleteSlot;
           setPendingDeleteSlot(null);
@@ -1011,8 +1011,8 @@ export default function ProductDataWorkspace({
           void handleImageDelete(target.projectKey, target.moldNumber, target.type);
         }}
         onCancel={() => setPendingDeleteSlot(null)}
-        confirmText="Delete"
-        cancelText="Cancel"
+        confirmText="确认删除"
+        cancelText="取消"
       />
     </>
   );

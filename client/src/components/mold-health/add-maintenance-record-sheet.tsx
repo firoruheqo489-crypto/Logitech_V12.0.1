@@ -484,7 +484,7 @@ export default function AddMaintenanceRecordSheet({
               onClick={() => onOpenChange(false)}
               disabled={isSubmitting}
             >
-              取消 / Cancel
+              取消
             </Button>
             <Button
               type="submit"

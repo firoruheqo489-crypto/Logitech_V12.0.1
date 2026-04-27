@@ -214,7 +214,7 @@ export default function TaskDrawer({ task, allTasks, onClose }: TaskDrawerProps)
                 </div>
                 <div className="flex-1">
                   <p className="text-[11px] font-semibold text-white/70 group-hover:text-blue-400 transition-colors">
-                    FAI Report
+                    FAI 报告
                   </p>
                   <p className="text-[9px] text-white/30" style={{ fontFamily: 'var(--font-mono)' }}>
                     {task.id}_fai_report.pdf

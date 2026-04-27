@@ -44,7 +44,7 @@ export function getComponentEnvelopeEnd(group: ComponentGroup): string {
 export function getComponentAggregateProgress(group: ComponentGroup): number {
   const topLevelTasks = group.tasks.filter((t) => !t.parentId)
   if (topLevelTasks.length === 0) return 0
-  const total = topLevelTasks.reduce((sum, t) => sum + (t.progress ?? 0), 0)
+  const total = topLevelTasks.reduce((sum, t) => sum + getScheduleProgress(t), 0)
   return Math.round(total / topLevelTasks.length)
 }
 
@@ -75,7 +75,7 @@ export function isComponentCollidingMilestone(group: ComponentGroup, milestones:
 export function isComponentCompleted(group: ComponentGroup): boolean {
   if (group.tasks.length === 0) return false
   for (const t of group.tasks) {
-    if (!t.parentId && (t.progress ?? 0) < 100) return false
+    if (!t.parentId && getScheduleProgress(t) < 100) return false
   }
   return true
 }
@@ -144,6 +144,20 @@ export function todayIso(): string {
 }
 
 /**
+ * Schedule-derived progress used for dashboard display.
+ * 0% before start, 100% on/after end, linearly interpolated in between.
+ */
+export function getScheduleProgress(node: TaskNode, referenceDate = todayIso()): number {
+  if (node.parentId) return 0
+  if (referenceDate <= node.startDate) return 0
+  if (referenceDate >= node.endDate) return 100
+
+  const totalDays = Math.max(1, diffDays(node.startDate, node.endDate))
+  const elapsedDays = Math.max(0, diffDays(node.startDate, referenceDate))
+  return Math.max(0, Math.min(100, Math.round((elapsedDays / totalDays) * 100)))
+}
+
+/**
  * Phase 7 — 逾期熔断判定。
  * 任务已实质性逾期且未完成：endDate < Today && progress < 100
  * 仅对顶级父节点有意义；延期子节点无 progress 概念。
@@ -151,7 +165,7 @@ export function todayIso(): string {
 export function isOverdue(node: TaskNode): boolean {
   if (node.parentId) return false // 子节点不参与逾期判定
   const today = todayIso()
-  const progress = node.progress ?? 0
+  const progress = getScheduleProgress(node, today)
   return node.endDate < today && progress < 100
 }
 
@@ -172,7 +186,7 @@ export function getOverdueDays(node: TaskNode): number {
  */
 export function isCompleted(node: TaskNode): boolean {
   if (node.parentId) return false // 子节点不参与完工判定
-  return (node.progress ?? 0) === 100
+  return getScheduleProgress(node) === 100
 }
 
 /**
@@ -556,37 +570,40 @@ export function validateDeletion(taskId: string, allTasks: TaskNode[]): Deletion
 
 export function createTopLevelTask(
   name: string,
-  durationDays: number,
+  startDate: string,
+  endDate: string,
   dependencyId: string | null,
   roots: TaskNode[],
   iterationPhase = "T0",
   assignee = "",
 ): TaskNode {
-  let startDate: string
+  let effectiveStartDate = startDate
+  let effectiveEndDate = endDate
   if (dependencyId) {
     const dep = findNode(roots, dependencyId)
     if (dep) {
-      startDate = dep.endDate
+      if (effectiveStartDate < dep.endDate) {
+        effectiveStartDate = dep.endDate
+      }
+      if (effectiveEndDate < effectiveStartDate) {
+        effectiveEndDate = effectiveStartDate
+      }
     } else {
-      console.warn("[v0] createTopLevelTask: dependencyId not found, fallback to today", dependencyId)
-      startDate = todayIso()
+      console.warn("[v0] createTopLevelTask: dependencyId not found, keep requested dates", dependencyId)
     }
-  } else {
     // No dependency — start today (or could be customized).
-    startDate = todayIso()
   }
-  const endDate = addDays(startDate, durationDays)
 
   return {
     id: generateId("root"),
     parentId: null,
     name,
     assignee,
-    startDate,
-    endDate,
-    baseStartDate: startDate,
-    baseEndDate: endDate,
-    status: "pending",
+    startDate: effectiveStartDate,
+    endDate: effectiveEndDate,
+    baseStartDate: effectiveStartDate,
+    baseEndDate: effectiveEndDate,
+    status: "in-progress",
     dependencies: dependencyId ? [dependencyId] : [],
     children: [],
     isExpanded: true,

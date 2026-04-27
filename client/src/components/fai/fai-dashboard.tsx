@@ -1277,7 +1277,7 @@ export function FAIDashboard({
               className="inline-flex items-center gap-1.5 rounded-md border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-xs font-semibold text-red-200 transition hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-40"
             >
               <Trash2 className="h-3.5 w-3.5" />
-              Delete Excel Data
+              删除 Excel 数据
             </button>
           </div>
         </div>
@@ -1333,12 +1333,12 @@ export function FAIDashboard({
 
       <CyberConfirmDialog
         open={showClearConfirm}
-        title="Confirm Deleting Excel Data"
-        message="Delete current parsed Excel dataset?\nAfter deletion the dashboard falls back to mock data."
+        title="确认删除 Excel 数据"
+        message="确定要删除当前已解析的 Excel 数据吗？\n删除后看板将回退到模拟数据。"
         onCancel={() => setShowClearConfirm(false)}
         onConfirm={handleClearUploadedData}
-        confirmText="Delete"
-        cancelText="Cancel"
+        confirmText="确认删除"
+        cancelText="取消"
       />
     </div>
   )

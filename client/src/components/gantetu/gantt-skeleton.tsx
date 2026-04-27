@@ -9,6 +9,7 @@ import {
   getComponentAggregateProgress,
   getComponentEnvelopeEnd,
   getComponentEnvelopeStart,
+  getScheduleProgress,
   getRoots,
   isCompleted,
   isComponentCollidingMilestone,
@@ -52,6 +53,8 @@ interface GanttBarSegment {
   widthPx: number
   type: "base" | "delay"
   title?: string
+  label?: string
+  compactLabel?: string
 }
 
 interface GanttBarProps {
@@ -88,6 +91,7 @@ const PLASMA_EDGE: Record<GanttBarStatus, string> = {
 
 function GanttBar({ leftPx, widthPx, progress, status, label, segments, delayDebt }: GanttBarProps) {
   const pct = Math.max(0, Math.min(100, progress))
+  const showZeroProgressActiveTint = pct === 0 && (status === "active" || status === "delayed")
 
   const isOverdueBar = status === "overdue"
   const plasmaFill = PLASMA_FILL[status]
@@ -124,35 +128,47 @@ function GanttBar({ leftPx, widthPx, progress, status, label, segments, delayDeb
                 if (seg.type === "base") {
                   return (
                     <div key={i} className="relative h-full" style={{ width: `${seg.widthPx}px` }} title={seg.title}>
-                      {pct > 0 && (
+                      {pct > 0 ? (
                         <div
                           className={`absolute inset-y-0 left-0 ${plasmaFill} ${
                             pct < 100 ? `border-r ${plasmaEdge}` : ""
                           }`}
                           style={{ width: `${pct}%` }}
                         />
-                      )}
+                      ) : showZeroProgressActiveTint ? (
+                        <div className={`absolute inset-0 ${plasmaFill} opacity-45`} />
+                      ) : null}
                     </div>
                   )
                 }
                 return (
                   <div
                     key={i}
-                    className="h-full gantt-delay-stripe"
+                    className={`relative h-full gantt-delay-stripe ${i > 1 ? "gantt-delay-segment-divider" : ""}`}
                     style={{ width: `${seg.widthPx}px` }}
                     title={seg.title}
-                  />
+                  >
+                    {(seg.widthPx >= 24 && (seg.widthPx >= 52 ? seg.label : seg.compactLabel ?? seg.label)) ? (
+                      <div className="absolute inset-0 z-[3] flex items-center justify-center px-2 pointer-events-none overflow-hidden">
+                        <span className={`${seg.widthPx < 64 ? "text-[8px]" : "text-[9px]"} font-semibold whitespace-nowrap text-rose-50 drop-shadow-[0_1px_1px_rgba(0,0,0,0.75)]`}>
+                          {seg.widthPx >= 52 ? seg.label : seg.compactLabel ?? seg.label}
+                        </span>
+                      </div>
+                    ) : null}
+                  </div>
                 )
               })}
             </div>
           ) : (
             /* Simple mode: single plasma fill at progress% */
-            pct > 0 && (
+            pct > 0 ? (
               <div
                 className={`absolute inset-y-0 left-0 ${plasmaFill} ${pct < 100 ? `border-r ${plasmaEdge}` : ""}`}
                 style={{ width: `${pct}%` }}
               />
-            )
+            ) : showZeroProgressActiveTint ? (
+              <div className={`absolute inset-0 ${plasmaFill} opacity-45`} />
+            ) : null
           )}
         </div>
 
@@ -177,10 +193,16 @@ function GanttBar({ leftPx, widthPx, progress, status, label, segments, delayDeb
   )
 }
 
-function deriveBarStatus(_overdue: boolean, completed: boolean, progress: number): GanttBarStatus {
+function deriveBarStatus(
+  _overdue: boolean,
+  completed: boolean,
+  progress: number,
+  taskStatus?: TaskNode["status"],
+): GanttBarStatus {
   if (completed) return "completed"
   // 逾期任务不再强制红色 — 统一走橙色系，只有延期报备段才允许红
-  if (progress > 0) return "active"
+  if (taskStatus === "delayed") return "delayed"
+  if (taskStatus === "in-progress" || progress > 0) return "active"
   return "pending"
 }
 
@@ -203,6 +225,7 @@ export function GanttSkeleton({ initialComponents, initialMilestones = [], dayWi
     toggleComponentExpanded,
     addTaskToComponent,
     addComponentGroup,
+    updateComponentGroup,
     deleteComponentGroup,
     role,
     milestones,
@@ -240,6 +263,8 @@ export function GanttSkeleton({ initialComponents, initialMilestones = [], dayWi
   // Phase 21 — 部件管理面板（新增/删除集中入口）
   const [showComponentPanel, setShowComponentPanel] = useState(false)
   const [componentDeletionTarget, setComponentDeletionTarget] = useState<{ id: string; name: string } | null>(null)
+  const [editingComponentId, setEditingComponentId] = useState<string | null>(null)
+  const [componentNameDraft, setComponentNameDraft] = useState("")
 
   // 统一录入弹窗状态机（取代 window.prompt）
   type PromptKind =
@@ -304,6 +329,25 @@ export function GanttSkeleton({ initialComponents, initialMilestones = [], dayWi
     deleteComponentGroup(componentDeletionTarget.id)
     setComponentDeletionTarget(null)
   }, [componentDeletionTarget, deleteComponentGroup])
+
+  const handleStartComponentEdit = useCallback((componentId: string, name: string) => {
+    setEditingComponentId(componentId)
+    setComponentNameDraft(name)
+  }, [])
+
+  const handleSaveComponentEdit = useCallback(() => {
+    if (!editingComponentId) return
+    const trimmedName = componentNameDraft.trim()
+    if (!trimmedName) return
+    updateComponentGroup(editingComponentId, trimmedName)
+    setEditingComponentId(null)
+    setComponentNameDraft("")
+  }, [componentNameDraft, editingComponentId, updateComponentGroup])
+
+  const handleCancelComponentEdit = useCallback(() => {
+    setEditingComponentId(null)
+    setComponentNameDraft("")
+  }, [])
 
   // Phase 23 — 右侧面板宽度跟踪（用于计算动态 dayWidth）
   const [containerWidth, setContainerWidth] = useState(0)
@@ -425,11 +469,11 @@ export function GanttSkeleton({ initialComponents, initialMilestones = [], dayWi
         </div>
 
         {/* --------------------- Left — Component Tree (Phase 15: 物理空间解压) --------------------- */}
-        <div className="flex-1 min-w-[210px] max-w-[300px] flex-shrink border-r border-slate-800/40 flex flex-col bg-[#111827]">
+        <div className="basis-[236px] min-w-[176px] max-w-[248px] shrink-0 border-r border-slate-800/40 flex flex-col bg-[#111827]">
           {/* Phase 22 — 顶部控件表头：交付死线 / 部件管理 / 宏微观切换，等距排列 */}
           {/* 高度从 GANTT_ROW_H.CONTROL_BAR 取值，与右侧里程碑条物理锁死 */}
           <div
-            className="sticky top-0 z-20 bg-[#0f1729] border-b border-slate-800/50 flex items-center justify-between gap-2 px-3 whitespace-nowrap"
+            className="sticky top-0 z-20 bg-[#0f1729] border-b border-slate-800/50 flex items-center justify-between gap-2 px-2.5 whitespace-nowrap"
             style={{ height: GANTT_ROW_H.CONTROL_BAR }}
           >
             {/* 交付死线 */}
@@ -562,22 +606,66 @@ export function GanttSkeleton({ initialComponents, initialMilestones = [], dayWi
                     <div className="px-2 py-3 text-[10px] text-slate-500 text-center">尚未录入部件</div>
                   ) : (
                     <ul className="max-h-60 overflow-auto">
-                      {components.map((g) => (
-                        <li key={g.id} className="flex items-center gap-2 px-2 py-1.5 border-b border-slate-800/40 last:border-0 hover:bg-slate-800/30">
-                          <span className="flex-1 text-[10px] text-slate-200 truncate" title={g.name}>{g.name}</span>
-                          <span className="text-[9px] text-slate-500">{g.tasks.length} 工序</span>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setComponentDeletionTarget({ id: g.id, name: g.name })
-                              setShowComponentPanel(false)
-                            }}
-                            className="text-[9px] text-slate-500 hover:text-red-400 px-1"
-                          >
-                            删除
-                          </button>
-                        </li>
-                      ))}
+                      {components.map((g) => {
+                        const isEditing = editingComponentId === g.id
+                        return (
+                          <li key={g.id} className="flex items-center gap-2 px-2 py-1.5 border-b border-slate-800/40 last:border-0 hover:bg-slate-800/30">
+                            {isEditing ? (
+                              <>
+                                <input
+                                  type="text"
+                                  value={componentNameDraft}
+                                  onChange={(e) => setComponentNameDraft(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") handleSaveComponentEdit()
+                                    if (e.key === "Escape") handleCancelComponentEdit()
+                                  }}
+                                  className="flex-1 min-w-0 bg-transparent border-0 border-b border-cyan-700 text-[10px] text-slate-100 px-1 py-0.5 focus:outline-none focus:border-cyan-500"
+                                  aria-label={`编辑 ${g.name}`}
+                                  autoFocus
+                                />
+                                <button
+                                  type="button"
+                                  onClick={handleSaveComponentEdit}
+                                  disabled={!componentNameDraft.trim()}
+                                  className="text-[9px] text-emerald-400 hover:text-emerald-300 px-1 disabled:opacity-40 disabled:cursor-not-allowed"
+                                >
+                                  保存
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={handleCancelComponentEdit}
+                                  className="text-[9px] text-slate-500 hover:text-slate-300 px-1"
+                                >
+                                  取消
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                <span className="flex-1 text-[10px] text-slate-200 truncate" title={g.name}>{g.name}</span>
+                                <span className="text-[9px] text-slate-500">{g.tasks.length} 工序</span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleStartComponentEdit(g.id, g.name)}
+                                  className="text-[9px] text-slate-500 hover:text-cyan-400 px-1"
+                                >
+                                  编辑
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setComponentDeletionTarget({ id: g.id, name: g.name })
+                                    setShowComponentPanel(false)
+                                  }}
+                                  className="text-[9px] text-slate-500 hover:text-red-400 px-1"
+                                >
+                                  删除
+                                </button>
+                              </>
+                            )}
+                          </li>
+                        )
+                      })}
                     </ul>
                   )}
                   <button
@@ -598,7 +686,7 @@ export function GanttSkeleton({ initialComponents, initialMilestones = [], dayWi
           {/* Section header (仅文本描述，与右侧 ruler 对齐) */}
           {/* 高度从 GANTT_ROW_H.RULER 取值，top 偏移为 CONTROL_BAR 高度 */}
           <div
-            className="border-b border-slate-800/50 sticky bg-[#0f1729] flex items-center px-4 text-[10px] tracking-wider text-slate-500 z-10"
+            className="border-b border-slate-800/50 sticky bg-[#0f1729] flex items-center px-3 text-[10px] tracking-wider text-slate-500 z-10"
             style={{ height: GANTT_ROW_H.RULER, top: GANTT_ROW_H.CONTROL_BAR }}
           >
             <span className="text-cyan-500/70 mr-2">///</span>
@@ -630,7 +718,7 @@ export function GanttSkeleton({ initialComponents, initialMilestones = [], dayWi
         </div>
 
         {/* --------------------- Right — Timeline Tracks (Phase 23.2: dayWidth 动态填充使本月刚好铺满) --------------------- */}
-        <div ref={rightScrollRef} className="flex-1 overflow-auto relative bg-[#0B0F19] [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+        <div ref={rightScrollRef} className="min-w-0 flex-1 overflow-auto relative bg-[#0B0F19] [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
           {/* Phase 18 — Milestone Strip：独立一行、紧贴 top-0、位于 ruler 上方 */}
           {/* 高度从 GANTT_ROW_H.CONTROL_BAR 取值，与左侧控制栏物理锁死 */}
           <div
@@ -906,7 +994,15 @@ interface ComponentTreeListProps {
   onUpdateReason: (componentId: string, taskId: string, reason: string) => void
   onUpdateProgress: (componentId: string, taskId: string, progress: number) => void
   onDeleteLastDelay: (componentId: string, childId: string) => void
-  onAddTaskToComponent: (componentId: string, name: string, duration: number, depId: string | null, phase?: string, assignee?: string) => void
+  onAddTaskToComponent: (
+    componentId: string,
+    name: string,
+    startDate: string,
+    endDate: string,
+    depId: string | null,
+    phase?: string,
+    assignee?: string,
+  ) => void
   onValidateTaskDeletion: (componentId: string, taskId: string) => { canDelete: boolean; reason?: string }
   onDeleteTask: (componentId: string, taskId: string) => void
   onResetTaskProgress: (componentId: string, taskId: string) => void
@@ -943,7 +1039,8 @@ function ComponentTreeList(props: ComponentTreeListProps) {
         const groupOverdue = isComponentOverdue(group)
         const groupCompleted = isComponentCompleted(group)
         const groupProgress = getComponentAggregateProgress(group)
-        const inProgress = groupProgress > 0 && !groupCompleted && !groupOverdue
+        const groupHasStarted = group.tasks.some((task) => !task.parentId && (task.status === "in-progress" || getScheduleProgress(task) > 0))
+        const inProgress = groupHasStarted && !groupCompleted && !groupOverdue
 
         // Phase 15 — 色谱遗传法则：根据 index 分配专属主题色
         const themeColor = COMPONENT_PALETTE[idx % COMPONENT_PALETTE.length]
@@ -953,7 +1050,7 @@ function ComponentTreeList(props: ComponentTreeListProps) {
             {/* Component Group Header — 高度从 GANTT_ROW_H.GROUP 取值，与右侧面板物理锁死 */}
             <div
               style={{ height: GANTT_ROW_H.GROUP }}
-              className={`flex items-center gap-3 py-2.5 px-4 hover:bg-slate-800/50 transition-all cursor-pointer border-l-3 whitespace-nowrap ${
+              className={`flex items-center gap-2.5 py-2.5 px-3 hover:bg-slate-800/50 transition-all cursor-pointer border-l-3 whitespace-nowrap ${
                 groupOverdue 
                   ? "bg-emerald-950/25 border-l-emerald-500" 
                   : groupCompleted 
@@ -1036,7 +1133,9 @@ function ComponentTreeList(props: ComponentTreeListProps) {
                   onUpdateReason={(taskId, reason) => onUpdateReason(group.id, taskId, reason)}
                   onUpdateProgress={(taskId, progress) => onUpdateProgress(group.id, taskId, progress)}
                   onDeleteLastDelay={(childId) => onDeleteLastDelay(group.id, childId)}
-                  onAddTopLevelTask={(name, duration, depId, phase, assignee) => onAddTaskToComponent(group.id, name, duration, depId, phase, assignee)}
+                  onAddTopLevelTask={(name, startDate, endDate, depId) =>
+                    onAddTaskToComponent(group.id, name, startDate, endDate, depId)
+                  }
                   onUpdateAssignee={(taskId, assignee) => onUpdateAssignee(group.id, taskId, assignee)}
                   onValidateTaskDeletion={(taskId) => onValidateTaskDeletion(group.id, taskId)}
                   onDeleteTopLevelTask={(taskId) => onDeleteTask(group.id, taskId)}
@@ -1077,7 +1176,8 @@ function ComponentTrack({ group, timelineStart, dayWidth, role, milestones, colo
 
   const barWidthPx = span * dayWidth
   const barLeftPx = offsetDays * dayWidth
-  const status = deriveBarStatus(isOverdueGroup, isCompletedGroup, progress)
+  const hasStartedGroup = group.tasks.some((task) => !task.parentId && (task.status === "in-progress" || getScheduleProgress(task) > 0))
+  const status = deriveBarStatus(isOverdueGroup, isCompletedGroup, progress, hasStartedGroup ? "in-progress" : "pending")
 
   return (
     <div
@@ -1228,13 +1328,13 @@ function TaskTrack({ node, indexInParent, timelineStart, dayWidth, viewMode, rol
     const completed = isCompleted(node)
     const delayDebt = calculateDelayDebt(node)
     const hasDelayDebt = completed && delayDebt > 0
-    const progress = node.progress ?? 0
+    const progress = getScheduleProgress(node)
 
     const childrenSpanDays = children.reduce((sum, c) => sum + Math.max(0, diffDays(c.startDate, c.endDate)), 0)
     const totalBarSpan = baseDays + childrenSpanDays
     const totalBarWidthPx = totalBarSpan * dayWidth
     const barLeftPx = offsetDays * dayWidth
-    const status = deriveBarStatus(overdue, completed, progress)
+    const status = deriveBarStatus(overdue, completed, progress, node.status)
 
     const segments: GanttBarSegment[] = []
     if (baseDays > 0) {
@@ -1243,7 +1343,14 @@ function TaskTrack({ node, indexInParent, timelineStart, dayWidth, viewMode, rol
     for (const c of children) {
       const segDays = Math.max(0, diffDays(c.startDate, c.endDate))
       if (segDays > 0) {
-        segments.push({ widthPx: segDays * dayWidth, type: "delay", title: `${c.name}${c.reason ? ` · ${c.reason}` : ""}` })
+        const delayText = segDays === 1 ? `+${segDays}天` : `delay +${segDays}天`
+        segments.push({
+          widthPx: segDays * dayWidth,
+          type: "delay",
+          title: `${c.name}${c.reason ? ` · ${c.reason}` : ""}`,
+          label: delayText,
+          compactLabel: segDays === 1 ? `+${segDays}天` : delayText,
+        })
       }
     }
 
@@ -1299,8 +1406,9 @@ function TaskTrack({ node, indexInParent, timelineStart, dayWidth, viewMode, rol
 
   // Child (delay record) row — striped entity slider
   const span = Math.max(1, diffDays(node.startDate, node.endDate))
+  const delayLabel = span === 1 ? `+${span}天` : `delay +${span}天`
   const childBarWidthPx = span * dayWidth
-  const childIsNarrow = childBarWidthPx < 80
+  const childIsNarrow = childBarWidthPx < 72
   const childBarLeftPx = offsetDays * dayWidth
 
   return (
@@ -1310,29 +1418,23 @@ function TaskTrack({ node, indexInParent, timelineStart, dayWidth, viewMode, rol
       data-task-id={node.id}
     >
       <div
-        className="absolute h-5 rounded overflow-hidden gantt-delay-stripe"
+        className="absolute h-5 rounded overflow-hidden gantt-delay-stripe shadow-[0_0_14px_rgba(239,68,68,0.18)]"
         style={{
           left: `${childBarLeftPx}px`,
           width: `${childBarWidthPx}px`,
           top: "50%",
           transform: "translateY(-50%)",
-          border: "1px solid rgba(220,38,38,0.3)",
+          border: "1px solid rgba(248,113,113,0.42)",
+          boxShadow: "inset 0 1px 0 rgba(255,255,255,0.12), inset 0 0 0 1px rgba(127,29,29,0.35), 0 6px 18px rgba(127,29,29,0.24)",
         }}
         title={`${node.name} · ${node.startDate} → ${node.endDate}${node.reason ? ` · ${node.reason}` : ""}`}
       >
-        {!childIsNarrow && (
-          <div className="absolute inset-0 z-10 flex items-center px-2 pointer-events-none overflow-hidden">
-            <span className="text-[9px] font-medium truncate text-amber-100">
-              {node.name}
-            </span>
-          </div>
-        )}
-      </div>
-      {childIsNarrow && (
-        <div className="absolute top-1/2 -translate-y-1/2 ml-2 pointer-events-none whitespace-nowrap" style={{ left: `${childBarLeftPx + childBarWidthPx}px` }}>
-          <span className="text-[9px] font-medium text-amber-200/80">{node.name}</span>
+        <div className={`absolute inset-0 z-10 flex items-center pointer-events-none overflow-hidden ${childIsNarrow ? "justify-center px-1" : "px-2"}`}>
+          <span className={`${childIsNarrow ? "text-[8px]" : "text-[9px]"} font-semibold truncate whitespace-nowrap text-rose-50 drop-shadow-[0_1px_1px_rgba(0,0,0,0.7)]`}>
+              {delayLabel}
+          </span>
         </div>
-      )}
+      </div>
     </div>
   )
 }

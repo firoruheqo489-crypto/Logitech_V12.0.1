@@ -73,8 +73,8 @@ type PendingDeleteState = { slotType: ProductDocSlotType; fileName: string } | n
 const SLOT_CONFIGS: SlotConfig[] = [
   {
     slotType: 'drawing-2d',
-    label: '2D Drawing',
-    description: 'Landscape A4 preview, mixed formats',
+    label: '2D 图纸',
+    description: '横向 A4 预览，支持混合格式',
     icon: FileText,
     accept: '.pdf,application/pdf,application/x-pdf,application/acrobat,.xls,.xlsx,.png,.jpg,.jpeg,.webp',
     layoutType: 'landscape-a4',
@@ -82,8 +82,8 @@ const SLOT_CONFIGS: SlotConfig[] = [
   },
   {
     slotType: 'measurement-method',
-    label: 'Measurement MTD',
-    description: 'Landscape A4, multi-page PDF only',
+    label: '测量方法 MTD',
+    description: '横向 A4，仅支持多页 PDF',
     icon: FileSpreadsheet,
     accept: '.pdf,application/pdf,application/x-pdf,application/acrobat',
     layoutType: 'landscape-a4',
@@ -92,8 +92,8 @@ const SLOT_CONFIGS: SlotConfig[] = [
   },
   {
     slotType: 'product-standard',
-    label: 'Product Standard',
-    description: 'PDF / Excel / Image',
+    label: '产品标准',
+    description: '支持 PDF / Excel / 图片',
     icon: ImageIcon,
     accept: '.pdf,application/pdf,application/x-pdf,application/acrobat,.xls,.xlsx,.png,.jpg,.jpeg,.webp',
     layoutType: 'standard',
@@ -267,7 +267,7 @@ function DocumentPreviewModal({ record, onClose }: { record: ProductDocRecord; o
         type="button"
         onClick={onClose}
         className="absolute right-4 top-4 rounded-full border border-white/10 bg-black/60 p-2 text-white/80 transition-colors hover:bg-black/80 hover:text-white"
-        aria-label="Close preview"
+        aria-label="关闭预览"
       >
         <X className="h-5 w-5" />
       </button>
@@ -727,7 +727,7 @@ function DocumentCard({
                     </div>
                     <div className="mt-5 inline-flex items-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.03] px-4 py-3 text-sm text-slate-200 transition-colors hover:border-cyan-500/40 hover:bg-cyan-500/10 hover:text-cyan-100">
                       <RefreshCw className="h-4 w-4" />
-                      Open Document
+                      打开文档
                     </div>
                   </div>
                 </button>
@@ -744,8 +744,8 @@ function DocumentCard({
               ) : (
                 <>
                   <UploadCloud className={`h-6 w-6 ${theme.text}`} />
-                  <div className="text-sm text-slate-200">Upload file</div>
-                  <div className="text-[11px] text-slate-500">{slotConfig.fileType === 'pdf' ? 'PDF only' : 'PDF / Excel / Image'}</div>
+                  <div className="text-sm text-slate-200">上传文件</div>
+                  <div className="text-[11px] text-slate-500">{slotConfig.fileType === 'pdf' ? '仅支持 PDF' : '支持 PDF / Excel / 图片'}</div>
                 </>
               )}
             </button>
@@ -765,7 +765,7 @@ function DocumentCard({
               }`}
             >
               <UploadCloud className="h-3.5 w-3.5" />
-              Replace
+              替换文件
             </button>
             <button
               type="button"
@@ -774,7 +774,7 @@ function DocumentCard({
               className="inline-flex items-center justify-center gap-2 rounded-lg border border-red-500/15 bg-red-500/10 px-3 py-2 text-xs text-red-200 transition-colors hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Trash2 className="h-3.5 w-3.5" />
-              Delete
+              删除文件
             </button>
             {showOpenButton ? (
               <button
@@ -784,7 +784,7 @@ function DocumentCard({
                 className="inline-flex items-center justify-center gap-2 rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-xs text-slate-400 transition-colors hover:border-white/[0.12] hover:bg-white/[0.05] hover:text-slate-200 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <RefreshCw className="h-3.5 w-3.5" />
-                Open
+                打开
               </button>
             ) : null}
             {showExpandReader ? (
@@ -795,7 +795,7 @@ function DocumentCard({
                 className="inline-flex items-center justify-center gap-2 rounded-lg border border-cyan-500/20 bg-cyan-500/10 px-3 py-2 text-xs text-cyan-100 transition-colors hover:border-cyan-400/50 hover:bg-cyan-500/15 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Maximize2 className="h-3.5 w-3.5" />
-                Expand Reader
+                展开阅读器
               </button>
             ) : null}
           </div>

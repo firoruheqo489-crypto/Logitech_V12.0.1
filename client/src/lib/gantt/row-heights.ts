@@ -34,7 +34,7 @@ export const GANTT_ROW_H: Readonly<Record<GanttRowKind, number>> = {
   CONTROL_BAR: 40,
   RULER: 40,
   GROUP: 40,
-  TASK: 40,
+  TASK: 72,
   SPAWNER: 28,
 } as const
 

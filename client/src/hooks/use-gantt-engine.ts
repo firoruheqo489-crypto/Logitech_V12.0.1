@@ -51,9 +51,18 @@ export interface UseGanttEngineReturn {
   toggleExpanded: (componentId: string, taskId: string) => void
   toggleComponentExpanded: (componentId: string) => void
   /** Phase 13 — 在指定部件内添加工序 */
-  addTaskToComponent: (componentId: string, name: string, durationDays: number, dependencyId: string | null, iterationPhase?: string, assignee?: string) => void
+  addTaskToComponent: (
+    componentId: string,
+    name: string,
+    startDate: string,
+    endDate: string,
+    dependencyId: string | null,
+    iterationPhase?: string,
+    assignee?: string,
+  ) => void
   /** Phase 13 — 新增部件组 */
   addComponentGroup: (name: string) => void
+  updateComponentGroup: (componentId: string, name: string) => void
   /** Phase 21 — 删除部件组 */
   deleteComponentGroup: (componentId: string) => void
 
@@ -316,13 +325,21 @@ export function useGanttEngine(initialComponents: ComponentGroup[], initialMiles
   /* ----------------------- addTaskToComponent ----------------------------- */
 
   const addTaskToComponent = useCallback(
-    (componentId: string, name: string, durationDays: number, dependencyId: string | null, iterationPhase = "T0", assignee = "") => {
+    (
+      componentId: string,
+      name: string,
+      startDate: string,
+      endDate: string,
+      dependencyId: string | null,
+      iterationPhase = "T0",
+      assignee = "",
+    ) => {
       if (!name.trim()) {
         console.warn("[v0] addTaskToComponent: name is empty")
         return
       }
-      if (durationDays <= 0) {
-        console.warn("[v0] addTaskToComponent: durationDays must be > 0", durationDays)
+      if (!startDate || !endDate || startDate > endDate) {
+        console.warn("[v0] addTaskToComponent: invalid date range", { startDate, endDate })
         return
       }
 
@@ -331,7 +348,15 @@ export function useGanttEngine(initialComponents: ComponentGroup[], initialMiles
           const group = draft.find((g) => g.id === componentId)
           if (!group) return
 
-          const newTask = createTopLevelTask(name.trim(), durationDays, dependencyId, group.tasks, iterationPhase, assignee.trim())
+          const newTask = createTopLevelTask(
+            name.trim(),
+            startDate,
+            endDate,
+            dependencyId,
+            group.tasks,
+            iterationPhase,
+            assignee.trim(),
+          )
           group.tasks.push(newTask)
           enforceDependencyConstraints(group.tasks)
         }),
@@ -356,6 +381,22 @@ export function useGanttEngine(initialComponents: ComponentGroup[], initialMiles
           tasks: [],
           isExpanded: true,
         })
+      }),
+    )
+  }, [])
+
+  const updateComponentGroup = useCallback((componentId: string, name: string) => {
+    const trimmedName = name.trim()
+    if (!trimmedName) {
+      console.warn("[v0] updateComponentGroup: name is empty")
+      return
+    }
+
+    setComponents((prev) =>
+      produce(prev, (draft) => {
+        const group = draft.find((g) => g.id === componentId)
+        if (!group) return
+        group.name = trimmedName
       }),
     )
   }, [])
@@ -502,6 +543,7 @@ export function useGanttEngine(initialComponents: ComponentGroup[], initialMiles
     toggleComponentExpanded,
     addTaskToComponent,
     addComponentGroup,
+    updateComponentGroup,
     deleteComponentGroup,
     // Phase 8
     role,

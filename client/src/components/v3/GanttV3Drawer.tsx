@@ -292,7 +292,7 @@ export default function GanttV3Drawer({ task, allTasks, dependencies, onClose }:
 
             {/* Evidence Documents */}
             <div>
-              <SectionTitle icon={<Image className="w-3.5 h-3.5" />} title="证据文档 · Evidence" />
+              <SectionTitle icon={<Image className="w-3.5 h-3.5" />} title="证据文档" />
               {task.dbId ? (
                 <EvidenceUpload taskId={task.dbId} />
               ) : (
@@ -309,7 +309,7 @@ export default function GanttV3Drawer({ task, allTasks, dependencies, onClose }:
                 </div>
                 <div className="flex-1">
                   <p className="text-[12px] font-semibold text-white/60 group-hover:text-blue-400 transition-colors">
-                    FAI Report
+                    FAI 报告
                   </p>
                   <p className="text-[11px] text-white/25" style={{ fontFamily: 'var(--font-mono)' }}>
                     {task.id}_fai_report.pdf
@@ -322,7 +322,7 @@ export default function GanttV3Drawer({ task, allTasks, dependencies, onClose }:
             {/* Predecessor Dependencies */}
             {predecessors.length > 0 && (
               <div>
-                <SectionTitle icon={<GitBranch className="w-3.5 h-3.5" />} title="前置依赖 · Predecessors" />
+                <SectionTitle icon={<GitBranch className="w-3.5 h-3.5" />} title="前置依赖" />
                 <div className="mt-2.5 space-y-1.5">
                   {predecessors.map((pred) => {
                     const delay = getDelayDays(pred.task);
@@ -344,7 +344,7 @@ export default function GanttV3Drawer({ task, allTasks, dependencies, onClose }:
                             className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/15"
                             style={{ fontFamily: 'var(--font-mono)' }}
                           >
-                            +{pred.lagHours}h lag
+                            +{pred.lagHours}h 延后
                           </span>
                         )}
                         {delay > 0 ? (
@@ -359,7 +359,7 @@ export default function GanttV3Drawer({ task, allTasks, dependencies, onClose }:
                             className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-emerald-500/8 text-emerald-400 border border-emerald-500/10"
                             style={{ fontFamily: 'var(--font-mono)' }}
                           >
-                            On Time
+                            按时
                           </span>
                         )}
                       </div>
@@ -372,7 +372,7 @@ export default function GanttV3Drawer({ task, allTasks, dependencies, onClose }:
             {/* Successor Tasks */}
             {successors.length > 0 && (
               <div>
-                <SectionTitle icon={<ArrowRight className="w-3.5 h-3.5" />} title="后续任务 · Successors" />
+                <SectionTitle icon={<ArrowRight className="w-3.5 h-3.5" />} title="后续任务" />
                 <div className="mt-2.5 space-y-1.5">
                   {successors.map((succ) => {
                     const succColors = PHASE_COLORS[succ.phase as PhaseType];

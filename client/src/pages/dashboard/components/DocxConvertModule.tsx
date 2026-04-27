@@ -1595,12 +1595,12 @@ function DocxConvertPanel({ panel }: { panel: AssetPanelItem }) {
 
       <CyberConfirmDialog
         open={showClearConfirm}
-        title="Confirm Clear Current Trial"
-        message={`This will clear all parsed data for ${activeTrial}, including local cache and linked OSS file reference. This action cannot be undone. Continue?`}
+        title="清除当前轮次确认"
+        message={`这将清除 ${activeTrial} 的全部解析数据，包括本地缓存和关联的 OSS 文件引用。\n此操作不可撤销，是否继续？`}
         onCancel={() => setShowClearConfirm(false)}
         onConfirm={handleClear}
-        confirmText="Clear Now"
-        cancelText="Cancel"
+        confirmText="立即清除"
+        cancelText="取消"
       />
 
       <CyberConfirmDialog

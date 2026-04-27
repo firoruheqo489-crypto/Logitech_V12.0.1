@@ -3119,7 +3119,7 @@ export default function MoldTrialDatabase({
             <div className="flex h-[85vh] w-[90vw] items-center justify-center overflow-hidden">
               <img
                 src={evidenceLightboxUrl}
-                alt="Evidence preview"
+                alt="证据预览"
                 className={`rounded-2xl border border-slate-700 object-contain shadow-2xl transition-transform duration-200 ${
                   Math.abs(evidenceLightboxRotation % 180) === 90
                     ? "max-h-[90vw] max-w-[85vh]"

@@ -457,7 +457,7 @@ export function ClinicalHistoryTable({
 
       <CyberConfirmDialog
         open={pendingDelete !== null}
-        title="删除维护记录 / Delete Record"
+        title="删除维护记录"
         message={
           pendingDelete
             ? `确认删除这条记录吗？\n${pendingDelete.timestamp.toLocaleString("zh-CN")} / ${pendingDelete.symptom}`
