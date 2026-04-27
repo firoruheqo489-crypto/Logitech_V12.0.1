@@ -2,13 +2,10 @@
 
 import {
   Fragment,
-  Children,
-  isValidElement,
   useCallback,
   useEffect,
   useRef,
   useState,
-  type ReactNode,
 } from "react";
 import imageCompression from "browser-image-compression";
 import {
@@ -29,10 +26,6 @@ import {
   fetchDashboardMoldTrialEvidenceState,
   saveDashboardMoldTrialEvidenceState,
 } from "../lib/mold-trial-evidence-api";
-import {
-  fetchDashboardMachineSheetState,
-  saveDashboardMachineSheetState,
-} from "../lib/mold-trial-machine-sheet-api";
 import PartFaiParserSection from "./part-fai-parser";
 import SurfaceParserSection from "./surface-parser";
 import ToolingFaiParserSection from "./tooling-fai-parser";
@@ -52,25 +45,6 @@ interface TrialEvidenceStageState {
   recordedAt: string | null;
 }
 
-interface TrialSummaryCard {
-  labelCn: string;
-  labelEn: string;
-  value: ReactNode;
-}
-
-interface TrialDataRow {
-  label: string;
-  value: ReactNode;
-}
-
-interface TrialStageData {
-  summaryCards: TrialSummaryCard[];
-  thermalSettings: TrialDataRow[];
-  injectionProfile: TrialDataRow[];
-  actuals: TrialDataRow[];
-  evidenceLabels: string[];
-}
-
 interface MoldTrialDatabaseProps {
   moldId: string;
   moldNo?: string;
@@ -78,7 +52,6 @@ interface MoldTrialDatabaseProps {
 }
 
 const defaultTrialStages: TrialStage[] = ["T0"];
-const trialStages = defaultTrialStages;
 const MAX_EVIDENCE_SIZE_BYTES = 500 * 1024;
 const EVIDENCE_SLOT_COUNT = 15;
 const MOLD_TEMP_EVIDENCE_SLOT_COUNT = 5;
@@ -92,26 +65,6 @@ function buildEvidenceSlotLabel(index: number): string {
 function parseEvidenceSlotIndex(slotId: string): number {
   const match = slotId.match(/-slot-(\d+)$/);
   return match ? Number.parseInt(match[1], 10) : -1;
-}
-
-function normalizeStoredMachineSheetMap(
-  value: unknown
-): Record<TrialStage, string> {
-  if (!value || typeof value !== "object") return {};
-
-  return Object.entries(value as Record<string, unknown>).reduce(
-    (acc, [stage, imageUrl]) => {
-      if (
-        /^T\d+$/.test(stage) &&
-        typeof imageUrl === "string" &&
-        imageUrl.trim().length > 0
-      ) {
-        acc[stage] = imageUrl.trim();
-      }
-      return acc;
-    },
-    {} as Record<TrialStage, string>
-  );
 }
 
 function sanitizeTrialStages(value: unknown): TrialStage[] {
@@ -179,387 +132,6 @@ function formatRecordedAt(value: string | null): string {
 
   return `${year}-${month}-${day} ${hours}:${minutes}`;
 }
-
-const trialStageData: Record<TrialStage, TrialStageData> = {
-  T0: {
-    summaryCards: [
-      { labelCn: "试模日期", labelEn: "DATE", value: "2026-03-20" },
-      { labelCn: "成型机台", labelEn: "HAITIAN IMM", value: "MA 1600/540" },
-      { labelCn: "原料", labelEn: "MATERIAL", value: "PC/ABS (干燥 110℃ 4H)" },
-      {
-        labelCn: "试验技术员",
-        labelEn: "TECHNICIAN",
-        value: (
-          <span className="text-amber-400 font-bold">待验证 (PENDING)</span>
-        ),
-      },
-    ],
-    thermalSettings: [
-      {
-        label: "料筒设定 / BARREL PROFILE",
-        value: "245-255-260-260 ℃",
-      },
-      { label: "热流道设定 / HOT RUNNER", value: "265 ℃" },
-      { label: "前模温机设定 / CAVITY TCU", value: "80 ℃" },
-      { label: "后模温机设定 / CORE TCU", value: "90 ℃" },
-    ],
-    injectionProfile: [
-      { label: "射出速度 (均值) / INJ. SPEED", value: "65 %" },
-      { label: "射出压力 (限制) / INJ. PRESSURE", value: "110 Bar" },
-      { label: "保压压力 / HOLD PRESSURE", value: "85 Bar" },
-      { label: "V/P 切换位置 / V/P SWITCH", value: "12.5 mm" },
-      { label: "保压时间 / HOLD TIME", value: "4.5 s" },
-      { label: "冷却时间 / COOLING TIME", value: "15.0 s" },
-    ],
-    actuals: [
-      {
-        label: "实际残料量 / MELT CUSHION ACTUAL",
-        value: (
-          <span className="text-rose-400 font-semibold">1.2 mm (偏小)</span>
-        ),
-      },
-      { label: "实际峰值压力 / PEAK PRESS ACTUAL", value: "138 Bar" },
-      { label: "前/后模表面实测 / CAV&COR ACTUAL", value: "82.0℃ / 88.5℃" },
-      {
-        label: "滑块实测 / SLIDER ACTUAL",
-        value: (
-          <span className="text-orange-400 font-semibold">95.2 ℃ (超温)</span>
-        ),
-      },
-      { label: "浇口实测 / GATE ACTUAL", value: "65.4 ℃" },
-      { label: "实际成型周期 / CYCLE TIME ACTUAL", value: "32.0 s" },
-    ],
-    evidenceLabels: ["尺寸超差 / OVERSIZED", "结合线 / WELD LINE"],
-  },
-  T1: {
-    summaryCards: [
-      { labelCn: "试模日期", labelEn: "DATE", value: "2026-03-24" },
-      { labelCn: "成型机台", labelEn: "HAITIAN IMM", value: "MA 1600/540" },
-      { labelCn: "原料", labelEn: "MATERIAL", value: "PC/ABS (干燥 110℃ 4H)" },
-      {
-        labelCn: "试验技术员",
-        labelEn: "TECHNICIAN",
-        value: <span className="text-cyan-400 font-bold">改善中 (TUNING)</span>,
-      },
-    ],
-    thermalSettings: [
-      {
-        label: "料筒设定 / BARREL PROFILE",
-        value: "242-250-258-258 ℃",
-      },
-      { label: "热流道设定 / HOT RUNNER", value: "262 ℃" },
-      { label: "前模温机设定 / CAVITY TCU", value: "78 ℃" },
-      { label: "后模温机设定 / CORE TCU", value: "88 ℃" },
-    ],
-    injectionProfile: [
-      { label: "射出速度 (均值) / INJ. SPEED", value: "60 %" },
-      { label: "射出压力 (限制) / INJ. PRESSURE", value: "105 Bar" },
-      { label: "保压压力 / HOLD PRESSURE", value: "82 Bar" },
-      { label: "V/P 切换位置 / V/P SWITCH", value: "12.0 mm" },
-      { label: "保压时间 / HOLD TIME", value: "4.2 s" },
-      { label: "冷却时间 / COOLING TIME", value: "15.5 s" },
-    ],
-    actuals: [
-      { label: "实际残料量 / MELT CUSHION ACTUAL", value: "2.0 mm" },
-      { label: "实际峰值压力 / PEAK PRESS ACTUAL", value: "132 Bar" },
-      { label: "前/后模表面实测 / CAV&COR ACTUAL", value: "79.5℃ / 86.2℃" },
-      {
-        label: "滑块实测 / SLIDER ACTUAL",
-        value: (
-          <span className="text-amber-400 font-semibold">88.0 ℃ (临界)</span>
-        ),
-      },
-      { label: "浇口实测 / GATE ACTUAL", value: "63.1 ℃" },
-      { label: "实际成型周期 / CYCLE TIME ACTUAL", value: "31.2 s" },
-    ],
-    evidenceLabels: ["飞边改善 / FLASH REDUCED", "滑块温升 / SLIDER HOTSPOT"],
-  },
-  T2: {
-    summaryCards: [
-      { labelCn: "试模日期", labelEn: "DATE", value: "2026-03-28" },
-      { labelCn: "成型机台", labelEn: "HAITIAN IMM", value: "MA 1600/540" },
-      { labelCn: "原料", labelEn: "MATERIAL", value: "PC/ABS (干燥 110℃ 4H)" },
-      {
-        labelCn: "试验技术员",
-        labelEn: "TECHNICIAN",
-        value: (
-          <span className="text-cyan-400 font-bold">验证中 (VERIFYING)</span>
-        ),
-      },
-    ],
-    thermalSettings: [
-      {
-        label: "料筒设定 / BARREL PROFILE",
-        value: "240-248-255-255 ℃",
-      },
-      { label: "热流道设定 / HOT RUNNER", value: "260 ℃" },
-      { label: "前模温机设定 / CAVITY TCU", value: "76 ℃" },
-      { label: "后模温机设定 / CORE TCU", value: "86 ℃" },
-    ],
-    injectionProfile: [
-      { label: "射出速度 (均值) / INJ. SPEED", value: "58 %" },
-      { label: "射出压力 (限制) / INJ. PRESSURE", value: "103 Bar" },
-      { label: "保压压力 / HOLD PRESSURE", value: "80 Bar" },
-      { label: "V/P 切换位置 / V/P SWITCH", value: "11.8 mm" },
-      { label: "保压时间 / HOLD TIME", value: "4.0 s" },
-      { label: "冷却时间 / COOLING TIME", value: "16.0 s" },
-    ],
-    actuals: [
-      { label: "实际残料量 / MELT CUSHION ACTUAL", value: "2.4 mm" },
-      { label: "实际峰值压力 / PEAK PRESS ACTUAL", value: "128 Bar" },
-      { label: "前/后模表面实测 / CAV&COR ACTUAL", value: "77.2℃ / 84.8℃" },
-      { label: "滑块实测 / SLIDER ACTUAL", value: "82.4 ℃" },
-      { label: "浇口实测 / GATE ACTUAL", value: "61.5 ℃" },
-      { label: "实际成型周期 / CYCLE TIME ACTUAL", value: "30.8 s" },
-    ],
-    evidenceLabels: ["缩水点观察 / SINK TRACE", "分型面状态 / PARTING LINE"],
-  },
-  T3: {
-    summaryCards: [
-      { labelCn: "试模日期", labelEn: "DATE", value: "2026-04-02" },
-      { labelCn: "成型机台", labelEn: "HAITIAN IMM", value: "MA 1600/540" },
-      { labelCn: "原料", labelEn: "MATERIAL", value: "PC/ABS (干燥 110℃ 4H)" },
-      {
-        labelCn: "试验技术员",
-        labelEn: "TECHNICIAN",
-        value: (
-          <span className="text-cyan-400 font-bold">数据稳定 (STABLE)</span>
-        ),
-      },
-    ],
-    thermalSettings: [
-      {
-        label: "料筒设定 / BARREL PROFILE",
-        value: "238-246-252-252 ℃",
-      },
-      { label: "热流道设定 / HOT RUNNER", value: "258 ℃" },
-      { label: "前模温机设定 / CAVITY TCU", value: "74 ℃" },
-      { label: "后模温机设定 / CORE TCU", value: "84 ℃" },
-    ],
-    injectionProfile: [
-      { label: "射出速度 (均值) / INJ. SPEED", value: "56 %" },
-      { label: "射出压力 (限制) / INJ. PRESSURE", value: "100 Bar" },
-      { label: "保压压力 / HOLD PRESSURE", value: "78 Bar" },
-      { label: "V/P 切换位置 / V/P SWITCH", value: "11.5 mm" },
-      { label: "保压时间 / HOLD TIME", value: "3.8 s" },
-      { label: "冷却时间 / COOLING TIME", value: "16.5 s" },
-    ],
-    actuals: [
-      { label: "实际残料量 / MELT CUSHION ACTUAL", value: "2.7 mm" },
-      { label: "实际峰值压力 / PEAK PRESS ACTUAL", value: "124 Bar" },
-      { label: "前/后模表面实测 / CAV&COR ACTUAL", value: "75.8℃ / 83.4℃" },
-      { label: "滑块实测 / SLIDER ACTUAL", value: "79.1 ℃" },
-      { label: "浇口实测 / GATE ACTUAL", value: "60.2 ℃" },
-      { label: "实际成型周期 / CYCLE TIME ACTUAL", value: "30.1 s" },
-    ],
-    evidenceLabels: ["焊痕趋势 / WELD TRACE", "滑块表面 / SLIDER FACE"],
-  },
-  T4: {
-    summaryCards: [
-      { labelCn: "试模日期", labelEn: "DATE", value: "2026-04-08" },
-      { labelCn: "成型机台", labelEn: "HAITIAN IMM", value: "MA 1600/540" },
-      { labelCn: "原料", labelEn: "MATERIAL", value: "PC/ABS (干燥 110℃ 4H)" },
-      {
-        labelCn: "试验技术员",
-        labelEn: "TECHNICIAN",
-        value: (
-          <span className="text-cyan-400 font-bold">小批验证 (PILOT)</span>
-        ),
-      },
-    ],
-    thermalSettings: [
-      {
-        label: "料筒设定 / BARREL PROFILE",
-        value: "238-245-250-250 ℃",
-      },
-      { label: "热流道设定 / HOT RUNNER", value: "256 ℃" },
-      { label: "前模温机设定 / CAVITY TCU", value: "73 ℃" },
-      { label: "后模温机设定 / CORE TCU", value: "83 ℃" },
-    ],
-    injectionProfile: [
-      { label: "射出速度 (均值) / INJ. SPEED", value: "55 %" },
-      { label: "射出压力 (限制) / INJ. PRESSURE", value: "98 Bar" },
-      { label: "保压压力 / HOLD PRESSURE", value: "77 Bar" },
-      { label: "V/P 切换位置 / V/P SWITCH", value: "11.2 mm" },
-      { label: "保压时间 / HOLD TIME", value: "3.7 s" },
-      { label: "冷却时间 / COOLING TIME", value: "16.8 s" },
-    ],
-    actuals: [
-      { label: "实际残料量 / MELT CUSHION ACTUAL", value: "2.9 mm" },
-      { label: "实际峰值压力 / PEAK PRESS ACTUAL", value: "122 Bar" },
-      { label: "前/后模表面实测 / CAV&COR ACTUAL", value: "74.9℃ / 82.7℃" },
-      { label: "滑块实测 / SLIDER ACTUAL", value: "77.8 ℃" },
-      { label: "浇口实测 / GATE ACTUAL", value: "59.7 ℃" },
-      { label: "实际成型周期 / CYCLE TIME ACTUAL", value: "29.8 s" },
-    ],
-    evidenceLabels: ["尺寸窗口 / DIMENSION WINDOW", "顶白检查 / EJECTOR CHECK"],
-  },
-  T5: {
-    summaryCards: [
-      { labelCn: "试模日期", labelEn: "DATE", value: "2026-04-14" },
-      { labelCn: "成型机台", labelEn: "HAITIAN IMM", value: "MA 1600/540" },
-      { labelCn: "原料", labelEn: "MATERIAL", value: "PC/ABS (干燥 110℃ 4H)" },
-      {
-        labelCn: "试验技术员",
-        labelEn: "TECHNICIAN",
-        value: (
-          <span className="text-cyan-400 font-bold">量产预演 (RAMP-UP)</span>
-        ),
-      },
-    ],
-    thermalSettings: [
-      {
-        label: "料筒设定 / BARREL PROFILE",
-        value: "236-244-248-248 ℃",
-      },
-      { label: "热流道设定 / HOT RUNNER", value: "255 ℃" },
-      { label: "前模温机设定 / CAVITY TCU", value: "72 ℃" },
-      { label: "后模温机设定 / CORE TCU", value: "82 ℃" },
-    ],
-    injectionProfile: [
-      { label: "射出速度 (均值) / INJ. SPEED", value: "54 %" },
-      { label: "射出压力 (限制) / INJ. PRESSURE", value: "97 Bar" },
-      { label: "保压压力 / HOLD PRESSURE", value: "76 Bar" },
-      { label: "V/P 切换位置 / V/P SWITCH", value: "11.0 mm" },
-      { label: "保压时间 / HOLD TIME", value: "3.6 s" },
-      { label: "冷却时间 / COOLING TIME", value: "17.0 s" },
-    ],
-    actuals: [
-      { label: "实际残料量 / MELT CUSHION ACTUAL", value: "3.0 mm" },
-      { label: "实际峰值压力 / PEAK PRESS ACTUAL", value: "120 Bar" },
-      { label: "前/后模表面实测 / CAV&COR ACTUAL", value: "74.2℃ / 82.1℃" },
-      { label: "滑块实测 / SLIDER ACTUAL", value: "76.5 ℃" },
-      { label: "浇口实测 / GATE ACTUAL", value: "58.9 ℃" },
-      { label: "实际成型周期 / CYCLE TIME ACTUAL", value: "29.6 s" },
-    ],
-    evidenceLabels: ["首件确认 / FIRST ARTICLE", "熔接线弱化 / WELD REDUCED"],
-  },
-  T6: {
-    summaryCards: [
-      { labelCn: "试模日期", labelEn: "DATE", value: "2026-04-18" },
-      { labelCn: "成型机台", labelEn: "HAITIAN IMM", value: "MA 1600/540" },
-      { labelCn: "原料", labelEn: "MATERIAL", value: "PC/ABS (干燥 110℃ 4H)" },
-      {
-        labelCn: "试验技术员",
-        labelEn: "TECHNICIAN",
-        value: (
-          <span className="text-cyan-400 font-bold">过程锁定 (LOCKED)</span>
-        ),
-      },
-    ],
-    thermalSettings: [
-      {
-        label: "料筒设定 / BARREL PROFILE",
-        value: "236-243-247-247 ℃",
-      },
-      { label: "热流道设定 / HOT RUNNER", value: "254 ℃" },
-      { label: "前模温机设定 / CAVITY TCU", value: "72 ℃" },
-      { label: "后模温机设定 / CORE TCU", value: "81 ℃" },
-    ],
-    injectionProfile: [
-      { label: "射出速度 (均值) / INJ. SPEED", value: "53 %" },
-      { label: "射出压力 (限制) / INJ. PRESSURE", value: "96 Bar" },
-      { label: "保压压力 / HOLD PRESSURE", value: "75 Bar" },
-      { label: "V/P 切换位置 / V/P SWITCH", value: "10.9 mm" },
-      { label: "保压时间 / HOLD TIME", value: "3.5 s" },
-      { label: "冷却时间 / COOLING TIME", value: "17.1 s" },
-    ],
-    actuals: [
-      { label: "实际残料量 / MELT CUSHION ACTUAL", value: "3.1 mm" },
-      { label: "实际峰值压力 / PEAK PRESS ACTUAL", value: "119 Bar" },
-      { label: "前/后模表面实测 / CAV&COR ACTUAL", value: "73.8℃ / 81.9℃" },
-      { label: "滑块实测 / SLIDER ACTUAL", value: "75.9 ℃" },
-      { label: "浇口实测 / GATE ACTUAL", value: "58.2 ℃" },
-      { label: "实际成型周期 / CYCLE TIME ACTUAL", value: "29.4 s" },
-    ],
-    evidenceLabels: ["披锋封口 / FLASH CLOSED", "循环曲线 / CYCLE CURVE"],
-  },
-  T7: {
-    summaryCards: [
-      { labelCn: "试模日期", labelEn: "DATE", value: "2026-04-22" },
-      { labelCn: "成型机台", labelEn: "HAITIAN IMM", value: "MA 1600/540" },
-      { labelCn: "原料", labelEn: "MATERIAL", value: "PC/ABS (干燥 110℃ 4H)" },
-      {
-        labelCn: "试验技术员",
-        labelEn: "TECHNICIAN",
-        value: (
-          <span className="text-emerald-400 font-bold">
-            通过预审 (APPROVED)
-          </span>
-        ),
-      },
-    ],
-    thermalSettings: [
-      {
-        label: "料筒设定 / BARREL PROFILE",
-        value: "235-242-246-246 ℃",
-      },
-      { label: "热流道设定 / HOT RUNNER", value: "253 ℃" },
-      { label: "前模温机设定 / CAVITY TCU", value: "71 ℃" },
-      { label: "后模温机设定 / CORE TCU", value: "81 ℃" },
-    ],
-    injectionProfile: [
-      { label: "射出速度 (均值) / INJ. SPEED", value: "52 %" },
-      { label: "射出压力 (限制) / INJ. PRESSURE", value: "95 Bar" },
-      { label: "保压压力 / HOLD PRESSURE", value: "74 Bar" },
-      { label: "V/P 切换位置 / V/P SWITCH", value: "10.8 mm" },
-      { label: "保压时间 / HOLD TIME", value: "3.5 s" },
-      { label: "冷却时间 / COOLING TIME", value: "17.2 s" },
-    ],
-    actuals: [
-      { label: "实际残料量 / MELT CUSHION ACTUAL", value: "3.2 mm" },
-      { label: "实际峰值压力 / PEAK PRESS ACTUAL", value: "118 Bar" },
-      { label: "前/后模表面实测 / CAV&COR ACTUAL", value: "73.6℃ / 81.5℃" },
-      { label: "滑块实测 / SLIDER ACTUAL", value: "75.2 ℃" },
-      { label: "浇口实测 / GATE ACTUAL", value: "57.9 ℃" },
-      { label: "实际成型周期 / CYCLE TIME ACTUAL", value: "29.2 s" },
-    ],
-    evidenceLabels: [
-      "外观确认 / APPEARANCE OK",
-      "尺寸复核 / DIMENSION RECHECK",
-    ],
-  },
-  T8: {
-    summaryCards: [
-      { labelCn: "试模日期", labelEn: "DATE", value: "2026-04-28" },
-      { labelCn: "成型机台", labelEn: "HAITIAN IMM", value: "MA 1600/540" },
-      { labelCn: "原料", labelEn: "MATERIAL", value: "PC/ABS (干燥 110℃ 4H)" },
-      {
-        labelCn: "试验技术员",
-        labelEn: "TECHNICIAN",
-        value: (
-          <span className="text-emerald-400 font-bold">试模关闭 (CLOSED)</span>
-        ),
-      },
-    ],
-    thermalSettings: [
-      {
-        label: "料筒设定 / BARREL PROFILE",
-        value: "235-242-245-245 ℃",
-      },
-      { label: "热流道设定 / HOT RUNNER", value: "252 ℃" },
-      { label: "前模温机设定 / CAVITY TCU", value: "71 ℃" },
-      { label: "后模温机设定 / CORE TCU", value: "80 ℃" },
-    ],
-    injectionProfile: [
-      { label: "射出速度 (均值) / INJ. SPEED", value: "52 %" },
-      { label: "射出压力 (限制) / INJ. PRESSURE", value: "94 Bar" },
-      { label: "保压压力 / HOLD PRESSURE", value: "74 Bar" },
-      { label: "V/P 切换位置 / V/P SWITCH", value: "10.7 mm" },
-      { label: "保压时间 / HOLD TIME", value: "3.4 s" },
-      { label: "冷却时间 / COOLING TIME", value: "17.3 s" },
-    ],
-    actuals: [
-      { label: "实际残料量 / MELT CUSHION ACTUAL", value: "3.2 mm" },
-      { label: "实际峰值压力 / PEAK PRESS ACTUAL", value: "117 Bar" },
-      { label: "前/后模表面实测 / CAV&COR ACTUAL", value: "73.4℃ / 81.2℃" },
-      { label: "滑块实测 / SLIDER ACTUAL", value: "74.8 ℃" },
-      { label: "浇口实测 / GATE ACTUAL", value: "57.5 ℃" },
-      { label: "实际成型周期 / CYCLE TIME ACTUAL", value: "29.0 s" },
-    ],
-    evidenceLabels: ["量产签核 / MP SIGN-OFF", "终版外观 / FINAL COSMETIC"],
-  },
-};
 
 function TAxisButton({
   label,
@@ -630,37 +202,6 @@ function buildTrialEvidenceSlots(stage: TrialStage): TrialEvidenceSlot[] {
 
 function createTrialStageLabel(index: number): TrialStage {
   return `T${index}`;
-}
-
-function cloneTrialStageData(source: TrialStageData): TrialStageData {
-  return {
-    summaryCards: source.summaryCards.map(card => ({ ...card })),
-    thermalSettings: source.thermalSettings.map(row => ({ ...row })),
-    injectionProfile: source.injectionProfile.map(row => ({ ...row })),
-    actuals: source.actuals.map(row => ({ ...row })),
-    evidenceLabels: [...source.evidenceLabels],
-  };
-}
-
-function buildDefaultTrialStageData(stage: TrialStage): TrialStageData {
-  return cloneTrialStageData(trialStageData[stage] || trialStageData.T8);
-}
-
-function buildInitialTrialDataMap(
-  stages: TrialStage[],
-  clearedStages: TrialStage[] = []
-): Record<TrialStage, TrialStageData> {
-  const clearedStageSet = new Set(clearedStages);
-
-  return stages.reduce(
-    (acc, stage) => {
-      acc[stage] = clearedStageSet.has(stage)
-        ? buildClearedTrialStageData(stage)
-        : buildDefaultTrialStageData(stage);
-      return acc;
-    },
-    {} as Record<TrialStage, TrialStageData>
-  );
 }
 
 function writeStoredTrialStages(storageKey: string, stages: TrialStage[]): void {
@@ -865,121 +406,6 @@ function compactEvidenceSlotsWithinRange(
   return nextSlots;
 }
 
-function buildClearedTrialStageDataFromSource(
-  baseData: TrialStageData
-): TrialStageData {
-  return {
-    summaryCards: baseData.summaryCards.map(card => ({
-      ...card,
-      value: "--",
-    })),
-    thermalSettings: baseData.thermalSettings.map(row => ({
-      ...row,
-      value: "--",
-    })),
-    injectionProfile: baseData.injectionProfile.map(row => ({
-      ...row,
-      value: "--",
-    })),
-    actuals: baseData.actuals.map(row => ({
-      ...row,
-      value: "--",
-    })),
-    evidenceLabels: [...baseData.evidenceLabels],
-  };
-}
-
-function buildInitialEvidenceMap(
-  stages: TrialStage[]
-): Record<TrialStage, TrialEvidenceSlot[]> {
-  return stages.reduce(
-    (acc, stage) => {
-      const labels = trialStageData[stage].evidenceLabels;
-      acc[stage] = [
-        {
-          id: `${stage}-slot-1`,
-          label: labels[0] || "证据 1 / EVIDENCE 1",
-          isUploadSlot: true,
-        },
-        {
-          id: `${stage}-slot-2`,
-          label: labels[1] || "证据 2 / EVIDENCE 2",
-          isUploadSlot: true,
-        },
-        {
-          id: `${stage}-slot-3`,
-          label: "证据 3 / EVIDENCE 3",
-          isUploadSlot: true,
-        },
-        {
-          id: `${stage}-slot-4`,
-          label: "证据 4 / EVIDENCE 4",
-          isUploadSlot: true,
-        },
-        {
-          id: `${stage}-slot-5`,
-          label: "证据 5 / EVIDENCE 5",
-          isUploadSlot: true,
-        },
-        {
-          id: `${stage}-slot-6`,
-          label: "证据 6 / EVIDENCE 6",
-          isUploadSlot: true,
-        },
-      ];
-      return acc;
-    },
-    {} as Record<TrialStage, TrialEvidenceSlot[]>
-  );
-}
-
-function normalizeEvidenceSlots(
-  stage: TrialStage,
-  slots?: TrialEvidenceSlot[]
-): TrialEvidenceSlot[] {
-  const baseSlots = buildTrialEvidenceSlots(stage);
-
-  return baseSlots.map((baseSlot, index) => {
-    const existingSlot =
-      slots?.find(slot => slot.id === baseSlot.id) || slots?.[index];
-
-    if (!existingSlot) {
-      return baseSlot;
-    }
-
-    return {
-      ...baseSlot,
-      ...existingSlot,
-      id: baseSlot.id,
-      label: existingSlot.label || baseSlot.label,
-    };
-  });
-}
-
-function buildClearedTrialStageData(stage: TrialStage): TrialStageData {
-  const baseData = buildDefaultTrialStageData(stage);
-
-  return {
-    summaryCards: baseData.summaryCards.map(card => ({
-      ...card,
-      value: "--",
-    })),
-    thermalSettings: baseData.thermalSettings.map(row => ({
-      ...row,
-      value: "--",
-    })),
-    injectionProfile: baseData.injectionProfile.map(row => ({
-      ...row,
-      value: "--",
-    })),
-    actuals: baseData.actuals.map(row => ({
-      ...row,
-      value: "--",
-    })),
-    evidenceLabels: baseData.evidenceLabels,
-  };
-}
-
 function revokeEvidenceSlotUrls(
   evidenceMap: Record<TrialStage, TrialEvidenceStageState>
 ): void {
@@ -992,35 +418,10 @@ function revokeEvidenceSlotUrls(
   });
 }
 
-function extractNodeText(value: ReactNode): string {
-  const text = Children.toArray(value)
-    .map(node => {
-      if (typeof node === "string" || typeof node === "number") {
-        return String(node);
-      }
-
-      if (node === null || node === undefined || typeof node === "boolean") {
-        return "";
-      }
-
-      if (isValidElement<{ children?: ReactNode }>(node)) {
-        return extractNodeText(node.props.children);
-      }
-
-      return "";
-    })
-    .join(" ")
-    .replace(/\s+/g, " ")
-    .trim();
-
-  return text || "--";
-}
-
 type WorkbookRow = unknown[];
 
 interface ImportedMoldTrialWorkbookState {
   trialStagesState: TrialStage[];
-  trialDataByStage: Record<TrialStage, TrialStageData>;
   evidenceSlots: TrialEvidenceSlot[];
 }
 
@@ -1066,31 +467,6 @@ function collectWorkbookSectionRows(
   return collected;
 }
 
-function mapWorkbookSectionValues(rows: WorkbookRow[]): Map<string, string> {
-  return new Map(
-    rows
-      .map(
-        row =>
-          [
-            normalizeWorkbookCell(row[0]),
-            normalizeWorkbookCell(row[1]),
-          ] as const
-      )
-      .filter(([label]) => label.length > 0)
-  );
-}
-
-function getWorkbookValue(
-  values: Map<string, string>,
-  label: string,
-  aliases: string[] = []
-): string | undefined {
-  return (
-    values.get(label) ||
-    aliases.map(alias => values.get(alias)).find(value => !!value)
-  );
-}
-
 function parseWorkbookEvidenceSlots(rows: WorkbookRow[]): TrialEvidenceSlot[] {
   const baseSlots = buildTrialEvidenceSlots(defaultTrialStages[0]);
   const parsedRows = collectWorkbookSectionRows(rows, "Evidence", []);
@@ -1108,66 +484,6 @@ function parseWorkbookEvidenceSlots(rows: WorkbookRow[]): TrialEvidenceSlot[] {
   });
 }
 
-function parseWorkbookStageData(
-  stage: TrialStage,
-  rows: WorkbookRow[]
-): TrialStageData {
-  const baseData = buildDefaultTrialStageData(stage);
-  const summaryValues = mapWorkbookSectionValues(
-    collectWorkbookSectionRows(rows, "Summary", [
-      "Thermal Settings",
-      "Injection Profile",
-      "Actuals & Metrology",
-      "Evidence",
-    ])
-  );
-  const thermalValues = mapWorkbookSectionValues(
-    collectWorkbookSectionRows(rows, "Thermal Settings", [
-      "Injection Profile",
-      "Actuals & Metrology",
-      "Evidence",
-    ])
-  );
-  const injectionValues = mapWorkbookSectionValues(
-    collectWorkbookSectionRows(rows, "Injection Profile", [
-      "Actuals & Metrology",
-      "Evidence",
-    ])
-  );
-  const actualValues = mapWorkbookSectionValues(
-    collectWorkbookSectionRows(rows, "Actuals & Metrology", ["Evidence"])
-  );
-
-  return {
-    summaryCards: baseData.summaryCards.map(card => ({
-      ...card,
-      value:
-        getWorkbookValue(
-          summaryValues,
-          card.labelCn,
-          card.labelCn === "试验技术员"
-            ? ["试模结论"]
-            : card.labelCn === "原料"
-              ? ["测试物料"]
-              : []
-        ) || extractNodeText(card.value),
-    })),
-    thermalSettings: baseData.thermalSettings.map(row => ({
-      ...row,
-      value: thermalValues.get(row.label) || extractNodeText(row.value),
-    })),
-    injectionProfile: baseData.injectionProfile.map(row => ({
-      ...row,
-      value: injectionValues.get(row.label) || extractNodeText(row.value),
-    })),
-    actuals: baseData.actuals.map(row => ({
-      ...row,
-      value: actualValues.get(row.label) || extractNodeText(row.value),
-    })),
-    evidenceLabels: [...baseData.evidenceLabels],
-  };
-}
-
 async function parseImportedMoldTrialWorkbook(
   file: File
 ): Promise<ImportedMoldTrialWorkbookState> {
@@ -1183,21 +499,6 @@ async function parseImportedMoldTrialWorkbook(
     throw new Error("未找到可导入的试模轮次工作表");
   }
 
-  const trialDataByStage = stageNames.reduce(
-    (acc, stageName) => {
-      const sheet = workbook.Sheets[stageName];
-      if (!sheet) return acc;
-
-      const rows = XLSX.utils.sheet_to_json(sheet, {
-        header: 1,
-        defval: "",
-      }) as WorkbookRow[];
-      acc[stageName] = parseWorkbookStageData(stageName, rows);
-      return acc;
-    },
-    {} as Record<TrialStage, TrialStageData>
-  );
-
   const evidenceSheet =
     workbook.Sheets[stageNames[0]] ||
     workbook.Sheets[workbook.SheetNames[0] || ""];
@@ -1210,7 +511,6 @@ async function parseImportedMoldTrialWorkbook(
 
   return {
     trialStagesState: stageNames,
-    trialDataByStage,
     evidenceSlots: parseWorkbookEvidenceSlots(evidenceRows),
   };
 }
@@ -1261,10 +561,6 @@ export default function MoldTrialDatabase({
   const [activeTrial, setActiveTrial] = useState<TrialStage>("");
   const excelInputRef = useRef<HTMLInputElement>(null);
   const evidenceInputRef = useRef<HTMLInputElement>(null);
-  const machineSheetInputRef = useRef<HTMLInputElement>(null);
-  const [trialDataByStage, setTrialDataByStage] = useState<
-    Record<TrialStage, TrialStageData>
-  >({});
   const [clearedTrialStages, setClearedTrialStages] = useState<TrialStage[]>(
     []
   );
@@ -1280,31 +576,18 @@ export default function MoldTrialDatabase({
   const [pendingUploadSlotId, setPendingUploadSlotId] = useState<string | null>(
     null
   );
-  const [showClearMachineConfirm, setShowClearMachineConfirm] = useState(false);
-  const [pendingClearMachineTrial, setPendingClearMachineTrial] =
-    useState<TrialStage | null>(null);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [pendingDeleteEvidenceSlotId, setPendingDeleteEvidenceSlotId] =
     useState<string | null>(null);
   const [showDeleteGroupNoteConfirm, setShowDeleteGroupNoteConfirm] =
     useState(false);
-  const [showClearMachineSheetConfirm, setShowClearMachineSheetConfirm] =
-    useState(false);
-  const [pendingClearMachineSheetTrial, setPendingClearMachineSheetTrial] =
-    useState<TrialStage | null>(null);
-  const [machineSheetByTrial, setMachineSheetByTrial] = useState<
-    Record<TrialStage, string>
-  >({});
-  const machineSheetByTrialRef = useRef<Record<TrialStage, string>>({});
   const canPersistEvidenceRef = useRef(false);
   const canPersistTrialStateRef = useRef(false);
   const [isEvidenceHydrated, setIsEvidenceHydrated] = useState(false);
   const [isTrialStateHydrated, setIsTrialStateHydrated] = useState(false);
-  const [isMachineSheetHydrated, setIsMachineSheetHydrated] = useState(false);
   const [isDatabaseReady, setIsDatabaseReady] = useState(false);
   const [isRemoteSyncing, setIsRemoteSyncing] = useState(false);
   const [isOfflineFallbackMode, setIsOfflineFallbackMode] = useState(false);
-  const [isUploadingMachineSheet, setIsUploadingMachineSheet] = useState(false);
   const [isEvidenceDropActive, setIsEvidenceDropActive] = useState(false);
   const [selectedEvidenceSlotId, setSelectedEvidenceSlotId] = useState<
     string | null
@@ -1318,9 +601,6 @@ export default function MoldTrialDatabase({
     activeTrial,
     currentEvidenceState.slots
   );
-  const currentData =
-    trialDataByStage[activeTrial] ||
-    buildDefaultTrialStageData(activeTrial || defaultTrialStages[0]);
   const shouldRevalidateAfterSave = !embedded;
   const activeEvidenceSlot =
     currentEvidenceSlots.find(
@@ -1339,7 +619,6 @@ export default function MoldTrialDatabase({
     clearedTrialStages: TrialStage[];
     evidenceByTrial: Record<TrialStage, TrialEvidenceStageState>;
     evidenceGroupNoteDraftByTrial: Record<TrialStage, string>;
-    machineSheetByTrial: Record<TrialStage, string>;
   };
 
   type RemoteTrialDatabaseSnapshotReadResult =
@@ -1369,7 +648,6 @@ export default function MoldTrialDatabase({
         clearedTrialStages: [],
         evidenceByTrial: fallbackEvidenceByTrial,
         evidenceGroupNoteDraftByTrial: fallbackEvidenceGroupNoteDraftByTrial,
-        machineSheetByTrial: {},
       };
     },
     []
@@ -1388,21 +666,12 @@ export default function MoldTrialDatabase({
 
       setTrialStagesState(snapshot.trialStages);
       setActiveTrial(snapshot.trialStages[0] || "");
-      setTrialDataByStage(
-        buildInitialTrialDataMap(
-          snapshot.trialStages,
-          snapshot.clearedTrialStages
-        )
-      );
       setClearedTrialStages(snapshot.clearedTrialStages);
       setEvidenceByTrial(snapshot.evidenceByTrial);
       evidenceByTrialRef.current = snapshot.evidenceByTrial;
       setEvidenceGroupNoteDraftByTrial(snapshot.evidenceGroupNoteDraftByTrial);
-      setMachineSheetByTrial(snapshot.machineSheetByTrial);
-      machineSheetByTrialRef.current = snapshot.machineSheetByTrial;
       setIsEvidenceHydrated(true);
       setIsTrialStateHydrated(true);
-      setIsMachineSheetHydrated(true);
 
       if (!allowRemotePersistence) {
         return;
@@ -1441,11 +710,6 @@ export default function MoldTrialDatabase({
       };
     }
 
-    const remoteMachineSheet = await fetchDashboardMachineSheetState({
-      moldId,
-      moldNo,
-    }).catch(() => null);
-
     const normalizedClearedTrialStages = resolveClearedTrialStages(
       normalizedTrialStages,
       sanitizeTrialStages(remoteEvidenceState.clearedTrialStages || [])
@@ -1472,9 +736,6 @@ export default function MoldTrialDatabase({
         clearedTrialStages: normalizedClearedTrialStages,
         evidenceByTrial,
         evidenceGroupNoteDraftByTrial,
-        machineSheetByTrial: normalizeStoredMachineSheetMap(
-          remoteMachineSheet?.stagesByTrial ?? {}
-        ),
       },
     };
   }, [buildLocalFallbackTrialDatabaseSnapshot, moldId, moldNo]);
@@ -1501,7 +762,6 @@ export default function MoldTrialDatabase({
     [applyRemoteTrialDatabaseSnapshot, readRemoteTrialDatabaseSnapshot]
   );
   const defectEvidenceSlots = currentEvidenceSlots.slice(5, 15);
-  const activeMachineSheetUrl = machineSheetByTrial[activeTrial] || "";
   const trialStageStorageKey = `mold-trial-stages:${moldId}:${moldNo || "default"}`;
   const clearedTrialStageStorageKey = `mold-trial-cleared-stages:${moldId}:${moldNo || "default"}`;
   const trialScopeKey = `${moldId}:${moldNo || "default"}:${activeTrial}`;
@@ -1520,10 +780,6 @@ export default function MoldTrialDatabase({
   useEffect(() => {
     evidenceByTrialRef.current = evidenceByTrial;
   }, [evidenceByTrial]);
-
-  useEffect(() => {
-    machineSheetByTrialRef.current = machineSheetByTrial;
-  }, [machineSheetByTrial]);
 
   useEffect(() => {
     if (!isEvidenceDropActive) return;
@@ -1564,16 +820,11 @@ export default function MoldTrialDatabase({
     revokeEvidenceSlotUrls(evidenceByTrialRef.current);
     setTrialStagesState([]);
     setActiveTrial("");
-    setTrialDataByStage({});
     setClearedTrialStages([]);
     setEvidenceByTrial({});
     evidenceByTrialRef.current = {};
     setEvidenceGroupNoteDraftByTrial({});
-    setMachineSheetByTrial({});
-    machineSheetByTrialRef.current = {};
     setShowDeleteGroupNoteConfirm(false);
-    setShowClearMachineSheetConfirm(false);
-    setPendingClearMachineSheetTrial(null);
     setPendingUploadSlotId(null);
     setShowClearConfirm(false);
     setPendingDeleteEvidenceSlotId(null);
@@ -1582,11 +833,9 @@ export default function MoldTrialDatabase({
     canPersistTrialStateRef.current = false;
     setIsEvidenceHydrated(false);
     setIsTrialStateHydrated(false);
-    setIsMachineSheetHydrated(false);
     setIsDatabaseReady(false);
     setIsOfflineFallbackMode(false);
     setIsRemoteSyncing(true);
-    setIsUploadingMachineSheet(false);
     setIsImportingExcel(false);
 
     void (async () => {
@@ -1722,35 +971,6 @@ export default function MoldTrialDatabase({
   ]);
 
   useEffect(() => {
-    if (!isMachineSheetHydrated || isOfflineFallbackMode) {
-      return;
-    }
-
-    void (async () => {
-      try {
-        await saveDashboardMachineSheetState({
-          moldId,
-          moldNo,
-          stagesByTrial: machineSheetByTrial,
-        });
-        if (shouldRevalidateAfterSave) {
-          void reloadRemoteTrialDatabaseState({ background: true });
-        }
-      } catch {
-        // Ignore remote storage write failures and keep the UI responsive.
-      }
-    })();
-  }, [
-    isMachineSheetHydrated,
-    isOfflineFallbackMode,
-    machineSheetByTrial,
-    moldId,
-    moldNo,
-    reloadRemoteTrialDatabaseState,
-    shouldRevalidateAfterSave,
-  ]);
-
-  useEffect(() => {
     if (trialStagesState.length === 0) return;
     if (trialStagesState.includes(activeTrial)) return;
     setActiveTrial(trialStagesState[0]);
@@ -1783,9 +1003,6 @@ export default function MoldTrialDatabase({
 
     setTrialStagesState(nextTrialStages);
     setClearedTrialStages(nextClearedTrialStages);
-    setTrialDataByStage(
-      buildInitialTrialDataMap(nextTrialStages, nextClearedTrialStages)
-    );
     writeStoredTrialStages(trialStageStorageKey, nextTrialStages);
     writeStoredClearedTrialStages(
       clearedTrialStageStorageKey,
@@ -1853,12 +1070,8 @@ export default function MoldTrialDatabase({
     delete nextEvidenceState[activeTrial];
     const nextEvidenceDrafts = { ...evidenceGroupNoteDraftByTrial };
     delete nextEvidenceDrafts[activeTrial];
-    const deletedMachineSheetUrl = machineSheetByTrialRef.current[activeTrial];
 
     setTrialStagesState(nextTrialStages);
-    setTrialDataByStage(
-      buildInitialTrialDataMap(nextTrialStages, nextClearedTrialStages)
-    );
     setClearedTrialStages(nextClearedTrialStages);
     writeStoredTrialStages(trialStageStorageKey, nextTrialStages);
     writeStoredClearedTrialStages(
@@ -1868,134 +1081,8 @@ export default function MoldTrialDatabase({
     setEvidenceByTrial(nextEvidenceState);
     evidenceByTrialRef.current = nextEvidenceState;
     setEvidenceGroupNoteDraftByTrial(nextEvidenceDrafts);
-    setMachineSheetByTrial(prev => {
-      if (!prev[activeTrial]) return prev;
-      const next = { ...prev };
-      delete next[activeTrial];
-      return next;
-    });
-    if (deletedMachineSheetUrl && !deletedMachineSheetUrl.startsWith("blob:")) {
-      void deleteAssetViaServer(deletedMachineSheetUrl).catch(() => undefined);
-    }
-    setShowClearMachineSheetConfirm(false);
-    setPendingClearMachineSheetTrial(null);
     setActiveTrial(nextActiveTrial);
     setShowClearConfirm(false);
-  };
-
-  const clearMachineParamsForStage = (stage: TrialStage) => {
-    const nextClearedTrialStages = clearedTrialStages.includes(stage)
-      ? clearedTrialStages
-      : [...clearedTrialStages, stage];
-
-    setClearedTrialStages(nextClearedTrialStages);
-    writeStoredClearedTrialStages(
-      clearedTrialStageStorageKey,
-      nextClearedTrialStages
-    );
-    setTrialDataByStage(prev => {
-      const currentStageData = prev[stage] || buildDefaultTrialStageData(stage);
-      return {
-        ...prev,
-        [stage]: buildClearedTrialStageDataFromSource(currentStageData),
-      };
-    });
-    const clearedMachineSheetUrl = machineSheetByTrialRef.current[stage];
-    setMachineSheetByTrial(prev => {
-      if (!prev[stage]) return prev;
-      const next = { ...prev };
-      delete next[stage];
-      return next;
-    });
-    if (clearedMachineSheetUrl && !clearedMachineSheetUrl.startsWith("blob:")) {
-      void deleteAssetViaServer(clearedMachineSheetUrl).catch(() => undefined);
-    }
-    setShowClearMachineConfirm(false);
-    setPendingClearMachineTrial(null);
-    setShowClearMachineSheetConfirm(false);
-    setPendingClearMachineSheetTrial(null);
-  };
-
-  const clearMachineSheetForStage = async (
-    stage: TrialStage,
-    options?: { silent?: boolean }
-  ) => {
-    const existingImageUrl = machineSheetByTrialRef.current[stage];
-    if (!existingImageUrl) return;
-
-    const nextMachineSheetByTrial = {
-      ...machineSheetByTrialRef.current,
-    };
-    delete nextMachineSheetByTrial[stage];
-
-    setMachineSheetByTrial(prev => {
-      if (!prev[stage]) return prev;
-      const next = { ...prev };
-      delete next[stage];
-      return next;
-    });
-    machineSheetByTrialRef.current = nextMachineSheetByTrial;
-    if (!existingImageUrl.startsWith("blob:")) {
-      await deleteAssetViaServer(existingImageUrl).catch(() => undefined);
-    }
-
-    if (!options?.silent) {
-      toast.success("图片已删除", {
-        description: "手写机台参数图已清除。",
-        position: "bottom-right",
-      });
-    }
-  };
-
-  const handleMachineSheetUpload = async (file?: File): Promise<boolean> => {
-    if (!file) return false;
-    if (!file.type.startsWith("image/")) {
-      window.alert("请上传图片格式文件");
-      return false;
-    }
-
-    setIsUploadingMachineSheet(true);
-    const targetStage = activeTrial;
-    const slotId = `${targetStage}-machine-sheet-a4`;
-    const previousImageUrl = machineSheetByTrialRef.current[targetStage];
-
-    try {
-      const uploadResult = await uploadAssetViaServer({
-        file,
-        category: "mold-trial-machine-sheet",
-        entityId: evidenceAssetEntityId,
-        slot: slotId,
-      });
-      const nextImageUrl = uploadResult.url;
-      const nextMachineSheetByTrial = {
-        ...machineSheetByTrialRef.current,
-        [targetStage]: nextImageUrl,
-      };
-
-      setMachineSheetByTrial(nextMachineSheetByTrial);
-      machineSheetByTrialRef.current = nextMachineSheetByTrial;
-      if (
-        previousImageUrl &&
-        previousImageUrl !== nextImageUrl &&
-        !previousImageUrl.startsWith("blob:")
-      ) {
-        void deleteAssetViaServer(previousImageUrl).catch(() => undefined);
-      }
-
-      toast.success("图片已保存", {
-        description: "手写机台参数图已上传。",
-        position: "bottom-right",
-      });
-      return true;
-    } catch {
-      toast.error("上传失败", {
-        description: "请重试或检查网络连接。",
-        position: "bottom-right",
-      });
-      return false;
-    } finally {
-      setIsUploadingMachineSheet(false);
-    }
   };
 
   const uploadEvidenceFileToSlot = async (
@@ -2466,23 +1553,17 @@ export default function MoldTrialDatabase({
       revokeEvidenceSlotUrls(evidenceByTrialRef.current);
       setTrialStagesState(imported.trialStagesState);
       setActiveTrial(imported.trialStagesState[0] || defaultTrialStages[0]);
-      setTrialDataByStage(imported.trialDataByStage);
       setClearedTrialStages([]);
       writeStoredTrialStages(trialStageStorageKey, imported.trialStagesState);
       writeStoredClearedTrialStages(clearedTrialStageStorageKey, []);
       setEvidenceByTrial(importedEvidenceMap);
       evidenceByTrialRef.current = importedEvidenceMap;
       setEvidenceGroupNoteDraftByTrial(importedEvidenceDrafts);
-      setMachineSheetByTrial({});
-      machineSheetByTrialRef.current = {};
       setSelectedEvidenceSlotId(
         importedEvidenceMap[importedStage]?.slots.find(slot => slot.imageUrl)
           ?.id || null
       );
       setPendingUploadSlotId(null);
-      setShowClearMachineConfirm(false);
-      setShowClearMachineSheetConfirm(false);
-      setPendingClearMachineSheetTrial(null);
       setShowClearConfirm(false);
       setPendingDeleteEvidenceSlotId(null);
       setShowDeleteGroupNoteConfirm(false);
@@ -2504,15 +1585,6 @@ export default function MoldTrialDatabase({
   const handleExcelImportClick = useCallback(() => {
     excelInputRef.current?.click();
   }, []);
-
-  const handleMachineSheetFileChange = (
-    event: React.ChangeEvent<HTMLInputElement>
-  ) => {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (!file) return;
-    void handleMachineSheetUpload(file);
-  };
 
   const renderEvidenceSlotGrid = (slots: TrialEvidenceSlot[]) =>
     slots.map(slot => {
@@ -2706,167 +1778,6 @@ export default function MoldTrialDatabase({
         </div>
       </section>
 
-      <div className="my-5">
-        <TrialModuleHeading titleCn="机台参数" titleEn="Machine Parameters" />
-      </div>
-
-      <section className="mb-6">
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {currentData.summaryCards.map(card => (
-            <article
-              key={`${activeTrial}-${card.labelEn}`}
-              className="rounded-2xl border border-slate-800 bg-slate-900/45 px-4 py-4 shadow-[0_12px_30px_rgba(2,8,23,0.35)]"
-            >
-              <p className="text-[13px] font-bold tracking-[0.15em] text-slate-100 md:text-sm">
-                {card.labelCn}
-              </p>
-              <p className="text-[9px] font-semibold uppercase tracking-[0.18em] text-slate-400 md:text-[10px]">
-                {card.labelEn}
-              </p>
-              <div className="mt-3 flex flex-col leading-tight">
-                <span className="text-xl font-mono tabular-nums text-slate-50 md:text-2xl">
-                  {card.value}
-                </span>
-                <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400 md:text-xs">
-                  原料
-                </span>
-              </div>
-            </article>
-          ))}
-        </div>
-
-        <div className="mt-5 grid gap-4 md:grid-cols-3">
-          {[
-            {
-              titleCn: "温控参数",
-              titleEn: "THERMAL SETTINGS",
-              rows: currentData.thermalSettings,
-            },
-            {
-              titleCn: "注塑参数",
-              titleEn: "INJECTION PROFILE",
-              rows: currentData.injectionProfile,
-            },
-            {
-              titleCn: "实际结果",
-              titleEn: "ACTUALS",
-              rows: currentData.actuals,
-            },
-          ].map(section => (
-            <article
-              key={`${activeTrial}-${section.titleEn}`}
-              className="rounded-2xl p-6 shadow-inner flex flex-col gap-4 md:p-7 md:gap-5"
-            >
-              <header className="flex flex-col leading-tight">
-                <p className="text-[13px] font-bold text-slate-100 uppercase tracking-[0.15em] md:text-sm">
-                  {section.titleCn}
-                </p>
-                <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400 md:text-[11px]">
-                  {section.titleEn}
-                </p>
-              </header>
-              <div className="space-y-2">
-                {section.rows.map(row => (
-                  <div
-                    key={`${section.titleEn}-${row.label}`}
-                    className="rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2"
-                  >
-                    <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400 md:text-xs">
-                      {row.label}
-                    </p>
-                    <div className="mt-1 flex flex-col leading-tight">
-                      <span className="text-xl font-mono tabular-nums text-slate-50 md:text-2xl">
-                        {row.value}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      {/* SECTION 3.5: Handwritten Machine Sheet (A4 Landscape) */}
-      <section className="mb-8 rounded-2xl border border-slate-800 bg-slate-900/35 p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-start gap-3">
-            <div className="rounded-xl border border-cyan-900/40 bg-cyan-950/20 p-2.5">
-              <ImageIcon className="h-4 w-4 text-cyan-300" />
-            </div>
-            <div>
-              <h2 className="text-xs font-bold uppercase tracking-[0.14em] text-slate-200">
-                手写机台参数单 / HANDWRITTEN MACHINE SHEET
-              </h2>
-              <p className="mt-1 text-xs text-slate-500">
-                固定 A4 横向比例 297:210，建议上传清晰的整页照片或扫描件。
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => machineSheetInputRef.current?.click()}
-              disabled={isUploadingMachineSheet}
-              className="rounded-lg border border-cyan-700/50 bg-cyan-950/40 px-4 py-2 text-xs font-bold uppercase tracking-wider text-cyan-300 transition-colors hover:bg-cyan-900/50 hover:text-cyan-100 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {isUploadingMachineSheet
-                ? "上传中..."
-                : activeMachineSheetUrl
-                  ? "替换图片"
-                  : "上传图片"}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setPendingClearMachineSheetTrial(activeTrial);
-                setShowClearMachineSheetConfirm(true);
-              }}
-              disabled={!activeMachineSheetUrl}
-              className={`rounded-lg border px-4 py-2 text-xs font-bold uppercase tracking-wider transition-colors ${
-                activeMachineSheetUrl
-                  ? "border-rose-700/50 bg-rose-950/35 text-rose-300 hover:bg-rose-900/50 hover:text-rose-100"
-                  : "cursor-not-allowed border-slate-800 bg-slate-900/60 text-slate-600"
-              }`}
-            >
-              清除图片
-            </button>
-          </div>
-        </div>
-        <div className="mt-4">
-          <div
-            className="relative overflow-hidden rounded-xl border border-cyan-900/40 bg-slate-950/75 shadow-inner"
-            style={{ aspectRatio: "297 / 210" }}
-          >
-            {activeMachineSheetUrl ? (
-              <img
-                src={activeMachineSheetUrl}
-                alt={`${activeTrial} 手写机台参数单`}
-                className="h-full w-full object-contain bg-slate-950"
-              />
-            ) : (
-              <div className="flex h-full w-full flex-col items-center justify-center gap-3 px-6 text-center">
-                <ImageIcon className="h-8 w-8 text-slate-600" />
-                <p className="text-sm font-semibold tracking-wide text-slate-300">
-                  暂无手写机台参数图
-                </p>
-                <p className="max-w-xl text-xs text-slate-500">
-                  点击右上角“上传图片”后，这里会按 A4 横向尺寸展示整页手写参数。
-                </p>
-              </div>
-            )}
-          </div>
-        </div>
-      </section>
-
-      <div className="my-8 flex items-center gap-4 px-1">
-        <span className="h-px flex-1 bg-gradient-to-r from-transparent via-slate-700 to-transparent" />
-        <span className="rounded-full border border-slate-700 bg-slate-950 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">
-          独立模块分隔 / Module Break
-        </span>
-        <span className="h-px flex-1 bg-gradient-to-r from-transparent via-slate-700 to-transparent" />
-      </div>
-
       <section className="rounded-2xl border border-rose-900/30 bg-slate-950/55 p-5 shadow-[0_0_0_1px_rgba(251,113,133,0.06)]">
         <div className="flex items-start gap-3">
           <div className="rounded-xl border border-cyan-900/40 bg-cyan-950/20 p-2.5">
@@ -3006,43 +1917,11 @@ export default function MoldTrialDatabase({
       </section>
 
       <CyberConfirmDialog
-        open={showClearMachineConfirm}
-        title="清除数据确认"
-        message={`确定要清除当前 ${pendingClearMachineTrial || activeTrial} 轮次的机台参数吗？将清空试模日期、成型机台、材料、三列机台参数数据，以及手写机台参数图片；证据、FAI 和表面测试内容不会被删除。`}
-        onCancel={() => {
-          setShowClearMachineConfirm(false);
-          setPendingClearMachineTrial(null);
-        }}
-        onConfirm={() => {
-          const targetStage = pendingClearMachineTrial || activeTrial;
-          clearMachineParamsForStage(targetStage);
-        }}
-        confirmText="确认清除"
-        cancelText="取消"
-      />
-      <CyberConfirmDialog
         open={showDeleteGroupNoteConfirm}
         title="删除记录确认"
         message="确定要删除当前证据总记录吗？删除后内容和记录时间都会清空，此操作不可撤销。"
         onCancel={() => setShowDeleteGroupNoteConfirm(false)}
         onConfirm={handleDeleteEvidenceGroupNote}
-        confirmText="确认删除"
-        cancelText="取消"
-      />
-      <CyberConfirmDialog
-        open={showClearMachineSheetConfirm}
-        title="删除图片确认"
-        message={`确定要删除当前 ${pendingClearMachineSheetTrial || activeTrial} 轮次的手写机台参数图片吗？删除后不可撤销。`}
-        onCancel={() => {
-          setShowClearMachineSheetConfirm(false);
-          setPendingClearMachineSheetTrial(null);
-        }}
-        onConfirm={() => {
-          const targetStage = pendingClearMachineSheetTrial || activeTrial;
-          setShowClearMachineSheetConfirm(false);
-          setPendingClearMachineSheetTrial(null);
-          void clearMachineSheetForStage(targetStage);
-        }}
         confirmText="确认删除"
         cancelText="取消"
       />
@@ -3080,13 +1959,6 @@ export default function MoldTrialDatabase({
         accept=".xlsx,.xls"
         className="hidden"
         onChange={handleExcelImport}
-      />
-      <input
-        type="file"
-        accept="image/*"
-        className="hidden"
-        ref={machineSheetInputRef}
-        onChange={handleMachineSheetFileChange}
       />
       <input
         type="file"

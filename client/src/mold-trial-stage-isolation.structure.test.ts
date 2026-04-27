@@ -27,16 +27,12 @@ describe("mold trial stage isolation", () => {
       "[nextStage]: buildEmptyTrialEvidenceStageState(nextStage),"
     );
     expect(source).toContain("normalizeStoredEvidenceStateMap(");
-    expect(source).toContain("const slotId = `${targetStage}-machine-sheet-a4`;");
-    expect(source).toContain("slot: slotId");
     expect(source).toContain("const trialScopeKey = `${moldId}:${moldNo || \"default\"}:${activeTrial}`;");
     expect(source).toContain("setIsEvidenceHydrated(false);");
     expect(source).toContain("setIsEvidenceHydrated(true);");
     expect(source).toContain("canPersistEvidenceRef");
     expect(source).toContain("const enablePersistTimer = window.setTimeout(() => {");
     expect(source).toContain("if (!canPersistEvidenceRef.current) {");
-    expect(source).toContain("isMachineSheetHydrated");
-    expect(source).toContain("saveDashboardMachineSheetState({");
     expect(source).toContain("<Fragment key={trialScopeKey}>");
   });
 });

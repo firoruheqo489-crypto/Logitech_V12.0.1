@@ -23,7 +23,6 @@ import {
 } from "./routes/dashboard-fai-dimension-state.js";
 import { deleteDashboardMoldTrialEvidenceState, ensureDashboardMoldTrialEvidenceTable, getDashboardMoldTrialEvidenceState, upsertDashboardMoldTrialEvidenceState } from "./routes/dashboard-mold-trial-evidence.js";
 import { deleteDashboardToolingFaiState, ensureDashboardToolingFaiTable, getDashboardToolingFaiState, upsertDashboardToolingFaiState } from "./routes/dashboard-tooling-fai.js";
-import { ensureDashboardMachineSheetTable, getDashboardMachineSheetState, upsertDashboardMachineSheetState } from "./routes/dashboard-machine-sheet.js";
 import {
   deleteDashboardDocxConverterState,
   ensureDashboardDocxConverterTable,
@@ -71,7 +70,6 @@ async function startServer() {
     { name: "dashboard_part_fai", run: ensureDashboardPartFaiTable },
     { name: "dashboard_fai_dimension", run: ensureDashboardFaiDimensionTable },
     { name: "dashboard_mold_trial_evidence", run: ensureDashboardMoldTrialEvidenceTable },
-    { name: "dashboard_machine_sheet", run: ensureDashboardMachineSheetTable },
     { name: "dashboard_docx_converter", run: ensureDashboardDocxConverterTable },
     { name: "dashboard_health", run: ensureDashboardHealthTable },
     { name: "dashboard_module_order", run: ensureDashboardModuleOrderTable },
@@ -209,8 +207,6 @@ async function startServer() {
   app.get("/api/dashboard/mold-trial-evidence-state", getDashboardMoldTrialEvidenceState);
   app.put("/api/dashboard/mold-trial-evidence-state", upsertDashboardMoldTrialEvidenceState);
   app.delete("/api/dashboard/mold-trial-evidence-state", deleteDashboardMoldTrialEvidenceState);
-  app.get("/api/dashboard/machine-sheet-state", getDashboardMachineSheetState);
-  app.put("/api/dashboard/machine-sheet-state", upsertDashboardMachineSheetState);
   app.get("/api/dashboard/docx-converter-state", getDashboardDocxConverterState);
   app.put("/api/dashboard/docx-converter-state", upsertDashboardDocxConverterState);
   app.delete("/api/dashboard/docx-converter-state", deleteDashboardDocxConverterState);

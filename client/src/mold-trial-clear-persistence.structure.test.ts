@@ -10,12 +10,11 @@ async function loadSource(relativePath: string): Promise<string> {
   return readFile(path.resolve(__dirname, relativePath), 'utf8');
 }
 
-describe('mold trial clear persistence', () => {
-  it('keeps cleared machine-parameter state persisted across refreshes', async () => {
+describe('mold trial stage persistence', () => {
+  it('keeps trial stage state persisted across refreshes', async () => {
     const source = await loadSource('./pages/dashboard/components/MoldTrialDatabase.tsx');
 
     expect(source).toContain('mold-trial-cleared-stages:');
-    expect(source).toContain('buildInitialTrialDataMap(nextTrialStages, nextClearedTrialStages)');
     expect(source).toContain('setClearedTrialStages(');
     expect(source).toContain('writeStoredTrialStages(trialStageStorageKey, nextTrialStages)');
     expect(source).toContain('writeStoredClearedTrialStages(');
