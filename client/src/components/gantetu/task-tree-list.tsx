@@ -25,6 +25,7 @@ interface TaskTreeListProps {
   colorIndex?: number
   onToggle: (id: string) => void
   onAddDelay: (parentId: string) => void
+  onUpdateName: (id: string, name: string) => void
   onUpdateDate: (id: string, start: string, end: string) => void
   onUpdateReason: (id: string, reason: string) => void
   onUpdateProgress: (id: string, progress: number) => void
@@ -60,6 +61,7 @@ export function TaskTreeList(props: TaskTreeListProps) {
     colorIndex = 0,
     onToggle,
     onAddDelay,
+    onUpdateName,
     onUpdateDate,
     onUpdateReason,
     onUpdateProgress,
@@ -76,6 +78,8 @@ export function TaskTreeList(props: TaskTreeListProps) {
   // Phase 9 - 删除状态管理
   const [deletionTarget, setDeletionTarget] = useState<{ id: string; name: string } | null>(null)
   const [rejectionMessage, setRejectionMessage] = useState<string | null>(null)
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null)
+  const [editDraft, setEditDraft] = useState({ name: "", startDate: "", endDate: "" })
 
   const handleDeleteClick = useCallback(
     (taskId: string, taskName: string) => {
@@ -96,6 +100,20 @@ export function TaskTreeList(props: TaskTreeListProps) {
     setDeletionTarget(null)
   }, [deletionTarget, onDeleteTopLevelTask])
 
+  const handleStartEdit = useCallback((node: TaskNode) => {
+    setEditingTaskId(node.id)
+    setEditDraft({
+      name: node.name,
+      startDate: node.startDate,
+      endDate: node.endDate,
+    })
+  }, [])
+
+  const handleCancelEdit = useCallback(() => {
+    setEditingTaskId(null)
+    setEditDraft({ name: "", startDate: "", endDate: "" })
+  }, [])
+
   return (
     <>
       <ul className="text-[13px]">
@@ -104,6 +122,13 @@ export function TaskTreeList(props: TaskTreeListProps) {
           const expanded = node.isExpanded !== false
           const isChildRow = !!node.parentId
           const isLastChildOfParent = isChildRow && i === nodes.length - 1
+          const isEditing = editingTaskId === node.id
+          const canEditDates = !isParent
+          const canSaveEdit =
+            editDraft.name.trim().length > 0 &&
+            editDraft.startDate.length > 0 &&
+            editDraft.endDate.length > 0 &&
+            editDraft.startDate <= editDraft.endDate
 
           if (isMacro && isChildRow) return null
 
@@ -131,10 +156,10 @@ export function TaskTreeList(props: TaskTreeListProps) {
                 : "text-slate-100"
 
           return (
-            <li key={node.id} className="border-b border-slate-800/30">
+            <li key={node.id}>
               {/* 鈹佲攣 Row: 楂樺害浠?GANTT_ROW_H.TASK 鍙栧€硷紝涓庡彸渚?TaskTrack 鐗╃悊閿佹 鈹佲攣 */}
               <div
-                className="group flex flex-col justify-center gap-1 pr-3 transition-colors hover:bg-slate-800/40"
+                className="group box-border flex flex-col justify-center gap-1 pr-3 border-b border-slate-800/30 transition-colors hover:bg-slate-800/40"
                 style={{ height: GANTT_ROW_H.TASK, paddingLeft: `${8 + depth * 14}px` }}
               >
                 <div className="flex items-center gap-1.5 min-w-0">
@@ -155,9 +180,20 @@ export function TaskTreeList(props: TaskTreeListProps) {
                     {!isParent ? <span className="text-slate-700">·</span> : expanded ? "▼" : "▶"}
                   </button>
 
-                  <span className={`flex-1 min-w-0 text-[12px] leading-4 truncate ${nameCls}`} title={node.name}>
-                    {node.name}
-                  </span>
+                  {isEditing && !isChildRow ? (
+                    <input
+                      type="text"
+                      value={editDraft.name}
+                      onChange={(e) => setEditDraft((draft) => ({ ...draft, name: e.target.value }))}
+                      className="flex-1 min-w-0 bg-transparent border-0 border-b border-cyan-700 text-[12px] leading-4 text-slate-100 px-1 py-0.5 focus:outline-none focus:border-cyan-500"
+                      aria-label={`${node.name} 工序名称`}
+                      autoFocus
+                    />
+                  ) : (
+                    <span className={`flex-1 min-w-0 text-[12px] leading-4 truncate ${nameCls}`} title={node.name}>
+                      {node.name}
+                    </span>
+                  )}
                 </div>
 
                 {isChildRow ? (
@@ -205,59 +241,117 @@ export function TaskTreeList(props: TaskTreeListProps) {
                   })()
                 ) : (
                   <div className="flex items-center justify-between gap-2 pl-7 min-w-0">
-                    <div className="flex items-center gap-0.5 shrink-0">
-                      <span className="relative tabular-nums text-[12px] text-slate-500 tracking-tight cursor-default">
-                        {fmtDate(node.startDate)}
-                        {!isParent && (
+                    <div className="flex items-center gap-0.5 shrink-0 min-w-0">
+                      {isEditing ? (
+                        <>
                           <input
                             type="date"
-                            value={node.startDate}
-                            onChange={(e) => onUpdateDate(node.id, e.target.value, node.endDate)}
-                            className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
-                            tabIndex={-1}
+                            value={editDraft.startDate}
+                            onChange={(e) => setEditDraft((draft) => ({ ...draft, startDate: e.target.value }))}
+                            disabled={!canEditDates}
+                            title={!canEditDates ? "存在延期记录时，日期由链路自动推算" : undefined}
+                            className={`w-[104px] bg-transparent border-0 border-b px-1 py-0.5 text-[11px] font-mono focus:outline-none ${
+                              canEditDates
+                                ? "border-cyan-700 text-slate-200 focus:border-cyan-500"
+                                : "border-slate-800 text-slate-600 cursor-not-allowed"
+                            }`}
                             aria-label={`${node.name} 开始日期`}
                           />
-                        )}
-                      </span>
-                      <span className="text-slate-700 text-[8px]">–</span>
-                      <span className="relative tabular-nums text-[12px] text-slate-500 tracking-tight cursor-default">
-                        {fmtDate(node.endDate)}
-                        {!isParent && (
+                          <span className="text-slate-700 text-[8px]">–</span>
                           <input
                             type="date"
-                            value={node.endDate}
-                            onChange={(e) => onUpdateDate(node.id, node.startDate, e.target.value)}
-                            className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
-                            tabIndex={-1}
+                            value={editDraft.endDate}
+                            onChange={(e) => setEditDraft((draft) => ({ ...draft, endDate: e.target.value }))}
+                            disabled={!canEditDates}
+                            title={!canEditDates ? "存在延期记录时，日期由链路自动推算" : undefined}
+                            className={`w-[104px] bg-transparent border-0 border-b px-1 py-0.5 text-[11px] font-mono focus:outline-none ${
+                              canEditDates
+                                ? "border-cyan-700 text-slate-200 focus:border-cyan-500"
+                                : "border-slate-800 text-slate-600 cursor-not-allowed"
+                            }`}
                             aria-label={`${node.name} 截至日期`}
                           />
-                        )}
-                      </span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="tabular-nums text-[12px] text-slate-500 tracking-tight cursor-default">
+                            {fmtDate(node.startDate)}
+                          </span>
+                          <span className="text-slate-700 text-[8px]">–</span>
+                          <span className="tabular-nums text-[12px] text-slate-500 tracking-tight cursor-default">
+                            {fmtDate(node.endDate)}
+                          </span>
+                        </>
+                      )}
                     </div>
 
                     <div className="flex items-center gap-0.5 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => onAddDelay(node.id)}
-                        title="延期报备"
-                        className="w-6 h-6 flex items-center justify-center text-slate-600 hover:text-cyan-400 hover:bg-cyan-950/30 rounded transition-all"
-                      >
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <circle cx="12" cy="12" r="9" strokeWidth={1.5} />
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6v6l4 2" />
-                        </svg>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteClick(node.id, node.name)}
-                        title="删除工序"
-                        className="w-6 h-6 flex items-center justify-center text-slate-600 hover:text-red-400 hover:bg-red-950/30 rounded transition-all"
-                        aria-label={`删除 ${node.name}`}
-                      >
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
-                      </button>
+                      {isEditing ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onUpdateName(node.id, editDraft.name)
+                              if (canEditDates) {
+                                onUpdateDate(node.id, editDraft.startDate, editDraft.endDate)
+                              }
+                              handleCancelEdit()
+                            }}
+                            disabled={!canSaveEdit}
+                            title="保存修改"
+                            className="w-6 h-6 flex items-center justify-center text-emerald-400 hover:text-emerald-300 hover:bg-emerald-950/30 rounded transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M5 13l4 4L19 7" />
+                            </svg>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleCancelEdit}
+                            title="取消编辑"
+                            className="w-6 h-6 flex items-center justify-center text-slate-600 hover:text-slate-300 hover:bg-slate-800/40 rounded transition-all"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => handleStartEdit(node)}
+                            title="编辑工序"
+                            className="w-6 h-6 flex items-center justify-center text-slate-600 hover:text-amber-300 hover:bg-amber-950/30 rounded transition-all"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16.862 4.487a2.1 2.1 0 113 2.97L9 18.32l-4 1 1-4 10.862-10.833z" />
+                            </svg>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => onAddDelay(node.id)}
+                            title="延期报备"
+                            className="w-6 h-6 flex items-center justify-center text-slate-600 hover:text-cyan-400 hover:bg-cyan-950/30 rounded transition-all"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <circle cx="12" cy="12" r="9" strokeWidth={1.5} />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6v6l4 2" />
+                            </svg>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteClick(node.id, node.name)}
+                            title="删除工序"
+                            className="w-6 h-6 flex items-center justify-center text-slate-600 hover:text-red-400 hover:bg-red-950/30 rounded transition-all"
+                            aria-label={`删除 ${node.name}`}
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
+                        </>
+                      )}
                     </div>
                   </div>
                 )}
@@ -277,6 +371,7 @@ export function TaskTreeList(props: TaskTreeListProps) {
                   colorIndex={colorIndex}
                   onToggle={onToggle}
                   onAddDelay={onAddDelay}
+                  onUpdateName={onUpdateName}
                   onUpdateDate={onUpdateDate}
                   onUpdateReason={onUpdateReason}
                   onUpdateProgress={onUpdateProgress}
@@ -371,102 +466,114 @@ function BlackboardSpawner({ roots, onAdd }: BlackboardSpawnerProps) {
     setOpen(false)
   }
 
-  if (!open) {
-    return (
+  return (
+    <div className="sticky bottom-0 z-20" style={{ height: GANTT_ROW_H.SPAWNER }}>
+      {open ? (
+        <div className="absolute bottom-full left-0 right-0 mb-2 border border-cyan-800/30 bg-[#111827] px-4 py-4 shadow-[0_-4px_12px_rgba(0,0,0,0.3)]">
+          <div className="space-y-3">
+            <div className="min-w-0">
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="工序名称 *"
+                className={`w-full bg-transparent border-0 border-b text-slate-200 px-1 py-1.5 text-[11px] focus:outline-none transition-colors ${
+                  errors.name ? "border-rose-500 focus:border-rose-400" : "border-slate-700 focus:border-cyan-500"
+                }`}
+                autoFocus
+              />
+              {errors.name ? <div className="mt-1 text-[10px] text-rose-400 whitespace-nowrap">{errors.name}</div> : null}
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="min-w-0">
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  aria-label="开始时间"
+                  className={`w-full bg-transparent border-0 border-b text-slate-200 px-1 py-1.5 text-[11px] focus:outline-none transition-colors ${
+                    errors.startDate ? "border-rose-500 focus:border-rose-400" : "border-slate-700 focus:border-cyan-500"
+                  }`}
+                />
+                {errors.startDate ? <div className="mt-1 text-[10px] text-rose-400 whitespace-nowrap">{errors.startDate}</div> : null}
+              </div>
+
+              <div className="min-w-0">
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  aria-label="截至时间"
+                  className={`w-full bg-transparent border-0 border-b text-slate-200 px-1 py-1.5 text-[11px] focus:outline-none transition-colors ${
+                    errors.endDate ? "border-rose-500 focus:border-rose-400" : "border-slate-700 focus:border-cyan-500"
+                  }`}
+                />
+                {errors.endDate ? <div className="mt-1 text-[10px] text-rose-400 whitespace-nowrap">{errors.endDate}</div> : null}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <label className="text-[9px] text-slate-600 whitespace-nowrap">前置条件:</label>
+              <select
+                value={depId ?? ""}
+                onChange={(e) => setDepId(e.target.value || null)}
+                className="flex-1 bg-transparent border-0 border-b border-slate-700 text-slate-300 px-1 py-1 text-[10px] focus:outline-none focus:border-cyan-500 transition-colors"
+              >
+                <option value="">无 / 开端</option>
+                {topLevelRoots.map((root) => (
+                  <option key={root.id} value={root.id}>
+                    {root.name} ({root.endDate})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={handleSubmit}
+                className="flex-1 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white text-[10px] font-medium rounded shadow-[0_0_12px_rgba(6,182,212,0.4)] hover:shadow-[0_0_18px_rgba(6,182,212,0.6)] transition-all"
+              >
+                确认录入
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  resetForm()
+                  setOpen(false)
+                }}
+                className="px-4 py-2 border border-slate-700/60 text-slate-500 hover:text-slate-300 hover:border-slate-500 hover:bg-slate-800/30 text-[10px] rounded transition-all"
+              >
+                取消
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <div
-        className="sticky bottom-0 border-t border-slate-800/40 bg-[#0f1729] px-3 flex items-center opacity-20 hover:opacity-100 transition-opacity"
-        style={{ height: GANTT_ROW_H.SPAWNER }}
+        className={`box-border flex h-full items-center border-b border-slate-800/20 bg-[#0f1729] px-3 transition-opacity ${
+          open ? "opacity-100" : "opacity-20 hover:opacity-100"
+        }`}
       >
         <button
           type="button"
-          onClick={() => setOpen(true)}
-          className="w-full py-0.5 border border-dashed border-slate-700/60 text-slate-500 hover:border-cyan-500/70 hover:text-cyan-400 hover:bg-cyan-950/20 text-[9px] rounded transition-all"
-        >
-          + 新增工序
-        </button>
-      </div>
-    )
-  }
-
-  return (
-    <div className="sticky bottom-0 border-t border-cyan-800/30 bg-[#111827] px-4 py-4 space-y-3 shadow-[0_-4px_12px_rgba(0,0,0,0.3)]">
-      <div className="space-y-3">
-        <div className="min-w-0">
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="工序名称 *"
-            className={`w-full bg-transparent border-0 border-b text-slate-200 px-1 py-1.5 text-[11px] focus:outline-none transition-colors ${
-              errors.name ? "border-rose-500 focus:border-rose-400" : "border-slate-700 focus:border-cyan-500"
-            }`}
-            autoFocus
-          />
-          {errors.name ? <div className="mt-1 text-[10px] text-rose-400 whitespace-nowrap">{errors.name}</div> : null}
-        </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          <div className="min-w-0">
-          <input
-            type="date"
-            value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
-            aria-label="开始时间"
-            className={`w-full bg-transparent border-0 border-b text-slate-200 px-1 py-1.5 text-[11px] focus:outline-none transition-colors ${
-              errors.startDate ? "border-rose-500 focus:border-rose-400" : "border-slate-700 focus:border-cyan-500"
-            }`}
-          />
-            {errors.startDate ? <div className="mt-1 text-[10px] text-rose-400 whitespace-nowrap">{errors.startDate}</div> : null}
-          </div>
-
-          <div className="min-w-0">
-          <input
-            type="date"
-            value={endDate}
-            onChange={(e) => setEndDate(e.target.value)}
-            aria-label="截至时间"
-            className={`w-full bg-transparent border-0 border-b text-slate-200 px-1 py-1.5 text-[11px] focus:outline-none transition-colors ${
-              errors.endDate ? "border-rose-500 focus:border-rose-400" : "border-slate-700 focus:border-cyan-500"
-            }`}
-          />
-            {errors.endDate ? <div className="mt-1 text-[10px] text-rose-400 whitespace-nowrap">{errors.endDate}</div> : null}
-          </div>
-        </div>
-      </div>
-
-      <div className="flex items-center gap-3">
-        <label className="text-[9px] text-slate-600 whitespace-nowrap">前置条件:</label>
-        <select
-          value={depId ?? ""}
-          onChange={(e) => setDepId(e.target.value || null)}
-          className="flex-1 bg-transparent border-0 border-b border-slate-700 text-slate-300 px-1 py-1 text-[10px] focus:outline-none focus:border-cyan-500 transition-colors"
-        >
-          <option value="">无 / 开端</option>
-          {topLevelRoots.map((root) => (
-            <option key={root.id} value={root.id}>
-              {root.name} ({root.endDate})
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div className="flex items-center gap-3 pt-2">
-        <button
-          type="button"
-          onClick={handleSubmit}
-          className="flex-1 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white text-[10px] font-medium rounded shadow-[0_0_12px_rgba(6,182,212,0.4)] hover:shadow-[0_0_18px_rgba(6,182,212,0.6)] transition-all"
-        >
-          确认录入
-        </button>
-        <button
-          type="button"
           onClick={() => {
-            resetForm()
-            setOpen(false)
+            if (open) {
+              resetForm()
+              setOpen(false)
+              return
+            }
+            setOpen(true)
           }}
-          className="px-4 py-2 border border-slate-700/60 text-slate-500 hover:text-slate-300 hover:border-slate-500 hover:bg-slate-800/30 text-[10px] rounded transition-all"
+          className={`w-full py-0.5 border border-dashed text-[9px] rounded transition-all ${
+            open
+              ? "border-cyan-600/70 text-cyan-300 bg-cyan-950/20 hover:border-cyan-400 hover:text-cyan-200"
+              : "border-slate-700/60 text-slate-500 hover:border-cyan-500/70 hover:text-cyan-400 hover:bg-cyan-950/20"
+          }`}
         >
-          取消
+          {open ? "收起新增工序" : "+ 新增工序"}
         </button>
       </div>
     </div>

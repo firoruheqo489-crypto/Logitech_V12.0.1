@@ -43,6 +43,7 @@ export interface UseGanttEngineReturn {
   viewMode: ViewMode
   setViewMode: (mode: ViewMode) => void
   addDelay: (componentId: string, parentId: string, delayDays: number, reason: string) => void
+  updateTaskName: (componentId: string, taskId: string, name: string) => void
   updateTaskDate: (componentId: string, taskId: string, newStart: string, newEnd: string) => void
   updateTaskReason: (componentId: string, taskId: string, reason: string) => void
   updateTaskProgress: (componentId: string, taskId: string, progress: number) => void
@@ -165,6 +166,24 @@ export function useGanttEngine(initialComponents: ComponentGroup[], initialMiles
         }
 
         enforceDependencyConstraints(group.tasks)
+      }),
+    )
+  }, [])
+
+  const updateTaskName = useCallback((componentId: string, taskId: string, name: string) => {
+    const trimmedName = name.trim()
+    if (!trimmedName) {
+      console.warn("[v0] updateTaskName: name is empty")
+      return
+    }
+
+    setComponents((prev) =>
+      produce(prev, (draft) => {
+        const group = draft.find((g) => g.id === componentId)
+        if (!group) return
+        const node = findNode(group.tasks, taskId)
+        if (!node) return
+        node.name = trimmedName
       }),
     )
   }, [])
@@ -534,6 +553,7 @@ export function useGanttEngine(initialComponents: ComponentGroup[], initialMiles
     viewMode,
     setViewMode,
     addDelay,
+    updateTaskName,
     updateTaskDate,
     updateTaskReason,
     updateTaskProgress,

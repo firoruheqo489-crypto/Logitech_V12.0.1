@@ -24,6 +24,7 @@ export type GanttRowKind =
   | "RULER"
   /** 部件组标题行（MICRO 模式下左右各一；MACRO 模式右侧整组合一） */
   | "GROUP"
+  | "MACRO_GROUP"
   /** 工序行 / 延期记录行 */
   | "TASK"
   /** 「+ 新增基础工序」沙盘折叠态 与 右侧对应占位 */
@@ -34,6 +35,7 @@ export const GANTT_ROW_H: Readonly<Record<GanttRowKind, number>> = {
   CONTROL_BAR: 40,
   RULER: 40,
   GROUP: 40,
+  MACRO_GROUP: 60,
   TASK: 72,
   SPAWNER: 28,
 } as const
