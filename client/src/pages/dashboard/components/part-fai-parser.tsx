@@ -418,11 +418,13 @@ type ParserHeaderIndexes = {
   dimType: number;
   cavity: number;
   fos: number;
+  judgeFos: number;
   plusTol: number;
   minusTol: number;
   usl: number;
   lsl: number;
   gtolRange: number;
+  judgeGtol: number;
   fosShotIndexes: [number, number, number];
   gtolShotIndexes: [number, number, number];
 };
@@ -444,6 +446,10 @@ type ParsedWorkbookSnapshot = {
   contractData: FaiParsedData[];
   rowData: FaiDataRow[];
 };
+
+function hasAnyShotValue(shots: ShotTuple): boolean {
+  return shots.some(value => value !== null);
+}
 
 type SheetJsonRow = Record<string, unknown>;
 
@@ -623,6 +629,10 @@ function findParserHeaderIndexes(headers: unknown[]): ParserHeaderIndexes {
     const header = normalizeHeader(cell);
     return header.includes("fos") && !header.includes("judge");
   });
+  const judgeFos = headers.findIndex(cell => {
+    const header = normalizeHeader(cell);
+    return header.includes("judge") && header.includes("fos");
+  });
   const plusTol = headers.findIndex(cell => normalizeHeader(cell).includes("plus tol"));
   const minusTol = headers.findIndex(cell => normalizeHeader(cell).includes("minus tol"));
   const usl = headers.findIndex(cell => {
@@ -637,6 +647,10 @@ function findParserHeaderIndexes(headers: unknown[]): ParserHeaderIndexes {
     const header = normalizeHeader(cell);
     return header.includes("g-tol range") || header.includes("gtol range");
   });
+  const judgeGtol = headers.findIndex(cell => {
+    const header = normalizeHeader(cell);
+    return header.includes("judge") && (header.includes("g-tol") || header.includes("gtol"));
+  });
 
   const { fosShotIndexes, gtolShotIndexes } = resolveShotIndexes(headers);
 
@@ -645,11 +659,13 @@ function findParserHeaderIndexes(headers: unknown[]): ParserHeaderIndexes {
     dimType,
     cavity,
     fos,
+    judgeFos,
     plusTol,
     minusTol,
     usl,
     lsl,
     gtolRange,
+    judgeGtol,
     fosShotIndexes,
     gtolShotIndexes,
   };
@@ -765,6 +781,7 @@ function buildContractSnapshot(rows: unknown[][]): ParsedWorkbookSnapshot {
   }
 
   const buffers = new Map<string, FaiAggregationBuffer>();
+  const rowData: FaiDataRow[] = [];
   let parseError: unknown = null;
   let parsedSectionCount = 0;
 
@@ -793,14 +810,106 @@ function buildContractSnapshot(rows: unknown[][]): ParsedWorkbookSnapshot {
           return;
         }
 
-        const cavity = normalizeCavity(
-          headerIndexes.cavity >= 0 ? row[headerIndexes.cavity] : "",
-          rowIndex
-        );
+        const rawCavityValue =
+          headerIndexes.cavity >= 0 ? row[headerIndexes.cavity] : "";
+        const cavityText = String(rawCavityValue ?? "").trim();
+        const cavity = normalizeCavity(rawCavityValue, rowIndex);
         const dimType =
           headerIndexes.dimType >= 0
             ? String(row[headerIndexes.dimType] ?? "").trim()
             : "";
+
+        const fosNominal =
+          headerIndexes.fos >= 0
+            ? parseMeasurementValue(row[headerIndexes.fos])
+            : null;
+        const plusTol =
+          headerIndexes.plusTol >= 0
+            ? parseMeasurementValue(row[headerIndexes.plusTol])
+            : null;
+        const minusTol =
+          headerIndexes.minusTol >= 0
+            ? parseMeasurementValue(row[headerIndexes.minusTol])
+            : null;
+        const directUsl =
+          headerIndexes.usl >= 0
+            ? parseMeasurementValue(row[headerIndexes.usl])
+            : null;
+        const directLsl =
+          headerIndexes.lsl >= 0
+            ? parseMeasurementValue(row[headerIndexes.lsl])
+            : null;
+        const gtolRange =
+          headerIndexes.gtolRange >= 0
+            ? parseMeasurementValue(row[headerIndexes.gtolRange])
+            : null;
+        const sourceJudgeFos =
+          headerIndexes.judgeFos >= 0
+            ? normalizeJudge(row[headerIndexes.judgeFos])
+            : "";
+        const sourceJudgeGtol =
+          headerIndexes.judgeGtol >= 0
+            ? normalizeJudge(row[headerIndexes.judgeGtol])
+            : "";
+        const fosShots = readShotTupleFromRow(row, headerIndexes.fosShotIndexes);
+        const gtolShots = readShotTupleFromRow(row, headerIndexes.gtolShotIndexes);
+        const hasFosShots = hasAnyShotValue(fosShots);
+        const hasGtolShots = hasAnyShotValue(gtolShots);
+
+        const computedUsl =
+          directUsl ??
+          (fosNominal !== null && plusTol !== null
+            ? roundToThreeDecimals(fosNominal + plusTol)
+            : null);
+        const computedLsl =
+          directLsl ??
+          (fosNominal !== null && minusTol !== null
+            ? roundToThreeDecimals(fosNominal + minusTol)
+            : null);
+        const judgeFos =
+          sourceJudgeFos ||
+          (hasFosShots && computedUsl !== null && computedLsl !== null
+            ? computeJudgeFromShots(fosShots, computedUsl, computedLsl)
+            : "");
+        const judgeGtol =
+          sourceJudgeGtol ||
+          (hasGtolShots && gtolRange !== null
+            ? computeJudgeFromShots(gtolShots, gtolRange, 0)
+            : "");
+        const hasMeaningfulMeasurements =
+          fosNominal !== null ||
+          plusTol !== null ||
+          minusTol !== null ||
+          directUsl !== null ||
+          directLsl !== null ||
+          gtolRange !== null ||
+          hasFosShots ||
+          hasGtolShots ||
+          judgeFos.length > 0 ||
+          judgeGtol.length > 0;
+
+        if (cavityText && hasMeaningfulMeasurements) {
+          rowData.push({
+            faiSet: currentFaiId,
+            dim: currentFaiId,
+            dimType,
+            cavity,
+            fos: fosNominal,
+            plusTol,
+            minusTol,
+            usl: computedUsl,
+            lsl: computedLsl,
+            judgeFos,
+            judgeGtol,
+            isNG: judgeFos === "NG" || judgeGtol === "NG",
+            fosShots,
+            gtolShots,
+          });
+        }
+
+        if (!cavityText || !hasMeaningfulMeasurements) {
+          return;
+        }
 
         const buffer =
           buffers.get(currentFaiId) ??
@@ -827,31 +936,6 @@ function buildContractSnapshot(rows: unknown[][]): ParsedWorkbookSnapshot {
           buffer.cavityDimTypes.set(cavity, dimType);
         }
 
-        const fosNominal =
-          headerIndexes.fos >= 0
-            ? parseMeasurementValue(row[headerIndexes.fos])
-            : null;
-        const plusTol =
-          headerIndexes.plusTol >= 0
-            ? parseMeasurementValue(row[headerIndexes.plusTol])
-            : null;
-        const minusTol =
-          headerIndexes.minusTol >= 0
-            ? parseMeasurementValue(row[headerIndexes.minusTol])
-            : null;
-        const directUsl =
-          headerIndexes.usl >= 0
-            ? parseMeasurementValue(row[headerIndexes.usl])
-            : null;
-        const directLsl =
-          headerIndexes.lsl >= 0
-            ? parseMeasurementValue(row[headerIndexes.lsl])
-            : null;
-        const gtolRange =
-          headerIndexes.gtolRange >= 0
-            ? parseMeasurementValue(row[headerIndexes.gtolRange])
-            : null;
-
         if (buffer.fosNominal === null && fosNominal !== null) {
           buffer.fosNominal = fosNominal;
         }
@@ -865,26 +949,12 @@ function buildContractSnapshot(rows: unknown[][]): ParsedWorkbookSnapshot {
           buffer.gtolRange = gtolRange;
         }
 
-        const computedUsl =
-          directUsl ??
-          (fosNominal !== null && plusTol !== null
-            ? roundToThreeDecimals(fosNominal + plusTol)
-            : null);
-        const computedLsl =
-          directLsl ??
-          (fosNominal !== null && minusTol !== null
-            ? roundToThreeDecimals(fosNominal + minusTol)
-            : null);
-
         if (buffer.fosUsl === null && computedUsl !== null) {
           buffer.fosUsl = computedUsl;
         }
         if (buffer.fosLsl === null && computedLsl !== null) {
           buffer.fosLsl = computedLsl;
         }
-
-        const fosShots = readShotTupleFromRow(row, headerIndexes.fosShotIndexes);
-        const gtolShots = readShotTupleFromRow(row, headerIndexes.gtolShotIndexes);
 
         fosShots.forEach((value, index) => {
           if (value === null) {
@@ -968,72 +1038,6 @@ function buildContractSnapshot(rows: unknown[][]): ParsedWorkbookSnapshot {
         },
       } satisfies FaiParsedData;
     });
-
-  const rowData: FaiDataRow[] = [];
-  contractData.forEach(item => {
-    const sourceBuffer = buffers.get(item.faiId);
-    const cavitySet = new Set<string>();
-    sourceBuffer?.cavityDimTypes.forEach((_, cavity) => cavitySet.add(cavity));
-    item.measurements.FOS.rawData.forEach(point => cavitySet.add(point.cavity));
-    item.measurements.GTol?.rawData.forEach(point => cavitySet.add(point.cavity));
-    const cavities = Array.from(cavitySet).sort(compareCavity);
-
-    const fosValueMap = new Map<string, number>();
-    item.measurements.FOS.rawData.forEach(point => {
-      fosValueMap.set(`${point.cavity}|${point.shot}`, point.value);
-    });
-    const gtolValueMap = new Map<string, number>();
-    item.measurements.GTol?.rawData.forEach(point => {
-      gtolValueMap.set(`${point.cavity}|${point.shot}`, point.value);
-    });
-
-    cavities.forEach(cavity => {
-      const fosShots: ShotTuple = [
-        fosValueMap.get(`${cavity}|1`) ?? null,
-        fosValueMap.get(`${cavity}|2`) ?? null,
-        fosValueMap.get(`${cavity}|3`) ?? null,
-      ];
-      const gtolShots: ShotTuple = [
-        gtolValueMap.get(`${cavity}|1`) ?? null,
-        gtolValueMap.get(`${cavity}|2`) ?? null,
-        gtolValueMap.get(`${cavity}|3`) ?? null,
-      ];
-
-      const judgeFos = computeJudgeFromShots(
-        fosShots,
-        item.measurements.FOS.usl,
-        item.measurements.FOS.lsl
-      );
-      const judgeGtol = item.measurements.GTol
-        ? computeJudgeFromShots(
-            gtolShots,
-            item.measurements.GTol.usl,
-            item.measurements.GTol.lsl
-          )
-        : "";
-
-      rowData.push({
-        faiSet: item.faiId,
-        dim: item.faiId,
-        dimType: sourceBuffer?.cavityDimTypes.get(cavity) ?? "",
-        cavity,
-        fos: item.measurements.FOS.nominal,
-        plusTol:
-          sourceBuffer?.plusTol ??
-          roundToThreeDecimals(item.measurements.FOS.usl - item.measurements.FOS.nominal),
-        minusTol:
-          sourceBuffer?.minusTol ??
-          roundToThreeDecimals(item.measurements.FOS.lsl - item.measurements.FOS.nominal),
-        usl: item.measurements.FOS.usl,
-        lsl: item.measurements.FOS.lsl,
-        judgeFos,
-        judgeGtol,
-        isNG: judgeFos === "NG" || judgeGtol === "NG",
-        fosShots,
-        gtolShots,
-      });
-    });
-  });
 
   return {
     contractData,

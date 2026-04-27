@@ -433,6 +433,122 @@ describe("Part FAI SPC parser", () => {
     expect(parsed[0]?.measurements.GTol?.flatValues).toEqual([0.03, 0.04, 0.05, 0.06]);
   });
 
+  it("keeps duplicated Dim.# + cavity measurement rows as separate summary rows instead of collapsing method-2 retests", () => {
+    const rows: unknown[][] = [
+      buildHeaderRow(),
+      [
+        "FAI35-1",
+        "",
+        "",
+        "Profile",
+        "CAV1",
+        "A",
+        5.05,
+        0.05,
+        -0.05,
+        "OCM",
+        "OK",
+        5.01,
+        5.02,
+        5.03,
+        0.1,
+        "OCM",
+        "OK",
+        0.03,
+        0.04,
+        0.05,
+      ],
+      [
+        "FAI35-1",
+        "方法2",
+        "HCF+CP",
+        "Profile",
+        "CAV1",
+        "A",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        0.1,
+        "3D Scaner",
+        "NG",
+        0.11,
+        0.12,
+        0.13,
+      ],
+    ];
+
+    const parsed = parseSheetRows(rows);
+    expect(parsed.data).toHaveLength(2);
+    expect(parsed.summary.totalRows).toBe(3);
+    expect(parsed.summary.qualifiedRows).toBe(2);
+    expect(parsed.summary.ngRows).toBe(1);
+    expect(parsed.data[0]?.judgeFos).toBe("OK");
+    expect(parsed.data[0]?.judgeGtol).toBe("OK");
+    expect(parsed.data[1]?.judgeFos).toBe("");
+    expect(parsed.data[1]?.judgeGtol).toBe("NG");
+  });
+
+  it("ignores blank cavity filler rows so they do not create ROWxxx ghost entries", () => {
+    const rows: unknown[][] = [
+      buildHeaderRow(),
+      [
+        "FAI40",
+        "",
+        "PROFILE",
+        "",
+        "CAV1",
+        "",
+        8,
+        0.1,
+        -0.1,
+        "",
+        "OK",
+        8.01,
+        8.02,
+        8.03,
+        0.08,
+        "",
+        "OK",
+        0.01,
+        0.02,
+        0.03,
+      ],
+      [
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+      ],
+    ];
+
+    const parsed = parseSheetRows(rows);
+    expect(parsed.data).toHaveLength(1);
+    expect(parsed.contractData).toHaveLength(1);
+    expect(parsed.contractData[0]?.faiId).toBe("FAI40");
+    expect(parsed.data.some(row => row.cavity.startsWith("ROW"))).toBe(false);
+  });
+
   it("rejects non-numeric shot strings from json rows instead of coercing them into numbers", () => {
     const jsonRows: Record<string, unknown>[] = [
       {
