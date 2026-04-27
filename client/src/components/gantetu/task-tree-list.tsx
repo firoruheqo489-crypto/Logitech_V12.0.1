@@ -2,6 +2,7 @@
 import { GANTT_ROW_H } from "@/lib/gantt/row-heights"
 import type { CollisionState, Milestone, Role, TaskNode, ViewMode } from "@/lib/gantt/types"
 import { getRoots, getScheduleProgress, isCompleted, isOverdue, isTaskCollidingMilestone, todayIso, type DeletionValidation } from "@/lib/gantt/utils"
+import CyberPromptDialog from "@/components/ui/CyberPromptDialog"
 import { DeletionModal } from "./deletion-modal"
 import { RejectionToast } from "./rejection-toast"
 
@@ -78,8 +79,7 @@ export function TaskTreeList(props: TaskTreeListProps) {
   // Phase 9 - 删除状态管理
   const [deletionTarget, setDeletionTarget] = useState<{ id: string; name: string } | null>(null)
   const [rejectionMessage, setRejectionMessage] = useState<string | null>(null)
-  const [editingTaskId, setEditingTaskId] = useState<string | null>(null)
-  const [editDraft, setEditDraft] = useState({ name: "", startDate: "", endDate: "" })
+  const [editTarget, setEditTarget] = useState<TaskNode | null>(null)
 
   const handleDeleteClick = useCallback(
     (taskId: string, taskName: string) => {
@@ -100,19 +100,72 @@ export function TaskTreeList(props: TaskTreeListProps) {
     setDeletionTarget(null)
   }, [deletionTarget, onDeleteTopLevelTask])
 
-  const handleStartEdit = useCallback((node: TaskNode) => {
-    setEditingTaskId(node.id)
-    setEditDraft({
-      name: node.name,
-      startDate: node.startDate,
-      endDate: node.endDate,
-    })
+  const handleCloseEdit = useCallback(() => {
+    setEditTarget(null)
   }, [])
 
-  const handleCancelEdit = useCallback(() => {
-    setEditingTaskId(null)
-    setEditDraft({ name: "", startDate: "", endDate: "" })
-  }, [])
+  const handleConfirmEdit = useCallback(
+    (values: Record<string, string>) => {
+      if (!editTarget) return
+
+      const name = (values.name ?? "").trim()
+      if (!name) {
+        setRejectionMessage("工序名称不能为空。")
+        return
+      }
+
+      const hasDelayChildren = (editTarget.children?.length ?? 0) > 0
+      if (!hasDelayChildren) {
+        const startDate = values.startDate ?? ""
+        const endDate = values.endDate ?? ""
+        if (!startDate || !endDate) {
+          setRejectionMessage("开始时间和截至时间不能为空。")
+          return
+        }
+        if (startDate > endDate) {
+          setRejectionMessage("截至时间不能早于开始时间。")
+          return
+        }
+        onUpdateDate(editTarget.id, startDate, endDate)
+      }
+
+      onUpdateName(editTarget.id, name)
+      setEditTarget(null)
+    },
+    [editTarget, onUpdateDate, onUpdateName],
+  )
+
+  const editTargetHasDelayChildren = (editTarget?.children?.length ?? 0) > 0
+  const editFields = editTarget
+    ? [
+        {
+          kind: "text" as const,
+          name: "name",
+          label: "工序名称",
+          defaultValue: editTarget.name,
+          required: true,
+          maxLength: 80,
+        },
+        ...(!editTargetHasDelayChildren
+          ? [
+              {
+                kind: "date" as const,
+                name: "startDate",
+                label: "开始时间",
+                defaultValue: editTarget.startDate,
+                required: true,
+              },
+              {
+                kind: "date" as const,
+                name: "endDate",
+                label: "截至时间",
+                defaultValue: editTarget.endDate,
+                required: true,
+              },
+            ]
+          : []),
+      ]
+    : []
 
   return (
     <>
@@ -122,13 +175,6 @@ export function TaskTreeList(props: TaskTreeListProps) {
           const expanded = node.isExpanded !== false
           const isChildRow = !!node.parentId
           const isLastChildOfParent = isChildRow && i === nodes.length - 1
-          const isEditing = editingTaskId === node.id
-          const canEditDates = !isParent
-          const canSaveEdit =
-            editDraft.name.trim().length > 0 &&
-            editDraft.startDate.length > 0 &&
-            editDraft.endDate.length > 0 &&
-            editDraft.startDate <= editDraft.endDate
 
           if (isMacro && isChildRow) return null
 
@@ -180,20 +226,9 @@ export function TaskTreeList(props: TaskTreeListProps) {
                     {!isParent ? <span className="text-slate-700">·</span> : expanded ? "▼" : "▶"}
                   </button>
 
-                  {isEditing && !isChildRow ? (
-                    <input
-                      type="text"
-                      value={editDraft.name}
-                      onChange={(e) => setEditDraft((draft) => ({ ...draft, name: e.target.value }))}
-                      className="flex-1 min-w-0 bg-transparent border-0 border-b border-cyan-700 text-[12px] leading-4 text-slate-100 px-1 py-0.5 focus:outline-none focus:border-cyan-500"
-                      aria-label={`${node.name} 工序名称`}
-                      autoFocus
-                    />
-                  ) : (
-                    <span className={`flex-1 min-w-0 text-[12px] leading-4 truncate ${nameCls}`} title={node.name}>
-                      {node.name}
-                    </span>
-                  )}
+                  <span className={`flex-1 min-w-0 text-[12px] leading-4 truncate ${nameCls}`} title={node.name}>
+                    {node.name}
+                  </span>
                 </div>
 
                 {isChildRow ? (
