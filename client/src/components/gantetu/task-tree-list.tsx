@@ -198,13 +198,14 @@ export function TaskTreeList(props: TaskTreeListProps) {
           const overdue = isOverdue(node)
           const completed = isCompleted(node)
           const hasStarted = node.status === "in-progress" || getScheduleProgress(node) > 0
-          const inProgress = !isChildRow && !completed && !overdue && hasStarted
+          const isTopLevelAmber = !isChildRow && !completed && !overdue
+          const inProgress = isTopLevelAmber && hasStarted
 
           const dotCls = completed
             ? "bg-emerald-500"
             : overdue
               ? "bg-red-500"
-              : inProgress
+              : isTopLevelAmber
                 ? "bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.45)]"
                 : "bg-slate-600"
 
@@ -212,11 +213,25 @@ export function TaskTreeList(props: TaskTreeListProps) {
             ? "text-emerald-400"
             : overdue
               ? "text-red-400"
-              : inProgress
+              : isTopLevelAmber
                 ? "text-amber-200"
               : isChildRow
                 ? "text-slate-400"
                 : "text-slate-100"
+          const dateCls = completed
+            ? "text-emerald-300"
+            : overdue
+              ? "text-red-300"
+              : isTopLevelAmber
+                ? "text-amber-200"
+                : "text-slate-500"
+          const dateDividerCls = completed
+            ? "text-emerald-500/80"
+            : overdue
+              ? "text-red-500/80"
+              : isTopLevelAmber
+                ? "text-amber-400/80"
+                : "text-slate-700"
 
           return (
             <li key={node.id}>
@@ -229,7 +244,7 @@ export function TaskTreeList(props: TaskTreeListProps) {
                   {!isChildRow && (
                     <span
                       className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotCls}`}
-                      title={completed ? "已完工" : overdue ? "已逾期" : inProgress ? "进行中" : "待开始"}
+                      title={completed ? "已完工" : overdue ? "已逾期" : hasStarted ? "进行中" : "待开始"}
                     />
                   )}
 
@@ -300,11 +315,11 @@ export function TaskTreeList(props: TaskTreeListProps) {
                 ) : (
                   <div className="flex items-center justify-between gap-2 pl-7 min-w-0">
                     <div className="flex items-center gap-0.5 shrink-0 min-w-0">
-                      <span className="tabular-nums text-[12px] text-slate-500 tracking-tight cursor-default">
+                      <span className={`tabular-nums text-[12px] tracking-tight cursor-default ${dateCls}`}>
                         {fmtDate(node.startDate)}
                       </span>
-                      <span className="text-slate-700 text-[8px]">–</span>
-                      <span className="tabular-nums text-[12px] text-slate-500 tracking-tight cursor-default">
+                      <span className={`text-[8px] ${dateDividerCls}`}>–</span>
+                      <span className={`tabular-nums text-[12px] tracking-tight cursor-default ${dateCls}`}>
                         {fmtDate(node.endDate)}
                       </span>
                     </div>

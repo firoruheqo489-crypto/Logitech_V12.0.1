@@ -137,11 +137,14 @@ function readDateLike(value: unknown): string | Date | null {
   return normalized ? normalized : null;
 }
 
-function readDashboardApiErrorCode(value: unknown, fallbackCode: DashboardApiErrorCode): DashboardApiErrorCode {
+function readDashboardApiErrorCode(
+  value: unknown,
+  fallbackCode: DashboardApiErrorCode,
+): DashboardApiErrorCode {
   const normalized = readOptionalString(value);
   if (!normalized) return fallbackCode;
   return DASHBOARD_API_ERROR_CODES.has(normalized as DashboardApiErrorCode)
-    ? normalized as DashboardApiErrorCode
+    ? (normalized as DashboardApiErrorCode)
     : fallbackCode;
 }
 
@@ -225,7 +228,9 @@ export function normalizeDashboardProgressSaveResult(payload: unknown): Dashboar
   };
 }
 
-export function normalizeDashboardProgressBackupMutationResult(payload: unknown): DashboardProgressBackupMutationResult {
+export function normalizeDashboardProgressBackupMutationResult(
+  payload: unknown,
+): DashboardProgressBackupMutationResult {
   const row = asRecord(payload);
   return {
     created: readBoolean(row?.created),
@@ -254,15 +259,15 @@ export function getDashboardApiErrorDisplayMessage(error: unknown, fallbackMessa
   if (error instanceof DashboardApiError) {
     switch (error.code) {
       case 'API_KEY_INVALID':
-        return '当前会话未授权，请刷新后重试';
+        return '写入授权无效，请重新输入授权 key 后重试';
       case 'API_KEY_NOT_CONFIGURED':
-        return '服务端写接口授权未配置，暂时无法提交';
+        return '服务端未配置写入授权，当前环境无法提交更新';
       case 'BACKUP_NOT_FOUND':
         return '暂无可恢复备份';
       case 'BODY_MUST_BE_ARRAY':
         return '提交数据格式无效，请刷新页面后重试';
       case 'DATABASE_NOT_CONFIGURED':
-        return '服务端数据库未配置，暂时无法执行此操作';
+        return '服务端数据库未配置，当前环境无法执行写入';
       case 'INVALID_ASSET_DELETE_REQUEST':
         return 'Missing mold number or slot type for delete';
       case 'INVALID_ASSET_UPSERT_REQUEST':

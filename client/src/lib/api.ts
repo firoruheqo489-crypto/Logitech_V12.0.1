@@ -19,7 +19,7 @@ export function setStoredApiKey(value: string): void {
 export function promptForApiKey(): 'saved' | 'cleared' | 'cancelled' {
   if (typeof window === 'undefined') return 'cancelled';
 
-  const input = window.prompt('输入本地写入授权 key，留空则清除：', getStoredApiKey());
+  const input = window.prompt('请输入写入授权 key，留空可清除当前授权：', getStoredApiKey());
   if (input === null) return 'cancelled';
 
   const next = input.trim();

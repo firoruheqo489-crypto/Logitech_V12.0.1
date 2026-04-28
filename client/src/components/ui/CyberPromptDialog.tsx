@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react"
-import { Pencil } from "lucide-react"
+import { useEffect, useMemo, useRef, useState } from "react"
+import { Calendar, Pencil } from "lucide-react"
 
 export type CyberPromptField =
   | {
@@ -78,6 +78,7 @@ export default function CyberPromptDialog({
 
   const [values, setValues] = useState<Record<string, string>>(initial)
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const dateInputRefs = useRef<Record<string, HTMLInputElement | null>>({})
 
   // open 状态切换或 fields 变化时重置
   useEffect(() => {
@@ -118,6 +119,20 @@ export default function CyberPromptDialog({
     onConfirm(r.values)
   }
 
+  const openNativeDatePicker = (fieldName: string) => {
+    const input = dateInputRefs.current[fieldName]
+    if (!input) return
+
+    const pickerInput = input as HTMLInputElement & { showPicker?: () => void }
+    if (typeof pickerInput.showPicker === "function") {
+      pickerInput.showPicker()
+      return
+    }
+
+    input.focus()
+    input.click()
+  }
+
   useEffect(() => {
     if (!open) return
     const handler = (e: KeyboardEvent) => {
@@ -142,7 +157,6 @@ export default function CyberPromptDialog({
   return (
     <div
       className="fixed inset-0 z-[10002] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm"
-      onClick={onCancel}
     >
       <div
         className="w-full max-w-md overflow-hidden rounded-2xl border border-cyan-400/25 shadow-[0_0_30px_rgba(34,211,238,0.25)]"
@@ -194,9 +208,31 @@ export default function CyberPromptDialog({
                         </option>
                       ))}
                     </select>
+                  ) : f.kind === "date" ? (
+                    <div className="relative">
+                      <input
+                        ref={(node) => {
+                          dateInputRefs.current[f.name] = node
+                        }}
+                        type="date"
+                        value={values[f.name] ?? ""}
+                        onChange={(e) => setValues({ ...values, [f.name]: e.target.value })}
+                        autoFocus={fields[0]?.name === f.name}
+                        className={`${baseInputCls} pr-10`}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => openNativeDatePicker(f.name)}
+                        className="absolute inset-y-0 right-0 flex items-center pr-3 text-white/35 transition-colors hover:text-cyan-300"
+                        aria-label={`选择${f.label}`}
+                        title={`选择${f.label}`}
+                      >
+                        <Calendar className="h-4 w-4" />
+                      </button>
+                    </div>
                   ) : (
                     <input
-                      type={f.kind === "number" ? "number" : f.kind === "date" ? "date" : "text"}
+                      type={f.kind === "number" ? "number" : "text"}
                       value={values[f.name] ?? ""}
                       placeholder={"placeholder" in f ? f.placeholder : undefined}
                       maxLength={f.kind === "text" ? f.maxLength : undefined}

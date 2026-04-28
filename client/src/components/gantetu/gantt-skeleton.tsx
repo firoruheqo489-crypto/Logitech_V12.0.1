@@ -31,6 +31,8 @@ interface GanttSkeletonProps {
   initialComponents: ComponentGroup[]
   initialMilestones?: Milestone[]
   dayWidth?: number
+  storageKey?: string
+  headerSlot?: import("react").ReactNode
 }
 
 /* --------------------------------- Color --------------------------------- */
@@ -107,7 +109,7 @@ function GanttBar({
   clippedLabelFallback,
 }: GanttBarProps) {
   const pct = Math.max(0, Math.min(100, progress))
-  const showZeroProgressActiveTint = pct === 0 && (status === "active" || status === "delayed")
+  const showZeroProgressActiveTint = pct === 0 && (status === "pending" || status === "active" || status === "delayed")
   const shouldHideClippedLabel = !multilineLabel && labelClipWidthPx != null && labelClipWidthPx < 28
 
   const isOverdueBar = status === "overdue"
@@ -162,7 +164,7 @@ function GanttBar({
                           style={{ width: `${pct}%` }}
                         />
                       ) : showZeroProgressActiveTint ? (
-                        <div className={`absolute inset-0 ${plasmaFill} opacity-45`} />
+                        <div className={`absolute inset-0 ${plasmaFill}`} />
                       ) : null}
                     </div>
                   )
@@ -193,7 +195,7 @@ function GanttBar({
                 style={{ width: `${pct}%` }}
               />
             ) : showZeroProgressActiveTint ? (
-              <div className={`absolute inset-0 ${plasmaFill} opacity-45`} />
+              <div className={`absolute inset-0 ${plasmaFill}`} />
             ) : null
           )}
         </div>
@@ -308,13 +310,17 @@ function renderedTaskSpanDays(node: TaskNode): number {
 
 /* ------------------------------ Component -------------------------------- */
 
-export function GanttSkeleton({ initialComponents, initialMilestones = [], dayWidth: dayWidthFallback = 28 }: GanttSkeletonProps) {
-  const engine = useGanttEngine(initialComponents, initialMilestones)
+export function GanttSkeleton({
+  initialComponents,
+  initialMilestones = [],
+  dayWidth: dayWidthFallback = 28,
+  storageKey,
+  headerSlot,
+}: GanttSkeletonProps) {
+  const engine = useGanttEngine(initialComponents, initialMilestones, storageKey)
   const {
     components,
     allTasks,
-    viewMode,
-    setViewMode,
     addDelay,
     updateTaskName,
     updateTaskDate,
@@ -339,7 +345,8 @@ export function GanttSkeleton({ initialComponents, initialMilestones = [], dayWi
     resetTaskProgress,
   } = engine
 
-  const isMacro = viewMode === "MACRO"
+  const viewMode = "MICRO" as ViewMode
+  const isMacro = false
   const [selectedMonth, setSelectedMonth] = useState(() => todayIso().slice(0, 7))
   const timeline = useMemo(() => {
     const [year, month] = selectedMonth.split("-").map(Number)
@@ -512,34 +519,9 @@ export function GanttSkeleton({ initialComponents, initialMilestones = [], dayWi
 
   return (
     <div className="flex flex-col w-full h-screen bg-[#0B0F19] text-slate-100">
+      {headerSlot ? <div className="shrink-0">{headerSlot}</div> : null}
       {/* ========================== Main Content ========================== */}
       <div className="flex flex-1 min-h-0 border-t border-slate-800/30 relative">
-        {/* 宏观 / 微观，浮在里程碑行右侧空白区 */}
-        <div className="absolute top-0 right-3 flex items-center z-30 text-[13px] font-medium" style={{ height: GANTT_ROW_H.CONTROL_BAR }}>
-          <button
-            type="button"
-            onClick={() => setViewMode("MACRO")}
-            className={`px-2.5 py-0.5 rounded-l border transition-all ${
-              isMacro
-                ? "bg-cyan-600/80 border-cyan-400 text-white"
-                : "bg-slate-900/80 border-slate-700 text-slate-400 hover:text-slate-200 hover:border-slate-600"
-            }`}
-          >
-            宏观大盘
-          </button>
-          <button
-            type="button"
-            onClick={() => setViewMode("MICRO")}
-            className={`px-2.5 py-0.5 rounded-r border-t border-r border-b transition-all ${
-              !isMacro
-                ? "bg-cyan-600/80 border-cyan-400 text-white"
-                : "bg-slate-900/80 border-slate-700 text-slate-400 hover:text-slate-200 hover:border-slate-600"
-            }`}
-          >
-            微观审计
-          </button>
-        </div>
-
         {/* --------------------- Left 鈥?Component Tree (Phase 15: 鐗╃悊绌洪棿瑙ｅ帇) --------------------- */}
         <div className="basis-[236px] min-w-[176px] max-w-[248px] shrink-0 border-r border-slate-800/40 flex flex-col bg-[#111827]">
           {/* Phase 22 鈥?椤堕儴鎺т欢琛ㄥご锛氫氦浠樻绾?/ 閮ㄤ欢绠＄悊 / 瀹忓井瑙傚垏鎹紝绛夎窛鎺掑垪 */}

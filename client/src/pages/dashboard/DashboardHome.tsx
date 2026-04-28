@@ -13,12 +13,19 @@ import SearchBar from './components/SearchBar';
 import { AdminButton } from './components/AdminButton';
 
 import { transformDataToProject } from './lib/dataTransformer';
-import { fetchDashboardProjectData, fetchDashboardProgressEntries, type DashboardProgressEntry } from './lib/dashboardApi';
+import {
+  DashboardApiError,
+  fetchDashboardProjectData,
+  fetchDashboardProgressEntries,
+  getDashboardApiErrorDisplayMessage,
+  normalizeDashboardApiError,
+  type DashboardProgressEntry,
+} from './lib/dashboardApi';
 import { toast } from 'sonner';
 import { FileSpreadsheet, Sparkles, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { DEMO_PROJECTS } from './lib/demoData';
-import { apiFetch } from '@/lib/api';
+import { apiFetch, promptForApiKey } from '@/lib/api';
 import { getModuleTheme, getThemeGlowClass, orderModuleNamesForDisplay } from '@/lib/theme';
 import CyberConfirmDialog from '@/components/ui/CyberConfirmDialog';
 import ProjectLobby from '@/components/ProjectLobby';
@@ -91,12 +98,26 @@ async function batchReplaceProjects(data: Record<string, string | undefined>[]):
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
-  if (!res.ok) throw new Error('Save failed');
+  if (!res.ok) {
+    const payload = await res.json().catch(() => null);
+    throw normalizeDashboardApiError(payload, res.status, 'UNKNOWN_ERROR');
+  }
 }
 
 async function clearAllProjects(): Promise<void> {
   const res = await apiFetch('/api/dashboard/projects', { method: 'DELETE' });
-  if (!res.ok) throw new Error('Clear failed');
+  if (!res.ok) {
+    const payload = await res.json().catch(() => null);
+    throw normalizeDashboardApiError(payload, res.status, 'UNKNOWN_ERROR');
+  }
+}
+
+function shouldFallbackToLocalPreview(error: unknown): boolean {
+  if (error instanceof DashboardApiError) {
+    return error.code === 'INTERNAL_ERROR' || error.code === 'UNKNOWN_ERROR';
+  }
+
+  return !(error instanceof Error) || error instanceof TypeError;
 }
 
 function formatDateTimeLabel(timestamp?: string): string {
@@ -459,7 +480,8 @@ export default function DashboardHome() {
     };
   }, [activeTab, currentModuleData]);
 
-  const hasData = currentModuleData.length > 0;
+  const hasAnyProjects = allProjects.length > 0;
+  const hasCurrentModuleData = currentModuleData.length > 0;
 
   const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
   const [isInitialLoading, setIsInitialLoading] = useState(false);
@@ -480,13 +502,16 @@ export default function DashboardHome() {
     sessionStorage.setItem('dashboard_current_filter', filterStatus);
   }, [filterStatus]);
 
-  const handleFileSelect = async (_file: File) => {
-    setIsInitialLoading(true);
-    try { toast.success('文件上传成功'); } finally { setIsInitialLoading(false); }
+  const handleFileSelect = (_file: File) => {
+    void _file;
   };
 
   const handleDataUpdate = async (data: ProjectData[]) => {
     const normalizedData = data.map(normalizeProjectDataEnums);
+    if (normalizedData.length === 0) {
+      toast.error('未从 Excel 解析到项目数据，请检查表头模板');
+      return;
+    }
     const incomingSignature = buildBatchSignature(normalizedData);
     const currentSignature = buildBatchSignature(sourceProjects);
     if (incomingSignature && incomingSignature === currentSignature) {
@@ -497,16 +522,34 @@ export default function DashboardHome() {
     await executeDataUpdate(normalizedData);
   };
 
-  const executeDataUpdate = async (data: ProjectData[]) => {
+  const executeDataUpdate = async (data: ProjectData[], allowAuthRetry = true) => {
+    setIsInitialLoading(true);
     try {
       const transformed = data.map(transformDataToProject);
       await batchReplaceProjects(transformed);
       toast.success(`成功加载 ${data.length} 个项目`);
       setIsAdminModalOpen(false);
-      loadProjects();
-    } catch {
-      setLocalProjects(data);
-      toast.warning('服务不可用，已切换到本地预览模式');
+      await loadProjects();
+    } catch (error) {
+      if (allowAuthRetry && error instanceof DashboardApiError && error.code === 'API_KEY_INVALID') {
+        const promptResult = promptForApiKey();
+        if (promptResult === 'saved') {
+          await executeDataUpdate(data, false);
+          return;
+        }
+      }
+
+      const message = getDashboardApiErrorDisplayMessage(error, '上传失败');
+
+      if (shouldFallbackToLocalPreview(error)) {
+        setLocalProjects(data);
+        toast.warning(`${message}，已切换到本地预览模式`);
+        return;
+      }
+
+      toast.error(message);
+    } finally {
+      setIsInitialLoading(false);
     }
   };
 
@@ -526,8 +569,10 @@ export default function DashboardHome() {
       await clearAllProjects();
       toast.success('数据已清除');
       setIsAdminModalOpen(false);
-      loadProjects();
-    } catch { toast.error('清除数据失败'); }
+      await loadProjects();
+    } catch (error) {
+      toast.error(getDashboardApiErrorDisplayMessage(error, '清除数据失败'));
+    }
   };
 
   const handleLoadDemo = async () => {
@@ -536,15 +581,19 @@ export default function DashboardHome() {
       const transformed = DEMO_PROJECTS.map(transformDataToProject);
       await batchReplaceProjects(transformed);
       toast.success(`已加载 ${DEMO_PROJECTS.length} 个演示项目`);
-      loadProjects();
-    } catch {
-      setLocalProjects(DEMO_PROJECTS.map(normalizeProjectDataEnums));
-      toast.warning('服务不可用，已加载本地演示数据');
+      await loadProjects();
+    } catch (error) {
+      if (shouldFallbackToLocalPreview(error)) {
+        setLocalProjects(DEMO_PROJECTS.map(normalizeProjectDataEnums));
+        toast.warning(`${getDashboardApiErrorDisplayMessage(error, '服务不可用')}，已加载本地演示数据`);
+      } else {
+        toast.error(getDashboardApiErrorDisplayMessage(error, '加载演示数据失败'));
+      }
     } finally { setIsInitialLoading(false); }
   };
 
   const filteredProjects = useMemo(() => {
-    if (!hasData) return [];
+    if (!hasCurrentModuleData) return [];
     let filtered = currentModuleData;
     if (searchProjectName.trim()) {
       const s = searchProjectName.toLowerCase().trim();
@@ -558,7 +607,7 @@ export default function DashboardHome() {
       filtered = filtered.filter((p) => normalizeProjectStatus(p.milestones?.currentNode) === filterStatus);
     }
     return filtered;
-  }, [currentModuleData, hasData, searchProjectName, searchMoldId, filterStatus]);
+  }, [currentModuleData, hasCurrentModuleData, searchProjectName, searchMoldId, filterStatus]);
 
   const hasActiveFilters = searchProjectName.trim() !== '' || searchMoldId.trim() !== '';
 
@@ -592,6 +641,14 @@ export default function DashboardHome() {
   const handleTabSelect = useCallback((tab: DashboardTab) => {
     setActiveTab(tab);
   }, []);
+
+  const handleOpenAdmin = useCallback(() => {
+    if (selectedTab === 'product') {
+      setIsProductAdminModalOpen(true);
+      return;
+    }
+    setIsAdminModalOpen(true);
+  }, [selectedTab]);
 
   const tabStripRef = useRef<HTMLDivElement>(null);
 
@@ -645,32 +702,30 @@ export default function DashboardHome() {
       .sort((a, b) => b.localeCompare(a))[0];
     return latest ? formatDateTimeLabel(latest) : '-';
   }, [currentModuleMoldIds, productModuleDataByLookup, productModuleSequenceByMold]);
-  // Lobby gate: show the lobby when no module is selected.
-  if (!activeModule) {
-    return <ProjectLobby onSelect={(name) => {
-      setActiveModule(name);
-      setSearchProjectName('');
-      setSearchMoldId('');
-      setFilterStatus('ALL');
-    }} />;
-  }
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-[#000000] flex flex-col items-center justify-center gap-5">
-        <h1 className="text-xl font-bold tracking-tight" style={{ fontFamily: 'var(--font-display)' }}>
-          <span className="text-white/60">请稍后...</span>
-        </h1>
-        <div className="flex items-center gap-2.5 text-white/35 text-sm">
-          <span className="inline-block w-4 h-4 border-2 border-white/15 rounded-full animate-spin" style={{ borderTopColor: moduleTheme.hex }} />
-          正在加载项目数据...
-        </div>
-      </div>
-    );
-  }
+  const adminControls = isAdminMode ? (
+    <>
+      <AdminButton onClick={handleOpenAdmin} />
+      <Suspense fallback={null}>
+        <AdminModal
+          open={isAdminModalOpen}
+          onOpenChange={setIsAdminModalOpen}
+          onDataUpdate={handleDataUpdate}
+          onDataClear={handleClearData}
+          lastUpdated={new Date().toLocaleDateString('zh-CN')}
+        />
+        <ProductModuleAdminModal
+          open={isProductAdminModalOpen}
+          onOpenChange={setIsProductAdminModalOpen}
+          lastUpdated={productModuleLastUpdated}
+          onUploadSuccess={loadProductModuleRows}
+        />
+      </Suspense>
+    </>
+  ) : null;
 
-  if (!hasData) {
-    return (
+  const emptyDashboardView = (
+    <>
       <div className="min-h-screen bg-[#000000] flex items-center justify-center p-4">
         <div className="max-w-2xl w-full">
           <div className="text-center mb-8">
@@ -695,7 +750,45 @@ export default function DashboardHome() {
           </div>
         </div>
       </div>
+      {adminControls}
+    </>
+  );
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#000000] flex flex-col items-center justify-center gap-5">
+        <h1 className="text-xl font-bold tracking-tight" style={{ fontFamily: 'var(--font-display)' }}>
+          <span className="text-white/60">请稍后...</span>
+        </h1>
+        <div className="flex items-center gap-2.5 text-white/35 text-sm">
+          <span className="inline-block w-4 h-4 border-2 border-white/15 rounded-full animate-spin" style={{ borderTopColor: moduleTheme.hex }} />
+          正在加载项目数据...
+        </div>
+      </div>
     );
+  }
+
+  // Lobby gate: show the lobby when no module is selected.
+  if (!activeModule) {
+    if (!hasAnyProjects) {
+      return emptyDashboardView;
+    }
+
+    return (
+      <>
+        <ProjectLobby onSelect={(name) => {
+          setActiveModule(name);
+          setSearchProjectName('');
+          setSearchMoldId('');
+          setFilterStatus('ALL');
+        }} />
+        {adminControls}
+      </>
+    );
+  }
+
+  if (!hasCurrentModuleData) {
+    return emptyDashboardView;
   }
 
   return (
@@ -951,34 +1044,7 @@ export default function DashboardHome() {
         </LazyWorkspace>
       )}
 
-      {isAdminMode && (
-        <AdminButton
-          onClick={() => {
-            if (selectedTab === 'product') {
-              setIsProductAdminModalOpen(true);
-              return;
-            }
-            setIsAdminModalOpen(true);
-          }}
-        />
-      )}
-      {isAdminMode && (
-        <Suspense fallback={null}>
-          <AdminModal
-            open={isAdminModalOpen}
-            onOpenChange={setIsAdminModalOpen}
-            onDataUpdate={handleDataUpdate}
-            onDataClear={handleClearData}
-            lastUpdated={new Date().toLocaleDateString('zh-CN')}
-          />
-          <ProductModuleAdminModal
-            open={isProductAdminModalOpen}
-            onOpenChange={setIsProductAdminModalOpen}
-            lastUpdated={productModuleLastUpdated}
-            onUploadSuccess={loadProductModuleRows}
-          />
-        </Suspense>
-      )}
+      {adminControls}
 
       <CyberConfirmDialog
         open={showDuplicateUploadConfirm}
@@ -995,5 +1061,3 @@ export default function DashboardHome() {
     </div>
   );
 }
-
-

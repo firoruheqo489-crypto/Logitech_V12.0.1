@@ -9,6 +9,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import CyberConfirmDialog from '@/components/ui/CyberConfirmDialog';
+import { toast } from 'sonner';
 import { parseExcelFile } from '../lib/projectUtils';
 import type { ProjectData } from '../types/project';
 
@@ -16,8 +17,8 @@ interface AdminModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   lastUpdated: string;
-  onDataUpdate: (data: ProjectData[]) => void;
-  onDataClear: () => void;
+  onDataUpdate: (data: ProjectData[]) => Promise<void> | void;
+  onDataClear: () => Promise<void> | void;
 }
 
 /**
@@ -41,14 +42,17 @@ export function AdminModal({
     setIsUploading(true);
     try {
       const projects = await parseExcelFile(file);
-      onDataUpdate(projects);
+      if (projects.length === 0) {
+        toast.error('未从 Excel 解析到项目数据，请检查表头模板');
+        return;
+      }
+      await onDataUpdate(projects);
       onOpenChange(false);
     } catch (error) {
       console.error('Failed to parse Excel file:', error);
-      alert('文件解析失败,请检查文件格式是否正确');
+      toast.error('文件解析失败，请检查文件格式是否正确');
     } finally {
       setIsUploading(false);
-      // Reset file input
       event.target.value = '';
     }
   };
@@ -70,13 +74,11 @@ export function AdminModal({
         </DialogHeader>
 
         <div className="space-y-4 py-4">
-          {/* Last Updated Info */}
           <div className="flex items-center gap-2 text-sm text-[#8B949E] bg-white/[0.04] p-3 rounded-lg border border-white/[0.06]">
             <Clock className="w-4 h-4" />
             <span>最后更新: {lastUpdated}</span>
           </div>
 
-          {/* Upload New File Button */}
           <div>
             <label htmlFor="admin-file-upload">
               <Button
@@ -105,7 +107,6 @@ export function AdminModal({
             </p>
           </div>
 
-          {/* Clear Data Button */}
           <Button
             className="w-full"
             variant="destructive"
@@ -118,7 +119,6 @@ export function AdminModal({
           </Button>
         </div>
 
-        {/* Close Button */}
         <button
           onClick={() => onOpenChange(false)}
           className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground"
@@ -132,9 +132,9 @@ export function AdminModal({
           title="清除数据确认"
           message="确定要清除所有数据吗？此操作不可恢复。"
           onCancel={() => setShowClearConfirm(false)}
-          onConfirm={() => {
+          onConfirm={async () => {
             setShowClearConfirm(false);
-            onDataClear();
+            await onDataClear();
             onOpenChange(false);
           }}
           confirmText="确认清除"

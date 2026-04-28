@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { produce } from "immer"
 import type { CollisionState, ComponentGroup, Milestone, Role, TaskNode, ViewMode } from "@/lib/gantt/types"
 import {
@@ -102,15 +102,62 @@ function backfillComponents(components: ComponentGroup[]): ComponentGroup[] {
   }))
 }
 
+interface GanttEngineStorageSnapshot {
+  components?: ComponentGroup[]
+  milestones?: Milestone[]
+  role?: Role
+}
+
+function readGanttEngineStorageSnapshot(storageKey?: string): GanttEngineStorageSnapshot | null {
+  if (!storageKey || typeof window === "undefined") return null
+
+  try {
+    const raw = window.localStorage.getItem(storageKey)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as GanttEngineStorageSnapshot
+    if (!parsed || typeof parsed !== "object") return null
+    return parsed
+  } catch {
+    return null
+  }
+}
+
+function writeGanttEngineStorageSnapshot(storageKey: string, snapshot: GanttEngineStorageSnapshot) {
+  if (typeof window === "undefined") return
+
+  try {
+    window.localStorage.setItem(storageKey, JSON.stringify(snapshot))
+  } catch {
+    // Ignore localStorage quota and browser restrictions.
+  }
+}
+
 /* -------------------------------------------------------------------------- */
 /*  useGanttEngine (Phase 13 — ComponentGroup 版本)                           */
 /* -------------------------------------------------------------------------- */
 
-export function useGanttEngine(initialComponents: ComponentGroup[], initialMilestones: Milestone[] = []): UseGanttEngineReturn {
-  const [components, setComponents] = useState<ComponentGroup[]>(() => backfillComponents(initialComponents))
+export function useGanttEngine(
+  initialComponents: ComponentGroup[],
+  initialMilestones: Milestone[] = [],
+  storageKey?: string,
+): UseGanttEngineReturn {
+  const storageSnapshot = useMemo(() => readGanttEngineStorageSnapshot(storageKey), [storageKey])
+
+  const [components, setComponents] = useState<ComponentGroup[]>(() =>
+    backfillComponents(
+      Array.isArray(storageSnapshot?.components) ? storageSnapshot.components : initialComponents,
+    ),
+  )
   const [viewMode, setViewMode] = useState<ViewMode>("MICRO")
-  const [role, setRole] = useState<Role>("ADMIN")
-  const [milestones, setMilestones] = useState<Milestone[]>(initialMilestones)
+  const [role, setRole] = useState<Role>(storageSnapshot?.role === "USER" ? "USER" : "ADMIN")
+  const [milestones, setMilestones] = useState<Milestone[]>(
+    Array.isArray(storageSnapshot?.milestones) ? storageSnapshot.milestones : initialMilestones,
+  )
+
+  useEffect(() => {
+    if (!storageKey) return
+    writeGanttEngineStorageSnapshot(storageKey, { components, milestones, role })
+  }, [components, milestones, role, storageKey])
 
   /* ---------------------------- allTasks (兼容层) ------------------------- */
   const allTasks = useMemo(() => flattenAllTasks(components), [components])
