@@ -1,7 +1,8 @@
 ﻿import { useCallback, useEffect, useMemo, useState } from "react"
 import { GANTT_ROW_H } from "@/lib/gantt/row-heights"
+import { useRef } from "react"
 import type { CollisionState, Milestone, Role, TaskNode, ViewMode } from "@/lib/gantt/types"
-import { getRoots, getScheduleProgress, isCompleted, isOverdue, isTaskCollidingMilestone, todayIso, type DeletionValidation } from "@/lib/gantt/utils"
+import { diffDays, getRoots, getScheduleProgress, isCompleted, isOverdue, isTaskCollidingMilestone, todayIso, type DeletionValidation } from "@/lib/gantt/utils"
 import CyberPromptDialog from "@/components/ui/CyberPromptDialog"
 import { DeletionModal } from "./deletion-modal"
 import { RejectionToast } from "./rejection-toast"
@@ -10,6 +11,22 @@ import { RejectionToast } from "./rejection-toast"
 function fmtDate(iso: string): string {
   const parts = iso.split("-")
   return `${parts[1]}/${parts[2]}`
+}
+
+function fmtDelayLabel(startDate: string, endDate: string): string {
+  const delayDays = Math.max(1, diffDays(startDate, endDate) + 1)
+  return delayDays === 1 ? "+1天" : `delay +${delayDays}天`
+}
+
+function openNativeDatePicker(input: HTMLInputElement | null) {
+  if (!input) return
+  const pickerInput = input as HTMLInputElement & { showPicker?: () => void }
+  if (typeof pickerInput.showPicker === "function") {
+    pickerInput.showPicker()
+    return
+  }
+  input.focus()
+  input.click()
 }
 
 interface TaskTreeListProps {
@@ -235,6 +252,7 @@ export function TaskTreeList(props: TaskTreeListProps) {
                   (() => {
                     const parentNode = allRoots.find((r) => r.id === node.parentId)
                     const parentCompleted = parentNode ? isCompleted(parentNode) : false
+                    const delayLabel = fmtDelayLabel(node.startDate, node.endDate)
                     return (
                       <div className="flex flex-col gap-1 pl-7 min-w-0">
                         <input
@@ -252,9 +270,14 @@ export function TaskTreeList(props: TaskTreeListProps) {
                           title={parentCompleted ? "父工序已封板" : undefined}
                         />
                         <div className="flex items-center justify-between gap-2 min-w-0">
-                          <span className="tabular-nums text-[12px] text-slate-500 shrink-0 tracking-tight">
-                            {fmtDate(node.startDate)}–{fmtDate(node.endDate)}
-                          </span>
+                          <div className="flex min-w-0 items-center gap-2 text-[12px] tracking-tight">
+                            <span className="shrink-0 rounded border border-rose-500/25 bg-rose-950/20 px-1.5 py-0.5 text-[10px] font-semibold text-rose-200">
+                              {delayLabel}
+                            </span>
+                            <span className="min-w-0 truncate tabular-nums text-slate-500">
+                              {fmtDate(node.startDate)}–{fmtDate(node.endDate)}
+                            </span>
+                          </div>
                           {isLastChildOfParent ? (
                             <button
                               type="button"
@@ -277,116 +300,48 @@ export function TaskTreeList(props: TaskTreeListProps) {
                 ) : (
                   <div className="flex items-center justify-between gap-2 pl-7 min-w-0">
                     <div className="flex items-center gap-0.5 shrink-0 min-w-0">
-                      {isEditing ? (
-                        <>
-                          <input
-                            type="date"
-                            value={editDraft.startDate}
-                            onChange={(e) => setEditDraft((draft) => ({ ...draft, startDate: e.target.value }))}
-                            disabled={!canEditDates}
-                            title={!canEditDates ? "存在延期记录时，日期由链路自动推算" : undefined}
-                            className={`w-[104px] bg-transparent border-0 border-b px-1 py-0.5 text-[11px] font-mono focus:outline-none ${
-                              canEditDates
-                                ? "border-cyan-700 text-slate-200 focus:border-cyan-500"
-                                : "border-slate-800 text-slate-600 cursor-not-allowed"
-                            }`}
-                            aria-label={`${node.name} 开始日期`}
-                          />
-                          <span className="text-slate-700 text-[8px]">–</span>
-                          <input
-                            type="date"
-                            value={editDraft.endDate}
-                            onChange={(e) => setEditDraft((draft) => ({ ...draft, endDate: e.target.value }))}
-                            disabled={!canEditDates}
-                            title={!canEditDates ? "存在延期记录时，日期由链路自动推算" : undefined}
-                            className={`w-[104px] bg-transparent border-0 border-b px-1 py-0.5 text-[11px] font-mono focus:outline-none ${
-                              canEditDates
-                                ? "border-cyan-700 text-slate-200 focus:border-cyan-500"
-                                : "border-slate-800 text-slate-600 cursor-not-allowed"
-                            }`}
-                            aria-label={`${node.name} 截至日期`}
-                          />
-                        </>
-                      ) : (
-                        <>
-                          <span className="tabular-nums text-[12px] text-slate-500 tracking-tight cursor-default">
-                            {fmtDate(node.startDate)}
-                          </span>
-                          <span className="text-slate-700 text-[8px]">–</span>
-                          <span className="tabular-nums text-[12px] text-slate-500 tracking-tight cursor-default">
-                            {fmtDate(node.endDate)}
-                          </span>
-                        </>
-                      )}
+                      <span className="tabular-nums text-[12px] text-slate-500 tracking-tight cursor-default">
+                        {fmtDate(node.startDate)}
+                      </span>
+                      <span className="text-slate-700 text-[8px]">–</span>
+                      <span className="tabular-nums text-[12px] text-slate-500 tracking-tight cursor-default">
+                        {fmtDate(node.endDate)}
+                      </span>
                     </div>
 
                     <div className="flex items-center gap-0.5 shrink-0">
-                      {isEditing ? (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              onUpdateName(node.id, editDraft.name)
-                              if (canEditDates) {
-                                onUpdateDate(node.id, editDraft.startDate, editDraft.endDate)
-                              }
-                              handleCancelEdit()
-                            }}
-                            disabled={!canSaveEdit}
-                            title="保存修改"
-                            className="w-6 h-6 flex items-center justify-center text-emerald-400 hover:text-emerald-300 hover:bg-emerald-950/30 rounded transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                          >
-                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M5 13l4 4L19 7" />
-                            </svg>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={handleCancelEdit}
-                            title="取消编辑"
-                            className="w-6 h-6 flex items-center justify-center text-slate-600 hover:text-slate-300 hover:bg-slate-800/40 rounded transition-all"
-                          >
-                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                          </button>
-                        </>
-                      ) : (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => handleStartEdit(node)}
-                            title="编辑工序"
-                            className="w-6 h-6 flex items-center justify-center text-slate-600 hover:text-amber-300 hover:bg-amber-950/30 rounded transition-all"
-                          >
-                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16.862 4.487a2.1 2.1 0 113 2.97L9 18.32l-4 1 1-4 10.862-10.833z" />
-                            </svg>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => onAddDelay(node.id)}
-                            title="延期报备"
-                            className="w-6 h-6 flex items-center justify-center text-slate-600 hover:text-cyan-400 hover:bg-cyan-950/30 rounded transition-all"
-                          >
-                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <circle cx="12" cy="12" r="9" strokeWidth={1.5} />
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6v6l4 2" />
-                            </svg>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteClick(node.id, node.name)}
-                            title="删除工序"
-                            className="w-6 h-6 flex items-center justify-center text-slate-600 hover:text-red-400 hover:bg-red-950/30 rounded transition-all"
-                            aria-label={`删除 ${node.name}`}
-                          >
-                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
-                          </button>
-                        </>
-                      )}
+                      <button
+                        type="button"
+                        onClick={() => setEditTarget(node)}
+                        title="编辑工序"
+                        className="w-6 h-6 flex items-center justify-center text-slate-600 hover:text-amber-300 hover:bg-amber-950/30 rounded transition-all"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16.862 4.487a2.1 2.1 0 113 2.97L9 18.32l-4 1 1-4 10.862-10.833z" />
+                        </svg>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onAddDelay(node.id)}
+                        title="延期报备"
+                        className="w-6 h-6 flex items-center justify-center text-slate-600 hover:text-cyan-400 hover:bg-cyan-950/30 rounded transition-all"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <circle cx="12" cy="12" r="9" strokeWidth={1.5} />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6v6l4 2" />
+                        </svg>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteClick(node.id, node.name)}
+                        title="删除工序"
+                        className="w-6 h-6 flex items-center justify-center text-slate-600 hover:text-red-400 hover:bg-red-950/30 rounded transition-all"
+                        aria-label={`删除 ${node.name}`}
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
                     </div>
                   </div>
                 )}
@@ -426,6 +381,24 @@ export function TaskTreeList(props: TaskTreeListProps) {
       {/* -------------------- Blackboard Spawner (bottom) -------------------- */}
       {depth === 0 && <BlackboardSpawner roots={allRoots} onAdd={onAddTopLevelTask} />}
 
+      {depth === 0 && editTarget && (
+        <CyberPromptDialog
+          open
+          title="编辑工序"
+          subtitle="工序信息修改"
+          description={
+            editTargetHasDelayChildren
+              ? "当前工序已存在延期记录，日期由延期链路自动推算。\n本次仅支持修改工序名称。"
+              : "可修改工序名称、开始时间和截至时间。"
+          }
+          fields={editFields}
+          confirmText="保存修改"
+          cancelText="取消"
+          onConfirm={handleConfirmEdit}
+          onCancel={handleCloseEdit}
+        />
+      )}
+
       {/* Phase 9 鈥?琛屾斂闃插憜妯℃€佹 */}
       {depth === 0 && deletionTarget && (
         <DeletionModal
@@ -461,6 +434,8 @@ function BlackboardSpawner({ roots, onAdd }: BlackboardSpawnerProps) {
   const [endDate, setEndDate] = useState(today)
   const [depId, setDepId] = useState<string | null>(null)
   const [errors, setErrors] = useState<{ name?: string; startDate?: string; endDate?: string }>({})
+  const startDateInputRef = useRef<HTMLInputElement | null>(null)
+  const endDateInputRef = useRef<HTMLInputElement | null>(null)
 
   const topLevelRoots = getRoots(roots)
   const selectedDependency = useMemo(
@@ -522,27 +497,53 @@ function BlackboardSpawner({ roots, onAdd }: BlackboardSpawnerProps) {
 
             <div className="grid grid-cols-2 gap-3">
               <div className="min-w-0">
+                <button
+                  type="button"
+                  onClick={() => openNativeDatePicker(startDateInputRef.current)}
+                  aria-label="开始时间"
+                  className={`flex w-full items-center justify-between border-0 border-b bg-transparent px-1 py-1.5 text-left text-[11px] text-slate-200 transition-colors ${
+                    errors.startDate ? "border-rose-500" : "border-slate-700 hover:border-cyan-500"
+                  }`}
+                >
+                  <span className="tabular-nums">{fmtDate(startDate)}</span>
+                  <svg className="h-3.5 w-3.5 shrink-0 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.6} d="M8 2v3m8-3v3M4 9h16M5 5h14a1 1 0 011 1v12a1 1 0 01-1 1H5a1 1 0 01-1-1V6a1 1 0 011-1z" />
+                  </svg>
+                </button>
                 <input
+                  ref={startDateInputRef}
                   type="date"
                   value={startDate}
                   onChange={(e) => setStartDate(e.target.value)}
-                  aria-label="开始时间"
-                  className={`w-full bg-transparent border-0 border-b text-slate-200 px-1 py-1.5 text-[11px] focus:outline-none transition-colors ${
-                    errors.startDate ? "border-rose-500 focus:border-rose-400" : "border-slate-700 focus:border-cyan-500"
-                  }`}
+                  tabIndex={-1}
+                  aria-hidden="true"
+                  className="pointer-events-none absolute h-0 w-0 opacity-0"
                 />
                 {errors.startDate ? <div className="mt-1 text-[10px] text-rose-400 whitespace-nowrap">{errors.startDate}</div> : null}
               </div>
 
               <div className="min-w-0">
+                <button
+                  type="button"
+                  onClick={() => openNativeDatePicker(endDateInputRef.current)}
+                  aria-label="截至时间"
+                  className={`flex w-full items-center justify-between border-0 border-b bg-transparent px-1 py-1.5 text-left text-[11px] text-slate-200 transition-colors ${
+                    errors.endDate ? "border-rose-500" : "border-slate-700 hover:border-cyan-500"
+                  }`}
+                >
+                  <span className="tabular-nums">{fmtDate(endDate)}</span>
+                  <svg className="h-3.5 w-3.5 shrink-0 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.6} d="M8 2v3m8-3v3M4 9h16M5 5h14a1 1 0 011 1v12a1 1 0 01-1 1H5a1 1 0 01-1-1V6a1 1 0 011-1z" />
+                  </svg>
+                </button>
                 <input
+                  ref={endDateInputRef}
                   type="date"
                   value={endDate}
                   onChange={(e) => setEndDate(e.target.value)}
-                  aria-label="截至时间"
-                  className={`w-full bg-transparent border-0 border-b text-slate-200 px-1 py-1.5 text-[11px] focus:outline-none transition-colors ${
-                    errors.endDate ? "border-rose-500 focus:border-rose-400" : "border-slate-700 focus:border-cyan-500"
-                  }`}
+                  tabIndex={-1}
+                  aria-hidden="true"
+                  className="pointer-events-none absolute h-0 w-0 opacity-0"
                 />
                 {errors.endDate ? <div className="mt-1 text-[10px] text-rose-400 whitespace-nowrap">{errors.endDate}</div> : null}
               </div>

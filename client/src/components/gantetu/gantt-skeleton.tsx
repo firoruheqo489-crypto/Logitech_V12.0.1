@@ -67,6 +67,8 @@ interface GanttBarProps {
   delayDebt?: number
   heightPx?: number
   multilineLabel?: boolean
+  labelClipWidthPx?: number
+  clippedLabelFallback?: string
 }
 
 /**
@@ -101,9 +103,12 @@ function GanttBar({
   delayDebt,
   heightPx = 24,
   multilineLabel = false,
+  labelClipWidthPx,
+  clippedLabelFallback,
 }: GanttBarProps) {
   const pct = Math.max(0, Math.min(100, progress))
   const showZeroProgressActiveTint = pct === 0 && (status === "active" || status === "delayed")
+  const shouldHideClippedLabel = !multilineLabel && labelClipWidthPx != null && labelClipWidthPx < 28
 
   const isOverdueBar = status === "overdue"
   const plasmaFill = PLASMA_FILL[status]
@@ -131,6 +136,14 @@ function GanttBar({
         }}
         title={label}
       >
+        {shouldHideClippedLabel && (
+          <div className="absolute right-full top-1/2 z-20 mr-2 -translate-y-1/2 pointer-events-none">
+            <span className="block whitespace-nowrap rounded-md border border-white/12 bg-slate-950/72 px-2 py-1 text-[11px] font-medium tracking-wide text-white/92 shadow-[0_6px_18px_rgba(2,6,23,0.45)] backdrop-blur-md">
+              {clippedLabelFallback ?? label}
+            </span>
+          </div>
+        )}
+
         {/* ============ Plasma Clip 鈥?浠呰鍒囩瓑绂诲瓙濉厖灞傦紝涓嶅奖鍝嶆枃鏈孩鍑?============ */}
         <div className="absolute inset-0 rounded-md overflow-hidden">
           {/* ============ Layer 2: Plasma Fill ============ */}
@@ -186,14 +199,23 @@ function GanttBar({
         </div>
 
         {/* ============ Layer 3: Holographic Text 鈥?鑷€傚簲澶栨寕锛岀粷涓嶇渷鐣?============ */}
-        <div className={`absolute inset-y-0 left-0 z-20 pointer-events-none ${multilineLabel ? "flex items-center w-full px-2.5" : "flex items-center pl-2.5 pr-2 w-max"}`}>
-          <span
-            className={`${multilineLabel ? "block w-full whitespace-normal break-all text-[11px] leading-[1.1]" : "text-[12px] whitespace-nowrap"} font-medium text-white tracking-wide drop-shadow-[0_1px_1.5px_rgba(0,0,0,0.8)]`}
-            style={multilineLabel ? { maxHeight: `${Math.max(20, heightPx - 6)}px`, overflow: "hidden" } : undefined}
+        {!shouldHideClippedLabel && (
+          <div
+            className={`absolute inset-y-0 left-0 z-20 pointer-events-none ${
+              multilineLabel ? "flex items-center w-full px-2.5" : "flex items-center pl-2.5 pr-2 overflow-hidden"
+            }`}
+            style={!multilineLabel && labelClipWidthPx != null ? { width: `${labelClipWidthPx}px` } : undefined}
           >
-            {label}
-          </span>
-        </div>
+            <span
+              className={`${
+                multilineLabel ? "block w-full whitespace-normal break-all text-[11px] leading-[1.1]" : "block truncate text-[12px] whitespace-nowrap"
+              } font-medium text-white tracking-wide drop-shadow-[0_1px_1.5px_rgba(0,0,0,0.8)]`}
+              style={multilineLabel ? { maxHeight: `${Math.max(20, heightPx - 6)}px`, overflow: "hidden" } : undefined}
+            >
+              {label}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Delay debt badge */}
@@ -220,6 +242,68 @@ function deriveBarStatus(
   if (taskStatus === "delayed") return "delayed"
   if (taskStatus === "in-progress" || progress > 0) return "active"
   return "pending"
+}
+
+interface ControlGlassButtonProps {
+  accent: "fuchsia" | "cyan"
+  active?: boolean
+  title: string
+  onClick: () => void
+}
+
+function ControlGlassButton({
+  accent,
+  active = false,
+  title,
+  onClick,
+}: ControlGlassButtonProps) {
+  const accentStyles =
+    accent === "fuchsia"
+      ? {
+          shell: active
+            ? "border-fuchsia-300/45 bg-[linear-gradient(180deg,rgba(88,28,135,0.34),rgba(43,16,68,0.7))] shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_10px_24px_rgba(76,29,149,0.24)]"
+            : "border-fuchsia-500/18 bg-[linear-gradient(180deg,rgba(52,18,80,0.2),rgba(21,15,38,0.68))] hover:border-fuchsia-400/35 hover:bg-[linear-gradient(180deg,rgba(74,24,113,0.28),rgba(26,16,44,0.74))] hover:shadow-[0_8px_22px_rgba(88,28,135,0.18)]",
+          title: active ? "text-fuchsia-50" : "text-fuchsia-100/90 group-hover:text-fuchsia-50",
+        }
+      : {
+          shell: active
+            ? "border-cyan-300/45 bg-[linear-gradient(180deg,rgba(18,76,110,0.34),rgba(11,35,57,0.72))] shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_10px_24px_rgba(14,116,144,0.22)]"
+            : "border-cyan-500/16 bg-[linear-gradient(180deg,rgba(15,48,72,0.22),rgba(12,23,38,0.7))] hover:border-cyan-400/32 hover:bg-[linear-gradient(180deg,rgba(17,61,89,0.3),rgba(12,28,46,0.76))] hover:shadow-[0_8px_22px_rgba(8,145,178,0.16)]",
+          title: active ? "text-cyan-50" : "text-cyan-100/90 group-hover:text-cyan-50",
+        }
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`group relative inline-flex min-w-[84px] items-center justify-center overflow-hidden rounded-full border px-[13px] py-[5.5px] text-center backdrop-blur-md transition-all duration-200 ${accentStyles.shell}`}
+    >
+      <span className="pointer-events-none absolute inset-[1px] rounded-full bg-[linear-gradient(180deg,rgba(255,255,255,0.1),rgba(255,255,255,0.02)_48%,rgba(255,255,255,0.01)_100%)]" />
+      <span className="pointer-events-none absolute inset-x-2.5 top-0 h-px bg-white/16" />
+      <span className={`relative z-10 text-[10px] font-normal leading-none tracking-[0.01em] ${accentStyles.title}`}>
+        {title}
+      </span>
+    </button>
+  )
+}
+
+function inclusiveSpanDays(startIso: string, endIso: string): number {
+  return Math.max(1, diffDays(startIso, endIso) + 1)
+}
+
+function renderedTaskSpanDays(node: TaskNode): number {
+  if (node.parentId) {
+    return inclusiveSpanDays(node.startDate, node.endDate)
+  }
+
+  const children = (node.children ?? []) as TaskNode[]
+  if (children.length === 0) {
+    return inclusiveSpanDays(node.startDate, node.endDate)
+  }
+
+  const baseDays = Math.max(0, diffDays(node.startDate, children[0].startDate))
+  const delayDays = children.reduce((sum, child) => sum + inclusiveSpanDays(child.startDate, child.endDate), 0)
+  return Math.max(1, baseDays + delayDays)
 }
 
 /* ------------------------------ Component -------------------------------- */
@@ -410,7 +494,7 @@ export function GanttSkeleton({ initialComponents, initialMilestones = [], dayWi
         for (const { node } of visible) {
           const yCenterPx = yAccum + GANTT_ROW_H.TASK / 2
           const offsetD = diffDays(timeline.start, node.startDate)
-          const spanD = Math.max(1, diffDays(node.startDate, node.endDate))
+          const spanD = renderedTaskSpanDays(node)
           map.set(node.id, {
             yCenterPx,
             startPx: offsetD * dayWidth,
@@ -428,13 +512,6 @@ export function GanttSkeleton({ initialComponents, initialMilestones = [], dayWi
 
   return (
     <div className="flex flex-col w-full h-screen bg-[#0B0F19] text-slate-100">
-      {/* ========================== Top Header (title only after Phase 22 鍚堝苟) ========================== */}
-      <header className="h-12 flex-shrink-0 border-b border-slate-800/50 flex items-center px-4 bg-[#111827]">
-        <h1 className="text-[20px] font-semibold tracking-wide text-slate-100">
-          <span className="text-cyan-400">项目进度甘特图</span>
-        </h1>
-      </header>
-
       {/* ========================== Main Content ========================== */}
       <div className="flex flex-1 min-h-0 border-t border-slate-800/30 relative">
         {/* 宏观 / 微观，浮在里程碑行右侧空白区 */}
@@ -468,24 +545,24 @@ export function GanttSkeleton({ initialComponents, initialMilestones = [], dayWi
           {/* Phase 22 鈥?椤堕儴鎺т欢琛ㄥご锛氫氦浠樻绾?/ 閮ㄤ欢绠＄悊 / 瀹忓井瑙傚垏鎹紝绛夎窛鎺掑垪 */}
           {/* 楂樺害浠?GANTT_ROW_H.CONTROL_BAR 鍙栧€硷紝涓庡彸渚ч噷绋嬬鏉＄墿鐞嗛攣姝?*/}
           <div
-            className="sticky top-0 z-20 bg-[#0f1729] border-b border-slate-800/50 flex items-center justify-between gap-2 px-2.5 whitespace-nowrap"
+            className="sticky top-0 z-20 bg-[#0f1729] border-b border-slate-800/50 flex items-center gap-8 px-2.5 whitespace-nowrap"
             style={{ height: GANTT_ROW_H.CONTROL_BAR }}
           >
             {/* 浜や粯姝荤嚎 */}
             {role === "ADMIN" ? (
               <div className="relative">
-                <button
-                  type="button"
+                <ControlGlassButton
+                  accent="fuchsia"
+                  active={showMilestonePanel}
+                  title="里程碑"
                   onClick={() => {
                     setShowMilestonePanel((v) => !v)
+                    setShowComponentPanel(false)
                     setEditingMilestoneId(null)
                   }}
-                  className="px-2.5 py-1 border border-fuchsia-700/60 text-fuchsia-300 hover:bg-fuchsia-950/50 hover:border-fuchsia-500 text-[12.5px] font-bold rounded transition-all"
-                >
-                  ◆ 里程碑
-                </button>
+                />
                 {showMilestonePanel && (
-                  <div className="absolute left-0 top-full mt-1 z-50 w-[420px] bg-[#0f1729] border border-fuchsia-800/50 rounded shadow-[0_8px_24px_rgba(0,0,0,0.6)] p-2">
+                  <div className="absolute left-0 top-full mt-1 z-50 w-[228px] bg-[#0f1729] border border-fuchsia-800/50 rounded shadow-[0_8px_24px_rgba(0,0,0,0.6)] p-2">
                     <div className="flex items-center justify-between px-2 py-1 border-b border-slate-800/60 mb-1">
                       <span className="text-[10px] tracking-wider text-fuchsia-300">里程碑管理</span>
                       <button
@@ -577,15 +654,17 @@ export function GanttSkeleton({ initialComponents, initialMilestones = [], dayWi
 
             {/* 閮ㄤ欢绠＄悊 */}
             <div className="relative">
-              <button
-                type="button"
-                onClick={() => setShowComponentPanel((v) => !v)}
-                className="px-2.5 py-1 border border-cyan-700/50 text-cyan-400 hover:bg-cyan-950/40 hover:border-cyan-500 text-[12.5px] font-bold rounded transition-all"
-              >
-                ⚙ 项目管理
-              </button>
+              <ControlGlassButton
+                accent="cyan"
+                active={showComponentPanel}
+                title="项目管理"
+                onClick={() => {
+                  setShowComponentPanel((v) => !v)
+                  setShowMilestonePanel(false)
+                }}
+              />
               {showComponentPanel && (
-                <div className="absolute left-0 top-full mt-1 z-50 w-[300px] bg-[#0f1729] border border-cyan-800/50 rounded shadow-[0_8px_24px_rgba(0,0,0,0.6)] p-2">
+                <div className="absolute left-0 top-full mt-1 z-50 w-[228px] bg-[#0f1729] border border-cyan-800/50 rounded shadow-[0_8px_24px_rgba(0,0,0,0.6)] p-2">
                   <div className="flex items-center justify-between px-2 py-1 border-b border-slate-800/60 mb-1">
                     <span className="text-[10px] tracking-wider text-cyan-300">项目管理</span>
                     <button
@@ -1227,7 +1306,7 @@ function ComponentTrack({ group, timelineStart, dayWidth, role, milestones, colo
   const envelopeStart = getComponentEnvelopeStart(group)
   const envelopeEnd = getComponentEnvelopeEnd(group)
   const offsetDays = diffDays(timelineStart, envelopeStart)
-  const span = Math.max(1, diffDays(envelopeStart, envelopeEnd))
+  const span = inclusiveSpanDays(envelopeStart, envelopeEnd)
   const progress = getComponentAggregateProgress(group)
   const isOverdueGroup = isComponentOverdue(group)
   const isCompletedGroup = isComponentCompleted(group)
@@ -1382,18 +1461,20 @@ function TaskTrack({ node, indexInParent, timelineStart, dayWidth, viewMode, rol
   if (!node.parentId) {
     const children = (node.children ?? []) as TaskNode[]
     const hasChildren = children.length > 0
-    const baseEndIso = hasChildren ? children[0].startDate : node.endDate
-    const baseDays = Math.max(0, diffDays(node.startDate, baseEndIso))
+    const baseDays = hasChildren
+      ? Math.max(0, diffDays(node.startDate, children[0].startDate))
+      : inclusiveSpanDays(node.startDate, node.endDate)
     const overdue = isOverdue(node)
     const completed = isCompleted(node)
     const delayDebt = calculateDelayDebt(node)
     const hasDelayDebt = completed && delayDebt > 0
     const progress = getScheduleProgress(node)
 
-    const childrenSpanDays = children.reduce((sum, c) => sum + Math.max(0, diffDays(c.startDate, c.endDate)), 0)
+    const childrenSpanDays = children.reduce((sum, c) => sum + inclusiveSpanDays(c.startDate, c.endDate), 0)
     const totalBarSpan = baseDays + childrenSpanDays
     const totalBarWidthPx = totalBarSpan * dayWidth
     const barLeftPx = offsetDays * dayWidth
+    const baseLabelWidthPx = baseDays * dayWidth
     const status = deriveBarStatus(overdue, completed, progress, node.status)
 
     const segments: GanttBarSegment[] = []
@@ -1401,7 +1482,7 @@ function TaskTrack({ node, indexInParent, timelineStart, dayWidth, viewMode, rol
       segments.push({ widthPx: baseDays * dayWidth, type: "base", title: `${node.name} · 基准段` })
     }
     for (const c of children) {
-      const segDays = Math.max(0, diffDays(c.startDate, c.endDate))
+      const segDays = inclusiveSpanDays(c.startDate, c.endDate)
       if (segDays > 0) {
         const delayText = segDays === 1 ? `+${segDays}天` : `delay +${segDays}天`
         segments.push({
@@ -1428,6 +1509,8 @@ function TaskTrack({ node, indexInParent, timelineStart, dayWidth, viewMode, rol
           label={`${node.name} · ${progress}%`}
           segments={segments.length > 0 ? segments : undefined}
           delayDebt={hasDelayDebt ? delayDebt : undefined}
+          labelClipWidthPx={hasChildren ? baseLabelWidthPx : undefined}
+          clippedLabelFallback={node.name}
         />
         {/* 閫炬湡鏆村姏鍖栵細绾㈣壊铏氱嚎鐩磋繛鈥滀粖鏃?NOW鈥濊酱 + 閫炬湡澶╂暟寰界珷 */}
         {overdue && (() => {
@@ -1465,7 +1548,7 @@ function TaskTrack({ node, indexInParent, timelineStart, dayWidth, viewMode, rol
   }
 
   // Child (delay record) row 鈥?striped entity slider
-  const span = Math.max(1, diffDays(node.startDate, node.endDate))
+  const span = inclusiveSpanDays(node.startDate, node.endDate)
   const delayLabel = span === 1 ? `+${span}天` : `delay +${span}天`
   const childBarWidthPx = span * dayWidth
   const childIsNarrow = childBarWidthPx < 72
@@ -1498,4 +1581,3 @@ function TaskTrack({ node, indexInParent, timelineStart, dayWidth, viewMode, rol
     </div>
   )
 }
-

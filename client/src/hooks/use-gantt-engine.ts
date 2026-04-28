@@ -133,8 +133,8 @@ export function useGanttEngine(initialComponents: ComponentGroup[], initialMiles
         const parent = path[0]
 
         const anchor = latestChildEnd(parent)
-        const childStart = anchor
-        const childEnd = addDays(anchor, delayDays)
+        const childStart = addDays(anchor, 1)
+        const childEnd = addDays(childStart, delayDays - 1)
 
         const childIndex = (parent.children?.length ?? 0) + 1
         const newChild: TaskNode = {
