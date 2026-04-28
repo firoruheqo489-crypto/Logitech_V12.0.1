@@ -21,7 +21,6 @@ import {
 import {
   Building2,
   Boxes,
-  ChartGantt,
   Factory,
   FlaskConical,
   Gauge,
@@ -212,18 +211,6 @@ export default function ProjectCard({ project, theme }: ProjectCardProps) {
       window.alert(getDashboardApiErrorDisplayMessage(error, '备份失败，请稍后重试'));
     } finally {
       setCreatingBackup(false);
-    }
-  };
-
-  const handleDrillDown = () => {
-    if (detailModalOpen) return;
-    if (window.innerWidth <= 767) return;
-    const projectId = identity.moldNumber && identity.moldNumber !== '-' ? identity.moldNumber : '';
-    if (projectId) {
-      sessionStorage.setItem('dashboard_scroll_y', String(document.getElementById('root')?.scrollTop || window.scrollY));
-      sessionStorage.setItem('dashboard_filter', sessionStorage.getItem('dashboard_current_filter') || 'ALL');
-      sessionStorage.setItem('dashboard_active_module', identity.projectName || '');
-      window.location.href = `/gantt?id=${encodeURIComponent(projectId)}`;
     }
   };
 
@@ -448,7 +435,7 @@ export default function ProjectCard({ project, theme }: ProjectCardProps) {
           />
         </div>
 
-          <div className="contents md:mb-2 md:mt-4 md:grid md:grid-cols-3 md:gap-6">
+          <div className="contents md:mb-2 md:mt-4 md:grid md:grid-cols-2 md:gap-6">
           <MetricPanelCard
             icon={<TableProperties className={`mb-2.5 h-5 w-5 opacity-70 transition-opacity group-hover:opacity-100 ${theme.text}`} />}
             label="TOOLING FAI"
@@ -461,19 +448,6 @@ export default function ProjectCard({ project, theme }: ProjectCardProps) {
             value={parseFAIValue(milestones.partFAI)}
             valueClassName={buildFaiValueClass(milestones.partFAI)}
           />
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              handleDrillDown();
-            }}
-            className={`group relative col-span-2 flex min-h-[85px] cursor-pointer flex-col items-center justify-center rounded-xl border bg-slate-900/50 p-3 text-center backdrop-blur-md transition-all hover:bg-slate-800/50 md:col-span-1 md:min-h-[120px] md:p-6 ${themeBorder}`}
-          >
-            <div className={`absolute right-2 top-2 h-1.5 w-1.5 rounded-full ${theme.bg} opacity-60`} />
-            <ChartGantt className={`mb-2.5 h-5 w-5 transition-transform group-hover:scale-110 ${theme.text}`} />
-            <span className={`text-sm font-mono font-medium tracking-tight ${theme.text}`} style={cardMonoStyle}>项目甘特图</span>
-            <span className="mt-1 text-[9px] uppercase tracking-wider text-slate-600">点击查看</span>
-          </button>
           </div>
         </div>
 

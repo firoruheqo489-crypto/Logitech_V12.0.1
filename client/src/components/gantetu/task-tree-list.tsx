@@ -1,6 +1,7 @@
 ﻿import { useCallback, useEffect, useMemo, useState } from "react"
 import { GANTT_ROW_H } from "@/lib/gantt/row-heights"
 import { useRef } from "react"
+import { createPortal } from "react-dom"
 import type { CollisionState, Milestone, Role, TaskNode, ViewMode } from "@/lib/gantt/types"
 import { diffDays, getRoots, getScheduleProgress, isCompleted, isOverdue, isTaskCollidingMilestone, todayIso, type DeletionValidation } from "@/lib/gantt/utils"
 import CyberPromptDialog from "@/components/ui/CyberPromptDialog"
@@ -473,7 +474,12 @@ function BlackboardSpawner({ roots, onAdd }: BlackboardSpawnerProps) {
     setErrors({})
   }, [today])
 
-  const validate = (): boolean => {
+  const handleClose = useCallback(() => {
+    resetForm()
+    setOpen(false)
+  }, [resetForm])
+
+  const validate = useCallback((): boolean => {
     const errs: { name?: string; startDate?: string; endDate?: string } = {}
     if (!name.trim()) errs.name = "必填"
     if (!startDate) errs.startDate = "必填"
@@ -482,149 +488,205 @@ function BlackboardSpawner({ roots, onAdd }: BlackboardSpawnerProps) {
     if (selectedDependency && startDate < selectedDependency.endDate) errs.startDate = "不得早于前置截止"
     setErrors(errs)
     return Object.keys(errs).length === 0
-  }
+  }, [endDate, name, selectedDependency, startDate])
 
-  const handleSubmit = () => {
+  const handleSubmit = useCallback(() => {
     if (!validate()) return
     onAdd(name.trim(), startDate, endDate, depId)
     resetForm()
     setOpen(false)
-  }
+  }, [depId, endDate, name, onAdd, resetForm, startDate, validate])
 
-  return (
-    <div className="sticky bottom-0 z-20" style={{ height: GANTT_ROW_H.SPAWNER }}>
-      {open ? (
-        <div className="absolute bottom-full left-0 right-0 mb-2 border border-cyan-800/30 bg-[#111827] px-4 py-4 shadow-[0_-4px_12px_rgba(0,0,0,0.3)]">
-          <div className="space-y-3">
-            <div className="min-w-0">
+  useEffect(() => {
+    if (!open) return
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault()
+        handleClose()
+        return
+      }
+      if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+        event.preventDefault()
+        handleSubmit()
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown)
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown)
+    }
+  }, [handleClose, handleSubmit, open])
+
+  const addTaskDialog = open ? (
+    <div
+      className="fixed inset-0 z-[10002] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm"
+      onClick={handleClose}
+    >
+      <div
+        className="w-full max-w-lg overflow-hidden rounded-2xl border border-cyan-400/25 shadow-[0_0_30px_rgba(34,211,238,0.25)]"
+        style={{
+          background:
+            "linear-gradient(145deg, rgba(21,27,35,0.98) 0%, rgba(12,19,28,0.98) 60%, rgba(24,15,40,0.98) 100%)",
+        }}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="border-b border-white/[0.08] bg-[linear-gradient(90deg,rgba(34,211,238,0.14),rgba(37,99,235,0.12))] px-5 py-4">
+          <div className="text-sm font-bold tracking-wide text-white/95">新增工序</div>
+          <div className="mt-1 text-xs text-cyan-200/70">弹窗录入工序信息，不再在甘特列表底部原地展开。</div>
+        </div>
+
+        <div className="px-5 py-4">
+          <div className="mb-3 text-xs leading-relaxed text-white/60">
+            可填写工序名称、开始时间、截至时间；选择前置条件后，时间不会早于前置工序截止日。
+          </div>
+
+          <div className="space-y-4">
+            <div>
+              <label className="mb-1 block text-[11px] font-medium tracking-wide text-white/60">
+                工序名称
+                <span className="ml-1 text-red-400/80">*</span>
+              </label>
               <input
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="工序名称 *"
-                className={`w-full bg-transparent border-0 border-b text-slate-200 px-1 py-1.5 text-[11px] focus:outline-none transition-colors ${
-                  errors.name ? "border-rose-500 focus:border-rose-400" : "border-slate-700 focus:border-cyan-500"
+                placeholder="请输入工序名称"
+                className={`w-full rounded-md border bg-black/30 px-3 py-2 text-sm text-white/90 placeholder:text-white/30 outline-none transition-colors focus:bg-black/40 ${
+                  errors.name
+                    ? "border-red-400/60 focus:border-red-300"
+                    : "border-white/[0.12] focus:border-cyan-400/60"
                 }`}
                 autoFocus
               />
-              {errors.name ? <div className="mt-1 text-[10px] text-rose-400 whitespace-nowrap">{errors.name}</div> : null}
+              {errors.name ? <div className="mt-1 text-[10px] text-red-300/90">{errors.name}</div> : null}
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="min-w-0">
-                <button
-                  type="button"
-                  onClick={() => openNativeDatePicker(startDateInputRef.current)}
-                  aria-label="开始时间"
-                  className={`flex w-full items-center justify-between border-0 border-b bg-transparent px-1 py-1.5 text-left text-[11px] text-slate-200 transition-colors ${
-                    errors.startDate ? "border-rose-500" : "border-slate-700 hover:border-cyan-500"
-                  }`}
-                >
-                  <span className="tabular-nums">{fmtDate(startDate)}</span>
-                  <svg className="h-3.5 w-3.5 shrink-0 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.6} d="M8 2v3m8-3v3M4 9h16M5 5h14a1 1 0 011 1v12a1 1 0 01-1 1H5a1 1 0 01-1-1V6a1 1 0 011-1z" />
-                  </svg>
-                </button>
-                <input
-                  ref={startDateInputRef}
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  tabIndex={-1}
-                  aria-hidden="true"
-                  className="pointer-events-none absolute h-0 w-0 opacity-0"
-                />
-                {errors.startDate ? <div className="mt-1 text-[10px] text-rose-400 whitespace-nowrap">{errors.startDate}</div> : null}
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-[11px] font-medium tracking-wide text-white/60">
+                  开始时间
+                  <span className="ml-1 text-red-400/80">*</span>
+                </label>
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => openNativeDatePicker(startDateInputRef.current)}
+                    aria-label="开始时间"
+                    className={`flex w-full items-center justify-between rounded-md border bg-black/30 px-3 py-2 text-left text-sm text-white/90 outline-none transition-colors ${
+                      errors.startDate
+                        ? "border-red-400/60"
+                        : "border-white/[0.12] hover:border-cyan-400/60"
+                    }`}
+                  >
+                    <span className="tabular-nums">{startDate || "请选择开始时间"}</span>
+                    <svg className="h-4 w-4 shrink-0 text-white/35" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.6} d="M8 2v3m8-3v3M4 9h16M5 5h14a1 1 0 011 1v12a1 1 0 01-1 1H5a1 1 0 01-1-1V6a1 1 0 011-1z" />
+                    </svg>
+                  </button>
+                  <input
+                    ref={startDateInputRef}
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    tabIndex={-1}
+                    aria-hidden="true"
+                    className="pointer-events-none absolute h-0 w-0 opacity-0"
+                  />
+                </div>
+                {errors.startDate ? <div className="mt-1 text-[10px] text-red-300/90">{errors.startDate}</div> : null}
               </div>
 
-              <div className="min-w-0">
-                <button
-                  type="button"
-                  onClick={() => openNativeDatePicker(endDateInputRef.current)}
-                  aria-label="截至时间"
-                  className={`flex w-full items-center justify-between border-0 border-b bg-transparent px-1 py-1.5 text-left text-[11px] text-slate-200 transition-colors ${
-                    errors.endDate ? "border-rose-500" : "border-slate-700 hover:border-cyan-500"
-                  }`}
-                >
-                  <span className="tabular-nums">{fmtDate(endDate)}</span>
-                  <svg className="h-3.5 w-3.5 shrink-0 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.6} d="M8 2v3m8-3v3M4 9h16M5 5h14a1 1 0 011 1v12a1 1 0 01-1 1H5a1 1 0 01-1-1V6a1 1 0 011-1z" />
-                  </svg>
-                </button>
-                <input
-                  ref={endDateInputRef}
-                  type="date"
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                  tabIndex={-1}
-                  aria-hidden="true"
-                  className="pointer-events-none absolute h-0 w-0 opacity-0"
-                />
-                {errors.endDate ? <div className="mt-1 text-[10px] text-rose-400 whitespace-nowrap">{errors.endDate}</div> : null}
+              <div>
+                <label className="mb-1 block text-[11px] font-medium tracking-wide text-white/60">
+                  截至时间
+                  <span className="ml-1 text-red-400/80">*</span>
+                </label>
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => openNativeDatePicker(endDateInputRef.current)}
+                    aria-label="截至时间"
+                    className={`flex w-full items-center justify-between rounded-md border bg-black/30 px-3 py-2 text-left text-sm text-white/90 outline-none transition-colors ${
+                      errors.endDate
+                        ? "border-red-400/60"
+                        : "border-white/[0.12] hover:border-cyan-400/60"
+                    }`}
+                  >
+                    <span className="tabular-nums">{endDate || "请选择截至时间"}</span>
+                    <svg className="h-4 w-4 shrink-0 text-white/35" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.6} d="M8 2v3m8-3v3M4 9h16M5 5h14a1 1 0 011 1v12a1 1 0 01-1 1H5a1 1 0 01-1-1V6a1 1 0 011-1z" />
+                    </svg>
+                  </button>
+                  <input
+                    ref={endDateInputRef}
+                    type="date"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                    tabIndex={-1}
+                    aria-hidden="true"
+                    className="pointer-events-none absolute h-0 w-0 opacity-0"
+                  />
+                </div>
+                {errors.endDate ? <div className="mt-1 text-[10px] text-red-300/90">{errors.endDate}</div> : null}
               </div>
             </div>
 
-            <div className="flex items-center gap-3">
-              <label className="text-[9px] text-slate-600 whitespace-nowrap">前置条件:</label>
+            <div>
+              <label className="mb-1 block text-[11px] font-medium tracking-wide text-white/60">前置条件</label>
               <select
                 value={depId ?? ""}
                 onChange={(e) => setDepId(e.target.value || null)}
-                className="flex-1 bg-transparent border-0 border-b border-slate-700 text-slate-300 px-1 py-1 text-[10px] focus:outline-none focus:border-cyan-500 transition-colors"
+                className="w-full rounded-md border border-white/[0.12] bg-black/30 px-3 py-2 text-sm text-white/90 outline-none transition-colors focus:border-cyan-400/60"
               >
-                <option value="">无 / 开端</option>
+                <option value="" className="bg-slate-900 text-white">
+                  无 / 开端
+                </option>
                 {topLevelRoots.map((root) => (
-                  <option key={root.id} value={root.id}>
+                  <option key={root.id} value={root.id} className="bg-slate-900 text-white">
                     {root.name} ({root.endDate})
                   </option>
                 ))}
               </select>
             </div>
+          </div>
 
-            <div className="flex items-center gap-3 pt-2">
-              <button
-                type="button"
-                onClick={handleSubmit}
-                className="flex-1 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white text-[10px] font-medium rounded shadow-[0_0_12px_rgba(6,182,212,0.4)] hover:shadow-[0_0_18px_rgba(6,182,212,0.6)] transition-all"
-              >
-                确认录入
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  resetForm()
-                  setOpen(false)
-                }}
-                className="px-4 py-2 border border-slate-700/60 text-slate-500 hover:text-slate-300 hover:border-slate-500 hover:bg-slate-800/30 text-[10px] rounded transition-all"
-              >
-                取消
-              </button>
-            </div>
+          <div className="mt-5 flex items-center justify-end gap-3">
+            <button
+              type="button"
+              onClick={handleClose}
+              className="rounded-lg border border-white/[0.12] px-4 py-2 text-xs text-white/70 transition-colors hover:bg-white/[0.08]"
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              onClick={handleSubmit}
+              className="rounded-lg border border-cyan-400/30 bg-[linear-gradient(135deg,rgba(34,211,238,0.22),rgba(37,99,235,0.22))] px-4 py-2 text-xs font-bold text-cyan-100 transition-colors hover:bg-[linear-gradient(135deg,rgba(34,211,238,0.32),rgba(37,99,235,0.32))]"
+            >
+              确认录入
+            </button>
           </div>
         </div>
-      ) : null}
+      </div>
+    </div>
+  ) : null
 
-      <div
-        className={`box-border flex h-full items-center border-b border-slate-800/20 bg-[#0f1729] px-3 transition-opacity ${
-          open ? "opacity-100" : "opacity-20 hover:opacity-100"
-        }`}
-      >
+  return (
+    <div className="sticky bottom-0 z-20" style={{ height: GANTT_ROW_H.SPAWNER }}>
+      {addTaskDialog && typeof document !== "undefined" ? createPortal(addTaskDialog, document.body) : null}
+
+      <div className="box-border flex h-full items-center border-b border-slate-800/20 bg-[#0f1729] px-3 transition-opacity opacity-20 hover:opacity-100">
         <button
           type="button"
           onClick={() => {
-            if (open) {
-              resetForm()
-              setOpen(false)
-              return
-            }
+            resetForm()
             setOpen(true)
           }}
-          className={`w-full py-0.5 border border-dashed text-[9px] rounded transition-all ${
-            open
-              ? "border-cyan-600/70 text-cyan-300 bg-cyan-950/20 hover:border-cyan-400 hover:text-cyan-200"
-              : "border-slate-700/60 text-slate-500 hover:border-cyan-500/70 hover:text-cyan-400 hover:bg-cyan-950/20"
-          }`}
+          className="w-full rounded border border-dashed border-slate-700/60 py-0.5 text-[9px] text-slate-500 transition-all hover:border-cyan-500/70 hover:bg-cyan-950/20 hover:text-cyan-400"
         >
-          {open ? "收起新增工序" : "+ 新增工序"}
+          + 新增工序
         </button>
       </div>
     </div>

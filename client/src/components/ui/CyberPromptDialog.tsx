@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
+import { createPortal } from "react-dom"
 import { Calendar, Pencil } from "lucide-react"
 
 export type CyberPromptField =
@@ -154,7 +155,7 @@ export default function CyberPromptDialog({
       ? "rounded-lg border border-purple-400/25 bg-[linear-gradient(135deg,rgba(168,85,247,0.22),rgba(126,34,206,0.15))] px-4 py-2 text-xs font-bold text-purple-100 transition-colors hover:bg-[linear-gradient(135deg,rgba(168,85,247,0.32),rgba(126,34,206,0.25))]"
       : "rounded-lg border border-cyan-400/30 bg-[linear-gradient(135deg,rgba(34,211,238,0.22),rgba(8,145,178,0.18))] px-4 py-2 text-xs font-bold text-cyan-100 transition-colors hover:bg-[linear-gradient(135deg,rgba(34,211,238,0.32),rgba(8,145,178,0.28))]"
 
-  return (
+  const dialog = (
     <div
       className="fixed inset-0 z-[10002] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm"
     >
@@ -266,4 +267,6 @@ export default function CyberPromptDialog({
       </div>
     </div>
   )
+
+  return typeof document !== "undefined" ? createPortal(dialog, document.body) : dialog
 }

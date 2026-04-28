@@ -995,6 +995,12 @@ export default function DashboardHome() {
           </LazyWorkspace>
         )}
 
+        {selectedTab === 'project-gantt' && (
+          <LazyWorkspace>
+            <ProjectGanttWorkspace />
+          </LazyWorkspace>
+        )}
+
         {selectedTab === 'mold-reliability' && (
           <LazyWorkspace>
             <ReliabilityDrawerWorkspace panels={currentModuleTrialPanels} />
@@ -1010,12 +1016,6 @@ export default function DashboardHome() {
         {selectedTab === 'mold-trial-database' && (
           <LazyWorkspace>
             <MoldTrialDrawerWorkspace panels={currentModuleTrialPanels} />
-          </LazyWorkspace>
-        )}
-
-        {selectedTab === 'project-gantt' && (
-          <LazyWorkspace>
-            <ProjectGanttWorkspace />
           </LazyWorkspace>
         )}
 

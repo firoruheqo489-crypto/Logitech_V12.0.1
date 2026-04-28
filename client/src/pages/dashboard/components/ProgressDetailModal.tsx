@@ -6,8 +6,10 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import imageCompression from 'browser-image-compression';
 import { Plus, Trash2, Pencil, Check, X, Image as ImageIcon, History } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
+import { deleteAssetViaServer, uploadAssetViaServer } from '@/lib/ossUpload';
 import {
   fetchDashboardProgressEntries,
   getDashboardApiErrorDisplayMessage,
@@ -39,6 +41,8 @@ interface ProgressDetailModalProps {
 }
 
 const API_BASE = '/api/dashboard/progress-notes';
+const MAX_PROGRESS_IMAGE_SIZE_BYTES = 500 * 1024;
+const TARGET_PROGRESS_IMAGE_FORMAT: 'image/webp' | 'image/jpeg' = 'image/webp';
 
 async function loadEntries(moldNumber: string): Promise<ProgressEntry[]> {
   return fetchDashboardProgressEntries(moldNumber);
@@ -90,6 +94,99 @@ function formatAuditAction(action: string): string {
   }
 }
 
+function estimateBlobSizeKB(blob: Pick<Blob, 'size'>): number {
+  return Math.round(blob.size / 1024);
+}
+
+function isBlobUrl(value: string | null | undefined): value is string {
+  return typeof value === 'string' && value.startsWith('blob:');
+}
+
+function isDataUrl(value: string | null | undefined): value is string {
+  return typeof value === 'string' && value.startsWith('data:');
+}
+
+function revokePreviewUrl(value: string | null | undefined): void {
+  if (isBlobUrl(value)) {
+    URL.revokeObjectURL(value);
+  }
+}
+
+function inferImageExtension(mimeType: string): string {
+  switch (mimeType.trim().toLowerCase()) {
+    case 'image/png':
+      return '.png';
+    case 'image/webp':
+      return '.webp';
+    case 'image/gif':
+      return '.gif';
+    case 'image/jpeg':
+    case 'image/jpg':
+    default:
+      return '.jpg';
+  }
+}
+
+async function compressImage(file: File): Promise<File> {
+  if (!file.type.startsWith('image/')) {
+    return file;
+  }
+
+  if (file.size <= MAX_PROGRESS_IMAGE_SIZE_BYTES) {
+    return file;
+  }
+
+  return imageCompression(file, {
+    maxSizeMB: 0.48,
+    maxWidthOrHeight: 1600,
+    useWebWorker: true,
+    fileType: TARGET_PROGRESS_IMAGE_FORMAT as 'image/webp',
+    initialQuality: 0.8,
+    maxIteration: 10,
+  });
+}
+
+async function dataUrlToFile(dataUrl: string, filenameBase: string): Promise<File> {
+  const response = await fetch(dataUrl);
+  const blob = await response.blob();
+  const mimeType = blob.type || 'image/jpeg';
+  return new File([blob], `${filenameBase}${inferImageExtension(mimeType)}`, {
+    type: mimeType,
+  });
+}
+
+async function resolvePersistedProgressImage(params: {
+  moldNumber: string;
+  noteId: string;
+  previewUrl: string;
+  file: File | null;
+}): Promise<{ imageUrl?: string; uploadedUrl?: string }> {
+  let sourceFile = params.file;
+
+  if (!sourceFile && isDataUrl(params.previewUrl)) {
+    sourceFile = await dataUrlToFile(params.previewUrl, `progress-note-${params.noteId}`);
+  }
+
+  if (!sourceFile) {
+    return {
+      imageUrl: isBlobUrl(params.previewUrl) ? undefined : (params.previewUrl || undefined),
+    };
+  }
+
+  const processedFile = await compressImage(sourceFile);
+  const uploadResult = await uploadAssetViaServer({
+    file: processedFile,
+    category: 'progress-note-image',
+    entityId: params.moldNumber,
+    slot: params.noteId,
+  });
+
+  return {
+    imageUrl: uploadResult.url,
+    uploadedUrl: uploadResult.url,
+  };
+}
+
 export default function ProgressDetailModal({
   open, onClose, moldNumber, currentDetail, currentDate,
 }: ProgressDetailModalProps) {
@@ -100,10 +197,12 @@ export default function ProgressDetailModal({
   const [newContent, setNewContent] = useState('');
   const [newDate, setNewDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [newImageUrl, setNewImageUrl] = useState<string>('');
+  const [newImageFile, setNewImageFile] = useState<File | null>(null);
   const [newImageSizeKB, setNewImageSizeKB] = useState<number | null>(null);
   const [newAssignee, setNewAssignee] = useState<string>('');
   const [newEstimatedNodeCompletion, setNewEstimatedNodeCompletion] = useState<string>('');
   const [editImageUrl, setEditImageUrl] = useState<string>('');
+  const [editImageFile, setEditImageFile] = useState<File | null>(null);
   const [editImageSizeKB, setEditImageSizeKB] = useState<number | null>(null);
   const [editAssignee, setEditAssignee] = useState<string>('');
   const [editEstimatedNodeCompletion, setEditEstimatedNodeCompletion] = useState<string>('');
@@ -138,118 +237,83 @@ export default function ProgressDetailModal({
     return Math.round(bytes / 1024);
   };
 
-  const fileToDataUrl = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result || ''));
-      reader.onerror = () => reject(new Error('图片读取失败'));
-      reader.readAsDataURL(file);
+  const replaceNewImageSelection = useCallback((nextUrl: string, nextFile: File | null, nextSizeKB: number | null) => {
+    setNewImageUrl((currentUrl) => {
+      revokePreviewUrl(currentUrl);
+      return nextUrl;
     });
-  };
+    setNewImageFile(nextFile);
+    setNewImageSizeKB(nextSizeKB);
+  }, []);
 
-  const compressImage = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const img = new Image();
-        img.onload = async () => {
-          const MAX_BYTES = 500 * 1024;
-          const canvas = document.createElement('canvas');
-          const ctx = canvas.getContext('2d');
-          if (!ctx) { reject(new Error('图片处理失败')); return; }
+  const clearNewImageSelection = useCallback(() => {
+    replaceNewImageSelection('', null, null);
+  }, [replaceNewImageSelection]);
 
-          let width = img.width;
-          let height = img.height;
-          const maxSide = 1600;
-          if (Math.max(width, height) > maxSide) {
-            const ratio = maxSide / Math.max(width, height);
-            width = Math.round(width * ratio);
-            height = Math.round(height * ratio);
-          }
-
-          const toBlob = (quality: number) => new Promise<Blob | null>((res) => {
-            canvas.toBlob((b) => res(b), 'image/jpeg', quality);
-          });
-
-          const blobToDataUrl = (blob: Blob) => new Promise<string>((res, rej) => {
-            const fr = new FileReader();
-            fr.onload = () => res(String(fr.result || ''));
-            fr.onerror = () => rej(new Error('图片转换失败'));
-            fr.readAsDataURL(blob);
-          });
-
-          for (let round = 0; round < 6; round++) {
-            canvas.width = width;
-            canvas.height = height;
-            ctx.clearRect(0, 0, width, height);
-            ctx.drawImage(img, 0, 0, width, height);
-
-            for (const quality of [0.85, 0.78, 0.7, 0.62, 0.55, 0.48, 0.4]) {
-              const blob = await toBlob(quality);
-              if (!blob) continue;
-              if (blob.size <= MAX_BYTES) {
-                resolve(await blobToDataUrl(blob));
-                return;
-              }
-            }
-
-            width = Math.max(320, Math.round(width * 0.85));
-            height = Math.max(240, Math.round(height * 0.85));
-          }
-
-          const fallbackBlob = await toBlob(0.4);
-          if (!fallbackBlob) { reject(new Error('图片压缩失败')); return; }
-          resolve(await blobToDataUrl(fallbackBlob));
-        };
-        img.onerror = () => reject(new Error('图片解析失败'));
-        img.src = String(reader.result || '');
-      };
-      reader.onerror = () => reject(new Error('图片读取失败'));
-      reader.readAsDataURL(file);
+  const replaceEditImageSelection = useCallback((nextUrl: string, nextFile: File | null, nextSizeKB: number | null) => {
+    setEditImageUrl((currentUrl) => {
+      revokePreviewUrl(currentUrl);
+      return nextUrl;
     });
-  };
+    setEditImageFile(nextFile);
+    setEditImageSizeKB(nextSizeKB);
+  }, []);
+
+  const clearEditImageSelection = useCallback(() => {
+    replaceEditImageSelection('', null, null);
+  }, [replaceEditImageSelection]);
 
   const handleNewImageChange = useCallback(async (file?: File) => {
     if (!file) return;
     const jobId = ++newImageJobRef.current;
     setIsNewImageProcessing(true);
     try {
-      const dataUrl = await compressImage(file);
+      const processedFile = await compressImage(file);
       if (jobId !== newImageJobRef.current) return;
-      setNewImageUrl(dataUrl);
-      setNewImageSizeKB(estimateDataUrlSizeKB(dataUrl));
+      replaceNewImageSelection(
+        URL.createObjectURL(processedFile),
+        processedFile,
+        estimateBlobSizeKB(processedFile),
+      );
     } catch {
-      const dataUrl = await fileToDataUrl(file);
       if (jobId !== newImageJobRef.current) return;
-      setNewImageUrl(dataUrl);
-      setNewImageSizeKB(estimateDataUrlSizeKB(dataUrl));
+      replaceNewImageSelection(
+        URL.createObjectURL(file),
+        file,
+        estimateBlobSizeKB(file),
+      );
     } finally {
       if (jobId === newImageJobRef.current) {
         setIsNewImageProcessing(false);
       }
     }
-  }, []);
+  }, [replaceNewImageSelection]);
 
   const handleEditImageChange = useCallback(async (file?: File) => {
     if (!file) return;
     const jobId = ++editImageJobRef.current;
     setIsEditImageProcessing(true);
     try {
-      const dataUrl = await compressImage(file);
+      const processedFile = await compressImage(file);
       if (jobId !== editImageJobRef.current) return;
-      setEditImageUrl(dataUrl);
-      setEditImageSizeKB(estimateDataUrlSizeKB(dataUrl));
+      replaceEditImageSelection(
+        URL.createObjectURL(processedFile),
+        processedFile,
+        estimateBlobSizeKB(processedFile),
+      );
     } catch {
-      const dataUrl = await fileToDataUrl(file);
       if (jobId !== editImageJobRef.current) return;
-      setEditImageUrl(dataUrl);
-      setEditImageSizeKB(estimateDataUrlSizeKB(dataUrl));
+      replaceEditImageSelection(
+        URL.createObjectURL(file),
+        file,
+        estimateBlobSizeKB(file),
+      );
     } finally {
       if (jobId === editImageJobRef.current) {
         setIsEditImageProcessing(false);
       }
     }
-  }, []);
+  }, [replaceEditImageSelection]);
 
   useEffect(() => {
     if (!open) return;
@@ -259,10 +323,10 @@ export default function ProgressDetailModal({
     setEditingId(null);
     setNewContent('');
     setNewDate(new Date().toISOString().slice(0, 10));
-    setNewImageUrl('');
-    setNewImageSizeKB(null);
+    clearNewImageSelection();
     setNewAssignee('');
     setNewEstimatedNodeCompletion('');
+    clearEditImageSelection();
     setIsNewImageProcessing(false);
     setIsEditImageProcessing(false);
     newImageJobRef.current += 1;
@@ -283,7 +347,12 @@ export default function ProgressDetailModal({
     return () => {
       cancelled = true;
     };
-  }, [open, moldNumber]);
+  }, [open, moldNumber, clearEditImageSelection, clearNewImageSelection]);
+
+  useEffect(() => () => {
+    revokePreviewUrl(newImageUrl);
+    revokePreviewUrl(editImageUrl);
+  }, [newImageUrl, editImageUrl]);
 
   const refreshAuditLogs = useCallback(async () => {
     setAuditLoading(true);
@@ -301,41 +370,62 @@ export default function ProgressDetailModal({
       });
       return;
     }
-    const entry: ProgressEntry = {
-      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-      date: newDate,
-      content: newContent.trim(),
-      imageUrl: newImageUrl || undefined,
-      assignee: newAssignee.trim() || undefined,
-      estimatedNodeCompletion: newEstimatedNodeCompletion || undefined,
-    };
-    const updated = [entry, ...entries].sort((a, b) => b.date.localeCompare(a.date));
-    hasLocalEntryMutationRef.current = true;
-    setLoading(false);
-    setEntries(updated);
-    setNewContent('');
-    setNewDate(new Date().toISOString().slice(0, 10));
-    setNewImageUrl('');
-    setNewImageSizeKB(null);
-    setNewAssignee('');
-    setNewEstimatedNodeCompletion('');
-    setIsNewImageProcessing(false);
-    newImageJobRef.current += 1;
+    const previousEntries = entries;
+    const entryId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    let uploadedUrl = '';
+    setIsNewImageProcessing(true);
     try {
+      const persistedImage = await resolvePersistedProgressImage({
+        moldNumber,
+        noteId: entryId,
+        previewUrl: newImageUrl,
+        file: newImageFile,
+      });
+      uploadedUrl = persistedImage.uploadedUrl || '';
+      const entry: ProgressEntry = {
+        id: entryId,
+        date: newDate,
+        content: newContent.trim(),
+        imageUrl: persistedImage.imageUrl,
+        assignee: newAssignee.trim() || undefined,
+        estimatedNodeCompletion: newEstimatedNodeCompletion || undefined,
+      };
+      const updated = [entry, ...previousEntries].sort((a, b) => b.date.localeCompare(a.date));
+      hasLocalEntryMutationRef.current = true;
+      setLoading(false);
+      setEntries(updated);
       const result = await upsertEntry(moldNumber, entry);
+      setNewContent('');
+      setNewDate(new Date().toISOString().slice(0, 10));
+      clearNewImageSelection();
+      setNewAssignee('');
+      setNewEstimatedNodeCompletion('');
+      newImageJobRef.current += 1;
       toast.success(result.backupCreated ? '保存成功（已自动创建回滚快照）' : '保存成功（已复用最近快照）');
       if (showAuditPanel) await refreshAuditLogs();
     } catch (err) {
-      setEntries(entries);
-      setNewContent(entry.content);
-      setNewDate(entry.date);
-      setNewImageUrl(entry.imageUrl || '');
-      setNewImageSizeKB(entry.imageUrl ? estimateDataUrlSizeKB(entry.imageUrl) : null);
-      setNewAssignee(entry.assignee || '');
-      setNewEstimatedNodeCompletion(entry.estimatedNodeCompletion || '');
+      if (uploadedUrl) {
+        await deleteAssetViaServer(uploadedUrl).catch(() => undefined);
+      }
+      setEntries(previousEntries);
       toast.error(getDashboardApiErrorDisplayMessage(err, '保存失败'));
+    } finally {
+      setIsNewImageProcessing(false);
     }
-  }, [entries, moldNumber, newContent, newDate, newImageUrl, newAssignee, newEstimatedNodeCompletion, isNewImageProcessing, showAuditPanel, refreshAuditLogs]);
+  }, [
+    clearNewImageSelection,
+    entries,
+    moldNumber,
+    newAssignee,
+    newContent,
+    newDate,
+    newEstimatedNodeCompletion,
+    newImageFile,
+    newImageUrl,
+    isNewImageProcessing,
+    showAuditPanel,
+    refreshAuditLogs,
+  ]);
 
   const handleDelete = useCallback(async (id: string) => {
     const updated = entries.filter(e => e.id !== id);
@@ -344,6 +434,7 @@ export default function ProgressDetailModal({
     setEntries(updated);
     try {
       const result = await deleteEntry(moldNumber, id);
+      // Keep remote assets referenced by historical backups so restore still works.
       toast.success(result.backupCreated ? '删除成功（已自动创建回滚快照）' : '删除成功（已复用最近快照）');
       if (showAuditPanel) await refreshAuditLogs();
     } catch (err) {
@@ -362,6 +453,7 @@ export default function ProgressDetailModal({
     setEntries(updated);
     try {
       const result = await upsertEntry(moldNumber, updatedEntry);
+      // Keep remote assets referenced by historical backups so restore still works.
       toast.success(result.backupCreated ? '删除图片成功（已自动创建回滚快照）' : '删除图片成功（已复用最近快照）');
       if (showAuditPanel) await refreshAuditLogs();
     } catch (err) {
@@ -376,11 +468,14 @@ export default function ProgressDetailModal({
     setEditingId(entry.id);
     setEditContent(entry.content);
     setEditDate(entry.date);
-    setEditImageUrl(entry.imageUrl || '');
-    setEditImageSizeKB(entry.imageUrl ? estimateDataUrlSizeKB(entry.imageUrl) : null);
+    replaceEditImageSelection(
+      entry.imageUrl || '',
+      null,
+      entry.imageUrl && isDataUrl(entry.imageUrl) ? estimateDataUrlSizeKB(entry.imageUrl) : null,
+    );
     setEditAssignee(entry.assignee || '');
     setEditEstimatedNodeCompletion(entry.estimatedNodeCompletion || '');
-  }, []);
+  }, [replaceEditImageSelection]);
 
   const handleEditSave = useCallback(async () => {
     if (!editingId || !editContent.trim()) return;
@@ -393,36 +488,66 @@ export default function ProgressDetailModal({
     }
     const existingEntry = entries.find((entry) => entry.id === editingId);
     if (!existingEntry) return;
-    const updatedEntry: ProgressEntry = {
-      ...existingEntry,
-      content: editContent.trim(),
-      date: editDate,
-      imageUrl: editImageUrl || undefined,
-      assignee: editAssignee.trim() || undefined,
-      estimatedNodeCompletion: editEstimatedNodeCompletion || undefined,
-    };
-    const updated = entries.map(e =>
-      e.id === editingId ? updatedEntry : e
-    ).sort((a, b) => b.date.localeCompare(a.date));
-    hasLocalEntryMutationRef.current = true;
-    setLoading(false);
-    setEntries(updated);
+    let uploadedUrl = '';
+    setIsEditImageProcessing(true);
     try {
+      const persistedImage = await resolvePersistedProgressImage({
+        moldNumber,
+        noteId: editingId,
+        previewUrl: editImageUrl,
+        file: editImageFile,
+      });
+      uploadedUrl = persistedImage.uploadedUrl || '';
+      const updatedEntry: ProgressEntry = {
+        ...existingEntry,
+        content: editContent.trim(),
+        date: editDate,
+        imageUrl: persistedImage.imageUrl,
+        assignee: editAssignee.trim() || undefined,
+        estimatedNodeCompletion: editEstimatedNodeCompletion || undefined,
+      };
+      const updated = entries.map(e =>
+        e.id === editingId ? updatedEntry : e
+      ).sort((a, b) => b.date.localeCompare(a.date));
+      hasLocalEntryMutationRef.current = true;
+      setLoading(false);
+      setEntries(updated);
       const result = await upsertEntry(moldNumber, updatedEntry);
+      clearEditImageSelection();
       setEditingId(null);
       toast.success(result.backupCreated ? '更新成功（已自动创建回滚快照）' : '更新成功（已复用最近快照）');
       if (showAuditPanel) await refreshAuditLogs();
     } catch (err) {
+      if (uploadedUrl) {
+        await deleteAssetViaServer(uploadedUrl).catch(() => undefined);
+      }
       setEntries(entries);
       toast.error(getDashboardApiErrorDisplayMessage(err, '更新失败'));
+    } finally {
+      setIsEditImageProcessing(false);
     }
-  }, [entries, moldNumber, editingId, editContent, editDate, editImageUrl, editAssignee, editEstimatedNodeCompletion, isEditImageProcessing, showAuditPanel, refreshAuditLogs]);
+  }, [
+    clearEditImageSelection,
+    entries,
+    moldNumber,
+    editingId,
+    editAssignee,
+    editContent,
+    editDate,
+    editEstimatedNodeCompletion,
+    editImageFile,
+    editImageUrl,
+    isEditImageProcessing,
+    showAuditPanel,
+    refreshAuditLogs,
+  ]);
 
   const handleEditCancel = useCallback(() => {
     editImageJobRef.current += 1;
     setIsEditImageProcessing(false);
+    clearEditImageSelection();
     setEditingId(null);
-  }, []);
+  }, [clearEditImageSelection]);
 
   const openConfirmDialog = useCallback((params: {
     title: string;
@@ -464,10 +589,9 @@ export default function ProgressDetailModal({
     if (action === 'clear-edit-image') {
       editImageJobRef.current += 1;
       setIsEditImageProcessing(false);
-      setEditImageUrl('');
-      setEditImageSizeKB(null);
+      clearEditImageSelection();
     }
-  }, [confirmDialog, closeConfirmDialog, handleDelete, handleRemoveImage]);
+  }, [confirmDialog, clearEditImageSelection, closeConfirmDialog, handleDelete, handleRemoveImage]);
 
   if (!open) return null;
 

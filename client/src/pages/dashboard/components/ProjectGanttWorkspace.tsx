@@ -9,7 +9,8 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { Edit3, Plus } from 'lucide-react';
+import { Edit3, Plus, Trash2 } from 'lucide-react';
+import CyberConfirmDialog from '@/components/ui/CyberConfirmDialog';
 import CyberPromptDialog from '@/components/ui/CyberPromptDialog';
 import { GanttSkeleton } from '@/components/gantetu/gantt-skeleton';
 import type { ComponentGroup, Milestone } from '@/lib/gantt/types';
@@ -226,6 +227,16 @@ function writeWorkspaceSnapshot(snapshot: ProjectGanttWorkspaceSnapshot) {
   }
 }
 
+function removeBoardStorage(boardId: string) {
+  if (typeof window === 'undefined') return;
+
+  try {
+    window.localStorage.removeItem(`${BOARD_STORAGE_PREFIX}${boardId}`);
+  } catch {
+    // Ignore browser localStorage restrictions.
+  }
+}
+
 export default function ProjectGanttWorkspace() {
   const initialWorkspace = useMemo<ProjectGanttWorkspaceSnapshot>(() => {
     const snapshot = readWorkspaceSnapshot();
@@ -240,6 +251,7 @@ export default function ProjectGanttWorkspace() {
   const [boards, setBoards] = useState<GanttBoardTab[]>(() => initialWorkspace.boards);
   const [activeBoardId, setActiveBoardId] = useState<string>(() => initialWorkspace.activeBoardId);
   const [renameTargetId, setRenameTargetId] = useState<string | null>(null);
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
 
   const activeBoard = useMemo(
     () => boards.find((board) => board.id === activeBoardId) ?? boards[0] ?? null,
@@ -248,6 +260,10 @@ export default function ProjectGanttWorkspace() {
   const renameTarget = useMemo(
     () => boards.find((board) => board.id === renameTargetId) ?? null,
     [boards, renameTargetId],
+  );
+  const deleteTarget = useMemo(
+    () => boards.find((board) => board.id === deleteTargetId) ?? null,
+    [boards, deleteTargetId],
   );
 
   useEffect(() => {
@@ -289,6 +305,32 @@ export default function ProjectGanttWorkspace() {
     setRenameTargetId(null);
   };
 
+  const handleDeleteBoard = () => {
+    if (!deleteTargetId) return;
+    if (boards.length <= 1) {
+      setDeleteTargetId(null);
+      return;
+    }
+
+    const currentBoards = boards;
+    const deleteIndex = currentBoards.findIndex((board) => board.id === deleteTargetId);
+    if (deleteIndex < 0) {
+      setDeleteTargetId(null);
+      return;
+    }
+
+    const nextBoards = currentBoards.filter((board) => board.id !== deleteTargetId);
+    const fallbackBoard =
+      nextBoards[Math.min(deleteIndex, nextBoards.length - 1)] ?? nextBoards[0] ?? null;
+
+    removeBoardStorage(deleteTargetId);
+    setBoards(nextBoards);
+    if (activeBoardId === deleteTargetId && fallbackBoard) {
+      setActiveBoardId(fallbackBoard.id);
+    }
+    setDeleteTargetId(null);
+  };
+
   const headerSlot = (
     <div className="border-b border-slate-800/50 bg-[#09111d] px-3 py-3">
       <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
@@ -327,6 +369,16 @@ export default function ProjectGanttWorkspace() {
           <span className="truncate text-xs text-slate-500">
             {activeBoard ? `当前：${activeBoard.title}` : '当前：未选择甘特图'}
           </span>
+          <button
+            type="button"
+            onClick={() => activeBoard && setDeleteTargetId(activeBoard.id)}
+            disabled={!activeBoard || boards.length <= 1}
+            className="inline-flex items-center gap-1 rounded border border-red-500/25 bg-red-950/20 px-3 py-1.5 text-xs text-red-200 transition-colors hover:border-red-400/45 hover:bg-red-950/35 disabled:cursor-not-allowed disabled:opacity-35"
+            title={boards.length <= 1 ? '至少保留 1 张甘特图' : '删除当前甘特图'}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            删除当前
+          </button>
           <button
             type="button"
             onClick={() => activeBoard && setRenameTargetId(activeBoard.id)}
@@ -380,6 +432,18 @@ export default function ProjectGanttWorkspace() {
           cancelText="取消"
           onCancel={() => setRenameTargetId(null)}
           onConfirm={(values) => handleRenameBoard(values.title ?? '')}
+        />
+      )}
+
+      {deleteTarget && (
+        <CyberConfirmDialog
+          open
+          title="删除甘特图确认"
+          message={`确定要删除 ${deleteTarget.title} 吗？\n该标签下的本地甘特图数据也会一并移除，此操作不可撤销。`}
+          confirmText="确认删除"
+          cancelText="取消"
+          onCancel={() => setDeleteTargetId(null)}
+          onConfirm={handleDeleteBoard}
         />
       )}
     </div>
