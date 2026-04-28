@@ -4,7 +4,7 @@
  * 数据持久化到 Supabase（以 moldNumber 为 key）
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Plus, Trash2, Pencil, Check, X, Image as ImageIcon, History } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
@@ -107,11 +107,18 @@ export default function ProgressDetailModal({
   const [editImageSizeKB, setEditImageSizeKB] = useState<number | null>(null);
   const [editAssignee, setEditAssignee] = useState<string>('');
   const [editEstimatedNodeCompletion, setEditEstimatedNodeCompletion] = useState<string>('');
+  const [isNewImageProcessing, setIsNewImageProcessing] = useState(false);
+  const [isEditImageProcessing, setIsEditImageProcessing] = useState(false);
   const [previewImageUrl, setPreviewImageUrl] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [showAuditPanel, setShowAuditPanel] = useState(false);
   const [auditLoading, setAuditLoading] = useState(false);
   const [auditLogs, setAuditLogs] = useState<ProgressAuditLog[]>([]);
+  const newImageInputRef = useRef<HTMLInputElement>(null);
+  const editImageInputRef = useRef<HTMLInputElement>(null);
+  const hasLocalEntryMutationRef = useRef(false);
+  const newImageJobRef = useRef(0);
+  const editImageJobRef = useRef(0);
   const [confirmDialog, setConfirmDialog] = useState<{
     open: boolean;
     title: string;
@@ -204,27 +211,43 @@ export default function ProgressDetailModal({
 
   const handleNewImageChange = useCallback(async (file?: File) => {
     if (!file) return;
+    const jobId = ++newImageJobRef.current;
+    setIsNewImageProcessing(true);
     try {
       const dataUrl = await compressImage(file);
+      if (jobId !== newImageJobRef.current) return;
       setNewImageUrl(dataUrl);
       setNewImageSizeKB(estimateDataUrlSizeKB(dataUrl));
     } catch {
       const dataUrl = await fileToDataUrl(file);
+      if (jobId !== newImageJobRef.current) return;
       setNewImageUrl(dataUrl);
       setNewImageSizeKB(estimateDataUrlSizeKB(dataUrl));
+    } finally {
+      if (jobId === newImageJobRef.current) {
+        setIsNewImageProcessing(false);
+      }
     }
   }, []);
 
   const handleEditImageChange = useCallback(async (file?: File) => {
     if (!file) return;
+    const jobId = ++editImageJobRef.current;
+    setIsEditImageProcessing(true);
     try {
       const dataUrl = await compressImage(file);
+      if (jobId !== editImageJobRef.current) return;
       setEditImageUrl(dataUrl);
       setEditImageSizeKB(estimateDataUrlSizeKB(dataUrl));
     } catch {
       const dataUrl = await fileToDataUrl(file);
+      if (jobId !== editImageJobRef.current) return;
       setEditImageUrl(dataUrl);
       setEditImageSizeKB(estimateDataUrlSizeKB(dataUrl));
+    } finally {
+      if (jobId === editImageJobRef.current) {
+        setIsEditImageProcessing(false);
+      }
     }
   }, []);
 
@@ -232,6 +255,7 @@ export default function ProgressDetailModal({
     if (!open) return;
 
     let cancelled = false;
+    hasLocalEntryMutationRef.current = false;
     setEditingId(null);
     setNewContent('');
     setNewDate(new Date().toISOString().slice(0, 10));
@@ -239,6 +263,10 @@ export default function ProgressDetailModal({
     setNewImageSizeKB(null);
     setNewAssignee('');
     setNewEstimatedNodeCompletion('');
+    setIsNewImageProcessing(false);
+    setIsEditImageProcessing(false);
+    newImageJobRef.current += 1;
+    editImageJobRef.current += 1;
     setPreviewImageUrl('');
     setShowAuditPanel(false);
     setAuditLogs([]);
@@ -247,6 +275,7 @@ export default function ProgressDetailModal({
     void (async () => {
       const data = await loadEntries(moldNumber);
       if (cancelled) return;
+      if (hasLocalEntryMutationRef.current) return;
       setEntries(data);
       setLoading(false);
     })();
@@ -265,6 +294,13 @@ export default function ProgressDetailModal({
 
   const handleAdd = useCallback(async () => {
     if (!newContent.trim()) return;
+    if (isNewImageProcessing) {
+      toast.warning('图片处理中，请稍候', {
+        description: '请等待预览生成后再点击添加。',
+        position: 'bottom-right',
+      });
+      return;
+    }
     const entry: ProgressEntry = {
       id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
       date: newDate,
@@ -274,6 +310,8 @@ export default function ProgressDetailModal({
       estimatedNodeCompletion: newEstimatedNodeCompletion || undefined,
     };
     const updated = [entry, ...entries].sort((a, b) => b.date.localeCompare(a.date));
+    hasLocalEntryMutationRef.current = true;
+    setLoading(false);
     setEntries(updated);
     setNewContent('');
     setNewDate(new Date().toISOString().slice(0, 10));
@@ -281,6 +319,8 @@ export default function ProgressDetailModal({
     setNewImageSizeKB(null);
     setNewAssignee('');
     setNewEstimatedNodeCompletion('');
+    setIsNewImageProcessing(false);
+    newImageJobRef.current += 1;
     try {
       const result = await upsertEntry(moldNumber, entry);
       toast.success(result.backupCreated ? '保存成功（已自动创建回滚快照）' : '保存成功（已复用最近快照）');
@@ -295,10 +335,12 @@ export default function ProgressDetailModal({
       setNewEstimatedNodeCompletion(entry.estimatedNodeCompletion || '');
       toast.error(getDashboardApiErrorDisplayMessage(err, '保存失败'));
     }
-  }, [entries, moldNumber, newContent, newDate, newImageUrl, newAssignee, newEstimatedNodeCompletion, showAuditPanel, refreshAuditLogs]);
+  }, [entries, moldNumber, newContent, newDate, newImageUrl, newAssignee, newEstimatedNodeCompletion, isNewImageProcessing, showAuditPanel, refreshAuditLogs]);
 
   const handleDelete = useCallback(async (id: string) => {
     const updated = entries.filter(e => e.id !== id);
+    hasLocalEntryMutationRef.current = true;
+    setLoading(false);
     setEntries(updated);
     try {
       const result = await deleteEntry(moldNumber, id);
@@ -315,6 +357,8 @@ export default function ProgressDetailModal({
     if (!targetEntry) return;
     const updatedEntry = { ...targetEntry, imageUrl: undefined };
     const updated = entries.map(e => (e.id === id ? updatedEntry : e));
+    hasLocalEntryMutationRef.current = true;
+    setLoading(false);
     setEntries(updated);
     try {
       const result = await upsertEntry(moldNumber, updatedEntry);
@@ -327,6 +371,8 @@ export default function ProgressDetailModal({
   }, [entries, moldNumber, showAuditPanel, refreshAuditLogs]);
 
   const handleEditStart = useCallback((entry: ProgressEntry) => {
+    editImageJobRef.current += 1;
+    setIsEditImageProcessing(false);
     setEditingId(entry.id);
     setEditContent(entry.content);
     setEditDate(entry.date);
@@ -338,6 +384,13 @@ export default function ProgressDetailModal({
 
   const handleEditSave = useCallback(async () => {
     if (!editingId || !editContent.trim()) return;
+    if (isEditImageProcessing) {
+      toast.warning('图片处理中，请稍候', {
+        description: '请等待预览生成后再保存修改。',
+        position: 'bottom-right',
+      });
+      return;
+    }
     const existingEntry = entries.find((entry) => entry.id === editingId);
     if (!existingEntry) return;
     const updatedEntry: ProgressEntry = {
@@ -351,6 +404,8 @@ export default function ProgressDetailModal({
     const updated = entries.map(e =>
       e.id === editingId ? updatedEntry : e
     ).sort((a, b) => b.date.localeCompare(a.date));
+    hasLocalEntryMutationRef.current = true;
+    setLoading(false);
     setEntries(updated);
     try {
       const result = await upsertEntry(moldNumber, updatedEntry);
@@ -361,9 +416,11 @@ export default function ProgressDetailModal({
       setEntries(entries);
       toast.error(getDashboardApiErrorDisplayMessage(err, '更新失败'));
     }
-  }, [entries, moldNumber, editingId, editContent, editDate, editImageUrl, editAssignee, editEstimatedNodeCompletion, showAuditPanel, refreshAuditLogs]);
+  }, [entries, moldNumber, editingId, editContent, editDate, editImageUrl, editAssignee, editEstimatedNodeCompletion, isEditImageProcessing, showAuditPanel, refreshAuditLogs]);
 
   const handleEditCancel = useCallback(() => {
+    editImageJobRef.current += 1;
+    setIsEditImageProcessing(false);
     setEditingId(null);
   }, []);
 
@@ -405,6 +462,8 @@ export default function ProgressDetailModal({
       return;
     }
     if (action === 'clear-edit-image') {
+      editImageJobRef.current += 1;
+      setIsEditImageProcessing(false);
       setEditImageUrl('');
       setEditImageSizeKB(null);
     }
@@ -469,14 +528,30 @@ export default function ProgressDetailModal({
               placeholder="输入新的推进细节..."
               className="flex-1 px-3 py-2 rounded-lg bg-white/[0.04] border border-white/[0.08] text-xs text-white/80 placeholder:text-white/20 outline-none focus:border-cyan-400/30"
             />
-            <label className="shrink-0 px-3 py-2 rounded-lg bg-white/[0.04] border border-white/[0.08] text-xs text-white/70 hover:bg-white/[0.08] cursor-pointer flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => newImageInputRef.current?.click()}
+              disabled={isNewImageProcessing}
+              className="shrink-0 px-3 py-2 rounded-lg bg-white/[0.04] border border-white/[0.08] text-xs text-white/70 hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-50 flex items-center gap-1.5"
+            >
               <ImageIcon className="w-3.5 h-3.5" />
               上传图片
-              <input type="file" accept="image/*" className="hidden" onChange={(e) => handleNewImageChange(e.target.files?.[0])} />
-            </label>
+            </button>
+            <input
+              ref={newImageInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              disabled={isNewImageProcessing}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = '';
+                void handleNewImageChange(file);
+              }}
+            />
             <button
               onClick={handleAdd}
-              disabled={!newContent.trim()}
+              disabled={!newContent.trim() || isNewImageProcessing}
               className="shrink-0 px-4 py-2 rounded-lg bg-cyan-500/15 border border-cyan-400/20 text-xs font-bold text-cyan-300 hover:bg-cyan-500/25 disabled:opacity-30 disabled:cursor-not-allowed transition-colors flex items-center gap-1.5"
             >
               <Plus className="w-3.5 h-3.5" />
@@ -513,6 +588,11 @@ export default function ProgressDetailModal({
               {newImageSizeKB !== null && (
                 <div className="mt-1 text-[11px] text-white/45">压缩后大小：{newImageSizeKB} KB（目标 ≤ 500 KB）</div>
               )}
+            </div>
+          )}
+          {isNewImageProcessing && !newImageUrl && (
+            <div className="mt-3 text-[11px] text-cyan-300/70">
+              正在处理图片，请稍候...
             </div>
           )}
         </div>
@@ -556,12 +636,32 @@ export default function ProgressDetailModal({
                       title="节点预估完成时间"
                       className="w-[140px] shrink-0 px-2 py-1.5 rounded bg-white/[0.06] border border-white/[0.1] text-xs text-white/70 outline-none"
                     />
-                    <label className="px-2 py-1.5 rounded bg-white/[0.06] border border-white/[0.1] text-xs text-white/70 hover:bg-white/[0.1] cursor-pointer flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => editImageInputRef.current?.click()}
+                      disabled={isEditImageProcessing}
+                      className="px-2 py-1.5 rounded bg-white/[0.06] border border-white/[0.1] text-xs text-white/70 hover:bg-white/[0.1] disabled:cursor-not-allowed disabled:opacity-50 flex items-center gap-1"
+                    >
                       <ImageIcon className="w-3 h-3" />
                       换图
-                      <input type="file" accept="image/*" className="hidden" onChange={(e) => handleEditImageChange(e.target.files?.[0])} />
-                    </label>
-                    <button onClick={handleEditSave} className="w-7 h-7 rounded flex items-center justify-center hover:bg-green-500/20 transition-colors">
+                    </button>
+                    <input
+                      ref={editImageInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      disabled={isEditImageProcessing}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        e.target.value = '';
+                        void handleEditImageChange(file);
+                      }}
+                    />
+                    <button
+                      onClick={handleEditSave}
+                      disabled={isEditImageProcessing}
+                      className="w-7 h-7 rounded flex items-center justify-center hover:bg-green-500/20 transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+                    >
                       <Check className="w-3.5 h-3.5 text-green-400" />
                     </button>
                     <button onClick={handleEditCancel} className="w-7 h-7 rounded flex items-center justify-center hover:bg-white/[0.08] transition-colors">

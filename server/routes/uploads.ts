@@ -42,6 +42,7 @@ const ALLOWED_UPLOAD_RULES: Record<string, ReadonlySet<string>> = {
   'application/pdf': new Set(['.pdf']),
   'image/jpeg': new Set(['.jpeg', '.jpg']),
   'image/png': new Set(['.png']),
+  'image/webp': new Set(['.webp']),
 };
 
 mkdirSync(UPLOADS_TEMP_DIR, { recursive: true });
@@ -130,10 +131,17 @@ function isAllowedUploadFile(input: { originalname: string; mimetype: string }):
   const extension = inferExtension(input.originalname);
   const allowedExtensions = ALLOWED_UPLOAD_RULES[mimetype];
   if (!allowedExtensions || !extension) {
-    return false;
+    return Boolean(allowedExtensions);
   }
 
-  return allowedExtensions.has(extension);
+  if (allowedExtensions.has(extension)) {
+    return true;
+  }
+
+  // Browser-side image compression may convert the MIME type to WebP/JPEG
+  // while preserving the original filename extension. The server rewrites the
+  // stored extension from MIME type, so trust known image MIME types here.
+  return mimetype.startsWith('image/');
 }
 
 function isMulterFileSizeError(error: unknown): boolean {

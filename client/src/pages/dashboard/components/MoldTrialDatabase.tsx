@@ -1967,7 +1967,6 @@ export default function MoldTrialDatabase({
         className="hidden"
         ref={evidenceInputRef}
         onChange={e => {
-          console.log("File selected", e.target.files);
           void handleEvidenceFilesUpload(
             e.target.files || [],
             pendingUploadSlotId ||
