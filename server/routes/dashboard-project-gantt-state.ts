@@ -81,6 +81,12 @@ const TASK_STATUS_SET = new Set<GanttTaskStatus>(['pending', 'in-progress', 'com
 
 let dashboardProjectGanttTableReady: Promise<void> | null = null;
 
+function applyNoStoreHeaders(res: Response): void {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+}
+
 function sendDashboardProjectGanttRouteError(
   res: Response,
   status: number,
@@ -321,6 +327,8 @@ export function ensureDashboardProjectGanttStateTable(): Promise<void> {
 }
 
 export async function getDashboardProjectGanttState(req: Request, res: Response): Promise<void> {
+  applyNoStoreHeaders(res);
+
   if (!dbSql) {
     sendDashboardProjectGanttRouteError(res, 503, 'DATABASE_NOT_CONFIGURED');
     return;

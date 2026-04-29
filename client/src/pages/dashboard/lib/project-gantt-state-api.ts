@@ -30,8 +30,14 @@ const DEFAULT_WORKSPACE_KEY = 'dashboard-project-gantt-workspace';
 const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const TASK_STATUS_SET = new Set<TaskStatus>(['pending', 'in-progress', 'completed', 'delayed']);
 
-function buildProjectGanttStateUrl({ workspaceKey = DEFAULT_WORKSPACE_KEY }: DashboardProjectGanttIdentity): string {
+function buildProjectGanttStateUrl(
+  { workspaceKey = DEFAULT_WORKSPACE_KEY }: DashboardProjectGanttIdentity,
+  cacheBuster?: number,
+): string {
   const params = new URLSearchParams({ workspaceKey });
+  if (typeof cacheBuster === 'number' && Number.isFinite(cacheBuster)) {
+    params.set('_ts', String(Math.trunc(cacheBuster)));
+  }
   return `/api/dashboard/project-gantt-state?${params.toString()}`;
 }
 
@@ -218,7 +224,9 @@ export async function fetchDashboardProjectGanttState(
   identity: DashboardProjectGanttIdentity = {},
 ): Promise<DashboardProjectGanttRemoteState | null> {
   const workspaceKey = identity.workspaceKey || DEFAULT_WORKSPACE_KEY;
-  const response = await apiFetch(buildProjectGanttStateUrl({ workspaceKey }));
+  const response = await apiFetch(buildProjectGanttStateUrl({ workspaceKey }, Date.now()), {
+    cache: 'no-store',
+  });
   const payload = (await response.json().catch(() => null)) as
     | { state?: DashboardProjectGanttRemoteState | null; error?: string }
     | null;

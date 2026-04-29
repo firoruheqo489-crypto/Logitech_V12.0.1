@@ -6,11 +6,16 @@
  */
 
 import type { NextFunction, Request, Response } from 'express';
-import { API_TRUSTED_ORIGINS } from './apiCors.js';
+import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 
 const API_KEY = process.env.API_SECRET_KEY || '';
+const DASHBOARD_WRITE_PASSWORD = process.env.DASHBOARD_WRITE_PASSWORD || '';
 const IS_DEV_API_MODE = process.env.DEV_API === '1';
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1']);
+export const WRITE_SESSION_COOKIE_NAME = 'dashboard_write_session';
+export const WRITE_SESSION_TTL_SECONDS = 12 * 60 * 60;
+
+const WRITE_SESSION_VERSION = 'v1';
 
 type AuthErrorCode = 'API_KEY_INVALID' | 'API_KEY_NOT_CONFIGURED';
 
@@ -33,33 +38,6 @@ function extractHostname(input: string): string {
 
   const withoutPort = trimmed.replace(/^\[?([^\]]+)\]?(?::\d+)?$/, '$1');
   return withoutPort.toLowerCase();
-}
-
-function isTrustedOrigin(value: unknown): value is string {
-  return typeof value === 'string' && API_TRUSTED_ORIGINS.has(value);
-}
-
-function isTrustedBrowserWriteRequest(req: Request): boolean {
-  const originHeader = req.headers.origin;
-  if (!isTrustedOrigin(originHeader)) {
-    return false;
-  }
-
-  const originUrl = new URL(originHeader);
-  const requestHost = String(req.headers.host ?? '').trim().toLowerCase();
-  const requestHostname = String(req.hostname ?? '').trim().toLowerCase();
-  const originHost = originUrl.host.toLowerCase();
-  const originHostname = originUrl.hostname.toLowerCase();
-
-  if (requestHost && requestHost === originHost) {
-    return true;
-  }
-
-  if (requestHostname && requestHostname === originHostname) {
-    return true;
-  }
-
-  return false;
 }
 
 function isLocalDevelopmentRequest(req: Request): boolean {
@@ -85,8 +63,116 @@ function sendAuthError(res: Response, status: number, code: AuthErrorCode): void
   });
 }
 
+function readHeaderValue(value: string | string[] | undefined): string {
+  if (typeof value === 'string') return value.trim();
+  if (Array.isArray(value)) return value[0]?.trim() || '';
+  return '';
+}
+
+function readCookieValue(req: Request, cookieName: string): string {
+  const cookieHeader = readHeaderValue(req.headers.cookie);
+  if (!cookieHeader) return '';
+
+  for (const pair of cookieHeader.split(';')) {
+    const separatorIndex = pair.indexOf('=');
+    if (separatorIndex <= 0) continue;
+
+    const name = pair.slice(0, separatorIndex).trim();
+    if (name !== cookieName) continue;
+
+    const rawValue = pair.slice(separatorIndex + 1).trim();
+    try {
+      return decodeURIComponent(rawValue);
+    } catch {
+      return rawValue;
+    }
+  }
+
+  return '';
+}
+
+function signWriteSessionPayload(payload: string): string {
+  return createHmac('sha256', API_KEY).update(payload).digest('base64url');
+}
+
+function safeEqual(left: string, right: string): boolean {
+  const leftBuffer = Buffer.from(left);
+  const rightBuffer = Buffer.from(right);
+  if (leftBuffer.length !== rightBuffer.length) return false;
+  return timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+function isPublicWriteSessionRoute(req: Request): boolean {
+  const method = req.method.toUpperCase();
+  if (method !== 'GET' && method !== 'POST' && method !== 'DELETE') {
+    return false;
+  }
+
+  const originalPath = (req.originalUrl || '').split('?')[0] || '';
+  const mountedPath = `${req.baseUrl || ''}${req.path || ''}`;
+  const candidates = new Set([req.path || '', originalPath, mountedPath]);
+
+  return candidates.has('/auth/write-session') || candidates.has('/api/auth/write-session');
+}
+
+export function isWriteApiConfigured(): boolean {
+  return Boolean(API_KEY);
+}
+
+export function isValidWriteApiKey(value: unknown): boolean {
+  return typeof value === 'string' && Boolean(API_KEY) && value === API_KEY;
+}
+
+export function isValidWriteLoginSecret(value: unknown): boolean {
+  if (typeof value !== 'string' || !API_KEY) return false;
+  if (value === API_KEY) return true;
+  return Boolean(DASHBOARD_WRITE_PASSWORD) && value === DASHBOARD_WRITE_PASSWORD;
+}
+
+export function createWriteSessionToken(now = Date.now()): string {
+  if (!API_KEY) {
+    throw new Error('API_SECRET_KEY is required to create a write session');
+  }
+
+  const expiresAt = now + WRITE_SESSION_TTL_SECONDS * 1000;
+  const nonce = randomUUID();
+  const payload = `${WRITE_SESSION_VERSION}.${expiresAt}.${nonce}`;
+  const signature = signWriteSessionPayload(payload);
+  return `${payload}.${signature}`;
+}
+
+export function isValidWriteSessionToken(token: string, now = Date.now()): boolean {
+  if (!API_KEY || !token) return false;
+
+  const parts = token.split('.');
+  if (parts.length !== 4) return false;
+
+  const [version, expiresAtRaw, nonce, signature] = parts;
+  if (version !== WRITE_SESSION_VERSION || !nonce || !signature) return false;
+
+  const expiresAt = Number.parseInt(expiresAtRaw || '', 10);
+  if (!Number.isFinite(expiresAt) || expiresAt <= now) return false;
+
+  const payload = `${version}.${expiresAtRaw}.${nonce}`;
+  const expectedSignature = signWriteSessionPayload(payload);
+  return safeEqual(signature, expectedSignature);
+}
+
+export function hasValidWriteSession(req: Request): boolean {
+  return isValidWriteSessionToken(readCookieValue(req, WRITE_SESSION_COOKIE_NAME));
+}
+
+export function hasValidWriteApiKeyHeader(req: Request): boolean {
+  return isValidWriteApiKey(readHeaderValue(req.headers['x-api-key']));
+}
+
 export function apiKeyAuth(req: Request, res: Response, next: NextFunction): void {
   if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') {
+    next();
+    return;
+  }
+
+  if (isPublicWriteSessionRoute(req)) {
     next();
     return;
   }
@@ -97,20 +183,12 @@ export function apiKeyAuth(req: Request, res: Response, next: NextFunction): voi
     return;
   }
 
-  // Allow trusted same-origin dashboard writes without requiring each browser to hold the raw API secret.
-  if (isTrustedBrowserWriteRequest(req)) {
-    next();
-    return;
-  }
-
   if (!API_KEY) {
     sendAuthError(res, 503, 'API_KEY_NOT_CONFIGURED');
     return;
   }
 
-  const clientKey = req.headers['x-api-key'] as string | undefined;
-
-  if (!clientKey || clientKey !== API_KEY) {
+  if (!hasValidWriteApiKeyHeader(req) && !hasValidWriteSession(req)) {
     sendAuthError(res, 403, 'API_KEY_INVALID');
     return;
   }

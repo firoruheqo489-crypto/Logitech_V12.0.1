@@ -25,7 +25,7 @@ import { toast } from 'sonner';
 import { FileSpreadsheet, Sparkles, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { DEMO_PROJECTS } from './lib/demoData';
-import { apiFetch, promptForApiKey } from '@/lib/api';
+import { apiFetch } from '@/lib/api';
 import { getModuleTheme, getThemeGlowClass, orderModuleNamesForDisplay } from '@/lib/theme';
 import CyberConfirmDialog from '@/components/ui/CyberConfirmDialog';
 import ProjectLobby from '@/components/ProjectLobby';
@@ -522,7 +522,7 @@ export default function DashboardHome() {
     await executeDataUpdate(normalizedData);
   };
 
-  const executeDataUpdate = async (data: ProjectData[], allowAuthRetry = true) => {
+  const executeDataUpdate = async (data: ProjectData[]) => {
     setIsInitialLoading(true);
     try {
       const transformed = data.map(transformDataToProject);
@@ -531,14 +531,6 @@ export default function DashboardHome() {
       setIsAdminModalOpen(false);
       await loadProjects();
     } catch (error) {
-      if (allowAuthRetry && error instanceof DashboardApiError && error.code === 'API_KEY_INVALID') {
-        const promptResult = promptForApiKey();
-        if (promptResult === 'saved') {
-          await executeDataUpdate(data, false);
-          return;
-        }
-      }
-
       const message = getDashboardApiErrorDisplayMessage(error, '上传失败');
 
       if (shouldFallbackToLocalPreview(error)) {

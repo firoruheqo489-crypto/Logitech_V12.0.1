@@ -11,6 +11,7 @@ import { registerApiAccessPolicy } from "./middleware/apiAccessPolicy.js";
 import { registerDbWarmupGate, type DbWarmupState } from "./middleware/dbWarmupGate.js";
 import { securityHeaders } from "./middleware/security.js";
 import { getReleaseInfoHandler } from "./release.js";
+import { authSessionRouter } from "./routes/auth-session.js";
 import { getGanttDataHandler, postGanttImportHandler, patchProjectImageHandler, checkProjectExistsHandler, deleteGanttProject, getTaskEvidenceHandler, postTaskEvidenceHandler, deleteEvidenceHandler, getProjectEvidenceCountsHandler } from "./routes/gantt.js";
 import { listDashboardProjects, getDashboardProject, batchReplaceDashboardProjects, clearDashboardProjects, getDashboardHealthCheck, getLatestDashboardHealthCheck, runDashboardHealthCheck, ensureDashboardHealthTable, ensureDashboardModuleOrderTable } from "./routes/dashboard.js";
 import { listDashboardProjectAssets, upsertDashboardProjectAsset, deleteDashboardProjectAsset, ensureDashboardProjectAssetsTable } from "./routes/dashboard-assets.js";
@@ -173,6 +174,8 @@ async function startServer() {
       });
     }
   });
+
+  app.use("/api/auth", authSessionRouter);
 
   registerDbWarmupGate(app, () => warmupState);
 

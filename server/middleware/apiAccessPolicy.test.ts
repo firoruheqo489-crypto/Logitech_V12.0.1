@@ -26,11 +26,13 @@ function setEnv(name: string, value: string | undefined): void {
 
 async function loadAuthModule(env: {
   API_SECRET_KEY?: string;
+  DASHBOARD_WRITE_PASSWORD?: string;
   DEV_API?: string;
   NODE_ENV?: string;
 }): Promise<LoadedAuthModule> {
   vi.resetModules();
   setEnv('API_SECRET_KEY', env.API_SECRET_KEY);
+  setEnv('DASHBOARD_WRITE_PASSWORD', env.DASHBOARD_WRITE_PASSWORD);
   setEnv('DEV_API', env.DEV_API);
   setEnv('NODE_ENV', env.NODE_ENV);
   return import('./auth.js');
@@ -119,6 +121,7 @@ function runMiddlewarePipeline(
 afterEach(() => {
   vi.resetModules();
   delete process.env.API_SECRET_KEY;
+  delete process.env.DASHBOARD_WRITE_PASSWORD;
   delete process.env.DEV_API;
   delete process.env.NODE_ENV;
 });
@@ -194,7 +197,7 @@ describe('api access policy pipeline', () => {
     expect(state.headers['Access-Control-Allow-Credentials']).toBe('true');
   });
 
-  it('allows trusted browser writes in production when origin matches host', async () => {
+  it('requires authorization for trusted browser writes in production even when origin matches host', async () => {
     const { apiKeyAuth } = await loadAuthModule({
       API_SECRET_KEY: 'expected-key',
       NODE_ENV: 'production',
@@ -204,6 +207,35 @@ describe('api access policy pipeline', () => {
       headers: {
         host: '120.27.153.140:3000',
         origin: 'http://120.27.153.140:3000',
+      },
+      hostname: '120.27.153.140',
+    });
+    const { res, state } = createMockResponse();
+    const done = vi.fn<NextFunction>();
+
+    runMiddlewarePipeline([apiCors, apiKeyAuth], req, res, done);
+
+    expect(done).not.toHaveBeenCalled();
+    expect(state.statusCode).toBe(403);
+    expect(state.jsonBody).toEqual({
+      error: 'api key missing or invalid',
+      code: 'API_KEY_INVALID',
+    });
+    expect(state.headers['Access-Control-Allow-Origin']).toBe('http://120.27.153.140:3000');
+    expect(state.headers['Access-Control-Allow-Credentials']).toBe('true');
+  });
+
+  it('allows trusted browser writes in production with a valid write session cookie', async () => {
+    const { apiKeyAuth, createWriteSessionToken, WRITE_SESSION_COOKIE_NAME } = await loadAuthModule({
+      API_SECRET_KEY: 'expected-key',
+      NODE_ENV: 'production',
+    });
+    const req = createMockRequest({
+      method: 'POST',
+      headers: {
+        host: '120.27.153.140:3000',
+        origin: 'http://120.27.153.140:3000',
+        cookie: `${WRITE_SESSION_COOKIE_NAME}=${createWriteSessionToken()}`,
       },
       hostname: '120.27.153.140',
     });
