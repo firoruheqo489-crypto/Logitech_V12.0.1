@@ -559,12 +559,6 @@ export function validateDeletion(taskId: string, allTasks: TaskNode[]): Deletion
     return { canDelete: false, reason: "延期记录不可独立删除，请使用 LIFO 撤销。" }
   }
 
-  const progressCheck = validateProgressTampering(node)
-  if (!progressCheck.canDelete) return progressCheck
-
-  const depCheck = validateDependencyWall(taskId, allTasks)
-  if (!depCheck.canDelete) return depCheck
-
   return { canDelete: true }
 }
 
