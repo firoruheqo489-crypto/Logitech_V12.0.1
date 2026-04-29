@@ -44,6 +44,7 @@ export interface UseGanttEngineReturn {
   setViewMode: (mode: ViewMode) => void
   addDelay: (componentId: string, parentId: string, delayDays: number, reason: string) => void
   updateTaskName: (componentId: string, taskId: string, name: string) => void
+  updateTaskTag: (componentId: string, taskId: string, tag: string) => void
   updateTaskDate: (componentId: string, taskId: string, newStart: string, newEnd: string) => void
   updateTaskReason: (componentId: string, taskId: string, reason: string) => void
   updateTaskProgress: (componentId: string, taskId: string, progress: number) => void
@@ -60,6 +61,7 @@ export interface UseGanttEngineReturn {
     dependencyId: string | null,
     iterationPhase?: string,
     assignee?: string,
+    tag?: string,
   ) => void
   /** Phase 13 — 新增部件组 */
   addComponentGroup: (name: string) => void
@@ -235,6 +237,19 @@ export function useGanttEngine(
     )
   }, [])
 
+  const updateTaskTag = useCallback((componentId: string, taskId: string, tag: string) => {
+    setComponents((prev) =>
+      produce(prev, (draft) => {
+        const group = draft.find((g) => g.id === componentId)
+        if (!group) return
+        const node = findNode(group.tasks, taskId)
+        if (!node) return
+        const trimmedTag = tag.trim()
+        node.tag = trimmedTag || undefined
+      }),
+    )
+  }, [])
+
   /* -------------------------- updateTaskDate ------------------------------ */
 
   const updateTaskDate = useCallback((componentId: string, taskId: string, newStart: string, newEnd: string) => {
@@ -399,6 +414,7 @@ export function useGanttEngine(
       dependencyId: string | null,
       iterationPhase = "T0",
       assignee = "",
+      tag = "",
     ) => {
       if (!name.trim()) {
         console.warn("[v0] addTaskToComponent: name is empty")
@@ -422,6 +438,7 @@ export function useGanttEngine(
             group.tasks,
             iterationPhase,
             assignee.trim(),
+            tag,
           )
           group.tasks.push(newTask)
           enforceDependencyConstraints(group.tasks)
@@ -601,6 +618,7 @@ export function useGanttEngine(
     setViewMode,
     addDelay,
     updateTaskName,
+    updateTaskTag,
     updateTaskDate,
     updateTaskReason,
     updateTaskProgress,

@@ -45,11 +45,12 @@ interface TaskTreeListProps {
   onToggle: (id: string) => void
   onAddDelay: (parentId: string) => void
   onUpdateName: (id: string, name: string) => void
+  onUpdateTag: (id: string, tag: string) => void
   onUpdateDate: (id: string, start: string, end: string) => void
   onUpdateReason: (id: string, reason: string) => void
   onUpdateProgress: (id: string, progress: number) => void
   onDeleteLastDelay: (childId: string) => void
-  onAddTopLevelTask: (name: string, startDate: string, endDate: string, depId: string | null) => void
+  onAddTopLevelTask: (name: string, startDate: string, endDate: string, depId: string | null, tag?: string) => void
   onUpdateAssignee: (id: string, assignee: string) => void
   /** Phase 9 鈥?鍒犻櫎宸ュ簭 */
   onValidateTaskDeletion: (taskId: string) => DeletionValidation
@@ -81,6 +82,7 @@ export function TaskTreeList(props: TaskTreeListProps) {
     onToggle,
     onAddDelay,
     onUpdateName,
+    onUpdateTag,
     onUpdateDate,
     onUpdateReason,
     onUpdateProgress,
@@ -127,6 +129,7 @@ export function TaskTreeList(props: TaskTreeListProps) {
       if (!editTarget) return
 
       const name = (values.name ?? "").trim()
+      const tag = (values.tag ?? "").trim()
       if (!name) {
         setRejectionMessage("工序名称不能为空。")
         return
@@ -148,9 +151,10 @@ export function TaskTreeList(props: TaskTreeListProps) {
       }
 
       onUpdateName(editTarget.id, name)
+      onUpdateTag(editTarget.id, tag)
       setEditTarget(null)
     },
-    [editTarget, onUpdateDate, onUpdateName],
+    [editTarget, onUpdateDate, onUpdateName, onUpdateTag],
   )
 
   const editTargetHasDelayChildren = (editTarget?.children?.length ?? 0) > 0
@@ -163,6 +167,14 @@ export function TaskTreeList(props: TaskTreeListProps) {
           defaultValue: editTarget.name,
           required: true,
           maxLength: 80,
+        },
+        {
+          kind: "text" as const,
+          name: "tag",
+          label: "标签",
+          defaultValue: editTarget.tag ?? "",
+          placeholder: "例如：待确认钢材 / 客供图纸 / 风险点",
+          maxLength: 120,
         },
         ...(!editTargetHasDelayChildren
           ? [
@@ -259,7 +271,10 @@ export function TaskTreeList(props: TaskTreeListProps) {
                     {!isParent ? <span className="text-slate-700">·</span> : expanded ? "▼" : "▶"}
                   </button>
 
-                  <span className={`flex-1 min-w-0 text-[12px] leading-4 truncate ${nameCls}`} title={node.name}>
+                  <span
+                    className={`flex-1 min-w-0 text-[12px] leading-4 truncate ${nameCls}`}
+                    title={node.tag?.trim() ? `${node.name} · 标签：${node.tag.trim()}` : node.name}
+                  >
                     {node.name}
                   </span>
                 </div>
@@ -378,6 +393,7 @@ export function TaskTreeList(props: TaskTreeListProps) {
                   onToggle={onToggle}
                   onAddDelay={onAddDelay}
                   onUpdateName={onUpdateName}
+                  onUpdateTag={onUpdateTag}
                   onUpdateDate={onUpdateDate}
                   onUpdateReason={onUpdateReason}
                   onUpdateProgress={onUpdateProgress}
@@ -437,7 +453,7 @@ export function TaskTreeList(props: TaskTreeListProps) {
 
 interface BlackboardSpawnerProps {
   roots: TaskNode[]
-  onAdd: (name: string, startDate: string, endDate: string, depId: string | null) => void
+  onAdd: (name: string, startDate: string, endDate: string, depId: string | null, tag?: string) => void
 }
 
 /**
@@ -446,6 +462,7 @@ function BlackboardSpawner({ roots, onAdd }: BlackboardSpawnerProps) {
   const today = todayIso()
   const [open, setOpen] = useState(false)
   const [name, setName] = useState("")
+  const [tag, setTag] = useState("")
   const [startDate, setStartDate] = useState(today)
   const [endDate, setEndDate] = useState(today)
   const [depId, setDepId] = useState<string | null>(null)
@@ -468,6 +485,7 @@ function BlackboardSpawner({ roots, onAdd }: BlackboardSpawnerProps) {
 
   const resetForm = useCallback(() => {
     setName("")
+    setTag("")
     setStartDate(today)
     setEndDate(today)
     setDepId(null)
@@ -492,10 +510,10 @@ function BlackboardSpawner({ roots, onAdd }: BlackboardSpawnerProps) {
 
   const handleSubmit = useCallback(() => {
     if (!validate()) return
-    onAdd(name.trim(), startDate, endDate, depId)
+    onAdd(name.trim(), startDate, endDate, depId, tag.trim() || undefined)
     resetForm()
     setOpen(false)
-  }, [depId, endDate, name, onAdd, resetForm, startDate, validate])
+  }, [depId, endDate, name, onAdd, resetForm, startDate, tag, validate])
 
   useEffect(() => {
     if (!open) return
@@ -543,11 +561,11 @@ function BlackboardSpawner({ roots, onAdd }: BlackboardSpawnerProps) {
           </div>
 
           <div className="space-y-4">
-            <div>
-              <label className="mb-1 block text-[11px] font-medium tracking-wide text-white/60">
-                工序名称
-                <span className="ml-1 text-red-400/80">*</span>
-              </label>
+                <div>
+                  <label className="mb-1 block text-[11px] font-medium tracking-wide text-white/60">
+                    工序名称
+                    <span className="ml-1 text-red-400/80">*</span>
+                  </label>
               <input
                 type="text"
                 value={name}
@@ -559,11 +577,23 @@ function BlackboardSpawner({ roots, onAdd }: BlackboardSpawnerProps) {
                     : "border-white/[0.12] focus:border-cyan-400/60"
                 }`}
                 autoFocus
-              />
-              {errors.name ? <div className="mt-1 text-[10px] text-red-300/90">{errors.name}</div> : null}
-            </div>
+                  />
+                  {errors.name ? <div className="mt-1 text-[10px] text-red-300/90">{errors.name}</div> : null}
+                </div>
 
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-[11px] font-medium tracking-wide text-white/60">标签</label>
+                  <input
+                    type="text"
+                    value={tag}
+                    onChange={(e) => setTag(e.target.value)}
+                    placeholder="例如：待客户确认 / 关键风险 / 外协加工"
+                    className="w-full rounded-md border border-white/[0.12] bg-black/30 px-3 py-2 text-sm text-white/90 placeholder:text-white/30 outline-none transition-colors focus:border-cyan-400/60 focus:bg-black/40"
+                    maxLength={120}
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <label className="mb-1 block text-[11px] font-medium tracking-wide text-white/60">
                   开始时间

@@ -576,6 +576,7 @@ export function createTopLevelTask(
   roots: TaskNode[],
   iterationPhase = "T0",
   assignee = "",
+  tag = "",
 ): TaskNode {
   let effectiveStartDate = startDate
   let effectiveEndDate = endDate
@@ -599,6 +600,7 @@ export function createTopLevelTask(
     parentId: null,
     name,
     assignee,
+    tag: tag.trim() || undefined,
     startDate: effectiveStartDate,
     endDate: effectiveEndDate,
     baseStartDate: effectiveStartDate,

@@ -1,4 +1,5 @@
 ﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { createPortal } from "react-dom"
 import { useGanttEngine } from "@/hooks/use-gantt-engine"
 import type { CollisionState, ComponentGroup, Milestone, Role, TaskNode, ViewMode } from "@/lib/gantt/types"
 import {
@@ -65,6 +66,7 @@ interface GanttBarProps {
   progress: number
   status: GanttBarStatus
   label: string
+  titleText?: string
   segments?: GanttBarSegment[]
   delayDebt?: number
   heightPx?: number
@@ -95,12 +97,17 @@ const PLASMA_EDGE: Record<GanttBarStatus, string> = {
   overdue:   "border-red-200/60",
 }
 
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value))
+}
+
 function GanttBar({
   leftPx,
   widthPx,
   progress,
   status,
   label,
+  titleText,
   segments,
   delayDebt,
   heightPx = 24,
@@ -115,6 +122,44 @@ function GanttBar({
   const isOverdueBar = status === "overdue"
   const plasmaFill = PLASMA_FILL[status]
   const plasmaEdge = PLASMA_EDGE[status]
+  const browserTitle = titleText ? undefined : label
+  const barRef = useRef<HTMLDivElement | null>(null)
+  const [tooltipPosition, setTooltipPosition] = useState<{
+    arrowLeft: number
+    left: number
+    placement: "top" | "bottom"
+    top: number
+    width: number
+  } | null>(null)
+  const tagText = titleText?.replace(/^标签：/, "") ?? ""
+
+  const updateTooltipPosition = useCallback(() => {
+    if (!titleText || typeof window === "undefined") return
+    const barEl = barRef.current
+    if (!barEl) return
+
+    const viewportPadding = 12
+    const rect = barEl.getBoundingClientRect()
+    const anchorX = rect.left + rect.width / 2
+    const estimatedTextWidth = tagText.length * 15 + 58
+    const width = clampNumber(estimatedTextWidth, 220, Math.min(420, window.innerWidth - viewportPadding * 2))
+    const left = clampNumber(anchorX - width / 2, viewportPadding, window.innerWidth - width - viewportPadding)
+    const placement = rect.top > 100 ? "top" : "bottom"
+    const top = placement === "top" ? rect.top - 10 : rect.bottom + 10
+    const arrowLeft = clampNumber(anchorX - left, 18, width - 18)
+
+    setTooltipPosition({ arrowLeft, left, placement, top, width })
+  }, [tagText, titleText])
+
+  useEffect(() => {
+    if (!tooltipPosition || !titleText) return
+    window.addEventListener("resize", updateTooltipPosition)
+    window.addEventListener("scroll", updateTooltipPosition, true)
+    return () => {
+      window.removeEventListener("resize", updateTooltipPosition)
+      window.removeEventListener("scroll", updateTooltipPosition, true)
+    }
+  }, [titleText, tooltipPosition, updateTooltipPosition])
 
   // Layer 1 鈥?Glass Shell shadow stack (inset highlight + outer drop shadow + optional alarm halo)
   const shellBoxShadow = isOverdueBar
@@ -125,6 +170,7 @@ function GanttBar({
     <>
       {/* ============ Layer 1: Frosted Glass Shell (overflow-visible, allows text spillover) ============ */}
       <div
+        ref={barRef}
         className={`absolute rounded-md bg-white/[0.04] backdrop-blur-md border ${
           isOverdueBar ? "border-red-500/50" : "border-white/[0.12]"
         }`}
@@ -136,7 +182,11 @@ function GanttBar({
           transform: "translateY(-50%)",
           boxShadow: shellBoxShadow,
         }}
-        title={label}
+        title={browserTitle}
+        onBlur={() => setTooltipPosition(null)}
+        onFocus={updateTooltipPosition}
+        onMouseEnter={updateTooltipPosition}
+        onMouseLeave={() => setTooltipPosition(null)}
       >
         {shouldHideClippedLabel && (
           <div className="absolute right-full top-1/2 z-20 mr-2 -translate-y-1/2 pointer-events-none">
@@ -155,7 +205,7 @@ function GanttBar({
               {segments.map((seg, i) => {
                 if (seg.type === "base") {
                   return (
-                    <div key={i} className="relative h-full" style={{ width: `${seg.widthPx}px` }} title={seg.title}>
+                    <div key={i} className="relative h-full" style={{ width: `${seg.widthPx}px` }} title={titleText ? undefined : seg.title}>
                       {pct > 0 ? (
                         <div
                           className={`absolute inset-y-0 left-0 ${plasmaFill} ${
@@ -174,7 +224,7 @@ function GanttBar({
                     key={i}
                     className={`relative h-full gantt-delay-stripe ${i > 1 ? "gantt-delay-segment-divider" : ""}`}
                     style={{ width: `${seg.widthPx}px` }}
-                    title={seg.title}
+                    title={titleText ? undefined : seg.title}
                   >
                     {(seg.widthPx >= 24 && (seg.widthPx >= 52 ? seg.label : seg.compactLabel ?? seg.label)) ? (
                       <div className="absolute inset-0 z-[3] flex items-center justify-center px-2 pointer-events-none overflow-hidden">
@@ -219,6 +269,32 @@ function GanttBar({
           </div>
         )}
       </div>
+
+      {titleText && tooltipPosition && typeof document !== "undefined"
+        ? createPortal(
+            <div
+              className="pointer-events-none fixed z-[10020] whitespace-normal rounded-md border border-orange-400/75 bg-slate-950/95 px-3 py-2 text-[12px] leading-relaxed text-orange-100 shadow-[0_10px_28px_rgba(251,146,60,0.28)] backdrop-blur-md"
+              style={{
+                left: `${tooltipPosition.left}px`,
+                top: `${tooltipPosition.top}px`,
+                transform: tooltipPosition.placement === "top" ? "translateY(-100%)" : undefined,
+                width: `${tooltipPosition.width}px`,
+              }}
+            >
+              <div className="mb-1 text-[10px] font-semibold tracking-wide text-orange-300">标签</div>
+              <div className="whitespace-pre-wrap break-normal font-medium text-amber-100">{tagText}</div>
+              <div
+                className={`absolute h-2 w-2 rotate-45 border-orange-400/75 bg-slate-950/95 ${
+                  tooltipPosition.placement === "top"
+                    ? "top-full -translate-y-1/2 border-b border-r"
+                    : "bottom-full translate-y-1/2 border-l border-t"
+                }`}
+                style={{ left: `${tooltipPosition.arrowLeft - 4}px` }}
+              />
+            </div>,
+            document.body,
+          )
+        : null}
 
       {/* Delay debt badge */}
       {delayDebt != null && delayDebt > 0 && (
@@ -323,6 +399,7 @@ export function GanttSkeleton({
     allTasks,
     addDelay,
     updateTaskName,
+    updateTaskTag,
     updateTaskDate,
     updateTaskReason,
     updateTaskProgress,
@@ -783,6 +860,7 @@ export function GanttSkeleton({
                 setPromptState({ kind: "delay", componentId, parentId })
               }
               onUpdateTaskName={updateTaskName}
+              onUpdateTaskTag={updateTaskTag}
               onUpdateDate={updateTaskDate}
               onUpdateReason={updateTaskReason}
               onUpdateProgress={updateTaskProgress}
@@ -1070,6 +1148,7 @@ interface ComponentTreeListProps {
   /** 璇锋眰鎵撳紑鈥滃欢鏈熷ぉ鏁扳€濆綍鍏ュ脊绐楋紙鍙栦唬 window.prompt锛夈€傚疄闄呭啓鍏ュ湪 GanttSkeleton 寮圭獥 onConfirm 涓繘琛屻€?*/
   onRequestAddDelay: (componentId: string, parentId: string) => void
   onUpdateTaskName: (componentId: string, taskId: string, name: string) => void
+  onUpdateTaskTag: (componentId: string, taskId: string, tag: string) => void
   onUpdateDate: (componentId: string, taskId: string, start: string, end: string) => void
   onUpdateReason: (componentId: string, taskId: string, reason: string) => void
   onUpdateProgress: (componentId: string, taskId: string, progress: number) => void
@@ -1082,6 +1161,7 @@ interface ComponentTreeListProps {
     depId: string | null,
     phase?: string,
     assignee?: string,
+    tag?: string,
   ) => void
   onValidateTaskDeletion: (componentId: string, taskId: string) => { canDelete: boolean; reason?: string }
   onDeleteTask: (componentId: string, taskId: string) => void
@@ -1100,6 +1180,7 @@ function ComponentTreeList(props: ComponentTreeListProps) {
     onToggleTask,
     onRequestAddDelay,
     onUpdateTaskName,
+    onUpdateTaskTag,
     onUpdateDate,
     onUpdateReason,
     onUpdateProgress,
@@ -1245,12 +1326,13 @@ function ComponentTreeList(props: ComponentTreeListProps) {
                   onToggle={(taskId) => onToggleTask(group.id, taskId)}
                   onAddDelay={(parentId) => onRequestAddDelay(group.id, parentId)}
                   onUpdateName={(taskId, name) => onUpdateTaskName(group.id, taskId, name)}
+                  onUpdateTag={(taskId, tag) => onUpdateTaskTag(group.id, taskId, tag)}
                   onUpdateDate={(taskId, start, end) => onUpdateDate(group.id, taskId, start, end)}
                   onUpdateReason={(taskId, reason) => onUpdateReason(group.id, taskId, reason)}
                   onUpdateProgress={(taskId, progress) => onUpdateProgress(group.id, taskId, progress)}
                   onDeleteLastDelay={(childId) => onDeleteLastDelay(group.id, childId)}
-                  onAddTopLevelTask={(name, startDate, endDate, depId) =>
-                    onAddTaskToComponent(group.id, name, startDate, endDate, depId)
+                  onAddTopLevelTask={(name, startDate, endDate, depId, tag) =>
+                    onAddTaskToComponent(group.id, name, startDate, endDate, depId, undefined, undefined, tag)
                   }
                   onUpdateAssignee={(taskId, assignee) => onUpdateAssignee(group.id, taskId, assignee)}
                   onValidateTaskDeletion={(taskId) => onValidateTaskDeletion(group.id, taskId)}
@@ -1439,6 +1521,7 @@ interface TaskTrackProps {
 function TaskTrack({ node, indexInParent, timelineStart, dayWidth, viewMode, role, milestones }: TaskTrackProps) {
   const offsetDays = diffDays(timelineStart, node.startDate)
   const isMacro = viewMode === "MACRO"
+  const hoverTagText = node.tag?.trim() ? `标签：${node.tag.trim()}` : undefined
 
   if (!node.parentId) {
     const children = (node.children ?? []) as TaskNode[]
@@ -1461,7 +1544,7 @@ function TaskTrack({ node, indexInParent, timelineStart, dayWidth, viewMode, rol
 
     const segments: GanttBarSegment[] = []
     if (baseDays > 0) {
-      segments.push({ widthPx: baseDays * dayWidth, type: "base", title: `${node.name} · 基准段` })
+      segments.push({ widthPx: baseDays * dayWidth, type: "base", title: hoverTagText ?? `${node.name} · 基准段` })
     }
     for (const c of children) {
       const segDays = inclusiveSpanDays(c.startDate, c.endDate)
@@ -1470,7 +1553,7 @@ function TaskTrack({ node, indexInParent, timelineStart, dayWidth, viewMode, rol
         segments.push({
           widthPx: segDays * dayWidth,
           type: "delay",
-          title: `${c.name}${c.reason ? ` · ${c.reason}` : ""}`,
+          title: hoverTagText ?? `${c.name}${c.reason ? ` · ${c.reason}` : ""}`,
           label: delayText,
           compactLabel: segDays === 1 ? `+${segDays}天` : delayText,
         })
@@ -1489,6 +1572,7 @@ function TaskTrack({ node, indexInParent, timelineStart, dayWidth, viewMode, rol
           progress={progress}
           status={status}
           label={`${node.name} · ${progress}%`}
+          titleText={hoverTagText}
           segments={segments.length > 0 ? segments : undefined}
           delayDebt={hasDelayDebt ? delayDebt : undefined}
           labelClipWidthPx={hasChildren ? baseLabelWidthPx : undefined}
@@ -1552,7 +1636,7 @@ function TaskTrack({ node, indexInParent, timelineStart, dayWidth, viewMode, rol
           border: "1px solid rgba(248,113,113,0.42)",
           boxShadow: "inset 0 1px 0 rgba(255,255,255,0.12), inset 0 0 0 1px rgba(127,29,29,0.35), 0 6px 18px rgba(127,29,29,0.24)",
         }}
-        title={`${node.name} · ${node.startDate} → ${node.endDate}${node.reason ? ` · ${node.reason}` : ""}`}
+        title={hoverTagText ?? `${node.name} · ${node.startDate} → ${node.endDate}${node.reason ? ` · ${node.reason}` : ""}`}
       >
         <div className={`absolute inset-0 z-10 flex items-center pointer-events-none overflow-hidden ${childIsNarrow ? "justify-center px-1" : "px-2"}`}>
           <span className={`${childIsNarrow ? "text-[8px]" : "text-[9px]"} font-semibold truncate whitespace-nowrap text-rose-50 drop-shadow-[0_1px_1px_rgba(0,0,0,0.7)]`}>
