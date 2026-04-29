@@ -1,6 +1,6 @@
 ﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { createPortal } from "react-dom"
-import { useGanttEngine } from "@/hooks/use-gantt-engine"
+import { useGanttEngine, type GanttEngineStorageSnapshot } from "@/hooks/use-gantt-engine"
 import type { CollisionState, ComponentGroup, Milestone, Role, TaskNode, ViewMode } from "@/lib/gantt/types"
 import {
   calculateDelayDebt,
@@ -33,6 +33,8 @@ interface GanttSkeletonProps {
   initialMilestones?: Milestone[]
   dayWidth?: number
   storageKey?: string
+  initialSnapshot?: GanttEngineStorageSnapshot | null
+  onSnapshotChange?: (snapshot: GanttEngineStorageSnapshot) => void
   headerSlot?: import("react").ReactNode
 }
 
@@ -491,9 +493,15 @@ export function GanttSkeleton({
   initialMilestones = [],
   dayWidth: dayWidthFallback = 28,
   storageKey,
+  initialSnapshot,
+  onSnapshotChange,
   headerSlot,
 }: GanttSkeletonProps) {
-  const engine = useGanttEngine(initialComponents, initialMilestones, storageKey)
+  const engine = useGanttEngine(initialComponents, initialMilestones, {
+    storageKey,
+    initialSnapshot,
+    onSnapshotChange,
+  })
   const {
     components,
     allTasks,

@@ -29,6 +29,12 @@ import {
   getDashboardDocxConverterState,
   upsertDashboardDocxConverterState,
 } from "./routes/dashboard-docx-converter-state.js";
+import {
+  deleteDashboardProjectGanttState,
+  ensureDashboardProjectGanttStateTable,
+  getDashboardProjectGanttState,
+  upsertDashboardProjectGanttState,
+} from "./routes/dashboard-project-gantt-state.js";
 import { listDashboardProductData, batchUpsertDashboardProductData, ensureDashboardProductDataTable } from "./routes/dashboard-product-data.js";
 import { listDashboardProductDocs, upsertDashboardProductDoc, deleteDashboardProductDoc } from "./routes/dashboard-product-docs.js";
 import { getProgressNotes, getLatestProgressBackup, saveProgressNotes, upsertProgressNote, createProgressBackup, restoreLatestProgressNotes, deleteProgressNote, getProgressNoteAuditLogs, ensureBackupTable, ensureProgressAuditTable } from "./routes/progress-notes.js";
@@ -71,6 +77,7 @@ async function startServer() {
     { name: "dashboard_fai_dimension", run: ensureDashboardFaiDimensionTable },
     { name: "dashboard_mold_trial_evidence", run: ensureDashboardMoldTrialEvidenceTable },
     { name: "dashboard_docx_converter", run: ensureDashboardDocxConverterTable },
+    { name: "dashboard_project_gantt", run: ensureDashboardProjectGanttStateTable },
     { name: "dashboard_health", run: ensureDashboardHealthTable },
     { name: "dashboard_module_order", run: ensureDashboardModuleOrderTable },
     { name: "progress_backup", run: ensureBackupTable },
@@ -210,6 +217,9 @@ async function startServer() {
   app.get("/api/dashboard/docx-converter-state", getDashboardDocxConverterState);
   app.put("/api/dashboard/docx-converter-state", upsertDashboardDocxConverterState);
   app.delete("/api/dashboard/docx-converter-state", deleteDashboardDocxConverterState);
+  app.get("/api/dashboard/project-gantt-state", getDashboardProjectGanttState);
+  app.put("/api/dashboard/project-gantt-state", upsertDashboardProjectGanttState);
+  app.delete("/api/dashboard/project-gantt-state", deleteDashboardProjectGanttState);
   app.delete("/api/dashboard/projects", clearDashboardProjects);
   app.get("/api/dashboard/health-check", getDashboardHealthCheck);
   app.get("/api/dashboard/health-check/latest", getLatestDashboardHealthCheck);

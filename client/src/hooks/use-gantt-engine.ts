@@ -104,10 +104,16 @@ function backfillComponents(components: ComponentGroup[]): ComponentGroup[] {
   }))
 }
 
-interface GanttEngineStorageSnapshot {
+export interface GanttEngineStorageSnapshot {
   components?: ComponentGroup[]
   milestones?: Milestone[]
   role?: Role
+}
+
+interface UseGanttEngineOptions {
+  storageKey?: string
+  initialSnapshot?: GanttEngineStorageSnapshot | null
+  onSnapshotChange?: (snapshot: GanttEngineStorageSnapshot) => void
 }
 
 function readGanttEngineStorageSnapshot(storageKey?: string): GanttEngineStorageSnapshot | null {
@@ -141,25 +147,32 @@ function writeGanttEngineStorageSnapshot(storageKey: string, snapshot: GanttEngi
 export function useGanttEngine(
   initialComponents: ComponentGroup[],
   initialMilestones: Milestone[] = [],
-  storageKey?: string,
+  options?: UseGanttEngineOptions,
 ): UseGanttEngineReturn {
+  const storageKey = options?.storageKey
+  const onSnapshotChange = options?.onSnapshotChange
   const storageSnapshot = useMemo(() => readGanttEngineStorageSnapshot(storageKey), [storageKey])
+  const initialSnapshot = options?.initialSnapshot ?? storageSnapshot
 
   const [components, setComponents] = useState<ComponentGroup[]>(() =>
     backfillComponents(
-      Array.isArray(storageSnapshot?.components) ? storageSnapshot.components : initialComponents,
+      Array.isArray(initialSnapshot?.components) ? initialSnapshot.components : initialComponents,
     ),
   )
   const [viewMode, setViewMode] = useState<ViewMode>("MICRO")
-  const [role, setRole] = useState<Role>(storageSnapshot?.role === "USER" ? "USER" : "ADMIN")
+  const [role, setRole] = useState<Role>(initialSnapshot?.role === "USER" ? "USER" : "ADMIN")
   const [milestones, setMilestones] = useState<Milestone[]>(
-    Array.isArray(storageSnapshot?.milestones) ? storageSnapshot.milestones : initialMilestones,
+    Array.isArray(initialSnapshot?.milestones) ? initialSnapshot.milestones : initialMilestones,
   )
 
   useEffect(() => {
     if (!storageKey) return
     writeGanttEngineStorageSnapshot(storageKey, { components, milestones, role })
   }, [components, milestones, role, storageKey])
+
+  useEffect(() => {
+    onSnapshotChange?.({ components, milestones, role })
+  }, [components, milestones, onSnapshotChange, role])
 
   /* ---------------------------- allTasks (兼容层) ------------------------- */
   const allTasks = useMemo(() => flattenAllTasks(components), [components])

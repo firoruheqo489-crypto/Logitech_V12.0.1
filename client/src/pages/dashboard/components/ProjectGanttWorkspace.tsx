@@ -8,12 +8,26 @@
  * 数据形态来自 gantetu2/app/page.tsx，原样保留以便回归对照。
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Edit3, Plus, Trash2 } from 'lucide-react';
+import { toast } from 'sonner';
 import CyberConfirmDialog from '@/components/ui/CyberConfirmDialog';
 import CyberPromptDialog from '@/components/ui/CyberPromptDialog';
 import { GanttSkeleton } from '@/components/gantetu/gantt-skeleton';
+import type { GanttEngineStorageSnapshot } from '@/hooks/use-gantt-engine';
+import { promptForApiKey } from '@/lib/api';
 import type { ComponentGroup, Milestone } from '@/lib/gantt/types';
+import {
+  DashboardApiError,
+  getDashboardApiErrorDisplayMessage,
+} from '../lib/dashboardApi';
+import {
+  DEFAULT_DASHBOARD_PROJECT_GANTT_WORKSPACE_KEY,
+  fetchDashboardProjectGanttState,
+  saveDashboardProjectGanttState,
+  type DashboardProjectGanttBoardState,
+  type DashboardProjectGanttRemoteState,
+} from '../lib/project-gantt-state-api';
 
 const INITIAL_COMPONENTS: ComponentGroup[] = [
   {
@@ -160,8 +174,23 @@ interface ProjectGanttWorkspaceSnapshot {
   activeBoardId: string;
 }
 
+type ProjectGanttBoardStateMap = Record<string, GanttEngineStorageSnapshot>;
+
 const WORKSPACE_STORAGE_KEY = 'dashboard_project_gantt_workspace_v1';
 const BOARD_STORAGE_PREFIX = 'dashboard_project_gantt_board_v1:';
+const REMOTE_WORKSPACE_KEY = DEFAULT_DASHBOARD_PROJECT_GANTT_WORKSPACE_KEY;
+
+function cloneJsonValue<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function createDefaultBoardState(): GanttEngineStorageSnapshot {
+  return {
+    components: cloneJsonValue(INITIAL_COMPONENTS),
+    milestones: cloneJsonValue(INITIAL_MILESTONES),
+    role: 'ADMIN',
+  };
+}
 
 function createBoardTitle(serial: number): string {
   return `项目${serial}甘特图`;
@@ -227,6 +256,74 @@ function writeWorkspaceSnapshot(snapshot: ProjectGanttWorkspaceSnapshot) {
   }
 }
 
+function normalizeBoardStateSnapshot(value: unknown): GanttEngineStorageSnapshot | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+
+  const record = value as Partial<GanttEngineStorageSnapshot>;
+  return {
+    components: Array.isArray(record.components) ? cloneJsonValue(record.components) : cloneJsonValue(INITIAL_COMPONENTS),
+    milestones: Array.isArray(record.milestones) ? cloneJsonValue(record.milestones) : cloneJsonValue(INITIAL_MILESTONES),
+    role: record.role === 'USER' ? 'USER' : 'ADMIN',
+  };
+}
+
+function readBoardStorageSnapshot(boardId: string): GanttEngineStorageSnapshot | null {
+  if (typeof window === 'undefined') return null;
+
+  try {
+    const raw = window.localStorage.getItem(`${BOARD_STORAGE_PREFIX}${boardId}`);
+    if (!raw) return null;
+    return normalizeBoardStateSnapshot(JSON.parse(raw));
+  } catch {
+    return null;
+  }
+}
+
+function writeBoardStorageSnapshot(boardId: string, snapshot: GanttEngineStorageSnapshot) {
+  if (typeof window === 'undefined') return;
+
+  try {
+    window.localStorage.setItem(`${BOARD_STORAGE_PREFIX}${boardId}`, JSON.stringify(snapshot));
+  } catch {
+    // Ignore localStorage quota and browser restrictions.
+  }
+}
+
+function ensureBoardStateMap(
+  boards: GanttBoardTab[],
+  source?: Record<string, GanttEngineStorageSnapshot | DashboardProjectGanttBoardState | null | undefined>,
+): ProjectGanttBoardStateMap {
+  return boards.reduce((acc, board) => {
+    const nextState =
+      normalizeBoardStateSnapshot(source?.[board.id]) ??
+      readBoardStorageSnapshot(board.id) ??
+      createDefaultBoardState();
+    acc[board.id] = nextState;
+    return acc;
+  }, {} as ProjectGanttBoardStateMap);
+}
+
+function buildRemoteWorkspaceState(
+  boards: GanttBoardTab[],
+  activeBoardId: string,
+  boardStateById: ProjectGanttBoardStateMap,
+): DashboardProjectGanttRemoteState {
+  return {
+    workspaceKey: REMOTE_WORKSPACE_KEY,
+    boards,
+    activeBoardId,
+    boardStateById: boards.reduce((acc, board) => {
+      const snapshot = normalizeBoardStateSnapshot(boardStateById[board.id]) ?? createDefaultBoardState();
+      acc[board.id] = {
+        components: snapshot.components ?? cloneJsonValue(INITIAL_COMPONENTS),
+        milestones: snapshot.milestones ?? cloneJsonValue(INITIAL_MILESTONES),
+        role: snapshot.role === 'USER' ? 'USER' : 'ADMIN',
+      };
+      return acc;
+    }, {} as Record<string, DashboardProjectGanttBoardState>),
+  };
+}
+
 function removeBoardStorage(boardId: string) {
   if (typeof window === 'undefined') return;
 
@@ -238,7 +335,7 @@ function removeBoardStorage(boardId: string) {
 }
 
 export default function ProjectGanttWorkspace() {
-  const initialWorkspace = useMemo<ProjectGanttWorkspaceSnapshot>(() => {
+  const fallbackWorkspace = useMemo<ProjectGanttWorkspaceSnapshot>(() => {
     const snapshot = readWorkspaceSnapshot();
     if (snapshot && snapshot.boards.length > 0) return snapshot;
     const firstBoard = createBoard(1);
@@ -248,10 +345,18 @@ export default function ProjectGanttWorkspace() {
     };
   }, []);
 
-  const [boards, setBoards] = useState<GanttBoardTab[]>(() => initialWorkspace.boards);
-  const [activeBoardId, setActiveBoardId] = useState<string>(() => initialWorkspace.activeBoardId);
+  const [boards, setBoards] = useState<GanttBoardTab[]>(() => fallbackWorkspace.boards);
+  const [activeBoardId, setActiveBoardId] = useState<string>(() => fallbackWorkspace.activeBoardId);
+  const [boardStateById, setBoardStateById] = useState<ProjectGanttBoardStateMap>(() =>
+    ensureBoardStateMap(fallbackWorkspace.boards),
+  );
+  const [isHydrating, setIsHydrating] = useState(true);
   const [renameTargetId, setRenameTargetId] = useState<string | null>(null);
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+  const lastSavedPayloadRef = useRef('');
+  const hasShownLoadFailureRef = useRef(false);
+  const hasShownSaveFailureRef = useRef(false);
+  const isPromptingForApiKeyRef = useRef(false);
 
   const activeBoard = useMemo(
     () => boards.find((board) => board.id === activeBoardId) ?? boards[0] ?? null,
@@ -265,6 +370,66 @@ export default function ProjectGanttWorkspace() {
     () => boards.find((board) => board.id === deleteTargetId) ?? null,
     [boards, deleteTargetId],
   );
+  const activeWorkspaceBoardId = activeBoard?.id ?? boards[0]?.id ?? '';
+  const remoteWorkspaceState = useMemo(
+    () => buildRemoteWorkspaceState(boards, activeWorkspaceBoardId, boardStateById),
+    [activeWorkspaceBoardId, boardStateById, boards],
+  );
+  const remoteWorkspaceStatePayload = useMemo(
+    () => JSON.stringify(remoteWorkspaceState),
+    [remoteWorkspaceState],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const hydrateRemoteState = async () => {
+      try {
+        const remoteState = await fetchDashboardProjectGanttState({
+          workspaceKey: REMOTE_WORKSPACE_KEY,
+        });
+        if (cancelled) return;
+
+        if (remoteState && remoteState.boards.length > 0) {
+          const nextBoards = remoteState.boards;
+          const nextActiveBoardId = nextBoards.some((board) => board.id === remoteState.activeBoardId)
+            ? remoteState.activeBoardId
+            : nextBoards[0].id;
+          const nextBoardStateById = ensureBoardStateMap(nextBoards, remoteState.boardStateById);
+
+          setBoards(nextBoards);
+          setActiveBoardId(nextActiveBoardId);
+          setBoardStateById(nextBoardStateById);
+          writeWorkspaceSnapshot({
+            boards: nextBoards,
+            activeBoardId: nextActiveBoardId,
+          });
+          nextBoards.forEach((board) => {
+            writeBoardStorageSnapshot(board.id, nextBoardStateById[board.id]);
+          });
+          lastSavedPayloadRef.current = JSON.stringify(
+            buildRemoteWorkspaceState(nextBoards, nextActiveBoardId, nextBoardStateById),
+          );
+        }
+      } catch (error) {
+        console.error('ProjectGanttWorkspace hydrate remote state failed:', error);
+        if (!hasShownLoadFailureRef.current) {
+          toast.error('甘特图云端加载失败，先使用本地缓存');
+          hasShownLoadFailureRef.current = true;
+        }
+      } finally {
+        if (!cancelled) {
+          setIsHydrating(false);
+        }
+      }
+    };
+
+    void hydrateRemoteState();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (boards.length === 0) return;
@@ -277,14 +442,77 @@ export default function ProjectGanttWorkspace() {
     if (boards.length === 0) return;
     writeWorkspaceSnapshot({
       boards,
-      activeBoardId: activeBoard?.id ?? boards[0].id,
+      activeBoardId: activeWorkspaceBoardId,
     });
-  }, [activeBoard, activeBoardId, boards]);
+  }, [activeWorkspaceBoardId, boards]);
+
+  const persistRemoteWorkspaceState = useCallback(
+    async (
+      nextState: DashboardProjectGanttRemoteState,
+      nextPayload: string,
+      allowAuthRetry = true,
+    ) => {
+      try {
+        await saveDashboardProjectGanttState(nextState);
+        lastSavedPayloadRef.current = nextPayload;
+        hasShownSaveFailureRef.current = false;
+      } catch (error) {
+        if (allowAuthRetry && error instanceof DashboardApiError && error.code === 'API_KEY_INVALID') {
+          if (isPromptingForApiKeyRef.current) {
+            return;
+          }
+
+          isPromptingForApiKeyRef.current = true;
+          try {
+            const promptResult = promptForApiKey();
+            if (promptResult === 'saved') {
+              await persistRemoteWorkspaceState(nextState, nextPayload, false);
+              return;
+            }
+          } finally {
+            isPromptingForApiKeyRef.current = false;
+          }
+        }
+
+        console.error('ProjectGanttWorkspace save remote state failed:', error);
+        if (!hasShownSaveFailureRef.current) {
+          toast.error(
+            getDashboardApiErrorDisplayMessage(error, '甘特图云端保存失败，当前先保留本地缓存'),
+          );
+          hasShownSaveFailureRef.current = true;
+        }
+      }
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (isHydrating || boards.length === 0) return;
+    if (remoteWorkspaceStatePayload === lastSavedPayloadRef.current) return;
+
+    const timer = window.setTimeout(() => {
+      void persistRemoteWorkspaceState(remoteWorkspaceState, remoteWorkspaceStatePayload);
+    }, 600);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    boards.length,
+    isHydrating,
+    persistRemoteWorkspaceState,
+    remoteWorkspaceState,
+    remoteWorkspaceStatePayload,
+  ]);
 
   const handleAddBoard = () => {
     const nextSerial = boards.reduce((maxSerial, board) => Math.max(maxSerial, board.serial), 0) + 1;
     const nextBoard = createBoard(nextSerial);
+    const nextBoardState = createDefaultBoardState();
     setBoards((prev) => [...prev, nextBoard]);
+    setBoardStateById((prev) => ({
+      ...prev,
+      [nextBoard.id]: nextBoardState,
+    }));
+    writeBoardStorageSnapshot(nextBoard.id, nextBoardState);
     setActiveBoardId(nextBoard.id);
   };
 
@@ -324,12 +552,38 @@ export default function ProjectGanttWorkspace() {
       nextBoards[Math.min(deleteIndex, nextBoards.length - 1)] ?? nextBoards[0] ?? null;
 
     removeBoardStorage(deleteTargetId);
+    setBoardStateById((prev) => {
+      const next = { ...prev };
+      delete next[deleteTargetId];
+      return next;
+    });
     setBoards(nextBoards);
     if (activeBoardId === deleteTargetId && fallbackBoard) {
       setActiveBoardId(fallbackBoard.id);
     }
     setDeleteTargetId(null);
   };
+
+  const handleBoardSnapshotChange = useCallback(
+    (snapshot: GanttEngineStorageSnapshot) => {
+      const boardId = activeBoard?.id;
+      if (!boardId) return;
+      const normalizedSnapshot = normalizeBoardStateSnapshot(snapshot) ?? createDefaultBoardState();
+      writeBoardStorageSnapshot(boardId, normalizedSnapshot);
+      setBoardStateById((prev) => {
+        const current = prev[boardId];
+        const nextPayload = JSON.stringify(normalizedSnapshot);
+        if (current && JSON.stringify(current) === nextPayload) {
+          return prev;
+        }
+        return {
+          ...prev,
+          [boardId]: normalizedSnapshot,
+        };
+      });
+    },
+    [activeBoard],
+  );
 
   const headerSlot = (
     <div className="border-b border-slate-800/50 bg-[#09111d] px-3 py-3">
@@ -393,6 +647,14 @@ export default function ProjectGanttWorkspace() {
     </div>
   );
 
+  if (isHydrating) {
+    return (
+      <div className="rounded-2xl border border-slate-800 bg-[#0B0F19] px-6 py-12 text-center text-sm text-slate-500">
+        正在加载甘特图数据...
+      </div>
+    );
+  }
+
   if (!activeBoard) {
     return (
       <div className="rounded-2xl border border-slate-800 bg-[#0B0F19] px-6 py-12 text-center text-sm text-slate-500">
@@ -409,6 +671,8 @@ export default function ProjectGanttWorkspace() {
         headerSlot={headerSlot}
         initialComponents={INITIAL_COMPONENTS}
         initialMilestones={INITIAL_MILESTONES}
+        initialSnapshot={boardStateById[activeBoard.id]}
+        onSnapshotChange={handleBoardSnapshotChange}
       />
 
       {renameTarget && (
