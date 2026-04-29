@@ -171,6 +171,11 @@ interface ProjectGanttWorkspaceSnapshot {
 }
 
 type ProjectGanttBoardStateMap = Record<string, GanttEngineStorageSnapshot>;
+type ProjectGanttWorkspaceSeed = {
+  snapshot: ProjectGanttWorkspaceSnapshot;
+  boardStateById: ProjectGanttBoardStateMap;
+  fromLocalCache: boolean;
+};
 
 const WORKSPACE_STORAGE_KEY = 'dashboard_project_gantt_workspace_v1';
 const BOARD_STORAGE_PREFIX = 'dashboard_project_gantt_board_v1:';
@@ -328,6 +333,46 @@ function buildRemoteWorkspaceState(
   };
 }
 
+function countTasksInNode(node: { children?: unknown }): number {
+  const children = Array.isArray(node.children) ? node.children : [];
+  return 1 + children.reduce((total, child) => (
+    child && typeof child === 'object' ? total + countTasksInNode(child as { children?: unknown }) : total
+  ), 0);
+}
+
+function countTasksInComponents(components: unknown): number {
+  if (!Array.isArray(components)) return 0;
+
+  return components.reduce((componentTotal, component) => {
+    if (!component || typeof component !== 'object' || Array.isArray(component)) {
+      return componentTotal;
+    }
+
+    const tasks = (component as { tasks?: unknown }).tasks;
+    if (!Array.isArray(tasks)) {
+      return componentTotal;
+    }
+
+    return componentTotal + tasks.reduce((taskTotal, task) => (
+      task && typeof task === 'object' ? taskTotal + countTasksInNode(task as { children?: unknown }) : taskTotal
+    ), 0);
+  }, 0);
+}
+
+function countTasksInWorkspaceState(state: DashboardProjectGanttRemoteState): number {
+  return Object.values(state.boardStateById || {}).reduce(
+    (total, boardState) => total + countTasksInComponents(boardState?.components),
+    0,
+  );
+}
+
+function shouldRecoverLocalGanttCache(
+  localState: DashboardProjectGanttRemoteState,
+  remoteState: DashboardProjectGanttRemoteState,
+): boolean {
+  return countTasksInWorkspaceState(localState) > 0 && countTasksInWorkspaceState(remoteState) === 0;
+}
+
 function removeBoardStorage(boardId: string) {
   if (typeof window === 'undefined') return;
 
@@ -339,16 +384,33 @@ function removeBoardStorage(boardId: string) {
 }
 
 export default function ProjectGanttWorkspace() {
-  const fallbackWorkspace = useMemo<ProjectGanttWorkspaceSnapshot>(() => {
+  const workspaceSeed = useMemo<ProjectGanttWorkspaceSeed>(() => {
     const snapshot = readWorkspaceSnapshot();
-    if (snapshot && snapshot.boards.length > 0) return snapshot;
-    return createDefaultWorkspaceSnapshot();
+    const nextSnapshot = snapshot && snapshot.boards.length > 0
+      ? snapshot
+      : createDefaultWorkspaceSnapshot();
+
+    return {
+      snapshot: nextSnapshot,
+      boardStateById: ensureBoardStateMap(nextSnapshot.boards),
+      fromLocalCache: Boolean(snapshot && snapshot.boards.length > 0),
+    };
   }, []);
 
-  const [boards, setBoards] = useState<GanttBoardTab[]>(() => fallbackWorkspace.boards);
-  const [activeBoardId, setActiveBoardId] = useState<string>(() => fallbackWorkspace.activeBoardId);
+  const localCacheRecoveryStateRef = useRef<DashboardProjectGanttRemoteState | null>(
+    workspaceSeed.fromLocalCache
+      ? buildRemoteWorkspaceState(
+          workspaceSeed.snapshot.boards,
+          workspaceSeed.snapshot.activeBoardId,
+          workspaceSeed.boardStateById,
+        )
+      : null,
+  );
+
+  const [boards, setBoards] = useState<GanttBoardTab[]>(() => workspaceSeed.snapshot.boards);
+  const [activeBoardId, setActiveBoardId] = useState<string>(() => workspaceSeed.snapshot.activeBoardId);
   const [boardStateById, setBoardStateById] = useState<ProjectGanttBoardStateMap>(() =>
-    ensureBoardStateMap(fallbackWorkspace.boards),
+    workspaceSeed.boardStateById,
   );
   const [isHydrating, setIsHydrating] = useState(true);
   const [renameTargetId, setRenameTargetId] = useState<string | null>(null);
@@ -386,7 +448,7 @@ export default function ProjectGanttWorkspace() {
     latestWorkspacePayloadRef.current = remoteWorkspaceStatePayload;
   }, [remoteWorkspaceStatePayload]);
 
-  const applyRemoteWorkspaceState = useCallback((remoteState: DashboardProjectGanttRemoteState) => {
+  const applyRemoteWorkspaceState = useCallback((remoteState: DashboardProjectGanttRemoteState, markSaved = true) => {
     const nextBoards = remoteState.boards;
     if (nextBoards.length === 0) return;
 
@@ -406,7 +468,9 @@ export default function ProjectGanttWorkspace() {
       writeBoardStorageSnapshot(board.id, nextBoardStateById[board.id] ?? createDefaultBoardState());
     });
 
-    lastSavedPayloadRef.current = nextPayload;
+    if (markSaved) {
+      lastSavedPayloadRef.current = nextPayload;
+    }
     if (nextPayload === latestWorkspacePayloadRef.current) {
       return;
     }
@@ -441,6 +505,17 @@ export default function ProjectGanttWorkspace() {
           workspaceKey: REMOTE_WORKSPACE_KEY,
         });
         if (!isMountedRef.current) return;
+
+        const localCacheRecoveryState = localCacheRecoveryStateRef.current;
+        if (
+          remoteState &&
+          localCacheRecoveryState &&
+          shouldRecoverLocalGanttCache(localCacheRecoveryState, remoteState)
+        ) {
+          localCacheRecoveryStateRef.current = null;
+          applyRemoteWorkspaceState(localCacheRecoveryState, false);
+          return;
+        }
 
         if (remoteState && remoteState.boards.length > 0) {
           applyRemoteWorkspaceState(remoteState);

@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { produce } from "immer"
 import type { CollisionState, ComponentGroup, Milestone, Role, TaskNode, ViewMode } from "@/lib/gantt/types"
 import {
@@ -140,6 +140,28 @@ function writeGanttEngineStorageSnapshot(storageKey: string, snapshot: GanttEngi
   }
 }
 
+function normalizeGanttEngineSnapshot(
+  snapshot: GanttEngineStorageSnapshot | null | undefined,
+  initialComponents: ComponentGroup[],
+  initialMilestones: Milestone[],
+): Required<GanttEngineStorageSnapshot> {
+  return {
+    components: backfillComponents(
+      Array.isArray(snapshot?.components) ? snapshot.components : initialComponents,
+    ),
+    milestones: Array.isArray(snapshot?.milestones) ? snapshot.milestones : initialMilestones,
+    role: snapshot?.role === "USER" ? "USER" : "ADMIN",
+  }
+}
+
+function buildGanttEngineSnapshotSignature(snapshot: Required<GanttEngineStorageSnapshot>): string {
+  return JSON.stringify({
+    components: snapshot.components,
+    milestones: snapshot.milestones,
+    role: snapshot.role,
+  })
+}
+
 /* -------------------------------------------------------------------------- */
 /*  useGanttEngine (Phase 13 — ComponentGroup 版本)                           */
 /* -------------------------------------------------------------------------- */
@@ -152,18 +174,29 @@ export function useGanttEngine(
   const storageKey = options?.storageKey
   const onSnapshotChange = options?.onSnapshotChange
   const storageSnapshot = useMemo(() => readGanttEngineStorageSnapshot(storageKey), [storageKey])
-  const initialSnapshot = options?.initialSnapshot ?? storageSnapshot
+  const inputSnapshot = options?.initialSnapshot ?? storageSnapshot
+  const normalizedInputSnapshot = useMemo(
+    () => normalizeGanttEngineSnapshot(inputSnapshot, initialComponents, initialMilestones),
+    [initialComponents, initialMilestones, inputSnapshot],
+  )
+  const inputSnapshotSignature = useMemo(
+    () => buildGanttEngineSnapshotSignature(normalizedInputSnapshot),
+    [normalizedInputSnapshot],
+  )
+  const appliedInputSnapshotSignatureRef = useRef(inputSnapshotSignature)
 
-  const [components, setComponents] = useState<ComponentGroup[]>(() =>
-    backfillComponents(
-      Array.isArray(initialSnapshot?.components) ? initialSnapshot.components : initialComponents,
-    ),
-  )
+  const [components, setComponents] = useState<ComponentGroup[]>(() => normalizedInputSnapshot.components)
   const [viewMode, setViewMode] = useState<ViewMode>("MICRO")
-  const [role, setRole] = useState<Role>(initialSnapshot?.role === "USER" ? "USER" : "ADMIN")
-  const [milestones, setMilestones] = useState<Milestone[]>(
-    Array.isArray(initialSnapshot?.milestones) ? initialSnapshot.milestones : initialMilestones,
-  )
+  const [role, setRole] = useState<Role>(normalizedInputSnapshot.role)
+  const [milestones, setMilestones] = useState<Milestone[]>(() => normalizedInputSnapshot.milestones)
+
+  useEffect(() => {
+    if (inputSnapshotSignature === appliedInputSnapshotSignatureRef.current) return
+    appliedInputSnapshotSignatureRef.current = inputSnapshotSignature
+    setComponents(normalizedInputSnapshot.components)
+    setMilestones(normalizedInputSnapshot.milestones)
+    setRole(normalizedInputSnapshot.role)
+  }, [inputSnapshotSignature, normalizedInputSnapshot])
 
   useEffect(() => {
     if (!storageKey) return
