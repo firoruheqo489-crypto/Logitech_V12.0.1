@@ -6,6 +6,7 @@
  */
 
 import type { NextFunction, Request, Response } from 'express';
+import { API_TRUSTED_ORIGINS } from './apiCors.js';
 
 const API_KEY = process.env.API_SECRET_KEY || '';
 const IS_DEV_API_MODE = process.env.DEV_API === '1';
@@ -32,6 +33,33 @@ function extractHostname(input: string): string {
 
   const withoutPort = trimmed.replace(/^\[?([^\]]+)\]?(?::\d+)?$/, '$1');
   return withoutPort.toLowerCase();
+}
+
+function isTrustedOrigin(value: unknown): value is string {
+  return typeof value === 'string' && API_TRUSTED_ORIGINS.has(value);
+}
+
+function isTrustedBrowserWriteRequest(req: Request): boolean {
+  const originHeader = req.headers.origin;
+  if (!isTrustedOrigin(originHeader)) {
+    return false;
+  }
+
+  const originUrl = new URL(originHeader);
+  const requestHost = String(req.headers.host ?? '').trim().toLowerCase();
+  const requestHostname = String(req.hostname ?? '').trim().toLowerCase();
+  const originHost = originUrl.host.toLowerCase();
+  const originHostname = originUrl.hostname.toLowerCase();
+
+  if (requestHost && requestHost === originHost) {
+    return true;
+  }
+
+  if (requestHostname && requestHostname === originHostname) {
+    return true;
+  }
+
+  return false;
 }
 
 function isLocalDevelopmentRequest(req: Request): boolean {
@@ -65,6 +93,12 @@ export function apiKeyAuth(req: Request, res: Response, next: NextFunction): voi
 
   // Keep localhost validation friction-free during local development sessions.
   if (isLocalDevelopmentRequest(req)) {
+    next();
+    return;
+  }
+
+  // Allow trusted same-origin dashboard writes without requiring each browser to hold the raw API secret.
+  if (isTrustedBrowserWriteRequest(req)) {
     next();
     return;
   }
