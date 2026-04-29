@@ -529,10 +529,16 @@ export function useGanttEngine(
         const group = draft.find((g) => g.id === componentId)
         if (!group) return
 
-        const validation = validateDeletion(taskId, group.tasks)
-        if (!validation.canDelete) {
-          console.warn("[v0] deleteTask REJECTED:", validation.reason)
+        const target = findNode(group.tasks, taskId)
+        if (!target) {
+          console.warn("[v0] deleteTask: task not found", taskId)
           return
+        }
+
+        const removedIds = new Set(flatten([target]).map((node) => node.id))
+        for (const node of flatten(group.tasks)) {
+          if (!node.dependencies.some((depId) => removedIds.has(depId))) continue
+          node.dependencies = node.dependencies.filter((depId) => !removedIds.has(depId))
         }
 
         const idx = group.tasks.findIndex((t) => t.id === taskId)

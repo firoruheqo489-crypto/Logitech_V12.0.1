@@ -37,8 +37,16 @@ const UPLOADS_ROUTE_ERROR_MESSAGES: Record<UploadsRouteErrorCode, string> = {
 
 const UPLOADS_TEMP_DIR = path.resolve(process.cwd(), 'uploads_temp');
 const MAX_UPLOAD_FILE_SIZE_BYTES = 100 * 1024 * 1024;
+const STANDARD_DOCX_MIME_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+const DOCX_COMPATIBLE_MIME_TYPES = new Set([
+  '',
+  'application/octet-stream',
+  'application/zip',
+  'application/x-zip-compressed',
+  'multipart/x-zip',
+]);
 const ALLOWED_UPLOAD_RULES: Record<string, ReadonlySet<string>> = {
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': new Set(['.docx']),
+  [STANDARD_DOCX_MIME_TYPE]: new Set(['.docx']),
   'application/pdf': new Set(['.pdf']),
   'image/jpeg': new Set(['.jpeg', '.jpg']),
   'image/png': new Set(['.png']),
@@ -111,8 +119,19 @@ function inferExtension(filename: string): string {
   return path.extname(filename.trim()).toLowerCase();
 }
 
-function resolvePreferredExtension(input: { originalname: string; mimetype: string }): string {
+function normalizeUploadMimeType(input: { originalname: string; mimetype: string }): string {
+  const extension = inferExtension(input.originalname);
   const mimetype = input.mimetype.trim().toLowerCase();
+
+  if (extension === '.docx' && DOCX_COMPATIBLE_MIME_TYPES.has(mimetype)) {
+    return STANDARD_DOCX_MIME_TYPE;
+  }
+
+  return mimetype;
+}
+
+function resolvePreferredExtension(input: { originalname: string; mimetype: string }): string {
+  const mimetype = normalizeUploadMimeType(input);
   const extension = inferExtension(input.originalname);
   const allowedExtensions = ALLOWED_UPLOAD_RULES[mimetype];
   if (!allowedExtensions) {
@@ -127,7 +146,7 @@ function resolvePreferredExtension(input: { originalname: string; mimetype: stri
 }
 
 function isAllowedUploadFile(input: { originalname: string; mimetype: string }): boolean {
-  const mimetype = input.mimetype.trim().toLowerCase();
+  const mimetype = normalizeUploadMimeType(input);
   const extension = inferExtension(input.originalname);
   const allowedExtensions = ALLOWED_UPLOAD_RULES[mimetype];
   if (!allowedExtensions || !extension) {
@@ -199,11 +218,13 @@ async function handleAssetUpload(req: UploadRequest, res: Response): Promise<voi
       return;
     }
 
+    const normalizedMimeType = normalizeUploadMimeType(file);
+
     const uploaded = await uploadAssetToOss({
       fileStream: createReadStream(file.path),
       fileSize: file.size,
       filename: file.originalname,
-      mimeType: file.mimetype,
+      mimeType: normalizedMimeType,
       category: readMultipartField(req.body?.category),
       entityId: readMultipartField(req.body?.entityId),
       slot: readMultipartField(req.body?.slot),

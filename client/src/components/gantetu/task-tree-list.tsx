@@ -3,7 +3,7 @@ import { GANTT_ROW_H } from "@/lib/gantt/row-heights"
 import { useRef } from "react"
 import { createPortal } from "react-dom"
 import type { CollisionState, Milestone, Role, TaskNode, ViewMode } from "@/lib/gantt/types"
-import { diffDays, getRoots, getScheduleProgress, isCompleted, isOverdue, isTaskCollidingMilestone, todayIso, type DeletionValidation } from "@/lib/gantt/utils"
+import { diffDays, getRoots, getScheduleProgress, isCompleted, isOverdue, isTaskCollidingMilestone, todayIso } from "@/lib/gantt/utils"
 import CyberPromptDialog from "@/components/ui/CyberPromptDialog"
 import { DeletionModal } from "./deletion-modal"
 import { RejectionToast } from "./rejection-toast"
@@ -52,8 +52,6 @@ interface TaskTreeListProps {
   onDeleteLastDelay: (childId: string) => void
   onAddTopLevelTask: (name: string, startDate: string, endDate: string, depId: string | null, tag?: string) => void
   onUpdateAssignee: (id: string, assignee: string) => void
-  /** Phase 9 鈥?鍒犻櫎宸ュ簭 */
-  onValidateTaskDeletion: (taskId: string) => DeletionValidation
   onDeleteTopLevelTask: (taskId: string) => void
   /** Phase 10 鈥?ADMIN 杩涘害閲嶇疆 */
   onResetTaskProgress: (taskId: string) => void
@@ -89,7 +87,6 @@ export function TaskTreeList(props: TaskTreeListProps) {
     onDeleteLastDelay,
     onAddTopLevelTask,
     onUpdateAssignee,
-    onValidateTaskDeletion,
     onDeleteTopLevelTask,
     onResetTaskProgress,
   } = props
@@ -103,15 +100,9 @@ export function TaskTreeList(props: TaskTreeListProps) {
 
   const handleDeleteClick = useCallback(
     (taskId: string, taskName: string) => {
-      const validation = onValidateTaskDeletion(taskId)
-      if (!validation.canDelete) {
-        setRejectionMessage(validation.reason ?? "拒绝执行，当前工序不可删除。")
-        return
-      }
-      // 閫氳繃鏍￠獙锛屾樉绀鸿鏀块槻鍛嗘ā鎬佹
       setDeletionTarget({ id: taskId, name: taskName })
     },
-    [onValidateTaskDeletion],
+    [],
   )
 
   const handleConfirmDelete = useCallback(() => {
@@ -400,7 +391,6 @@ export function TaskTreeList(props: TaskTreeListProps) {
                   onDeleteLastDelay={onDeleteLastDelay}
                   onAddTopLevelTask={onAddTopLevelTask}
                   onUpdateAssignee={onUpdateAssignee}
-                  onValidateTaskDeletion={onValidateTaskDeletion}
                   onDeleteTopLevelTask={onDeleteTopLevelTask}
                   onResetTaskProgress={onResetTaskProgress}
                 />

@@ -1114,6 +1114,7 @@ function DocxConvertPanel({ panel }: { panel: AssetPanelItem }) {
         void setStageResultCache(panelIdentity, trialStage, parsed);
 
         let uploadedUrl: string | null = null;
+        let uploadFailureMessage: string | null = null;
         try {
           const uploaded = await uploadAssetViaServer({
             file: nextFile,
@@ -1122,9 +1123,10 @@ function DocxConvertPanel({ panel }: { panel: AssetPanelItem }) {
             slot: trialStage,
           });
           uploadedUrl = uploaded.url;
-        } catch {
+        } catch (uploadError) {
+          uploadFailureMessage = uploadError instanceof Error ? uploadError.message : 'OSS 上传失败';
           toast.error('DOCX 上传 OSS 失败', {
-            description: `${trialStage} 已保留解析结果，但文件未同步到远端 OSS。`,
+            description: `${trialStage} 已保留解析结果，但文件未同步到远端 OSS。${uploadFailureMessage ? ` ${uploadFailureMessage}` : ''}`,
             position: 'bottom-right',
           });
         }
@@ -1134,7 +1136,7 @@ function DocxConvertPanel({ panel }: { panel: AssetPanelItem }) {
           fileUrl: uploadedUrl,
           result: parsed,
           progress: { stage: 'done', message: '解析完成', progress: 100 },
-          error: uploadedUrl ? null : 'OSS 上传失败：仅本地显示解析结果',
+          error: uploadedUrl ? null : `OSS 上传失败：${uploadFailureMessage || '仅本地显示解析结果'}`,
         });
 
         if (previousFileUrl && uploadedUrl && previousFileUrl !== uploadedUrl) {

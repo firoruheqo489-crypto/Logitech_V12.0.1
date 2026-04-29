@@ -73,6 +73,7 @@ interface GanttBarProps {
   multilineLabel?: boolean
   labelClipWidthPx?: number
   clippedLabelFallback?: string
+  viewportWidthPx?: number
 }
 
 /**
@@ -101,6 +102,49 @@ function clampNumber(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
 }
 
+function estimateLabelWidthPx(text: string): number {
+  return Array.from(text).reduce((sum, char) => {
+    if (/\p{Script=Han}/u.test(char)) return sum + 14
+    if (char === " ") return sum + 4
+    return sum + 8
+  }, 24)
+}
+
+interface VisibleBarFrame {
+  clippedEnd: boolean
+  clippedStart: boolean
+  contentOffsetPx: number
+  visibleLeftPx: number
+  visibleWidthPx: number
+}
+
+function getVisibleBarFrame(leftPx: number, widthPx: number, viewportWidthPx?: number): VisibleBarFrame | null {
+  if (!Number.isFinite(widthPx) || widthPx <= 0) return null
+  if (viewportWidthPx == null || viewportWidthPx <= 0) {
+    return {
+      clippedEnd: false,
+      clippedStart: false,
+      contentOffsetPx: 0,
+      visibleLeftPx: leftPx,
+      visibleWidthPx: widthPx,
+    }
+  }
+
+  const rawRightPx = leftPx + widthPx
+  const visibleLeftPx = Math.max(0, leftPx)
+  const visibleRightPx = Math.min(viewportWidthPx, rawRightPx)
+  const visibleWidthPx = visibleRightPx - visibleLeftPx
+  if (visibleWidthPx <= 0) return null
+
+  return {
+    clippedEnd: rawRightPx > viewportWidthPx,
+    clippedStart: leftPx < 0,
+    contentOffsetPx: visibleLeftPx - leftPx,
+    visibleLeftPx,
+    visibleWidthPx,
+  }
+}
+
 function GanttBar({
   leftPx,
   widthPx,
@@ -110,14 +154,30 @@ function GanttBar({
   titleText,
   segments,
   delayDebt,
-  heightPx = 24,
+  heightPx = 28,
   multilineLabel = false,
   labelClipWidthPx,
   clippedLabelFallback,
+  viewportWidthPx,
 }: GanttBarProps) {
   const pct = Math.max(0, Math.min(100, progress))
   const showZeroProgressActiveTint = pct === 0 && (status === "pending" || status === "active" || status === "delayed")
-  const shouldHideClippedLabel = !multilineLabel && labelClipWidthPx != null && labelClipWidthPx < 28
+  const visibleFrame = getVisibleBarFrame(leftPx, widthPx, viewportWidthPx)
+  const outsideLabelText = clippedLabelFallback ?? label
+  const estimatedOutsideLabelWidthPx = useMemo(() => estimateLabelWidthPx(outsideLabelText), [outsideLabelText])
+  const visibleLabelWidthPx = useMemo(() => {
+    if (!visibleFrame) return 0
+    const labelBoundaryPx = labelClipWidthPx ?? widthPx
+    const visibleLabelStartPx = visibleFrame.contentOffsetPx
+    const visibleLabelEndPx = visibleFrame.contentOffsetPx + visibleFrame.visibleWidthPx
+    return Math.max(0, Math.min(labelBoundaryPx, visibleLabelEndPx) - visibleLabelStartPx)
+  }, [labelClipWidthPx, visibleFrame, widthPx])
+  const shouldUseOutsideLabel =
+    !multilineLabel &&
+    (
+      visibleLabelWidthPx < 28 ||
+      ((visibleFrame?.clippedEnd || visibleFrame?.clippedStart) && visibleLabelWidthPx < estimatedOutsideLabelWidthPx)
+    )
 
   const isOverdueBar = status === "overdue"
   const plasmaFill = PLASMA_FILL[status]
@@ -166,21 +226,27 @@ function GanttBar({
     ? "inset 0 1px 1px rgba(255,255,255,0.15), 0 0 12px rgba(239,68,68,0.4), 0 4px 12px rgba(0,0,0,0.3)"
     : "inset 0 1px 1px rgba(255,255,255,0.15), 0 4px 12px rgba(0,0,0,0.3)"
 
+  if (!visibleFrame) return null
+
+  const innerLeftPx = -visibleFrame.contentOffsetPx
+  const delayBadgeLeftPx =
+    viewportWidthPx != null && viewportWidthPx > 0
+      ? clampNumber(visibleFrame.visibleLeftPx + visibleFrame.visibleWidthPx + 6, 0, Math.max(0, viewportWidthPx - 42))
+      : leftPx + widthPx + 6
+  const outsideLabelPlacement = visibleFrame.clippedStart && !visibleFrame.clippedEnd ? "right" : "left"
+
   return (
     <>
-      {/* ============ Layer 1: Frosted Glass Shell (overflow-visible, allows text spillover) ============ */}
+      {/* ============ Layer 1: Viewport-clipped wrapper, keeps month edges tidy ============ */}
       <div
         ref={barRef}
-        className={`absolute rounded-md bg-white/[0.04] backdrop-blur-md border ${
-          isOverdueBar ? "border-red-500/50" : "border-white/[0.12]"
-        }`}
+        className="absolute overflow-visible"
         style={{
-          left: `${leftPx}px`,
-          width: `${widthPx}px`,
+          left: `${visibleFrame.visibleLeftPx}px`,
+          width: `${visibleFrame.visibleWidthPx}px`,
           height: `${heightPx}px`,
           top: "50%",
           transform: "translateY(-50%)",
-          boxShadow: shellBoxShadow,
         }}
         title={browserTitle}
         onBlur={() => setTooltipPosition(null)}
@@ -188,75 +254,109 @@ function GanttBar({
         onMouseEnter={updateTooltipPosition}
         onMouseLeave={() => setTooltipPosition(null)}
       >
-        {shouldHideClippedLabel && (
-          <div className="absolute right-full top-1/2 z-20 mr-2 -translate-y-1/2 pointer-events-none">
+        {shouldUseOutsideLabel && (
+          <div
+            className={`absolute top-1/2 z-20 -translate-y-1/2 pointer-events-none ${
+              outsideLabelPlacement === "right" ? "left-full ml-2" : "right-full mr-2"
+            }`}
+          >
             <span className="block whitespace-nowrap rounded-md border border-white/12 bg-slate-950/72 px-2 py-1 text-[11px] font-medium tracking-wide text-white/92 shadow-[0_6px_18px_rgba(2,6,23,0.45)] backdrop-blur-md">
-              {clippedLabelFallback ?? label}
+              {outsideLabelText}
             </span>
           </div>
         )}
 
         {/* ============ Plasma Clip 鈥?浠呰鍒囩瓑绂诲瓙濉厖灞傦紝涓嶅奖鍝嶆枃鏈孩鍑?============ */}
-        <div className="absolute inset-0 rounded-md overflow-hidden">
-          {/* ============ Layer 2: Plasma Fill ============ */}
-          {segments ? (
-            /* Segmented mode: base segment renders progress plasma; delay segments stay striped */
-            <div className="absolute inset-0 flex">
-              {segments.map((seg, i) => {
-                if (seg.type === "base") {
+        <div className="absolute inset-0 overflow-hidden">
+          <div
+            className={`absolute rounded-md bg-white/[0.04] backdrop-blur-md border ${
+              isOverdueBar ? "border-red-500/50" : "border-white/[0.12]"
+            }`}
+            style={{
+              left: `${innerLeftPx}px`,
+              width: `${widthPx}px`,
+              height: `${heightPx}px`,
+              top: 0,
+              boxShadow: shellBoxShadow,
+            }}
+          >
+            {/* ============ Layer 2: Plasma Fill ============ */}
+            {segments ? (
+              /* Segmented mode: base segment renders progress plasma; delay segments stay striped */
+              <div className="absolute inset-0 flex overflow-hidden rounded-md">
+                {segments.map((seg, i) => {
+                  if (seg.type === "base") {
+                    return (
+                      <div key={i} className="relative h-full" style={{ width: `${seg.widthPx}px` }} title={titleText ? undefined : seg.title}>
+                        {pct > 0 ? (
+                          <div
+                            className={`absolute inset-y-0 left-0 ${plasmaFill} ${
+                              pct < 100 ? `border-r ${plasmaEdge}` : ""
+                            }`}
+                            style={{ width: `${pct}%` }}
+                          />
+                        ) : showZeroProgressActiveTint ? (
+                          <div className={`absolute inset-0 ${plasmaFill}`} />
+                        ) : null}
+                      </div>
+                    )
+                  }
                   return (
-                    <div key={i} className="relative h-full" style={{ width: `${seg.widthPx}px` }} title={titleText ? undefined : seg.title}>
-                      {pct > 0 ? (
-                        <div
-                          className={`absolute inset-y-0 left-0 ${plasmaFill} ${
-                            pct < 100 ? `border-r ${plasmaEdge}` : ""
-                          }`}
-                          style={{ width: `${pct}%` }}
-                        />
-                      ) : showZeroProgressActiveTint ? (
-                        <div className={`absolute inset-0 ${plasmaFill}`} />
+                    <div
+                      key={i}
+                      className={`relative h-full gantt-delay-stripe ${i > 1 ? "gantt-delay-segment-divider" : ""}`}
+                      style={{ width: `${seg.widthPx}px` }}
+                      title={titleText ? undefined : seg.title}
+                    >
+                      {(seg.widthPx >= 24 && (seg.widthPx >= 52 ? seg.label : seg.compactLabel ?? seg.label)) ? (
+                        <div className="absolute inset-0 z-[3] flex items-center justify-center px-2 pointer-events-none overflow-hidden">
+                          <span className={`${seg.widthPx < 64 ? "text-[8px]" : "text-[9px]"} font-semibold whitespace-nowrap text-rose-50 drop-shadow-[0_1px_1px_rgba(0,0,0,0.75)]`}>
+                            {seg.widthPx >= 52 ? seg.label : seg.compactLabel ?? seg.label}
+                          </span>
+                        </div>
                       ) : null}
                     </div>
                   )
-                }
-                return (
-                  <div
-                    key={i}
-                    className={`relative h-full gantt-delay-stripe ${i > 1 ? "gantt-delay-segment-divider" : ""}`}
-                    style={{ width: `${seg.widthPx}px` }}
-                    title={titleText ? undefined : seg.title}
-                  >
-                    {(seg.widthPx >= 24 && (seg.widthPx >= 52 ? seg.label : seg.compactLabel ?? seg.label)) ? (
-                      <div className="absolute inset-0 z-[3] flex items-center justify-center px-2 pointer-events-none overflow-hidden">
-                        <span className={`${seg.widthPx < 64 ? "text-[8px]" : "text-[9px]"} font-semibold whitespace-nowrap text-rose-50 drop-shadow-[0_1px_1px_rgba(0,0,0,0.75)]`}>
-                          {seg.widthPx >= 52 ? seg.label : seg.compactLabel ?? seg.label}
-                        </span>
-                      </div>
-                    ) : null}
-                  </div>
-                )
-              })}
-            </div>
-          ) : (
-            /* Simple mode: single plasma fill at progress% */
-            pct > 0 ? (
-              <div
-                className={`absolute inset-y-0 left-0 ${plasmaFill} ${pct < 100 ? `border-r ${plasmaEdge}` : ""}`}
-                style={{ width: `${pct}%` }}
-              />
-            ) : showZeroProgressActiveTint ? (
-              <div className={`absolute inset-0 ${plasmaFill}`} />
-            ) : null
-          )}
+                })}
+              </div>
+            ) : (
+              /* Simple mode: single plasma fill at progress% */
+              pct > 0 ? (
+                <div
+                  className={`absolute inset-y-0 left-0 ${plasmaFill} ${pct < 100 ? `border-r ${plasmaEdge}` : ""}`}
+                  style={{ width: `${pct}%` }}
+                />
+              ) : showZeroProgressActiveTint ? (
+                <div className={`absolute inset-0 ${plasmaFill}`} />
+              ) : null
+            )}
+          </div>
         </div>
 
+        {(visibleFrame.clippedStart || visibleFrame.clippedEnd) && (
+          <div className="pointer-events-none absolute inset-0 z-[18]">
+            {visibleFrame.clippedStart ? (
+              <>
+                <div className="absolute inset-y-0 left-0 w-4 bg-gradient-to-r from-slate-950/80 to-transparent" />
+                <div className="absolute inset-y-[4px] left-0 border-l-2 border-dashed border-orange-200/80" />
+              </>
+            ) : null}
+            {visibleFrame.clippedEnd ? (
+              <>
+                <div className="absolute inset-y-0 right-0 w-4 bg-gradient-to-l from-slate-950/80 to-transparent" />
+                <div className="absolute inset-y-[4px] right-0 border-r-2 border-dashed border-orange-200/80" />
+              </>
+            ) : null}
+          </div>
+        )}
+
         {/* ============ Layer 3: Holographic Text 鈥?鑷€傚簲澶栨寕锛岀粷涓嶇渷鐣?============ */}
-        {!shouldHideClippedLabel && (
+        {!shouldUseOutsideLabel && (
           <div
             className={`absolute inset-y-0 left-0 z-20 pointer-events-none ${
               multilineLabel ? "flex items-center w-full px-2.5" : "flex items-center pl-2.5 pr-2 overflow-hidden"
             }`}
-            style={!multilineLabel && labelClipWidthPx != null ? { width: `${labelClipWidthPx}px` } : undefined}
+            style={!multilineLabel ? { width: `${visibleLabelWidthPx || visibleFrame.visibleWidthPx}px` } : undefined}
           >
             <span
               className={`${
@@ -300,7 +400,7 @@ function GanttBar({
       {delayDebt != null && delayDebt > 0 && (
         <span
           className="absolute top-1/2 -translate-y-1/2 px-1 py-0.5 bg-red-900/80 text-red-200 text-[7px] font-bold rounded whitespace-nowrap z-30 border border-red-700/50"
-          style={{ left: `${leftPx + widthPx + 6}px` }}
+          style={{ left: `${delayBadgeLeftPx}px` }}
         >
           +{delayDebt}天
         </span>
@@ -417,7 +517,6 @@ export function GanttSkeleton({
     updateMilestone,
     deleteMilestone,
     collisions,
-    validateTaskDeletion,
     deleteTask,
     resetTaskProgress,
   } = engine
@@ -866,7 +965,6 @@ export function GanttSkeleton({
               onUpdateProgress={updateTaskProgress}
               onDeleteLastDelay={deleteLastDelay}
               onAddTaskToComponent={addTaskToComponent}
-              onValidateTaskDeletion={validateTaskDeletion}
               onDeleteTask={deleteTask}
               onResetTaskProgress={resetTaskProgress}
               onUpdateAssignee={updateTaskAssignee}
@@ -991,6 +1089,7 @@ export function GanttSkeleton({
                   group={group}
                   timelineStart={timeline.start}
                   dayWidth={dayWidth}
+                  timelineTotalWidth={timeline.totalDays * dayWidth}
                   role={role}
                   milestones={milestones}
                   colorIndex={idx}
@@ -1003,7 +1102,12 @@ export function GanttSkeleton({
                     className={`box-border border-b border-slate-800/30 bg-slate-900/50 flex items-center px-3 ${themeColor.border}`}
                     style={{ height: GANTT_ROW_H.GROUP }}
                   >
-                    <span className={`text-[14px] font-medium tracking-wide ${themeColor.base}`}>{group.name}</span>
+                    <span className={`truncate text-[14px] font-medium tracking-wide ${themeColor.base}`}>
+                      {group.name}
+                    </span>
+                    <span className="ml-3 shrink-0 text-[11px] font-medium tracking-wide text-slate-400">
+                      {getComponentAggregateProgress(group)}% · {group.tasks.length}工序
+                    </span>
                   </div>
                   {/* Task rows */}
                   {group.isExpanded !== false && (
@@ -1015,6 +1119,7 @@ export function GanttSkeleton({
                           indexInParent={indexInParent}
                           timelineStart={timeline.start}
                           dayWidth={dayWidth}
+                          timelineTotalWidth={timeline.totalDays * dayWidth}
                           viewMode={viewMode}
                           role={role}
                           milestones={milestones}
@@ -1163,7 +1268,6 @@ interface ComponentTreeListProps {
     assignee?: string,
     tag?: string,
   ) => void
-  onValidateTaskDeletion: (componentId: string, taskId: string) => { canDelete: boolean; reason?: string }
   onDeleteTask: (componentId: string, taskId: string) => void
   onResetTaskProgress: (componentId: string, taskId: string) => void
   onUpdateAssignee: (componentId: string, taskId: string, assignee: string) => void
@@ -1186,7 +1290,6 @@ function ComponentTreeList(props: ComponentTreeListProps) {
     onUpdateProgress,
     onDeleteLastDelay,
     onAddTaskToComponent,
-    onValidateTaskDeletion,
     onDeleteTask,
     onResetTaskProgress,
     onUpdateAssignee,
@@ -1202,6 +1305,7 @@ function ComponentTreeList(props: ComponentTreeListProps) {
         const groupOverdue = isComponentOverdue(group)
         const groupCompleted = isComponentCompleted(group)
         const groupProgress = getComponentAggregateProgress(group)
+        const groupSummary = `${groupProgress}% · ${group.tasks.length}工序`
         const groupHasStarted = group.tasks.some((task) => !task.parentId && (task.status === "in-progress" || getScheduleProgress(task) > 0))
         const inProgress = groupHasStarted && !groupCompleted && !groupOverdue
 
@@ -1246,27 +1350,6 @@ function ComponentTreeList(props: ComponentTreeListProps) {
                       {group.name}
                     </span>
                   </div>
-                  <div className="flex flex-wrap items-center gap-1.5 pl-7">
-                    <span className={`text-[10px] px-2 py-0.5 rounded ${
-                      groupCompleted 
-                        ? "bg-emerald-900/50 text-emerald-300 border border-emerald-700/50" 
-                        : groupOverdue
-                          ? "bg-emerald-900/50 text-emerald-300 border border-emerald-700/50"
-                          : "bg-slate-800/50 text-slate-400 border border-slate-700/50"
-                    }`}>
-                      {groupProgress}% · {group.tasks.length} 工序
-                    </span>
-                    {groupOverdue && (
-                      <span className="px-2 py-0.5 bg-emerald-900/90 text-emerald-200 text-[8px] rounded border border-emerald-500/50 shadow-[0_0_8px_rgba(52,211,153,0.4)] animate-pulse">
-                        存在逾期
-                      </span>
-                    )}
-                    {groupCompleted && (
-                      <span className="px-2 py-0.5 bg-emerald-900/80 text-emerald-200 text-[8px] rounded border border-emerald-500/40 shadow-[0_0_6px_rgba(52,211,153,0.3)]">
-                        已完工
-                      </span>
-                    )}
-                  </div>
                 </div>
               ) : (
                 <div className="flex h-full items-center gap-2.5 whitespace-nowrap">
@@ -1297,16 +1380,6 @@ function ComponentTreeList(props: ComponentTreeListProps) {
                   <span className={`text-[14px] font-medium tracking-wide shrink-0 ${groupOverdue ? "text-emerald-400" : groupCompleted ? "text-emerald-400" : themeColor.base}`}>
                     {group.name}
                   </span>
-
-                  <span className={`text-[10px] px-2 py-0.5 rounded shrink-0 ${
-                    groupCompleted 
-                      ? "bg-emerald-900/50 text-emerald-300 border border-emerald-700/50" 
-                      : groupOverdue
-                        ? "bg-emerald-900/50 text-emerald-300 border border-emerald-700/50"
-                        : "bg-slate-800/50 text-slate-400 border border-slate-700/50"
-                  }`}>
-                    {groupProgress}% · {group.tasks.length} 工序
-                  </span>
                 </div>
               )}
             </div>
@@ -1335,7 +1408,6 @@ function ComponentTreeList(props: ComponentTreeListProps) {
                     onAddTaskToComponent(group.id, name, startDate, endDate, depId, undefined, undefined, tag)
                   }
                   onUpdateAssignee={(taskId, assignee) => onUpdateAssignee(group.id, taskId, assignee)}
-                  onValidateTaskDeletion={(taskId) => onValidateTaskDeletion(group.id, taskId)}
                   onDeleteTopLevelTask={(taskId) => onDeleteTask(group.id, taskId)}
                   onResetTaskProgress={(taskId) => onResetTaskProgress(group.id, taskId)}
                 />
@@ -1354,12 +1426,13 @@ interface ComponentTrackProps {
   group: ComponentGroup
   timelineStart: string
   dayWidth: number
+  timelineTotalWidth: number
   role: Role
   milestones: Milestone[]
   colorIndex: number
 }
 
-function ComponentTrack({ group, timelineStart, dayWidth, role, milestones, colorIndex }: ComponentTrackProps) {
+function ComponentTrack({ group, timelineStart, dayWidth, timelineTotalWidth, role, milestones, colorIndex }: ComponentTrackProps) {
   const rowHeight = GANTT_ROW_H.MACRO_GROUP
   const barHeight = Math.round(rowHeight * 0.6)
 
@@ -1372,6 +1445,7 @@ function ComponentTrack({ group, timelineStart, dayWidth, role, milestones, colo
   const offsetDays = diffDays(timelineStart, envelopeStart)
   const span = inclusiveSpanDays(envelopeStart, envelopeEnd)
   const progress = getComponentAggregateProgress(group)
+  const groupSummary = `${progress}% · ${group.tasks.length}工序`
   const isOverdueGroup = isComponentOverdue(group)
   const isCompletedGroup = isComponentCompleted(group)
 
@@ -1390,9 +1464,10 @@ function ComponentTrack({ group, timelineStart, dayWidth, role, milestones, colo
         widthPx={barWidthPx}
         progress={progress}
         status={status}
-        label={`${group.name} · ${progress}%`}
+        label={`${group.name} · ${groupSummary}`}
         heightPx={barHeight}
         multilineLabel
+        viewportWidthPx={timelineTotalWidth}
       />
     </div>
   )
@@ -1513,12 +1588,13 @@ interface TaskTrackProps {
   indexInParent: number
   timelineStart: string
   dayWidth: number
+  timelineTotalWidth: number
   viewMode: ViewMode
   role: Role
   milestones: Milestone[]
 }
 
-function TaskTrack({ node, indexInParent, timelineStart, dayWidth, viewMode, role, milestones }: TaskTrackProps) {
+function TaskTrack({ node, indexInParent, timelineStart, dayWidth, timelineTotalWidth, viewMode, role, milestones }: TaskTrackProps) {
   const offsetDays = diffDays(timelineStart, node.startDate)
   const isMacro = viewMode === "MACRO"
   const hoverTagText = node.tag?.trim() ? `标签：${node.tag.trim()}` : undefined
@@ -1577,6 +1653,7 @@ function TaskTrack({ node, indexInParent, timelineStart, dayWidth, viewMode, rol
           delayDebt={hasDelayDebt ? delayDebt : undefined}
           labelClipWidthPx={hasChildren ? baseLabelWidthPx : undefined}
           clippedLabelFallback={node.name}
+          viewportWidthPx={timelineTotalWidth}
         />
         {/* 閫炬湡鏆村姏鍖栵細绾㈣壊铏氱嚎鐩磋繛鈥滀粖鏃?NOW鈥濊酱 + 閫炬湡澶╂暟寰界珷 */}
         {overdue && (() => {
@@ -1617,8 +1694,11 @@ function TaskTrack({ node, indexInParent, timelineStart, dayWidth, viewMode, rol
   const span = inclusiveSpanDays(node.startDate, node.endDate)
   const delayLabel = span === 1 ? `+${span}天` : `delay +${span}天`
   const childBarWidthPx = span * dayWidth
-  const childIsNarrow = childBarWidthPx < 72
   const childBarLeftPx = offsetDays * dayWidth
+  const childVisibleFrame = getVisibleBarFrame(childBarLeftPx, childBarWidthPx, timelineTotalWidth)
+  const childVisibleWidthPx = childVisibleFrame?.visibleWidthPx ?? 0
+  const childIsNarrow = childVisibleWidthPx < 72
+  const shouldHideChildLabel = childVisibleWidthPx < 24
 
   return (
     <div
@@ -1626,24 +1706,64 @@ function TaskTrack({ node, indexInParent, timelineStart, dayWidth, viewMode, rol
       style={{ height: GANTT_ROW_H.TASK }}
       data-task-id={node.id}
     >
-      <div
-        className="absolute h-5 rounded overflow-hidden gantt-delay-stripe shadow-[0_0_14px_rgba(239,68,68,0.18)]"
-        style={{
-          left: `${childBarLeftPx}px`,
-          width: `${childBarWidthPx}px`,
-          top: "50%",
-          transform: "translateY(-50%)",
-          border: "1px solid rgba(248,113,113,0.42)",
-          boxShadow: "inset 0 1px 0 rgba(255,255,255,0.12), inset 0 0 0 1px rgba(127,29,29,0.35), 0 6px 18px rgba(127,29,29,0.24)",
-        }}
-        title={hoverTagText ?? `${node.name} · ${node.startDate} → ${node.endDate}${node.reason ? ` · ${node.reason}` : ""}`}
-      >
-        <div className={`absolute inset-0 z-10 flex items-center pointer-events-none overflow-hidden ${childIsNarrow ? "justify-center px-1" : "px-2"}`}>
-          <span className={`${childIsNarrow ? "text-[8px]" : "text-[9px]"} font-semibold truncate whitespace-nowrap text-rose-50 drop-shadow-[0_1px_1px_rgba(0,0,0,0.7)]`}>
-              {delayLabel}
-          </span>
+      {childVisibleFrame ? (
+        <div
+          className="absolute overflow-visible"
+          style={{
+            left: `${childVisibleFrame.visibleLeftPx}px`,
+            width: `${childVisibleFrame.visibleWidthPx}px`,
+            height: "24px",
+            top: "50%",
+            transform: "translateY(-50%)",
+          }}
+          title={hoverTagText ?? `${node.name} · ${node.startDate} → ${node.endDate}${node.reason ? ` · ${node.reason}` : ""}`}
+        >
+          {shouldHideChildLabel && (
+            <div className="absolute right-full top-1/2 z-20 mr-2 -translate-y-1/2 pointer-events-none">
+              <span className="block whitespace-nowrap rounded-md border border-red-200/20 bg-slate-950/78 px-2 py-1 text-[10px] font-medium tracking-wide text-rose-100 shadow-[0_6px_18px_rgba(2,6,23,0.45)] backdrop-blur-md">
+                {delayLabel}
+              </span>
+            </div>
+          )}
+          <div className="absolute inset-0 overflow-hidden">
+            <div
+              className="absolute gantt-delay-stripe rounded shadow-[0_0_14px_rgba(239,68,68,0.18)]"
+              style={{
+                left: `${-childVisibleFrame.contentOffsetPx}px`,
+                width: `${childBarWidthPx}px`,
+                height: "24px",
+                top: 0,
+                border: "1px solid rgba(248,113,113,0.42)",
+                boxShadow: "inset 0 1px 0 rgba(255,255,255,0.12), inset 0 0 0 1px rgba(127,29,29,0.35), 0 6px 18px rgba(127,29,29,0.24)",
+              }}
+            >
+              {!shouldHideChildLabel && (
+                <div className={`absolute inset-0 z-10 flex items-center pointer-events-none overflow-hidden ${childIsNarrow ? "justify-center px-1" : "px-2"}`}>
+                  <span className={`${childIsNarrow ? "text-[8px]" : "text-[9px]"} font-semibold truncate whitespace-nowrap text-rose-50 drop-shadow-[0_1px_1px_rgba(0,0,0,0.7)]`}>
+                    {delayLabel}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+          {(childVisibleFrame.clippedStart || childVisibleFrame.clippedEnd) && (
+            <div className="pointer-events-none absolute inset-0 z-[18]">
+              {childVisibleFrame.clippedStart ? (
+                <>
+                  <div className="absolute inset-y-0 left-0 w-4 bg-gradient-to-r from-slate-950/80 to-transparent" />
+                  <div className="absolute inset-y-[4px] left-0 border-l-2 border-dashed border-rose-200/80" />
+                </>
+              ) : null}
+              {childVisibleFrame.clippedEnd ? (
+                <>
+                  <div className="absolute inset-y-0 right-0 w-4 bg-gradient-to-l from-slate-950/80 to-transparent" />
+                  <div className="absolute inset-y-[4px] right-0 border-r-2 border-dashed border-rose-200/80" />
+                </>
+              ) : null}
+            </div>
+          )}
         </div>
-      </div>
+      ) : null}
     </div>
   )
 }
