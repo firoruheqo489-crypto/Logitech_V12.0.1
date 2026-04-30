@@ -109,6 +109,28 @@ async function requestWriteAuthorizationOnce(): Promise<boolean> {
   return pendingWriteAuthorization;
 }
 
+async function hasWriteSession(): Promise<boolean> {
+  if (typeof window === 'undefined') return false;
+
+  const response = await fetch(WRITE_SESSION_ENDPOINT, {
+    credentials: 'same-origin',
+    cache: 'no-store',
+  }).catch(() => null);
+  if (!response?.ok) return false;
+
+  const payload = (await response.json().catch(() => null)) as { authenticated?: unknown } | null;
+  return Boolean(payload?.authenticated);
+}
+
+export async function ensureWriteAuthorization(): Promise<boolean> {
+  if (await hasWriteSession()) {
+    forgetStoredApiKey();
+    return true;
+  }
+
+  return requestWriteAuthorizationOnce();
+}
+
 export function getStoredApiKey(): string {
   if (typeof window === 'undefined') return '';
   return window.localStorage.getItem(API_KEY_STORAGE_KEY)?.trim() || '';

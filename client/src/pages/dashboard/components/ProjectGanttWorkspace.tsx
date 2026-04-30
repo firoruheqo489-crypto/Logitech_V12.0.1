@@ -15,6 +15,7 @@ import CyberConfirmDialog from '@/components/ui/CyberConfirmDialog';
 import CyberPromptDialog from '@/components/ui/CyberPromptDialog';
 import { GanttSkeleton } from '@/components/gantetu/gantt-skeleton';
 import type { GanttEngineStorageSnapshot } from '@/hooks/use-gantt-engine';
+import { ensureWriteAuthorization } from '@/lib/api';
 import type { ComponentGroup, Milestone } from '@/lib/gantt/types';
 import { getDashboardApiErrorDisplayMessage } from '../lib/dashboardApi';
 import {
@@ -464,12 +465,14 @@ export default function ProjectGanttWorkspace() {
   const [isHydrating, setIsHydrating] = useState(true);
   const [renameTargetId, setRenameTargetId] = useState<string | null>(null);
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+  const [isDeleteAuthorizing, setIsDeleteAuthorizing] = useState(false);
   const lastSavedPayloadRef = useRef('');
   const hasShownLoadFailureRef = useRef(false);
   const hasShownSaveFailureRef = useRef(false);
   const latestWorkspacePayloadRef = useRef('');
   const isMountedRef = useRef(true);
   const isRemoteSyncInFlightRef = useRef(false);
+  const isDeleteAuthorizingRef = useRef(false);
   const currentBoardsRef = useRef<GanttBoardTab[]>(workspaceSeed.snapshot.boards);
   const suppressSnapshotChangeRef = useRef(false);
   const suppressSnapshotChangeTimerRef = useRef<number | null>(null);
@@ -745,34 +748,62 @@ export default function ProjectGanttWorkspace() {
     setRenameTargetId(null);
   };
 
-  const handleDeleteBoard = () => {
-    if (!deleteTargetId) return;
+  const handleDeleteBoard = async () => {
+    if (isDeleteAuthorizingRef.current) return;
+
+    const boardId = deleteTargetId;
+    if (!boardId) return;
     if (boards.length <= 1) {
       setDeleteTargetId(null);
       return;
     }
 
     const currentBoards = boards;
-    const deleteIndex = currentBoards.findIndex((board) => board.id === deleteTargetId);
+    const deleteIndex = currentBoards.findIndex((board) => board.id === boardId);
     if (deleteIndex < 0) {
       setDeleteTargetId(null);
       return;
     }
 
-    const nextBoards = currentBoards.filter((board) => board.id !== deleteTargetId);
-    const fallbackBoard =
-      nextBoards[Math.min(deleteIndex, nextBoards.length - 1)] ?? nextBoards[0] ?? null;
+    isDeleteAuthorizingRef.current = true;
+    setIsDeleteAuthorizing(true);
 
-    removeBoardStorage(deleteTargetId);
+    try {
+      const authorized = await ensureWriteAuthorization();
+      if (!authorized || !isMountedRef.current) return;
+    } finally {
+      isDeleteAuthorizingRef.current = false;
+      if (isMountedRef.current) {
+        setIsDeleteAuthorizing(false);
+      }
+    }
+
+    const latestBoards = currentBoardsRef.current;
+    if (latestBoards.length <= 1) {
+      setDeleteTargetId(null);
+      return;
+    }
+
+    const latestDeleteIndex = latestBoards.findIndex((board) => board.id === boardId);
+    if (latestDeleteIndex < 0) {
+      setDeleteTargetId(null);
+      return;
+    }
+
+    const nextBoards = latestBoards.filter((board) => board.id !== boardId);
+    const fallbackBoard =
+      nextBoards[Math.min(latestDeleteIndex, nextBoards.length - 1)] ?? nextBoards[0] ?? null;
+
+    removeBoardStorage(boardId);
     setBoardStateById((prev) => {
       const next = { ...prev };
-      delete next[deleteTargetId];
+      delete next[boardId];
       return next;
     });
     setBoards(nextBoards);
-    if (activeBoardId === deleteTargetId && fallbackBoard) {
-      setActiveBoardId(fallbackBoard.id);
-    }
+    setActiveBoardId((currentActiveBoardId) =>
+      currentActiveBoardId === boardId && fallbackBoard ? fallbackBoard.id : currentActiveBoardId,
+    );
     setDeleteTargetId(null);
   };
 
@@ -923,7 +954,8 @@ export default function ProjectGanttWorkspace() {
           confirmText="确认删除"
           cancelText="取消"
           onCancel={() => setDeleteTargetId(null)}
-          onConfirm={handleDeleteBoard}
+          onConfirm={() => void handleDeleteBoard()}
+          allowEnterConfirm={!isDeleteAuthorizing}
         />
       )}
     </div>
