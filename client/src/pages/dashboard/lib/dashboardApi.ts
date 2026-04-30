@@ -259,7 +259,7 @@ export function getDashboardApiErrorDisplayMessage(error: unknown, fallbackMessa
   if (error instanceof DashboardApiError) {
     switch (error.code) {
       case 'API_KEY_INVALID':
-        return '写入授权无效，请重新输入授权 key 后重试';
+        return '写入授权无效，请重新输入管理员密码后重试';
       case 'API_KEY_NOT_CONFIGURED':
         return '服务端未配置写入授权，当前环境无法提交更新';
       case 'BACKUP_NOT_FOUND':

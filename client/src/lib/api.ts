@@ -1,3 +1,6 @@
+import { toast } from 'sonner';
+import { showCyberPromptDialog } from '@/components/ui/showCyberPromptDialog';
+
 const API_KEY_STORAGE_KEY = 'dashboard_api_key';
 const WRITE_SESSION_ENDPOINT = '/api/auth/write-session';
 
@@ -36,11 +39,6 @@ function forgetStoredApiKey(): void {
 
 function buildRequestInit(init: RequestInit | undefined, method: string): RequestInit {
   const headers = new Headers(init?.headers);
-  const apiKey = getStoredApiKey();
-
-  if (isWriteMethod(method) && apiKey) {
-    headers.set('x-api-key', apiKey);
-  }
 
   return {
     ...init,
@@ -70,15 +68,32 @@ async function loginWriteSession(apiKey: string): Promise<boolean> {
 async function requestWriteAuthorization(): Promise<boolean> {
   if (typeof window === 'undefined') return false;
 
-  const input = window.prompt('请输入管理员写入密码，授权后本机将自动保存安全会话：', '');
-  if (input === null) return false;
+  const values = await showCyberPromptDialog({
+    title: '写入授权',
+    subtitle: '管理员安全校验',
+    description: '请输入管理员写入密码。授权成功后，本机会自动保存安全会话；取消则维持只读模式。',
+    fields: [
+      {
+        kind: 'password',
+        name: 'apiKey',
+        label: '管理员密码',
+        placeholder: '请输入管理员密码',
+        required: true,
+        maxLength: 128,
+      },
+    ],
+    confirmText: '确认授权',
+    cancelText: '取消',
+    tone: 'purple',
+  });
+  if (!values) return false;
 
-  const apiKey = input.trim();
+  const apiKey = (values.apiKey ?? '').trim();
   if (!apiKey) return false;
 
   const authenticated = await loginWriteSession(apiKey);
   if (!authenticated) {
-    window.alert('管理员写入密码无效，请确认后重试。');
+    toast.error('管理员写入密码无效，请确认后重试。');
   }
 
   return authenticated;
@@ -109,20 +124,14 @@ export function setStoredApiKey(value: string): void {
   window.localStorage.setItem(API_KEY_STORAGE_KEY, next);
 }
 
-export function promptForApiKey(): AuthPromptResult {
+export async function promptForApiKey(): Promise<AuthPromptResult> {
   if (typeof window === 'undefined') return 'cancelled';
 
-  const input = window.prompt('请输入旧版写入授权 key，留空可清除当前授权：', getStoredApiKey());
-  if (input === null) return 'cancelled';
-
-  const next = input.trim();
-  if (!next) {
-    window.localStorage.removeItem(API_KEY_STORAGE_KEY);
-    return 'cleared';
-  }
-
-  window.localStorage.setItem(API_KEY_STORAGE_KEY, next);
-  return 'saved';
+  // Compatibility shim: any stale callers should enter the current write-session flow
+  // instead of persisting a legacy x-api-key that causes repeated auth failures.
+  forgetStoredApiKey();
+  const authenticated = await requestWriteAuthorizationOnce();
+  return authenticated ? 'saved' : 'cancelled';
 }
 
 export async function apiFetch(url: string, init?: RequestInit): Promise<Response> {

@@ -46,7 +46,7 @@ describe('dashboard asset api errors', () => {
     const error = new DashboardApiError('api key missing or invalid', 'API_KEY_INVALID', 403);
 
     expect(getDashboardApiErrorDisplayMessage(error, 'fallback')).toBe(
-      '写入授权无效，请重新输入授权 key 后重试',
+      '写入授权无效，请重新输入管理员密码后重试',
     );
   });
 });

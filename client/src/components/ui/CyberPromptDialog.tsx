@@ -13,6 +13,15 @@ export type CyberPromptField =
       maxLength?: number
     }
   | {
+      kind: "password"
+      name: string
+      label: string
+      defaultValue?: string
+      placeholder?: string
+      required?: boolean
+      maxLength?: number
+    }
+  | {
       kind: "number"
       name: string
       label: string
@@ -233,13 +242,14 @@ export default function CyberPromptDialog({
                     </div>
                   ) : (
                     <input
-                      type={f.kind === "number" ? "number" : "text"}
+                      type={f.kind === "number" ? "number" : f.kind === "password" ? "password" : "text"}
                       value={values[f.name] ?? ""}
                       placeholder={"placeholder" in f ? f.placeholder : undefined}
-                      maxLength={f.kind === "text" ? f.maxLength : undefined}
+                      maxLength={f.kind === "text" || f.kind === "password" ? f.maxLength : undefined}
                       min={f.kind === "number" ? f.min : undefined}
                       max={f.kind === "number" ? f.max : undefined}
                       step={f.kind === "number" ? f.step ?? 1 : undefined}
+                      autoComplete={f.kind === "password" ? "current-password" : undefined}
                       onChange={(e) => setValues({ ...values, [f.name]: e.target.value })}
                       autoFocus={fields[0]?.name === f.name}
                       className={baseInputCls}
