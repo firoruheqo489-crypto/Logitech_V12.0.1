@@ -421,6 +421,9 @@ export default function ProjectGanttWorkspace() {
   const latestWorkspacePayloadRef = useRef('');
   const isMountedRef = useRef(true);
   const isRemoteSyncInFlightRef = useRef(false);
+  const currentBoardsRef = useRef<GanttBoardTab[]>(workspaceSeed.snapshot.boards);
+  const suppressSnapshotChangeRef = useRef(false);
+  const suppressSnapshotChangeTimerRef = useRef<number | null>(null);
 
   const activeBoard = useMemo(
     () => boards.find((board) => board.id === activeBoardId) ?? boards[0] ?? null,
@@ -448,6 +451,27 @@ export default function ProjectGanttWorkspace() {
     latestWorkspacePayloadRef.current = remoteWorkspaceStatePayload;
   }, [remoteWorkspaceStatePayload]);
 
+  useEffect(() => {
+    currentBoardsRef.current = boards;
+  }, [boards]);
+
+  const suppressLocalSnapshotBounce = useCallback((durationMs = 240) => {
+    suppressSnapshotChangeRef.current = true;
+    if (suppressSnapshotChangeTimerRef.current !== null) {
+      window.clearTimeout(suppressSnapshotChangeTimerRef.current);
+    }
+    suppressSnapshotChangeTimerRef.current = window.setTimeout(() => {
+      suppressSnapshotChangeRef.current = false;
+      suppressSnapshotChangeTimerRef.current = null;
+    }, durationMs);
+  }, []);
+
+  useEffect(() => () => {
+    if (suppressSnapshotChangeTimerRef.current !== null) {
+      window.clearTimeout(suppressSnapshotChangeTimerRef.current);
+    }
+  }, []);
+
   const applyRemoteWorkspaceState = useCallback((remoteState: DashboardProjectGanttRemoteState, markSaved = true) => {
     const nextBoards = remoteState.boards;
     if (nextBoards.length === 0) return;
@@ -459,6 +483,10 @@ export default function ProjectGanttWorkspace() {
     const nextPayload = JSON.stringify(
       buildRemoteWorkspaceState(nextBoards, nextActiveBoardId, nextBoardStateById),
     );
+    const nextBoardIdSet = new Set(nextBoards.map((board) => board.id));
+    const removedBoardIds = currentBoardsRef.current
+      .map((board) => board.id)
+      .filter((boardId) => !nextBoardIdSet.has(boardId));
 
     writeWorkspaceSnapshot({
       boards: nextBoards,
@@ -467,6 +495,7 @@ export default function ProjectGanttWorkspace() {
     nextBoards.forEach((board) => {
       writeBoardStorageSnapshot(board.id, nextBoardStateById[board.id] ?? createDefaultBoardState());
     });
+    removedBoardIds.forEach((boardId) => removeBoardStorage(boardId));
 
     if (markSaved) {
       lastSavedPayloadRef.current = nextPayload;
@@ -475,10 +504,11 @@ export default function ProjectGanttWorkspace() {
       return;
     }
 
+    suppressLocalSnapshotBounce();
     setBoards(nextBoards);
     setActiveBoardId(nextActiveBoardId);
     setBoardStateById(nextBoardStateById);
-  }, []);
+  }, [suppressLocalSnapshotBounce]);
 
   const syncRemoteWorkspaceState = useCallback(
     async ({
@@ -518,6 +548,10 @@ export default function ProjectGanttWorkspace() {
         }
 
         if (remoteState && remoteState.boards.length > 0) {
+          // Once we have a valid remote snapshot, stop treating the boot-time local cache
+          // as a future recovery source. Otherwise a later legitimate remote deletion can
+          // be "restored" by stale local data from another machine.
+          localCacheRecoveryStateRef.current = null;
           applyRemoteWorkspaceState(remoteState);
         }
       } catch (error) {
@@ -687,6 +721,9 @@ export default function ProjectGanttWorkspace() {
 
   const handleBoardSnapshotChange = useCallback(
     (snapshot: GanttEngineStorageSnapshot) => {
+      if (suppressSnapshotChangeRef.current) {
+        return;
+      }
       const boardId = activeBoard?.id;
       if (!boardId) return;
       const normalizedSnapshot = normalizeBoardStateSnapshot(snapshot) ?? createDefaultBoardState();
