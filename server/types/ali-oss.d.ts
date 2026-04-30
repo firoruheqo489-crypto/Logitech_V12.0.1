@@ -14,6 +14,11 @@ declare module 'ali-oss' {
 
   export interface SignatureUrlOptions {
     expires?: number;
+    method?: 'GET' | 'PUT' | 'POST' | 'DELETE' | 'HEAD';
+    'Content-Type'?: string;
+    'Content-MD5'?: string;
+    headers?: Record<string, string>;
+    response?: Record<string, string>;
   }
 
   export interface PutResult {

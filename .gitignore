@@ -128,3 +128,8 @@ scripts/out/
 # client/src/components/gantetu/、client/src/hooks/use-gantt-engine.ts、client/src/lib/gantt/，
 # 仅作本地只读参考，禁止入库以防主干熵增。
 gantetu2/
+
+# Daily trial document V0 prototype source. Runtime logic is absorbed into
+# client/src/pages/dashboard/components/TrialDocumentsWorkspace.tsx and
+# server/routes/trial-documents.ts.
+pdf/

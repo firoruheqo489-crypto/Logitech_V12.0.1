@@ -71,6 +71,10 @@ function readRequiredEnv(name: string): string {
   return value;
 }
 
+function readOptionalEnv(name: string): string {
+  return process.env[name]?.trim() || '';
+}
+
 function readPublicBaseUrl(): string | null {
   const region = process.env.ALIYUN_OSS_REGION?.trim();
   const bucket = process.env.ALIYUN_OSS_BUCKET?.trim();
@@ -90,9 +94,9 @@ function getPublicBaseUrl(): string {
   return baseUrl;
 }
 
-function getClient(): OssClient {
+function getClient(bucketOverride?: string): OssClient {
   const region = readRequiredEnv('ALIYUN_OSS_REGION');
-  const bucket = readRequiredEnv('ALIYUN_OSS_BUCKET');
+  const bucket = bucketOverride?.trim() || readRequiredEnv('ALIYUN_OSS_BUCKET');
   const accessKeyId = readRequiredEnv('ALIYUN_OSS_ACCESS_KEY_ID');
   const accessKeySecret = readRequiredEnv('ALIYUN_OSS_ACCESS_KEY_SECRET');
   const signature = [region, bucket, accessKeyId].join('|');
@@ -110,6 +114,10 @@ function getClient(): OssClient {
   cachedClientSignature = signature;
 
   return cachedClient;
+}
+
+function readTrialDocumentsBucket(): string {
+  return readOptionalEnv('TRIAL_REPORTS_OSS_BUCKET') || readRequiredEnv('ALIYUN_OSS_BUCKET');
 }
 
 function sanitizeSegment(value: string | undefined, fallback = 'misc'): string {
@@ -309,15 +317,75 @@ export function createSignedAssetUrl(
   });
 }
 
+function encodeRfc5987Value(value: string): string {
+  return encodeURIComponent(value).replace(/['()*]/g, (character) =>
+    `%${character.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+}
+
+export function buildInlinePdfContentDisposition(fileName = 'trial-report.pdf'): string {
+  const safeFileName = sanitizeSegment(sanitizeFileStem(fileName), 'trial-report');
+  return `inline; filename="${safeFileName}.pdf"; filename*=UTF-8''${encodeRfc5987Value(fileName)}`;
+}
+
+export function buildTrialDocumentObjectKey(options: {
+  fileName: string;
+  uploadDate: string;
+  componentName: string;
+}): string {
+  const now = new Date();
+  const year = String(now.getFullYear());
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const prefix = sanitizeSegment(readOptionalEnv('TRIAL_REPORTS_OSS_PREFIX') || 'trial-reports', 'trial-reports');
+  const dateSegment = sanitizeSegment(options.uploadDate, 'undated');
+  const componentSegment = sanitizeSegment(options.componentName, 'component');
+  const fileStem = sanitizeFileStem(options.fileName);
+  const extension = resolveExtension(options.fileName, 'application/pdf') || '.pdf';
+  const uniqueName = `${crypto.randomUUID()}-${fileStem}${extension}`;
+
+  return [prefix, year, month, dateSegment, componentSegment, uniqueName].join('/');
+}
+
+export function createSignedTrialUploadUrl(
+  objectKey: string,
+  contentType = 'application/pdf',
+  expiresSeconds = 300,
+): string {
+  const client = getClient(readTrialDocumentsBucket());
+  return client.signatureUrl(objectKey, {
+    method: 'PUT',
+    expires: expiresSeconds,
+    'Content-Type': contentType,
+  });
+}
+
+export function createSignedTrialPreviewUrl(
+  objectKey: string,
+  fileName = 'trial-report.pdf',
+  expiresSeconds = 300,
+): string {
+  const client = getClient(readTrialDocumentsBucket());
+  const disposition = buildInlinePdfContentDisposition(fileName);
+
+  return client.signatureUrl(objectKey, {
+    method: 'GET',
+    expires: expiresSeconds,
+    response: {
+      'content-disposition': disposition,
+    },
+  });
+}
+
 export async function getOssObjectStream(
   objectKey: string,
   rangeHeader?: string,
+  bucketOverride?: string,
 ): Promise<{
   stream: NodeJS.ReadableStream;
   status: number;
   headers: Record<string, string | number | string[] | undefined>;
   }> {
-  const client = getClient() as OssStreamClient;
+  const client = getClient(bucketOverride) as OssStreamClient;
   const result = await client.getStream(objectKey, {
     headers: rangeHeader ? { Range: rangeHeader } : undefined,
   });
@@ -327,6 +395,17 @@ export async function getOssObjectStream(
     status: result.res.status ?? 200,
     headers: result.res.headers as Record<string, string | number | string[] | undefined>,
   };
+}
+
+export function getTrialDocumentObjectStream(
+  objectKey: string,
+  rangeHeader?: string,
+): Promise<{
+  stream: NodeJS.ReadableStream;
+  status: number;
+  headers: Record<string, string | number | string[] | undefined>;
+}> {
+  return getOssObjectStream(objectKey, rangeHeader, readTrialDocumentsBucket());
 }
 
 export async function deleteAssetFromOssUrl(assetUrl: string | null | undefined): Promise<DeleteAssetResult> {

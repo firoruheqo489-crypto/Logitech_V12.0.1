@@ -45,6 +45,7 @@ import {
 
 const MoldTrialDrawerWorkspace = lazy(() => import('./components/MoldTrialDrawerWorkspace'));
 const ProjectGanttWorkspace = lazy(() => import('./components/ProjectGanttWorkspace'));
+const TrialDocumentsWorkspace = lazy(() => import('./components/TrialDocumentsWorkspace'));
 const MacroStageGateDrawerWorkspace = lazy(() => import('./components/MacroStageGateDrawerWorkspace'));
 const ReliabilityDrawerWorkspace = lazy(() => import('./components/ReliabilityDrawerWorkspace'));
 const SpcRadarDrawerWorkspace = lazy(() => import('./components/SpcRadarDrawerWorkspace'));
@@ -157,6 +158,7 @@ const DASHBOARD_TABS = [
   'mold-trial-database',
   'dimension-analysis',
   'docx-converter',
+  'trial-documents',
   'project-gantt',
   'mold-reliability',
   'spc-calculator',
@@ -819,6 +821,7 @@ export default function DashboardHome() {
               'mold-trial-database': '试模数据库',
               'dimension-analysis': '尺寸分析',
               'docx-converter': '问题解析',
+              'trial-documents': '每日试验档',
               'project-gantt': '项目甘特图',
               'mold-reliability': '模具可靠性',
               'spc-calculator': 'SPC计算器',
@@ -990,6 +993,12 @@ export default function DashboardHome() {
         {selectedTab === 'project-gantt' && (
           <LazyWorkspace>
             <ProjectGanttWorkspace />
+          </LazyWorkspace>
+        )}
+
+        {selectedTab === 'trial-documents' && (
+          <LazyWorkspace>
+            <TrialDocumentsWorkspace projectName={activeModule || ''} />
           </LazyWorkspace>
         )}
 

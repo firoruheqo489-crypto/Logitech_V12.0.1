@@ -52,6 +52,14 @@ import {
 } from "./routes/reliability.js";
 import { getTasksForSCurve } from "./routes/tasks.js";
 import { uploadsRouter } from "./routes/uploads.js";
+import {
+  createTrialPreviewUrl,
+  createTrialUploadUrl,
+  ensureTrialDocumentsTable,
+  insertTrialDocument,
+  listTrialDocuments,
+  streamTrialDocumentPreview,
+} from "./routes/trial-documents.js";
 import { db, sql } from "./db.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -79,6 +87,7 @@ async function startServer() {
     { name: "dashboard_mold_trial_evidence", run: ensureDashboardMoldTrialEvidenceTable },
     { name: "dashboard_docx_converter", run: ensureDashboardDocxConverterTable },
     { name: "dashboard_project_gantt", run: ensureDashboardProjectGanttStateTable },
+    { name: "dashboard_trial_documents", run: ensureTrialDocumentsTable },
     { name: "dashboard_health", run: ensureDashboardHealthTable },
     { name: "dashboard_module_order", run: ensureDashboardModuleOrderTable },
     { name: "progress_backup", run: ensureBackupTable },
@@ -192,9 +201,14 @@ async function startServer() {
   app.delete("/api/gantt/evidence/:evidenceId", deleteEvidenceHandler);
   app.get("/api/gantt/project/:projectId/evidence-counts", getProjectEvidenceCountsHandler);
   app.use("/api/uploads", uploadsRouter);
+  app.post("/api/storage/presigned-url/upload-url", createTrialUploadUrl);
+  app.post("/api/storage/presigned-url/preview-url", createTrialPreviewUrl);
 
   // API — 看板项目数据 (V1 Dashboard)
   app.get("/api/dashboard/projects", listDashboardProjects);
+  app.get("/api/dashboard/trial-documents", listTrialDocuments);
+  app.post("/api/dashboard/trial-documents", insertTrialDocument);
+  app.get("/api/dashboard/trial-documents/preview", streamTrialDocumentPreview);
   app.get("/api/dashboard/projects/:id", getDashboardProject);
   app.post("/api/dashboard/projects/batch-replace", batchReplaceDashboardProjects);
   app.get("/api/dashboard/project-assets", listDashboardProjectAssets);

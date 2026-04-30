@@ -274,4 +274,24 @@ describe('apiKeyAuth', () => {
     expect(next).toHaveBeenCalledOnce();
     expect(state.statusCode).toBeNull();
   });
+
+  it('allows the presigned preview endpoint as a public read operation', async () => {
+    const { apiKeyAuth } = await loadAuthModule({
+      API_SECRET_KEY: 'expected-key',
+      NODE_ENV: 'production',
+    });
+    const req = createMockRequest({
+      method: 'POST',
+      baseUrl: '/api',
+      path: '/storage/presigned-url/preview-url',
+      originalUrl: '/api/storage/presigned-url/preview-url',
+    });
+    const { res, state } = createMockResponse();
+    const next = vi.fn<NextFunction>();
+
+    apiKeyAuth(req, res, next);
+
+    expect(next).toHaveBeenCalledOnce();
+    expect(state.statusCode).toBeNull();
+  });
 });

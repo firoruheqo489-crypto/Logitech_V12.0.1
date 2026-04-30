@@ -115,6 +115,21 @@ function isPublicWriteSessionRoute(req: Request): boolean {
   return candidates.has('/auth/write-session') || candidates.has('/api/auth/write-session');
 }
 
+function isPublicPresignedReadRoute(req: Request): boolean {
+  if (req.method.toUpperCase() !== 'POST') {
+    return false;
+  }
+
+  const originalPath = (req.originalUrl || '').split('?')[0] || '';
+  const mountedPath = `${req.baseUrl || ''}${req.path || ''}`;
+  const candidates = new Set([req.path || '', originalPath, mountedPath]);
+
+  return (
+    candidates.has('/storage/presigned-url/preview-url') ||
+    candidates.has('/api/storage/presigned-url/preview-url')
+  );
+}
+
 export function isWriteApiConfigured(): boolean {
   return Boolean(API_KEY);
 }
@@ -173,6 +188,11 @@ export function apiKeyAuth(req: Request, res: Response, next: NextFunction): voi
   }
 
   if (isPublicWriteSessionRoute(req)) {
+    next();
+    return;
+  }
+
+  if (isPublicPresignedReadRoute(req)) {
     next();
     return;
   }
