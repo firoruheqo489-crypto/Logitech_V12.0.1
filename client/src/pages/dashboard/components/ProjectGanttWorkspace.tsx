@@ -170,14 +170,20 @@ interface ProjectGanttWorkspaceSnapshot {
   activeBoardId: string;
 }
 
+interface ProjectGanttWorkspaceCacheMeta {
+  updatedAt?: string;
+}
+
 type ProjectGanttBoardStateMap = Record<string, GanttEngineStorageSnapshot>;
 type ProjectGanttWorkspaceSeed = {
   snapshot: ProjectGanttWorkspaceSnapshot;
   boardStateById: ProjectGanttBoardStateMap;
   fromLocalCache: boolean;
+  localCacheUpdatedAt: string | null;
 };
 
 const WORKSPACE_STORAGE_KEY = 'dashboard_project_gantt_workspace_v1';
+const WORKSPACE_CACHE_META_STORAGE_KEY = 'dashboard_project_gantt_workspace_meta_v1';
 const BOARD_STORAGE_PREFIX = 'dashboard_project_gantt_board_v1:';
 const REMOTE_WORKSPACE_KEY = DEFAULT_DASHBOARD_PROJECT_GANTT_WORKSPACE_KEY;
 
@@ -265,6 +271,38 @@ function writeWorkspaceSnapshot(snapshot: ProjectGanttWorkspaceSnapshot) {
   }
 }
 
+function readWorkspaceCacheUpdatedAt(): string | null {
+  if (typeof window === 'undefined') return null;
+
+  try {
+    const raw = window.localStorage.getItem(WORKSPACE_CACHE_META_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as ProjectGanttWorkspaceCacheMeta | null;
+    if (!parsed || typeof parsed !== 'object') return null;
+    return typeof parsed.updatedAt === 'string' && parsed.updatedAt.trim()
+      ? parsed.updatedAt.trim()
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeWorkspaceCacheUpdatedAt(updatedAt?: string | null) {
+  if (typeof window === 'undefined') return;
+
+  try {
+    const nextUpdatedAt = typeof updatedAt === 'string' && updatedAt.trim()
+      ? updatedAt.trim()
+      : new Date().toISOString();
+    window.localStorage.setItem(
+      WORKSPACE_CACHE_META_STORAGE_KEY,
+      JSON.stringify({ updatedAt: nextUpdatedAt } satisfies ProjectGanttWorkspaceCacheMeta),
+    );
+  } catch {
+    // Ignore localStorage quota and browser restrictions.
+  }
+}
+
 function normalizeBoardStateSnapshot(value: unknown): GanttEngineStorageSnapshot | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
 
@@ -296,6 +334,12 @@ function writeBoardStorageSnapshot(boardId: string, snapshot: GanttEngineStorage
   } catch {
     // Ignore localStorage quota and browser restrictions.
   }
+}
+
+function parseTimestamp(value?: string | null): number {
+  if (!value) return 0;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function ensureBoardStateMap(
@@ -368,9 +412,12 @@ function countTasksInWorkspaceState(state: DashboardProjectGanttRemoteState): nu
 
 function shouldRecoverLocalGanttCache(
   localState: DashboardProjectGanttRemoteState,
+  localUpdatedAt: string | null,
   remoteState: DashboardProjectGanttRemoteState,
 ): boolean {
-  return countTasksInWorkspaceState(localState) > 0 && countTasksInWorkspaceState(remoteState) === 0;
+  return countTasksInWorkspaceState(localState) > 0
+    && countTasksInWorkspaceState(remoteState) === 0
+    && parseTimestamp(localUpdatedAt) > parseTimestamp(remoteState.updatedAt);
 }
 
 function removeBoardStorage(boardId: string) {
@@ -394,6 +441,7 @@ export default function ProjectGanttWorkspace() {
       snapshot: nextSnapshot,
       boardStateById: ensureBoardStateMap(nextSnapshot.boards),
       fromLocalCache: Boolean(snapshot && snapshot.boards.length > 0),
+      localCacheUpdatedAt: readWorkspaceCacheUpdatedAt(),
     };
   }, []);
 
@@ -406,6 +454,7 @@ export default function ProjectGanttWorkspace() {
         )
       : null,
   );
+  const localCacheRecoveryUpdatedAtRef = useRef<string | null>(workspaceSeed.localCacheUpdatedAt);
 
   const [boards, setBoards] = useState<GanttBoardTab[]>(() => workspaceSeed.snapshot.boards);
   const [activeBoardId, setActiveBoardId] = useState<string>(() => workspaceSeed.snapshot.activeBoardId);
@@ -492,6 +541,7 @@ export default function ProjectGanttWorkspace() {
       boards: nextBoards,
       activeBoardId: nextActiveBoardId,
     });
+    writeWorkspaceCacheUpdatedAt(remoteState.updatedAt);
     nextBoards.forEach((board) => {
       writeBoardStorageSnapshot(board.id, nextBoardStateById[board.id] ?? createDefaultBoardState());
     });
@@ -540,9 +590,14 @@ export default function ProjectGanttWorkspace() {
         if (
           remoteState &&
           localCacheRecoveryState &&
-          shouldRecoverLocalGanttCache(localCacheRecoveryState, remoteState)
+          shouldRecoverLocalGanttCache(
+            localCacheRecoveryState,
+            localCacheRecoveryUpdatedAtRef.current,
+            remoteState,
+          )
         ) {
           localCacheRecoveryStateRef.current = null;
+          localCacheRecoveryUpdatedAtRef.current = null;
           applyRemoteWorkspaceState(localCacheRecoveryState, false);
           return;
         }
@@ -552,6 +607,7 @@ export default function ProjectGanttWorkspace() {
           // as a future recovery source. Otherwise a later legitimate remote deletion can
           // be "restored" by stale local data from another machine.
           localCacheRecoveryStateRef.current = null;
+          localCacheRecoveryUpdatedAtRef.current = null;
           applyRemoteWorkspaceState(remoteState);
         }
       } catch (error) {
@@ -617,6 +673,7 @@ export default function ProjectGanttWorkspace() {
       boards,
       activeBoardId: activeWorkspaceBoardId,
     });
+    writeWorkspaceCacheUpdatedAt();
   }, [activeWorkspaceBoardId, boards]);
 
   const persistRemoteWorkspaceState = useCallback(
@@ -728,6 +785,7 @@ export default function ProjectGanttWorkspace() {
       if (!boardId) return;
       const normalizedSnapshot = normalizeBoardStateSnapshot(snapshot) ?? createDefaultBoardState();
       writeBoardStorageSnapshot(boardId, normalizedSnapshot);
+      writeWorkspaceCacheUpdatedAt();
       setBoardStateById((prev) => {
         const current = prev[boardId];
         const nextPayload = JSON.stringify(normalizedSnapshot);
