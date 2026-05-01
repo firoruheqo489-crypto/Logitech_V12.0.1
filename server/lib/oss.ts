@@ -332,18 +332,22 @@ export function buildTrialDocumentObjectKey(options: {
   fileName: string;
   uploadDate: string;
   componentName: string;
+  moldId?: string;
+  cavityNumber?: string;
 }): string {
   const now = new Date();
   const year = String(now.getFullYear());
   const month = String(now.getMonth() + 1).padStart(2, '0');
   const prefix = sanitizeSegment(readOptionalEnv('TRIAL_REPORTS_OSS_PREFIX') || 'trial-reports', 'trial-reports');
+  const moldSegment = sanitizeSegment(options.moldId, 'unscoped-mold');
+  const cavitySegment = sanitizeSegment(options.cavityNumber, 'unscoped-cavity');
   const dateSegment = sanitizeSegment(options.uploadDate, 'undated');
   const componentSegment = sanitizeSegment(options.componentName, 'component');
   const fileStem = sanitizeFileStem(options.fileName);
   const extension = resolveExtension(options.fileName, 'application/pdf') || '.pdf';
   const uniqueName = `${crypto.randomUUID()}-${fileStem}${extension}`;
 
-  return [prefix, year, month, dateSegment, componentSegment, uniqueName].join('/');
+  return [prefix, year, month, moldSegment, cavitySegment, dateSegment, componentSegment, uniqueName].join('/');
 }
 
 export function createSignedTrialUploadUrl(

@@ -3,6 +3,9 @@ import { apiFetch } from '@/lib/api';
 export type TrialDocument = {
   id: string;
   uploadDate: string;
+  moldId: string;
+  moldNo: string;
+  cavityNumber: string;
   componentName: string;
   fileName: string;
   fileSize: number;
@@ -13,6 +16,9 @@ export type TrialDocument = {
 export type TrialUploadTicket = {
   uploadUrl: string;
   storagePath: string;
+  moldId?: string;
+  moldNo?: string;
+  cavityNumber?: string;
   expiresInSeconds: number;
   method: 'PUT';
   headers?: Record<string, string>;
@@ -39,8 +45,15 @@ function readErrorMessage(payload: unknown, fallback: string): string {
   return typeof error === 'string' && error.trim() ? error : fallback;
 }
 
-export async function fetchTrialDocuments(): Promise<TrialDocument[]> {
-  const response = await apiFetch('/api/dashboard/trial-documents', {
+export async function fetchTrialDocuments(filters: {
+  moldId?: string;
+  cavityNumber?: string;
+} = {}): Promise<TrialDocument[]> {
+  const params = new URLSearchParams();
+  if (filters.moldId?.trim()) params.set('moldId', filters.moldId.trim());
+  if (filters.cavityNumber?.trim()) params.set('cavityNumber', filters.cavityNumber.trim());
+  const query = params.toString();
+  const response = await apiFetch(`/api/dashboard/trial-documents${query ? `?${query}` : ''}`, {
     cache: 'no-store',
   });
   const payload = (await response.json().catch(() => null)) as TrialDocumentsPayload | null;
@@ -54,6 +67,9 @@ export async function createTrialUploadTicket(input: {
   fileName: string;
   fileSize: number;
   uploadDate: string;
+  moldId: string;
+  moldNo: string;
+  cavityNumber?: string;
   componentName: string;
   contentType: string;
 }): Promise<TrialUploadTicket> {
@@ -72,6 +88,9 @@ export async function createTrialUploadTicket(input: {
   return {
     uploadUrl: payload.uploadUrl,
     storagePath: payload.storagePath,
+    moldId: payload.moldId,
+    moldNo: payload.moldNo,
+    cavityNumber: payload.cavityNumber,
     expiresInSeconds: payload.expiresInSeconds,
     method: 'PUT',
     headers: payload.headers,
@@ -80,6 +99,9 @@ export async function createTrialUploadTicket(input: {
 
 export async function insertTrialDocument(input: {
   uploadDate: string;
+  moldId: string;
+  moldNo: string;
+  cavityNumber?: string;
   componentName: string;
   fileName: string;
   fileSize: number;

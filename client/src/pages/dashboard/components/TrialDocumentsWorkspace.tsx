@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent, DragEvent } from 'react';
 import axios from 'axios';
-import { AlertCircle, Eye, FileText, Loader2, RefreshCw, Upload } from 'lucide-react';
+import { AlertCircle, Database, Eye, FileText, Loader2, RefreshCw, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   createTrialPreviewUrl,
@@ -12,6 +12,7 @@ import {
   insertTrialDocument,
   type TrialDocument,
 } from '../lib/trial-documents-api';
+import AssetDrawerWorkspace, { type AssetPanelItem } from './AssetDrawerWorkspace';
 
 const MAX_UPLOAD_FILE_SIZE_BYTES = 100 * 1024 * 1024;
 const PDF_CONTENT_TYPE = 'application/pdf';
@@ -35,6 +36,12 @@ type DayGroup = {
 
 interface TrialDocumentsWorkspaceProps {
   projectName?: string;
+  panels?: AssetPanelItem[];
+}
+
+interface TrialDocumentsVaultProps {
+  projectName?: string;
+  panel: AssetPanelItem;
 }
 
 function createLocalId(): string {
@@ -88,7 +95,7 @@ function toErrorMessage(error: unknown, fallback = '网络中断或服务端拒�
   return fallback;
 }
 
-export default function TrialDocumentsWorkspace({ projectName = '' }: TrialDocumentsWorkspaceProps) {
+function TrialDocumentsVault({ projectName = '', panel }: TrialDocumentsVaultProps) {
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [componentName, setComponentName] = useState('');
   const [documents, setDocuments] = useState<TrialDocument[]>([]);
@@ -98,13 +105,22 @@ export default function TrialDocumentsWorkspace({ projectName = '' }: TrialDocum
   const [uploadingFiles, setUploadingFiles] = useState<UploadingFile[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const activeMoldId = panel.moldId.trim();
+  const activeMoldNo = panel.moldNo.trim();
   const dayGroups = useMemo(() => groupDocumentsByDate(documents), [documents]);
-  const isLocked = !selectedDate.trim() || !componentName.trim();
+  const isLocked = !selectedDate.trim() || !componentName.trim() || !activeMoldId;
 
   const refreshDocuments = useCallback(async ({ silent = false }: { silent?: boolean } = {}) => {
+    if (!activeMoldId) {
+      setDocuments([]);
+      setLoadError('');
+      if (!silent) setIsLoading(false);
+      return;
+    }
+
     if (!silent) setIsLoading(true);
     try {
-      const nextDocuments = await fetchTrialDocuments();
+      const nextDocuments = await fetchTrialDocuments({ moldId: activeMoldId });
       setDocuments(nextDocuments);
       setLoadError('');
     } catch (error) {
@@ -116,7 +132,7 @@ export default function TrialDocumentsWorkspace({ projectName = '' }: TrialDocum
     } finally {
       if (!silent) setIsLoading(false);
     }
-  }, []);
+  }, [activeMoldId]);
 
   useEffect(() => {
     void refreshDocuments();
@@ -135,6 +151,13 @@ export default function TrialDocumentsWorkspace({ projectName = '' }: TrialDocum
   }, []);
 
   const validatePrerequisites = useCallback((): boolean => {
+    if (!activeMoldId) {
+      toast.error('请先选择模号', {
+        description: '每日试验档会跟随当前抽屉选择的模号归档。',
+      });
+      return false;
+    }
+
     if (!selectedDate.trim() || !componentName.trim()) {
       toast.error('请先完善实验前置参数', {
         description: '日期和部件/参数名称不能为空。',
@@ -142,7 +165,7 @@ export default function TrialDocumentsWorkspace({ projectName = '' }: TrialDocum
       return false;
     }
     return true;
-  }, [componentName, selectedDate]);
+  }, [activeMoldId, componentName, selectedDate]);
 
   const validateFile = (file: File): boolean => {
     const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
@@ -162,6 +185,8 @@ export default function TrialDocumentsWorkspace({ projectName = '' }: TrialDocum
     const uploadDate = selectedDate.trim();
     const normalizedComponentName = componentName.trim();
     const contentType = PDF_CONTENT_TYPE;
+    const moldId = activeMoldId;
+    const moldNo = activeMoldNo;
 
     setUploadingFiles((prev) => [
       ...prev,
@@ -179,6 +204,8 @@ export default function TrialDocumentsWorkspace({ projectName = '' }: TrialDocum
         fileName: file.name,
         fileSize: file.size,
         uploadDate,
+        moldId,
+        moldNo,
         componentName: normalizedComponentName,
         contentType,
       });
@@ -199,6 +226,8 @@ export default function TrialDocumentsWorkspace({ projectName = '' }: TrialDocum
 
       await insertTrialDocument({
         uploadDate,
+        moldId,
+        moldNo,
         componentName: normalizedComponentName,
         fileName: file.name,
         fileSize: file.size,
@@ -218,7 +247,7 @@ export default function TrialDocumentsWorkspace({ projectName = '' }: TrialDocum
       updateUploadingFile(uploadId, { status: 'error', error: message });
       toast.error('上传失败', { description: message });
     }
-  }, [componentName, refreshDocuments, selectedDate, updateUploadingFile]);
+  }, [activeMoldId, activeMoldNo, componentName, refreshDocuments, selectedDate, updateUploadingFile]);
 
   const uploadFiles = useCallback(async (files: File[]) => {
     if (!validatePrerequisites()) return;
@@ -297,7 +326,7 @@ export default function TrialDocumentsWorkspace({ projectName = '' }: TrialDocum
         <button
           type="button"
           onClick={() => void refreshDocuments()}
-          className="inline-flex items-center gap-2 self-start rounded-lg border border-cyan-500/25 bg-cyan-950/20 px-3 py-2 text-xs font-semibold text-cyan-200 transition hover:bg-cyan-900/30 md:self-auto"
+          className="inline-flex items-center gap-2 rounded-lg border border-cyan-500/25 bg-cyan-950/20 px-3 py-2 text-xs font-semibold text-cyan-200 transition hover:bg-cyan-900/30"
         >
           <RefreshCw className="h-3.5 w-3.5" />
           刷新账本
@@ -470,5 +499,25 @@ export default function TrialDocumentsWorkspace({ projectName = '' }: TrialDocum
         ))}
       </section>
     </div>
+  );
+}
+
+export default function TrialDocumentsWorkspace({ projectName = '', panels = [] }: TrialDocumentsWorkspaceProps) {
+  return (
+    <AssetDrawerWorkspace
+      panels={panels}
+      badgeLabel="Trial Vault"
+      drawerTitle="试验档案抽屉"
+      drawerDescription="选择一个模号，主视图区只显示当前选中的每日试验档案。"
+      emptyMessage="暂无每日试验档案模号"
+      icon={Database}
+      renderPanel={(panel) => (
+        <TrialDocumentsVault
+          key={`${panel.moldId}::${panel.moldNo}`}
+          projectName={projectName}
+          panel={panel}
+        />
+      )}
+    />
   );
 }

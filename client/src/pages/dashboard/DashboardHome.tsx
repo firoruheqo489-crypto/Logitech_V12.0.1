@@ -685,6 +685,7 @@ export default function DashboardHome() {
     });
     return map;
   }, [productModuleRows]);
+
   const productModuleLastUpdated = useMemo(() => {
     const latest = currentModuleMoldIds
       .map((moldId) => {
@@ -998,7 +999,10 @@ export default function DashboardHome() {
 
         {selectedTab === 'trial-documents' && (
           <LazyWorkspace>
-            <TrialDocumentsWorkspace projectName={activeModule || ''} />
+            <TrialDocumentsWorkspace
+              projectName={activeModule || ''}
+              panels={currentModuleTrialPanels}
+            />
           </LazyWorkspace>
         )}
 

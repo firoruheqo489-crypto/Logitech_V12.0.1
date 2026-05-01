@@ -18,6 +18,9 @@ const TRIAL_PREVIEW_TOKEN_VERSION = 'v1';
 type TrialDocumentRow = {
   id: string;
   upload_date: string | Date;
+  mold_id: string | null;
+  mold_no: string | null;
+  cavity_number: string | null;
   component_name: string;
   file_name: string;
   file_size: number | string;
@@ -28,6 +31,9 @@ type TrialDocumentRow = {
 type TrialDocument = {
   id: string;
   uploadDate: string;
+  moldId: string;
+  moldNo: string;
+  cavityNumber: string;
   componentName: string;
   fileName: string;
   fileSize: number;
@@ -79,6 +85,10 @@ function readText(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function readQueryText(value: unknown): string {
+  return Array.isArray(value) ? readText(value[0]) : readText(value);
+}
+
 function normalizeUploadDate(value: unknown): string {
   const normalized = readText(value);
   return /^\d{4}-\d{2}-\d{2}$/.test(normalized) ? normalized : '';
@@ -95,6 +105,9 @@ function mapTrialDocument(row: TrialDocumentRow): TrialDocument {
   return {
     id: row.id,
     uploadDate,
+    moldId: row.mold_id || '',
+    moldNo: row.mold_no || '',
+    cavityNumber: row.cavity_number || '',
     componentName: row.component_name,
     fileName: row.file_name,
     fileSize: Number(row.file_size),
@@ -175,6 +188,9 @@ export function ensureTrialDocumentsTable(): Promise<void> {
       CREATE TABLE IF NOT EXISTS trial_documents (
         id TEXT PRIMARY KEY,
         upload_date DATE NOT NULL,
+        mold_id TEXT NOT NULL DEFAULT '',
+        mold_no TEXT NOT NULL DEFAULT '',
+        cavity_number TEXT NOT NULL DEFAULT '',
         component_name TEXT NOT NULL,
         file_name TEXT NOT NULL,
         file_size BIGINT NOT NULL CHECK (file_size > 0),
@@ -184,8 +200,32 @@ export function ensureTrialDocumentsTable(): Promise<void> {
     `)
       .then(() =>
         sql.unsafe(`
+          ALTER TABLE trial_documents
+          ADD COLUMN IF NOT EXISTS mold_id TEXT NOT NULL DEFAULT ''
+        `),
+      )
+      .then(() =>
+        sql.unsafe(`
+          ALTER TABLE trial_documents
+          ADD COLUMN IF NOT EXISTS mold_no TEXT NOT NULL DEFAULT ''
+        `),
+      )
+      .then(() =>
+        sql.unsafe(`
+          ALTER TABLE trial_documents
+          ADD COLUMN IF NOT EXISTS cavity_number TEXT NOT NULL DEFAULT ''
+        `),
+      )
+      .then(() =>
+        sql.unsafe(`
           CREATE INDEX IF NOT EXISTS trial_documents_upload_date_idx
           ON trial_documents (upload_date DESC, created_at DESC)
+        `),
+      )
+      .then(() =>
+        sql.unsafe(`
+          CREATE INDEX IF NOT EXISTS trial_documents_scope_idx
+          ON trial_documents (mold_id, cavity_number, upload_date DESC, created_at DESC)
         `),
       )
       .then(() => undefined);
@@ -198,7 +238,7 @@ async function findTrialDocumentByStoragePath(storagePath: string): Promise<Tria
   await ensureTrialDocumentsTable();
   const rows = await dbSql.unsafe(
     `
-      SELECT id, upload_date, component_name, file_name, file_size, storage_path, created_at
+      SELECT id, upload_date, mold_id, mold_no, cavity_number, component_name, file_name, file_size, storage_path, created_at
       FROM trial_documents
       WHERE storage_path = $1
       LIMIT 1
@@ -213,10 +253,13 @@ export async function createTrialUploadUrl(req: Request, res: Response): Promise
   const fileName = readText(req.body?.fileName);
   const contentType = TRIAL_DOCUMENT_CONTENT_TYPE;
   const uploadDate = normalizeUploadDate(req.body?.uploadDate);
+  const moldId = readText(req.body?.moldId);
+  const moldNo = readText(req.body?.moldNo);
+  const cavityNumber = readText(req.body?.cavityNumber);
   const componentName = readText(req.body?.componentName);
   const fileSize = readFileSize(req.body?.fileSize);
 
-  if (!fileName || !uploadDate || !componentName || fileSize <= 0) {
+  if (!fileName || !uploadDate || !moldId || !componentName || fileSize <= 0) {
     sendTrialDocumentsRouteError(res, 400, 'INVALID_REQUEST');
     return;
   }
@@ -230,12 +273,21 @@ export async function createTrialUploadUrl(req: Request, res: Response): Promise
   }
 
   try {
-    const storagePath = buildTrialDocumentObjectKey({ fileName, uploadDate, componentName });
+    const storagePath = buildTrialDocumentObjectKey({
+      fileName,
+      uploadDate,
+      moldId,
+      cavityNumber,
+      componentName,
+    });
     const uploadUrl = createSignedTrialUploadUrl(storagePath, contentType, PRESIGNED_URL_TTL_SECONDS);
 
     res.status(200).json({
       uploadUrl,
       storagePath,
+      moldId,
+      moldNo,
+      cavityNumber,
       expiresInSeconds: PRESIGNED_URL_TTL_SECONDS,
       method: 'PUT',
       headers: {
@@ -344,7 +396,7 @@ export async function streamTrialDocumentPreview(req: Request, res: Response): P
   }
 }
 
-export async function listTrialDocuments(_req: Request, res: Response): Promise<void> {
+export async function listTrialDocuments(req: Request, res: Response): Promise<void> {
   if (!dbSql) {
     sendTrialDocumentsRouteError(res, 503, 'DATABASE_NOT_CONFIGURED');
     return;
@@ -352,11 +404,27 @@ export async function listTrialDocuments(_req: Request, res: Response): Promise<
 
   try {
     await ensureTrialDocumentsTable();
+    const moldId = readQueryText(req.query.moldId);
+    const cavityNumber = readQueryText(req.query.cavityNumber);
+    const filters: string[] = [];
+    const params: string[] = [];
+
+    if (moldId) {
+      params.push(moldId);
+      filters.push(`mold_id = $${params.length}`);
+    }
+    if (cavityNumber) {
+      params.push(cavityNumber);
+      filters.push(`cavity_number = $${params.length}`);
+    }
+
+    const whereClause = filters.length > 0 ? `WHERE ${filters.join(' AND ')}` : '';
     const rows = await dbSql.unsafe(`
-      SELECT id, upload_date, component_name, file_name, file_size, storage_path, created_at
+      SELECT id, upload_date, mold_id, mold_no, cavity_number, component_name, file_name, file_size, storage_path, created_at
       FROM trial_documents
+      ${whereClause}
       ORDER BY upload_date DESC, created_at DESC
-    `) as unknown as TrialDocumentRow[];
+    `, params) as unknown as TrialDocumentRow[];
 
     res.status(200).json({ documents: rows.map(mapTrialDocument) });
   } catch (error) {
@@ -372,12 +440,15 @@ export async function insertTrialDocument(req: Request, res: Response): Promise<
   }
 
   const uploadDate = normalizeUploadDate(req.body?.uploadDate);
+  const moldId = readText(req.body?.moldId);
+  const moldNo = readText(req.body?.moldNo);
+  const cavityNumber = readText(req.body?.cavityNumber);
   const componentName = readText(req.body?.componentName);
   const fileName = readText(req.body?.fileName);
   const fileSize = readFileSize(req.body?.fileSize);
   const storagePath = readText(req.body?.storagePath);
 
-  if (!uploadDate || !componentName || !fileName || !storagePath || fileSize <= 0) {
+  if (!uploadDate || !moldId || !componentName || !fileName || !storagePath || fileSize <= 0) {
     sendTrialDocumentsRouteError(res, 400, 'INVALID_REQUEST');
     return;
   }
@@ -397,15 +468,18 @@ export async function insertTrialDocument(req: Request, res: Response): Promise<
         INSERT INTO trial_documents (
           id,
           upload_date,
+          mold_id,
+          mold_no,
+          cavity_number,
           component_name,
           file_name,
           file_size,
           storage_path
         )
-        VALUES ($1, $2, $3, $4, $5, $6)
-        RETURNING id, upload_date, component_name, file_name, file_size, storage_path, created_at
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        RETURNING id, upload_date, mold_id, mold_no, cavity_number, component_name, file_name, file_size, storage_path, created_at
       `,
-      [randomUUID(), uploadDate, componentName, fileName, fileSize, storagePath],
+      [randomUUID(), uploadDate, moldId, moldNo, cavityNumber, componentName, fileName, fileSize, storagePath],
     ) as unknown as TrialDocumentRow[];
 
     res.status(201).json({ document: mapTrialDocument(rows[0]) });
