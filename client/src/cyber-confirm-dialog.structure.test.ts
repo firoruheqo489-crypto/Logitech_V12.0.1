@@ -14,8 +14,8 @@ describe("cyber confirm dialog keyboard support", () => {
   it("confirms with Enter and cancels with Escape", async () => {
     const source = await loadSource("./components/ui/CyberConfirmDialog.tsx");
 
-    expect(source).toContain("if (e.key === 'Escape') onCancel();");
-    expect(source).toContain("if (e.key === 'Enter') {");
-    expect(source).toContain("onConfirm();");
+    expect(source).toMatch(/if\s*\(\s*e\.key\s*===\s*["']Escape["']\s*\)\s*onCancel\(\)\s*;?/);
+    expect(source).toMatch(/if\s*\(\s*e\.key\s*===\s*["']Enter["']\s*\)\s*\{/);
+    expect(source).toMatch(/onConfirm\(\)\s*;?/);
   });
 });

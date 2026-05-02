@@ -66,8 +66,8 @@ describe('product data workspace error boundaries', () => {
     expect(source).toContain("event.key === 'ArrowRight'");
     expect(source).toContain('navigateLightbox(-1)');
     expect(source).toContain('navigateLightbox(1)');
-    expect(source).toContain("aria-label=\"Rotate left\"");
-    expect(source).toContain("aria-label=\"Rotate right\"");
-    expect(source).toContain("aria-label=\"Close preview\"");
+    expect(source).toContain('aria-label="向左旋转"');
+    expect(source).toContain('aria-label="向右旋转"');
+    expect(source).toContain('aria-label="关闭预览"');
   });
 });

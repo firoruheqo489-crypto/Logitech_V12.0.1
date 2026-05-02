@@ -120,4 +120,19 @@ describe('server/index.ts structure', () => {
       /res\.status\(404\)\.json\(\{\s*error:\s*"not found \(dev API only\)",\s*code:\s*"ROUTE_NOT_FOUND"\s*\}\);/,
     );
   });
+
+  it('keeps database warmup protected by exponential backoff retries', async () => {
+    const source = await loadServerIndexSource();
+
+    expect(source).toContain('const MAX_RETRIES = 5;');
+    expect(source).toContain('const BASE_DELAY = 1000;');
+    expect(source).toContain('function isRetryableWarmupError(error: unknown): boolean');
+    expect(source).toContain('function createDbWarmupFailedError(taskName: string, cause: unknown): Error');
+    expect(source).toContain('codedError.code = "DB_WARMUP_FAILED";');
+    expect(source).toContain('"CONNECT_TIMEOUT"');
+    expect(source).toContain('"ECONNREFUSED"');
+    expect(source).toContain('BASE_DELAY * Math.pow(2, attempt - 1)');
+    expect(source).toContain('runWithWarmupRetry(task.name, task.run)');
+    expect(source).toContain('runWithWarmupRetry("dashboard_health_check", runDashboardHealthCheck)');
+  });
 });

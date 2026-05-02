@@ -68,6 +68,90 @@ const __dirname = path.dirname(__filename);
 // Dev API only: set DEV_API=1 and PORT=3001 so Vite proxy /api -> localhost:3001
 const isDevApiOnly = process.env.DEV_API === "1";
 type DbWarmupTask = { name: string; run: () => Promise<unknown> };
+const MAX_RETRIES = 5;
+const BASE_DELAY = 1000;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getWarmupErrorSignature(error: unknown): string {
+  if (!error) return "";
+  if (error instanceof Error) {
+    const maybeCoded = error as Error & { code?: unknown; errno?: unknown };
+    return [
+      error.name,
+      error.message,
+      typeof maybeCoded.code === "string" ? maybeCoded.code : "",
+      typeof maybeCoded.errno === "string" ? maybeCoded.errno : "",
+    ].join(" ");
+  }
+
+  if (typeof error === "object") {
+    const maybeRecord = error as Record<string, unknown>;
+    return [
+      typeof maybeRecord.code === "string" ? maybeRecord.code : "",
+      typeof maybeRecord.errno === "string" ? maybeRecord.errno : "",
+      typeof maybeRecord.message === "string" ? maybeRecord.message : "",
+    ].join(" ");
+  }
+
+  return String(error);
+}
+
+function isRetryableWarmupError(error: unknown): boolean {
+  const signature = getWarmupErrorSignature(error).toUpperCase();
+  return [
+    "CONNECT_TIMEOUT",
+    "ECONNREFUSED",
+    "ECONNRESET",
+    "ETIMEDOUT",
+    "EPIPE",
+    "ENOTFOUND",
+    "EAI_AGAIN",
+    "SOCKET HANG UP",
+    "CONNECTION TERMINATED",
+    "CONNECTION REFUSED",
+    "CONNECTION TIMEOUT",
+  ].some((token) => signature.includes(token));
+}
+
+function createDbWarmupFailedError(taskName: string, cause: unknown): Error {
+  const error = new Error(`DB_WARMUP_FAILED: ${taskName} failed after ${MAX_RETRIES} physical attempts`);
+  const codedError = error as Error & { code: string; cause?: unknown };
+  codedError.code = "DB_WARMUP_FAILED";
+  codedError.cause = cause;
+  return error;
+}
+
+async function runWithWarmupRetry<T>(taskName: string, run: () => Promise<T>): Promise<T> {
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt += 1) {
+    try {
+      return await run();
+    } catch (error) {
+      const retryable = isRetryableWarmupError(error);
+      if (!retryable) {
+        throw error;
+      }
+
+      if (attempt >= MAX_RETRIES) {
+        console.error(
+          `[WARMUP] DB_WARMUP_FAILED ${taskName} fatal meltdown after ${MAX_RETRIES} physical attempts:`,
+          error,
+        );
+        throw createDbWarmupFailedError(taskName, error);
+      }
+
+      const delayMs = BASE_DELAY * Math.pow(2, attempt - 1);
+      console.warn(
+        `[WARMUP] ${taskName} 数据库未响应，进行第 ${attempt} 次退避重试... delay=${delayMs}ms`,
+      );
+      await sleep(delayMs);
+    }
+  }
+
+  throw new Error(`[WARMUP] ${taskName} retry loop exhausted unexpectedly`);
+}
 
 async function startServer() {
   const app = express();
@@ -101,7 +185,7 @@ async function startServer() {
     warmupState.finishedAt = null;
     warmupState.failedTasks = [];
 
-    void Promise.allSettled(warmupTasks.map((task) => task.run())).then((results) => {
+    void Promise.allSettled(warmupTasks.map((task) => runWithWarmupRetry(task.name, task.run))).then((results) => {
       const failedTasks = results
         .map((result, index) => {
           if (result.status !== "rejected") return null;
@@ -314,7 +398,7 @@ async function startServer() {
 
     const runAndLogHealthCheck = async () => {
       try {
-        const report = await runDashboardHealthCheck();
+        const report = await runWithWarmupRetry("dashboard_health_check", runDashboardHealthCheck);
         if (!report) return;
         console.log('[dashboard-health]', JSON.stringify(report));
       } catch (error) {
