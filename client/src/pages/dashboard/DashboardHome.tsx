@@ -54,6 +54,7 @@ const ProductDataDrawerWorkspace = lazy(() => import('./components/ProductDataDr
 const ProductStandardDrawerWorkspace = lazy(() => import('./components/ProductStandardDrawerWorkspace'));
 const ProcessDrawerWorkspace = lazy(() => import('./components/ProcessDrawerWorkspace'));
 const ProgressLogsDrawerWorkspace = lazy(() => import('./components/ProgressLogsDrawerWorkspace'));
+const ParetoQualityDashboard = lazy(() => import('./components/ParetoQualityDashboard'));
 const FaiDimensionAnalyzer = lazy(() => import('./components/FaiDimensionAnalyzer'));
 const DocxConvertModule = lazy(() => import('./components/DocxConvertModule'));
 const FmeaIssueWorkspace = lazy(() => import('@/components/FmeaIssueWorkspace'));
@@ -160,6 +161,7 @@ const DASHBOARD_TABS = [
   'docx-converter',
   'trial-documents',
   'project-gantt',
+  'pareto-analysis',
   'mold-reliability',
   'spc-calculator',
   'fmea',
@@ -173,7 +175,7 @@ const DASHBOARD_TABS = [
 type DashboardTab = typeof DASHBOARD_TABS[number];
 
 const PUBLIC_DASHBOARD_TAB_LIMIT =
-  DASHBOARD_TABS.indexOf('project-gantt') + 1;
+  DASHBOARD_TABS.indexOf('pareto-analysis') + 1;
 const PUBLIC_DASHBOARD_TABS: DashboardTab[] = [
   ...DASHBOARD_TABS.slice(0, PUBLIC_DASHBOARD_TAB_LIMIT),
 ];
@@ -816,6 +818,7 @@ export default function DashboardHome() {
           {visibleTabs.map((tab) => {
             const labels: Record<string, string> = {
               'overview': '项目总览',
+              'pareto-analysis': '柏拉图分析',
               'logs': '推进日志',
               'product': '产品模块',
               'product-standard': '产品标准',
@@ -866,6 +869,12 @@ export default function DashboardHome() {
               projects={currentModuleData}
               progressEntriesByMold={progressEntriesByMold}
             />
+          </LazyWorkspace>
+        )}
+
+        {selectedTab === 'pareto-analysis' && (
+          <LazyWorkspace>
+            <ParetoQualityDashboard />
           </LazyWorkspace>
         )}
 
