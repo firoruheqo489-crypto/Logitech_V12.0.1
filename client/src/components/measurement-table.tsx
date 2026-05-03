@@ -11,7 +11,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { Plus, Trash2, Download, AlertTriangle, CheckCircle2 } from 'lucide-react'
+import { Plus, Minus, Trash2, Download, AlertTriangle, CheckCircle2 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 
 interface HeaderInfo {
@@ -27,25 +27,28 @@ interface MeasurementRow {
   standardValue: string
   upperLimit: string
   lowerLimit: string
-  actual1: string
-  actual2: string
-  actual3: string
-  actual4: string
-  actual5: string
+  actuals: string[]
   remark: string
 }
 
-const createEmptyRow = (id: string): MeasurementRow => ({
+const DEFAULT_ACTUAL_COUNT = 5
+const MIN_ACTUAL_COUNT = 1
+const MAX_ACTUAL_COUNT = 20
+
+type MeasurementEditableField = Exclude<keyof MeasurementRow, 'id' | 'actuals'>
+
+const createEmptyActuals = (count: number) => Array.from({ length: count }, () => '')
+
+const normalizeActuals = (actuals: string[], count: number) =>
+  Array.from({ length: count }, (_, index) => actuals[index] ?? '')
+
+const createEmptyRow = (id: string, actualCount = DEFAULT_ACTUAL_COUNT): MeasurementRow => ({
   id,
   itemDescription: '',
   standardValue: '',
   upperLimit: '',
   lowerLimit: '',
-  actual1: '',
-  actual2: '',
-  actual3: '',
-  actual4: '',
-  actual5: '',
+  actuals: createEmptyActuals(actualCount),
   remark: '',
 })
 
@@ -62,6 +65,12 @@ export function MeasurementTable() {
     createEmptyRow('2'),
     createEmptyRow('3'),
   ])
+  const [actualColumnCount, setActualColumnCount] = useState(DEFAULT_ACTUAL_COUNT)
+
+  const actualColumns = useMemo(
+    () => Array.from({ length: actualColumnCount }, (_, index) => index),
+    [actualColumnCount]
+  )
 
   const handleHeaderChange = useCallback(
     (field: keyof HeaderInfo, value: string) => {
@@ -71,7 +80,7 @@ export function MeasurementTable() {
   )
 
   const handleRowChange = useCallback(
-    (id: string, field: keyof MeasurementRow, value: string) => {
+    (id: string, field: MeasurementEditableField, value: string) => {
       setRows((prev) =>
         prev.map((row) => (row.id === id ? { ...row, [field]: value } : row))
       )
@@ -79,9 +88,31 @@ export function MeasurementTable() {
     []
   )
 
-  const addRow = useCallback(() => {
-    setRows((prev) => [...prev, createEmptyRow(String(Date.now()))])
+  const handleActualChange = useCallback(
+    (id: string, actualIndex: number, value: string) => {
+      setRows((prev) =>
+        prev.map((row) => {
+          if (row.id !== id) return row
+          const nextActuals = normalizeActuals(row.actuals, Math.max(row.actuals.length, actualIndex + 1))
+          nextActuals[actualIndex] = value
+          return { ...row, actuals: nextActuals }
+        })
+      )
+    },
+    []
+  )
+
+  const addActualColumn = useCallback(() => {
+    setActualColumnCount((current) => Math.min(MAX_ACTUAL_COUNT, current + 1))
   }, [])
+
+  const removeActualColumn = useCallback(() => {
+    setActualColumnCount((current) => Math.max(MIN_ACTUAL_COUNT, current - 1))
+  }, [])
+
+  const addRow = useCallback(() => {
+    setRows((prev) => [...prev, createEmptyRow(String(Date.now()), actualColumnCount)])
+  }, [actualColumnCount])
 
   const clearData = useCallback(() => {
     setHeaderInfo({
@@ -90,19 +121,18 @@ export function MeasurementTable() {
       measurer: '',
       measureDate: new Date().toISOString().split('T')[0],
     })
-    setRows([createEmptyRow('1'), createEmptyRow('2'), createEmptyRow('3')])
-  }, [])
+    setRows([
+      createEmptyRow('1', actualColumnCount),
+      createEmptyRow('2', actualColumnCount),
+      createEmptyRow('3', actualColumnCount),
+    ])
+  }, [actualColumnCount])
 
   // 计算行数据（平均值、极差、判定结果）
   const computedRows = useMemo(() => {
     return rows.map((row) => {
-      const actualValues = [
-        row.actual1,
-        row.actual2,
-        row.actual3,
-        row.actual4,
-        row.actual5,
-      ]
+      const visibleActuals = normalizeActuals(row.actuals, actualColumnCount)
+      const actualValues = visibleActuals
         .map((v) => parseFloat(v))
         .filter((v) => !isNaN(v))
 
@@ -120,13 +150,7 @@ export function MeasurementTable() {
 
       // 判定每个实测值是否越界
       const hasLimits = !isNaN(upperLimit) && !isNaN(lowerLimit)
-      const actualStatuses = [
-        row.actual1,
-        row.actual2,
-        row.actual3,
-        row.actual4,
-        row.actual5,
-      ].map((v) => {
+      const actualStatuses = visibleActuals.map((v) => {
         const num = parseFloat(v)
         if (isNaN(num) || !hasLimits) return 'neutral'
         if (num < lowerLimit) return 'below'
@@ -150,7 +174,7 @@ export function MeasurementTable() {
         judgment,
       }
     })
-  }, [rows])
+  }, [actualColumnCount, rows])
 
   // 全局状态：是否有任何 NG
   const hasAnyNG = useMemo(() => {
@@ -182,17 +206,15 @@ export function MeasurementTable() {
     wsData.push([])
 
     // 表格表头
+    const actualHeaders = actualColumns.map((index) => `实测${index + 1}`)
+
     wsData.push([
       '序号',
       '检验项目描述',
       '标准值',
       '上限值',
       '下限值',
-      '实测1',
-      '实测2',
-      '实测3',
-      '实测4',
-      '实测5',
+      ...actualHeaders,
       '平均值',
       '极差',
       '判定结果',
@@ -207,11 +229,7 @@ export function MeasurementTable() {
         row.standardValue,
         row.upperLimit,
         row.lowerLimit,
-        row.actual1,
-        row.actual2,
-        row.actual3,
-        row.actual4,
-        row.actual5,
+        ...actualColumns.map((actualIndex) => row.actuals[actualIndex] ?? ''),
         row.average !== null ? row.average.toFixed(3) : '',
         row.range !== null ? row.range.toFixed(3) : '',
         row.judgment || '',
@@ -234,11 +252,7 @@ export function MeasurementTable() {
       { wch: 10 },
       { wch: 10 },
       { wch: 10 },
-      { wch: 10 },
-      { wch: 10 },
-      { wch: 10 },
-      { wch: 10 },
-      { wch: 10 },
+      ...actualColumns.map(() => ({ wch: 10 })),
       { wch: 10 },
       { wch: 10 },
       { wch: 10 },
@@ -249,7 +263,7 @@ export function MeasurementTable() {
       wb,
       `测量数据_${headerInfo.projectName || '未命名'}_${headerInfo.measureDate}.xlsx`
     )
-  }, [headerInfo, computedRows, hasAnyNG])
+  }, [actualColumns, headerInfo, computedRows, hasAnyNG])
 
   const getActualValueStyle = (status: string) => {
     switch (status) {
@@ -351,11 +365,45 @@ export function MeasurementTable() {
                 <TableHead className="w-20 text-center">标准值</TableHead>
                 <TableHead className="w-20 text-center">上限值</TableHead>
                 <TableHead className="w-20 text-center">下限值</TableHead>
-                <TableHead className="w-20 text-center">实测1</TableHead>
-                <TableHead className="w-20 text-center">实测2</TableHead>
-                <TableHead className="w-20 text-center">实测3</TableHead>
-                <TableHead className="w-20 text-center">实测4</TableHead>
-                <TableHead className="w-20 text-center">实测5</TableHead>
+                {actualColumns.map((actualIndex) => {
+                  const isLastActual = actualIndex === actualColumnCount - 1
+                  return (
+                    <TableHead
+                      key={`actual-head-${actualIndex}`}
+                      className={isLastActual ? 'w-28 text-center' : 'w-20 text-center'}
+                    >
+                      {isLastActual ? (
+                        <div className="flex items-center justify-center gap-1.5">
+                          <span>实测{actualIndex + 1}</span>
+                          <span className="inline-flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={addActualColumn}
+                              disabled={actualColumnCount >= MAX_ACTUAL_COUNT}
+                              aria-label="增加实测列"
+                              title="增加实测列"
+                              className="inline-flex size-5 items-center justify-center rounded border border-white/15 bg-white/[0.04] text-slate-200 transition-colors hover:border-cyan-400/50 hover:text-cyan-300 disabled:cursor-not-allowed disabled:opacity-35"
+                            >
+                              <Plus className="size-3" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={removeActualColumn}
+                              disabled={actualColumnCount <= MIN_ACTUAL_COUNT}
+                              aria-label="减少实测列"
+                              title="减少实测列"
+                              className="inline-flex size-5 items-center justify-center rounded border border-white/15 bg-white/[0.04] text-slate-200 transition-colors hover:border-cyan-400/50 hover:text-cyan-300 disabled:cursor-not-allowed disabled:opacity-35"
+                            >
+                              <Minus className="size-3" />
+                            </button>
+                          </span>
+                        </div>
+                      ) : (
+                        `实测${actualIndex + 1}`
+                      )}
+                    </TableHead>
+                  )
+                })}
                 <TableHead className="w-20 text-center">平均值</TableHead>
                 <TableHead className="w-20 text-center">极差</TableHead>
                 <TableHead className="w-16 text-center">判定</TableHead>
@@ -414,26 +462,23 @@ export function MeasurementTable() {
                       className="h-8 w-full text-center text-sm"
                     />
                   </TableCell>
-                  {[
-                    { field: 'actual1' as const, status: row.actualStatuses[0] },
-                    { field: 'actual2' as const, status: row.actualStatuses[1] },
-                    { field: 'actual3' as const, status: row.actualStatuses[2] },
-                    { field: 'actual4' as const, status: row.actualStatuses[3] },
-                    { field: 'actual5' as const, status: row.actualStatuses[4] },
-                  ].map(({ field, status }) => (
-                    <TableCell key={field}>
+                  {actualColumns.map((actualIndex) => {
+                    const status = row.actualStatuses[actualIndex] || 'neutral'
+                    return (
+                    <TableCell key={`actual-${row.id}-${actualIndex}`}>
                       <Input
                         type="number"
                         step="any"
-                        value={row[field]}
+                        value={row.actuals[actualIndex] ?? ''}
                         onChange={(e) =>
-                          handleRowChange(row.id, field, e.target.value)
+                          handleActualChange(row.id, actualIndex, e.target.value)
                         }
                         placeholder="实测"
                         className={`h-8 w-full text-center text-sm ${getActualValueStyle(status)}`}
                       />
                     </TableCell>
-                  ))}
+                    )
+                  })}
                   <TableCell className="text-center text-sm font-medium">
                     {row.average !== null ? row.average.toFixed(3) : '-'}
                   </TableCell>
