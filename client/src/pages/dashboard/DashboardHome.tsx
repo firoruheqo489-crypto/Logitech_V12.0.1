@@ -51,6 +51,7 @@ const ReliabilityDrawerWorkspace = lazy(() => import('./components/ReliabilityDr
 const SpcRadarDrawerWorkspace = lazy(() => import('./components/SpcRadarDrawerWorkspace'));
 const SpcCalculatorDrawerWorkspace = lazy(() => import('./components/SpcCalculatorDrawerWorkspace'));
 const FmeaAnalysisWorkspace = lazy(() => import('./components/FmeaAnalysisWorkspace'));
+const MeasurementIntakeWorkspace = lazy(() => import('./components/MeasurementIntakeWorkspace'));
 const ProductDataDrawerWorkspace = lazy(() => import('./components/ProductDataDrawerWorkspace'));
 const ProductStandardDrawerWorkspace = lazy(() => import('./components/ProductStandardDrawerWorkspace'));
 const ProcessDrawerWorkspace = lazy(() => import('./components/ProcessDrawerWorkspace'));
@@ -164,6 +165,7 @@ const DASHBOARD_TABS = [
   'project-gantt',
   'fmea-analysis',
   'pareto-analysis',
+  'measurement-intake',
   'mold-reliability',
   'spc-calculator',
   'fmea',
@@ -177,7 +179,7 @@ const DASHBOARD_TABS = [
 type DashboardTab = typeof DASHBOARD_TABS[number];
 
 const PUBLIC_DASHBOARD_TAB_LIMIT =
-  DASHBOARD_TABS.indexOf('pareto-analysis') + 1;
+  DASHBOARD_TABS.indexOf('measurement-intake') + 1;
 const PUBLIC_DASHBOARD_TABS: DashboardTab[] = [
   ...DASHBOARD_TABS.slice(0, PUBLIC_DASHBOARD_TAB_LIMIT),
 ];
@@ -831,6 +833,7 @@ export default function DashboardHome() {
               'project-gantt': '项目甘特图',
               'fmea-analysis': 'FMEA分析',
               'mold-reliability': '模具可靠性',
+              'measurement-intake': '测量检入表',
               'spc-calculator': 'SPC计算器',
               'fmea': 'FMEA知识库',
               'process': '工艺模块',
@@ -878,6 +881,12 @@ export default function DashboardHome() {
         {selectedTab === 'pareto-analysis' && (
           <LazyWorkspace>
             <ParetoQualityDashboard />
+          </LazyWorkspace>
+        )}
+
+        {selectedTab === 'measurement-intake' && (
+          <LazyWorkspace>
+            <MeasurementIntakeWorkspace />
           </LazyWorkspace>
         )}
 

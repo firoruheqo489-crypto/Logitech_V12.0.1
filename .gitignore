@@ -134,6 +134,11 @@ gantetu2/
 # client/src/components/fmea/, and client/src/lib/fmea-data.ts.
 FMEA2/
 
+# Online measurement intake V0 prototype source. Runtime logic is absorbed into
+# client/src/pages/dashboard/components/MeasurementIntakeWorkspace.tsx and
+# client/src/components/measurement-table.tsx.
+Excel1/
+
 # Daily trial document V0 prototype source. Runtime logic is absorbed into
 # client/src/pages/dashboard/components/TrialDocumentsWorkspace.tsx and
 # server/routes/trial-documents.ts.
