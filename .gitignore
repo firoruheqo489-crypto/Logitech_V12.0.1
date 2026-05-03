@@ -129,6 +129,11 @@ scripts/out/
 # 仅作本地只读参考，禁止入库以防主干熵增。
 gantetu2/
 
+# FMEA analysis V0 prototype source. Runtime logic is absorbed into
+# client/src/pages/dashboard/components/FmeaAnalysisWorkspace.tsx,
+# client/src/components/fmea/, and client/src/lib/fmea-data.ts.
+FMEA2/
+
 # Daily trial document V0 prototype source. Runtime logic is absorbed into
 # client/src/pages/dashboard/components/TrialDocumentsWorkspace.tsx and
 # server/routes/trial-documents.ts.

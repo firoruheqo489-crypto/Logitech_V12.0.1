@@ -50,6 +50,7 @@ const MacroStageGateDrawerWorkspace = lazy(() => import('./components/MacroStage
 const ReliabilityDrawerWorkspace = lazy(() => import('./components/ReliabilityDrawerWorkspace'));
 const SpcRadarDrawerWorkspace = lazy(() => import('./components/SpcRadarDrawerWorkspace'));
 const SpcCalculatorDrawerWorkspace = lazy(() => import('./components/SpcCalculatorDrawerWorkspace'));
+const FmeaAnalysisWorkspace = lazy(() => import('./components/FmeaAnalysisWorkspace'));
 const ProductDataDrawerWorkspace = lazy(() => import('./components/ProductDataDrawerWorkspace'));
 const ProductStandardDrawerWorkspace = lazy(() => import('./components/ProductStandardDrawerWorkspace'));
 const ProcessDrawerWorkspace = lazy(() => import('./components/ProcessDrawerWorkspace'));
@@ -161,6 +162,7 @@ const DASHBOARD_TABS = [
   'docx-converter',
   'trial-documents',
   'project-gantt',
+  'fmea-analysis',
   'pareto-analysis',
   'mold-reliability',
   'spc-calculator',
@@ -827,6 +829,7 @@ export default function DashboardHome() {
               'docx-converter': '问题解析',
               'trial-documents': '每日试验档',
               'project-gantt': '项目甘特图',
+              'fmea-analysis': 'FMEA分析',
               'mold-reliability': '模具可靠性',
               'spc-calculator': 'SPC计算器',
               'fmea': 'FMEA知识库',
@@ -1003,6 +1006,12 @@ export default function DashboardHome() {
         {selectedTab === 'project-gantt' && (
           <LazyWorkspace>
             <ProjectGanttWorkspace />
+          </LazyWorkspace>
+        )}
+
+        {selectedTab === 'fmea-analysis' && (
+          <LazyWorkspace>
+            <FmeaAnalysisWorkspace />
           </LazyWorkspace>
         )}
 
