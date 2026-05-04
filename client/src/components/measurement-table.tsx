@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useMemo } from 'react'
+import { useState, useCallback, useEffect, useMemo } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -33,7 +33,12 @@ interface MeasurementRow {
 
 const DEFAULT_ACTUAL_COUNT = 5
 const MIN_ACTUAL_COUNT = 1
-const MAX_ACTUAL_COUNT = 20
+const MAX_ACTUAL_COUNT = 10
+const NUMERIC_COLUMN_CLASS = 'min-w-[108px] text-center'
+const ACTUAL_COLUMN_CLASS = 'min-w-[112px] text-center'
+const LAST_ACTUAL_COLUMN_CLASS = 'min-w-[144px] text-center'
+const NUMERIC_INPUT_CLASS =
+  'measurement-number-input h-8 min-w-[96px] px-2 text-center text-[15px] font-mono tabular-nums'
 
 type MeasurementEditableField = Exclude<keyof MeasurementRow, 'id' | 'actuals'>
 
@@ -66,11 +71,30 @@ export function MeasurementTable() {
     createEmptyRow('3'),
   ])
   const [actualColumnCount, setActualColumnCount] = useState(DEFAULT_ACTUAL_COUNT)
+  const boundedActualColumnCount = Math.min(
+    MAX_ACTUAL_COUNT,
+    Math.max(MIN_ACTUAL_COUNT, actualColumnCount)
+  )
 
   const actualColumns = useMemo(
-    () => Array.from({ length: actualColumnCount }, (_, index) => index),
-    [actualColumnCount]
+    () => Array.from({ length: boundedActualColumnCount }, (_, index) => index),
+    [boundedActualColumnCount]
   )
+
+  useEffect(() => {
+    if (actualColumnCount !== boundedActualColumnCount) {
+      setActualColumnCount(boundedActualColumnCount)
+    }
+  }, [actualColumnCount, boundedActualColumnCount])
+
+  useEffect(() => {
+    setRows((prev) =>
+      prev.map((row) => {
+        if (row.actuals.length >= boundedActualColumnCount) return row
+        return { ...row, actuals: normalizeActuals(row.actuals, boundedActualColumnCount) }
+      })
+    )
+  }, [boundedActualColumnCount])
 
   const handleHeaderChange = useCallback(
     (field: keyof HeaderInfo, value: string) => {
@@ -111,8 +135,8 @@ export function MeasurementTable() {
   }, [])
 
   const addRow = useCallback(() => {
-    setRows((prev) => [...prev, createEmptyRow(String(Date.now()), actualColumnCount)])
-  }, [actualColumnCount])
+    setRows((prev) => [...prev, createEmptyRow(String(Date.now()), boundedActualColumnCount)])
+  }, [boundedActualColumnCount])
 
   const clearData = useCallback(() => {
     setHeaderInfo({
@@ -122,16 +146,16 @@ export function MeasurementTable() {
       measureDate: new Date().toISOString().split('T')[0],
     })
     setRows([
-      createEmptyRow('1', actualColumnCount),
-      createEmptyRow('2', actualColumnCount),
-      createEmptyRow('3', actualColumnCount),
+      createEmptyRow('1', boundedActualColumnCount),
+      createEmptyRow('2', boundedActualColumnCount),
+      createEmptyRow('3', boundedActualColumnCount),
     ])
-  }, [actualColumnCount])
+  }, [boundedActualColumnCount])
 
   // 计算行数据（平均值、极差、判定结果）
   const computedRows = useMemo(() => {
     return rows.map((row) => {
-      const visibleActuals = normalizeActuals(row.actuals, actualColumnCount)
+      const visibleActuals = normalizeActuals(row.actuals, boundedActualColumnCount)
       const actualValues = visibleActuals
         .map((v) => parseFloat(v))
         .filter((v) => !isNaN(v))
@@ -174,7 +198,7 @@ export function MeasurementTable() {
         judgment,
       }
     })
-  }, [actualColumnCount, rows])
+  }, [boundedActualColumnCount, rows])
 
   // 全局状态：是否有任何 NG
   const hasAnyNG = useMemo(() => {
@@ -268,11 +292,11 @@ export function MeasurementTable() {
   const getActualValueStyle = (status: string) => {
     switch (status) {
       case 'below':
-        return 'text-blue-600 font-bold'
+        return 'measurement-actual--below font-bold'
       case 'above':
-        return 'text-red-600 font-bold'
+        return 'measurement-actual--above font-bold'
       case 'ok':
-        return 'text-green-600'
+        return 'measurement-actual--ok'
       default:
         return ''
     }
@@ -362,15 +386,15 @@ export function MeasurementTable() {
               <TableRow className="bg-muted/50">
                 <TableHead className="w-12 text-center">序号</TableHead>
                 <TableHead className="min-w-[140px]">检验项目描述</TableHead>
-                <TableHead className="w-20 text-center">标准值</TableHead>
-                <TableHead className="w-20 text-center">上限值</TableHead>
-                <TableHead className="w-20 text-center">下限值</TableHead>
+                <TableHead className={NUMERIC_COLUMN_CLASS}>标准值</TableHead>
+                <TableHead className={NUMERIC_COLUMN_CLASS}>上限值</TableHead>
+                <TableHead className={NUMERIC_COLUMN_CLASS}>下限值</TableHead>
                 {actualColumns.map((actualIndex) => {
-                  const isLastActual = actualIndex === actualColumnCount - 1
+                  const isLastActual = actualIndex === boundedActualColumnCount - 1
                   return (
                     <TableHead
                       key={`actual-head-${actualIndex}`}
-                      className={isLastActual ? 'w-28 text-center' : 'w-20 text-center'}
+                      className={isLastActual ? LAST_ACTUAL_COLUMN_CLASS : ACTUAL_COLUMN_CLASS}
                     >
                       {isLastActual ? (
                         <div className="flex items-center justify-center gap-1.5">
@@ -379,7 +403,7 @@ export function MeasurementTable() {
                             <button
                               type="button"
                               onClick={addActualColumn}
-                              disabled={actualColumnCount >= MAX_ACTUAL_COUNT}
+                              disabled={boundedActualColumnCount >= MAX_ACTUAL_COUNT}
                               aria-label="增加实测列"
                               title="增加实测列"
                               className="inline-flex size-5 items-center justify-center rounded border border-white/15 bg-white/[0.04] text-slate-200 transition-colors hover:border-cyan-400/50 hover:text-cyan-300 disabled:cursor-not-allowed disabled:opacity-35"
@@ -389,7 +413,7 @@ export function MeasurementTable() {
                             <button
                               type="button"
                               onClick={removeActualColumn}
-                              disabled={actualColumnCount <= MIN_ACTUAL_COUNT}
+                              disabled={boundedActualColumnCount <= MIN_ACTUAL_COUNT}
                               aria-label="减少实测列"
                               title="减少实测列"
                               className="inline-flex size-5 items-center justify-center rounded border border-white/15 bg-white/[0.04] text-slate-200 transition-colors hover:border-cyan-400/50 hover:text-cyan-300 disabled:cursor-not-allowed disabled:opacity-35"
@@ -404,8 +428,8 @@ export function MeasurementTable() {
                     </TableHead>
                   )
                 })}
-                <TableHead className="w-20 text-center">平均值</TableHead>
-                <TableHead className="w-20 text-center">极差</TableHead>
+                <TableHead className={NUMERIC_COLUMN_CLASS}>平均值</TableHead>
+                <TableHead className={NUMERIC_COLUMN_CLASS}>极差</TableHead>
                 <TableHead className="w-16 text-center">判定</TableHead>
                 <TableHead className="min-w-[120px]">备注</TableHead>
               </TableRow>
@@ -435,7 +459,7 @@ export function MeasurementTable() {
                         handleRowChange(row.id, 'standardValue', e.target.value)
                       }
                       placeholder="标准值"
-                      className="h-8 w-full text-center text-sm"
+                      className={NUMERIC_INPUT_CLASS}
                     />
                   </TableCell>
                   <TableCell>
@@ -447,7 +471,7 @@ export function MeasurementTable() {
                         handleRowChange(row.id, 'upperLimit', e.target.value)
                       }
                       placeholder="上限"
-                      className="h-8 w-full text-center text-sm"
+                      className={NUMERIC_INPUT_CLASS}
                     />
                   </TableCell>
                   <TableCell>
@@ -459,7 +483,7 @@ export function MeasurementTable() {
                         handleRowChange(row.id, 'lowerLimit', e.target.value)
                       }
                       placeholder="下限"
-                      className="h-8 w-full text-center text-sm"
+                      className={NUMERIC_INPUT_CLASS}
                     />
                   </TableCell>
                   {actualColumns.map((actualIndex) => {
@@ -474,7 +498,7 @@ export function MeasurementTable() {
                           handleActualChange(row.id, actualIndex, e.target.value)
                         }
                         placeholder="实测"
-                        className={`h-8 w-full text-center text-sm ${getActualValueStyle(status)}`}
+                        className={`${NUMERIC_INPUT_CLASS} ${getActualValueStyle(status)}`}
                       />
                     </TableCell>
                     )
@@ -522,11 +546,12 @@ export function MeasurementTable() {
       {/* ��作按钮区 */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex gap-2">
-          <Button onClick={addRow} variant="outline" className="gap-1.5">
+          <Button type="button" onClick={addRow} variant="outline" className="gap-1.5">
             <Plus className="size-4" />
             新增一行
           </Button>
           <Button
+            type="button"
             onClick={clearData}
             variant="outline"
             className="gap-1.5 text-destructive hover:bg-destructive hover:text-white"
@@ -535,7 +560,7 @@ export function MeasurementTable() {
             清空数据
           </Button>
         </div>
-        <Button onClick={exportToExcel} className="gap-1.5">
+        <Button type="button" onClick={exportToExcel} className="gap-1.5">
           <Download className="size-4" />
           一键导出为 Excel
         </Button>

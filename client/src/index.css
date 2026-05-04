@@ -947,6 +947,36 @@ body::-webkit-scrollbar-button,
   ring: none !important;
 }
 
+[data-slot="input"].measurement-number-input {
+  font-variant-numeric: tabular-nums;
+}
+
+[data-slot="input"].measurement-number-input::-webkit-outer-spin-button,
+[data-slot="input"].measurement-number-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+[data-slot="input"].measurement-number-input[type="number"] {
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+[data-slot="input"].measurement-actual--below {
+  color: #60A5FA !important;
+  caret-color: #60A5FA;
+}
+
+[data-slot="input"].measurement-actual--above {
+  color: #F87171 !important;
+  caret-color: #F87171;
+}
+
+[data-slot="input"].measurement-actual--ok {
+  color: #34D399 !important;
+  caret-color: #34D399;
+}
+
 /* ═══════════════ STAT-CARD — CLEAN SLATE ═══════════════ */
 
 .stat-card {
