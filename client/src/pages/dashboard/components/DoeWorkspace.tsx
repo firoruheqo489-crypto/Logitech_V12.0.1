@@ -3,13 +3,11 @@ import { AnimatePresence, motion } from 'framer-motion';
 import {
   Activity,
   Check,
-  Cpu,
-  Database,
   Gauge,
   Grid3X3,
   Layers,
   Play,
-  Settings,
+  RotateCcw,
   Sparkles,
   Terminal,
   Thermometer,
@@ -31,6 +29,7 @@ import {
   YAxis,
 } from 'recharts';
 import { toast } from 'sonner';
+import CyberConfirmDialog from '@/components/ui/CyberConfirmDialog';
 import './doe/doe-workspace.css';
 import {
   analyzeTaguchiMatrix,
@@ -61,7 +60,69 @@ const initialFactorValues: TaguchiFactorLevels = {
   t3: ['1.5', '2.0', '2.5'],
 };
 
+const initialFactorToggles: TaguchiFactorToggles = {
+  stage1Hold: true,
+  sliderTemp: false,
+  stage2Hold: false,
+  stage3Hold: false,
+};
+
+type DoeTrialHeaderFields = {
+  moldNumber: string;
+  trialDate: string;
+  machineStartTime: string;
+  currentTrialCount: string;
+  technician: string;
+  machine: string;
+};
+
+const initialTrialHeaderFields: DoeTrialHeaderFields = {
+  moldNumber: '',
+  trialDate: '',
+  machineStartTime: '',
+  currentTrialCount: '',
+  technician: '',
+  machine: '',
+};
+
+const FACTOR_KEYS: readonly TaguchiFactorKey[] = [
+  'frontTemp',
+  'backTemp',
+  'sliderTemp',
+  'p1',
+  't1',
+  'p2',
+  't2',
+  'p3',
+  't3',
+];
+
+const TOGGLE_KEYS: readonly (keyof TaguchiFactorToggles)[] = ['stage1Hold', 'sliderTemp', 'stage2Hold', 'stage3Hold'];
+const TRIAL_HEADER_KEYS: readonly (keyof DoeTrialHeaderFields)[] = [
+  'moldNumber',
+  'trialDate',
+  'machineStartTime',
+  'currentTrialCount',
+  'technician',
+  'machine',
+];
+
 const CHART_COLORS = ['#00E5FF', '#6366f1', '#10b981', '#f59e0b', '#fb7185', '#a855f7', '#14b8a6', '#f97316', '#84cc16'];
+
+function cloneInitialFactorValues(): TaguchiFactorLevels {
+  return FACTOR_KEYS.reduce((next, key) => {
+    next[key] = [...initialFactorValues[key]] as [string, string, string];
+    return next;
+  }, {} as TaguchiFactorLevels);
+}
+
+function cloneInitialFactorToggles(): TaguchiFactorToggles {
+  return { ...initialFactorToggles };
+}
+
+function cloneInitialTrialHeaderFields(): DoeTrialHeaderFields {
+  return { ...initialTrialHeaderFields };
+}
 
 function DoeHeader() {
   return (
@@ -87,35 +148,163 @@ function DoeHeader() {
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3 md:gap-4">
-            <div className="glass-card flex flex-wrap items-center gap-4 rounded-xl px-4 py-2 md:gap-6">
-              <div className="flex items-center gap-2">
-                <Cpu className="h-3.5 w-3.5 text-[#00E5FF]/70" />
-                <span className="text-[10px] uppercase tracking-wider text-white/50">Session</span>
-                <span className="font-mono text-xs text-[#00E5FF]">DOE-2024-0512</span>
-              </div>
-              <div className="hidden h-4 w-px bg-white/10 md:block" />
-              <div className="flex items-center gap-2">
-                <Database className="h-3.5 w-3.5 text-emerald-400" />
-                <span className="text-xs text-white/60">Online</span>
-                <motion.div
-                  className="h-2 w-2 rounded-full bg-emerald-400"
-                  animate={{ opacity: [0.5, 1, 0.5], scale: [0.9, 1.1, 0.9] }}
-                  transition={{ duration: 2, repeat: Infinity }}
-                />
-              </div>
-            </div>
-            <button
-              type="button"
-              aria-label="DOE settings"
-              className="glass-card rounded-xl p-2.5 text-white/40 transition-all hover:bg-white/[0.06] hover:text-white/70"
-            >
-              <Settings className="h-4.5 w-4.5" />
-            </button>
-          </div>
         </div>
       </div>
     </header>
+  );
+}
+
+function TrialHeaderPanel({
+  fields,
+  onChange,
+}: {
+  fields: DoeTrialHeaderFields;
+  onChange: (field: keyof DoeTrialHeaderFields, value: string) => void;
+}) {
+  return <TrialHeaderPanelContentV2 fields={fields} onChange={onChange} />;
+
+  /*
+  const items: Array<{
+    key: keyof DoeTrialHeaderFields;
+    label: string;
+    type?: 'text' | 'date' | 'time' | 'number';
+    placeholder?: string;
+  }> = [
+    { key: 'moldNumber', label: '模具编号', placeholder: '输入模具编号' },
+    { key: 'trialDate', label: '试模日期', type: 'date' },
+    { key: 'machineStartTime', label: '上机时间', type: 'time' },
+    { key: 'currentTrialCount', label: '当前试模次数', type: 'number', placeholder: '输入次数' },
+    { key: 'technician', label: '技术员', placeholder: '输入技术员' },
+    { key: 'machine', label: '机台', placeholder: '输入机台编号' },
+  ];
+
+  return (
+    <section className="space-y-4">
+      <div>
+        <div className="section-label mb-2">Header</div>
+        <h2 className="text-xl font-semibold tracking-tight text-white">试模表头信息</h2>
+        <p className="mt-1 text-sm text-white/40">DOE trial context header</p>
+      </div>
+
+      <div className="glass-card-elevated rounded-2xl p-5 md:p-6">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {items.map((item) => (
+            <label key={item.key} className="space-y-2">
+              <span className="block text-sm font-medium text-white/85">{item.label}</span>
+              <input
+                type={item.type || 'text'}
+                min={item.type === 'number' ? '0' : undefined}
+                value={fields[item.key]}
+                onChange={(event) => onChange(item.key, event.target.value)}
+                placeholder={item.placeholder}
+                className="premium-input h-11 w-full rounded-xl px-3 text-sm text-white/90 placeholder:text-white/20 focus:outline-none"
+              />
+            </label>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+  */
+}
+
+function TrialHeaderPanelContent({
+  fields,
+  onChange,
+}: {
+  fields: DoeTrialHeaderFields;
+  onChange: (field: keyof DoeTrialHeaderFields, value: string) => void;
+}) {
+  const items: Array<{
+    key: keyof DoeTrialHeaderFields;
+    label: string;
+    type?: 'text' | 'date' | 'time' | 'number';
+    placeholder?: string;
+  }> = [
+    { key: 'moldNumber', label: '模具编号', placeholder: '输入模具编号' },
+    { key: 'trialDate', label: '试模日期', type: 'date' },
+    { key: 'machineStartTime', label: '上机时间', type: 'time' },
+    { key: 'currentTrialCount', label: '当前试模次数', type: 'number', placeholder: '输入次数' },
+    { key: 'technician', label: '技术员', placeholder: '输入技术员' },
+    { key: 'machine', label: '机台', placeholder: '输入机台编号' },
+  ];
+
+  return (
+    <section className="space-y-4">
+      <div>
+        <div className="section-label mb-2">Header</div>
+        <h2 className="text-xl font-semibold tracking-tight text-white">试模表头信息</h2>
+        <p className="mt-1 text-sm text-white/40">记录本次 DOE 试模的基础上下文信息</p>
+      </div>
+
+      <div className="glass-card-elevated rounded-2xl p-5 md:p-6">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {items.map((item) => (
+            <label key={item.key} className="space-y-2">
+              <span className="block text-sm font-medium text-white/85">{item.label}</span>
+              <input
+                type={item.type || 'text'}
+                min={item.type === 'number' ? '0' : undefined}
+                value={fields[item.key]}
+                onChange={(event) => onChange(item.key, event.target.value)}
+                placeholder={item.placeholder}
+                className="premium-input h-11 w-full rounded-xl px-3 text-sm text-white/90 placeholder:text-white/20 focus:outline-none"
+              />
+            </label>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function TrialHeaderPanelContentV2({
+  fields,
+  onChange,
+}: {
+  fields: DoeTrialHeaderFields;
+  onChange: (field: keyof DoeTrialHeaderFields, value: string) => void;
+}) {
+  const items: Array<{
+    key: keyof DoeTrialHeaderFields;
+    label: string;
+    type?: 'text' | 'date' | 'time' | 'number';
+    placeholder?: string;
+  }> = [
+    { key: 'moldNumber', label: '\u6A21\u5177\u7F16\u53F7', placeholder: '\u8F93\u5165\u6A21\u5177\u7F16\u53F7' },
+    { key: 'trialDate', label: '\u8BD5\u6A21\u65E5\u671F', type: 'date' },
+    { key: 'machineStartTime', label: '\u4E0A\u673A\u65F6\u95F4', type: 'time' },
+    { key: 'currentTrialCount', label: '\u5F53\u524D\u8BD5\u6A21\u6B21\u6570', type: 'number', placeholder: '\u8F93\u5165\u6B21\u6570' },
+    { key: 'technician', label: '\u6280\u672F\u5458', placeholder: '\u8F93\u5165\u6280\u672F\u5458' },
+    { key: 'machine', label: '\u673A\u53F0', placeholder: '\u8F93\u5165\u673A\u53F0\u7F16\u53F7' },
+  ];
+
+  return (
+    <section className="space-y-4">
+      <div>
+        <div className="section-label mb-2">Header</div>
+        <h2 className="text-xl font-semibold tracking-tight text-white">{'\u8BD5\u6A21\u8868\u5934\u4FE1\u606F'}</h2>
+        <p className="mt-1 text-sm text-white/40">{'\u8BB0\u5F55\u672C\u6B21 DOE \u8BD5\u6A21\u7684\u57FA\u7840\u4E0A\u4E0B\u6587\u4FE1\u606F'}</p>
+      </div>
+
+      <div className="glass-card-elevated rounded-2xl p-5 md:p-6">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {items.map((item) => (
+            <label key={item.key} className="space-y-2">
+              <span className="block text-sm font-medium text-white/85">{item.label}</span>
+              <input
+                type={item.type || 'text'}
+                min={item.type === 'number' ? '0' : undefined}
+                value={fields[item.key]}
+                onChange={(event) => onChange(item.key, event.target.value)}
+                placeholder={item.placeholder}
+                className="premium-input h-11 w-full rounded-xl px-3 text-sm text-white/90 placeholder:text-white/20 focus:outline-none"
+              />
+            </label>
+          ))}
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -250,16 +439,20 @@ function FactorBuilder({
   factors,
   activeFactorCount,
   arrayType,
+  canReset,
   onFactorToggle,
   factorValues,
   onValueChange,
+  onReset,
 }: {
   factors: TaguchiFactorToggles;
   activeFactorCount: number;
   arrayType: TaguchiArrayName;
+  canReset: boolean;
   onFactorToggle: (factor: keyof TaguchiFactorToggles) => void;
   factorValues: TaguchiFactorLevels;
   onValueChange: (factor: TaguchiFactorKey, level: number, value: string) => void;
+  onReset: () => void;
 }) {
   return (
     <section className="space-y-6">
@@ -269,7 +462,21 @@ function FactorBuilder({
           <h2 className="text-xl font-semibold tracking-tight text-white">因子配置构建器</h2>
           <p className="mt-1 text-sm text-white/40">Factor Configuration Builder - 按需配置乐高模式</p>
         </div>
-        <div className="glass-card-elevated flex w-full items-center justify-around gap-4 rounded-2xl px-5 py-3 md:w-auto md:justify-start">
+        <div className="flex w-full flex-col gap-3 md:w-auto md:flex-row md:items-center">
+          <button
+            type="button"
+            onClick={onReset}
+            disabled={!canReset}
+            className={`inline-flex w-full items-center justify-center gap-2 rounded-xl border px-4 py-3 text-sm font-semibold transition-all md:w-auto ${
+              canReset
+                ? 'border-white/15 bg-white/[0.05] text-white/80 hover:bg-white/[0.08] hover:text-white'
+                : 'border-white/10 bg-white/[0.03] text-white/30'
+            }`}
+          >
+            <RotateCcw className="h-4 w-4" />
+            <span>清除 DOE 数据</span>
+          </button>
+          <div className="glass-card-elevated flex w-full items-center justify-around gap-4 rounded-2xl px-5 py-3 md:w-auto md:justify-start">
           <div className="flex flex-col items-center">
             <span className="text-[10px] uppercase tracking-wider text-white/40">激活因子</span>
             <span className="font-mono text-2xl font-bold text-[#00E5FF]">{activeFactorCount}</span>
@@ -278,6 +485,7 @@ function FactorBuilder({
           <div className="flex flex-col items-center">
             <span className="text-[10px] uppercase tracking-wider text-white/40">正交阵列</span>
             <span className="font-mono text-2xl font-bold text-[#00E5FF]">{arrayType}</span>
+          </div>
           </div>
         </div>
       </div>
@@ -356,10 +564,17 @@ function FactorBuilder({
             <div className="ml-auto flex items-center gap-2">
               <Layers className="h-4 w-4 text-white/30" />
               <span className="font-mono text-xs text-white/40">
-                {2 + (factors.stage2Hold ? 2 : 0) + (factors.stage3Hold ? 2 : 0)} vars
+                {(factors.stage1Hold ? 2 : 0) + (factors.stage2Hold ? 2 : 0) + (factors.stage3Hold ? 2 : 0)} vars
               </span>
             </div>
           </div>
+
+          <PremiumToggle
+            enabled={factors.stage1Hold}
+            onToggle={() => onFactorToggle('stage1Hold')}
+            label="启用第一段保压"
+            labelCn="Enable Stage 1 Hold"
+          />
 
           <div className="space-y-4">
             <div className="flex items-center gap-2">
@@ -377,6 +592,7 @@ function FactorBuilder({
                 values={factorValues.p1}
                 onChange={(level, value) => onValueChange('p1', level, value)}
                 accentColor="indigo"
+                disabled={!factors.stage1Hold}
               />
               <LevelInputs
                 label="时间"
@@ -386,6 +602,7 @@ function FactorBuilder({
                 values={factorValues.t1}
                 onChange={(level, value) => onValueChange('t1', level, value)}
                 accentColor="indigo"
+                disabled={!factors.stage1Hold}
               />
             </div>
           </div>
@@ -1059,14 +1276,12 @@ function AnalyticsPanel({
 }
 
 export default function DoeWorkspace() {
-  const [factors, setFactors] = useState<TaguchiFactorToggles>({
-    sliderTemp: false,
-    stage2Hold: false,
-    stage3Hold: false,
-  });
-  const [factorValues, setFactorValues] = useState<TaguchiFactorLevels>(initialFactorValues);
+  const [factors, setFactors] = useState<TaguchiFactorToggles>(() => cloneInitialFactorToggles());
+  const [factorValues, setFactorValues] = useState<TaguchiFactorLevels>(() => cloneInitialFactorValues());
+  const [trialHeaderFields, setTrialHeaderFields] = useState<DoeTrialHeaderFields>(() => cloneInitialTrialHeaderFields());
   const [matrixData, setMatrixData] = useState<HydratedExperimentRow[]>([]);
   const [matrixGenerated, setMatrixGenerated] = useState(false);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
 
   const activeFactors = useMemo(
     () => buildActiveFactors(factors, factorValues),
@@ -1076,6 +1291,19 @@ export default function DoeWorkspace() {
     () => selectTaguchiArrayName(activeFactors.length),
     [activeFactors.length],
   );
+  const canReset = useMemo(() => {
+    const togglesChanged = TOGGLE_KEYS.some((key) => factors[key] !== initialFactorToggles[key]);
+    const levelsChanged = FACTOR_KEYS.some((key) =>
+      factorValues[key].some((value, index) => value !== initialFactorValues[key][index]),
+    );
+    const headerChanged = TRIAL_HEADER_KEYS.some((key) => trialHeaderFields[key] !== initialTrialHeaderFields[key]);
+
+    return togglesChanged || levelsChanged || headerChanged || matrixGenerated || matrixData.length > 0;
+  }, [factorValues, factors, matrixData.length, matrixGenerated, trialHeaderFields]);
+
+  const handleTrialHeaderChange = useCallback((field: keyof DoeTrialHeaderFields, value: string) => {
+    setTrialHeaderFields((current) => ({ ...current, [field]: value }));
+  }, []);
 
   const handleFactorToggle = useCallback((factor: keyof TaguchiFactorToggles) => {
     setFactors((current) => ({ ...current, [factor]: !current[factor] }));
@@ -1094,8 +1322,14 @@ export default function DoeWorkspace() {
   }, []);
 
   const handleGenerateMatrix = useCallback(() => {
-    setMatrixData(generateTaguchiMatrix(activeFactors));
-    setMatrixGenerated(true);
+    try {
+      setMatrixData(generateTaguchiMatrix(activeFactors));
+      setMatrixGenerated(true);
+    } catch (error) {
+      setMatrixData([]);
+      setMatrixGenerated(false);
+      toast.error(error instanceof Error ? error.message : '生成正交矩阵失败。');
+    }
   }, [activeFactors]);
 
   const handleDeviationChange = useCallback((run: number, value: string) => {
@@ -1110,19 +1344,43 @@ export default function DoeWorkspace() {
     );
   }, []);
 
+  const handleResetWorkspace = useCallback(() => {
+    if (!canReset) {
+      toast.message('DOE 数据已经是初始状态。');
+      return;
+    }
+    setShowResetConfirm(true);
+  }, [canReset]);
+
+  const handleConfirmResetWorkspace = useCallback(() => {
+    setFactors(cloneInitialFactorToggles());
+    setFactorValues(cloneInitialFactorValues());
+    setTrialHeaderFields(cloneInitialTrialHeaderFields());
+    setMatrixData([]);
+    setMatrixGenerated(false);
+    setShowResetConfirm(false);
+    toast.success('DOE 数据已清除。');
+  }, []);
+
   const hasData = matrixGenerated || matrixData.some((row) => row.maxDeviation !== null || row.scanImage !== null);
 
   return (
     <div className="doe-workspace min-h-[70vh] overflow-hidden rounded-2xl bg-black text-white">
       <DoeHeader />
       <main className="relative mx-auto max-w-[1400px] space-y-12 px-4 py-8 md:px-8 md:py-10 lg:space-y-14">
+        <TrialHeaderPanel
+          fields={trialHeaderFields}
+          onChange={handleTrialHeaderChange}
+        />
         <FactorBuilder
           factors={factors}
           activeFactorCount={activeFactors.length}
           arrayType={arrayType}
+          canReset={canReset}
           onFactorToggle={handleFactorToggle}
           factorValues={factorValues}
           onValueChange={handleValueChange}
+          onReset={handleResetWorkspace}
         />
         <TaguchiMatrix
           arrayType={arrayType}
@@ -1151,6 +1409,15 @@ export default function DoeWorkspace() {
           </div>
         </div>
       </footer>
+      <CyberConfirmDialog
+        open={showResetConfirm}
+        title="确认清除 DOE 数据"
+        message={'这会恢复默认因子配置，并清空当前正交矩阵、偏差录入和分析结果。\n此操作不可撤销，是否继续？'}
+        onCancel={() => setShowResetConfirm(false)}
+        onConfirm={handleConfirmResetWorkspace}
+        confirmText="确认清除"
+        cancelText="取消"
+      />
     </div>
   );
 }

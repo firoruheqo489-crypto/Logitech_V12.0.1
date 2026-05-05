@@ -21,7 +21,7 @@ const levels: TaguchiFactorLevels = {
 describe('taguchiEngine', () => {
   it('maps 4 active factors to L9 and hydrates level values', () => {
     const activeFactors = buildActiveFactors(
-      { sliderTemp: false, stage2Hold: false, stage3Hold: false },
+      { stage1Hold: true, sliderTemp: false, stage2Hold: false, stage3Hold: false },
       levels,
     );
     const matrix = generateTaguchiMatrix(activeFactors);
@@ -49,7 +49,7 @@ describe('taguchiEngine', () => {
 
   it('maps 5-9 active factors to L27 while preserving active factor order', () => {
     const activeFactors = buildActiveFactors(
-      { sliderTemp: true, stage2Hold: true, stage3Hold: false },
+      { stage1Hold: true, sliderTemp: true, stage2Hold: true, stage3Hold: false },
       levels,
     );
     const matrix = generateTaguchiMatrix(activeFactors);
@@ -75,5 +75,43 @@ describe('taguchiEngine', () => {
       p2: 50,
       t2: 3.5,
     });
+  });
+
+  it('physically removes stage 1 factors when stage 1 hold is disabled', () => {
+    const activeFactors = buildActiveFactors(
+      { stage1Hold: false, sliderTemp: false, stage2Hold: true, stage3Hold: false },
+      levels,
+    );
+
+    expect(activeFactors.map((factor) => factor.key)).toEqual(['frontTemp', 'backTemp', 'p2', 't2']);
+  });
+
+  it('rejects zero, empty, and duplicate active factor levels before matrix generation', () => {
+    const duplicatedLevels: TaguchiFactorLevels = {
+      ...levels,
+      p1: ['55', '55', '60'],
+    };
+    const zeroLevels: TaguchiFactorLevels = {
+      ...levels,
+      t1: ['0', '2.5', '3.0'],
+    };
+
+    expect(() =>
+      generateTaguchiMatrix(
+        buildActiveFactors(
+          { stage1Hold: true, sliderTemp: false, stage2Hold: false, stage3Hold: false },
+          duplicatedLevels,
+        ),
+      ),
+    ).toThrow('校验失败');
+
+    expect(() =>
+      generateTaguchiMatrix(
+        buildActiveFactors(
+          { stage1Hold: true, sliderTemp: false, stage2Hold: false, stage3Hold: false },
+          zeroLevels,
+        ),
+      ),
+    ).toThrow('校验失败');
   });
 });

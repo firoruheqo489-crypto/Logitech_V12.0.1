@@ -16,6 +16,7 @@ export type TaguchiLevelValues = readonly [string, string, string];
 export type TaguchiFactorLevels = Record<TaguchiFactorKey, TaguchiLevelValues>;
 
 export type TaguchiFactorToggles = {
+  stage1Hold: boolean;
   sliderTemp: boolean;
   stage2Hold: boolean;
   stage3Hold: boolean;
@@ -85,6 +86,9 @@ const TAGUCHI_ARRAYS: Record<TaguchiArrayName, readonly (readonly TaguchiLevel[]
   L27: L27_ARRAY,
 };
 
+const TAGUCHI_LEVEL_VALIDATION_ERROR =
+  '校验失败：被激活的因子必须提供 3 个有效的、互不相同的水平值。若某参数为全局固定值，请关闭其启用开关。';
+
 const FACTOR_META: Record<
   TaguchiFactorKey,
   Omit<TaguchiActiveFactor, 'key' | 'levels'>
@@ -116,7 +120,9 @@ export function buildActiveFactors(
     orderedKeys.push('sliderTemp');
   }
 
-  orderedKeys.push('p1', 't1');
+  if (toggles.stage1Hold) {
+    orderedKeys.push('p1', 't1');
+  }
 
   if (toggles.stage2Hold) {
     orderedKeys.push('p2', 't2');
@@ -136,6 +142,7 @@ export function buildActiveFactors(
 export function generateTaguchiMatrix(
   activeFactors: readonly TaguchiActiveFactor[],
 ): HydratedExperimentRow[] {
+  validateActiveFactors(activeFactors);
   const arrayName = selectTaguchiArrayName(activeFactors.length);
   const selectedArray = TAGUCHI_ARRAYS[arrayName];
 
@@ -157,10 +164,36 @@ export function generateTaguchiMatrix(
   });
 }
 
+function validateActiveFactors(activeFactors: readonly TaguchiActiveFactor[]): void {
+  activeFactors.forEach((factor) => {
+    const normalizedLevels = factor.levels.map(normalizeLevelValue);
+
+    if (normalizedLevels.some((level) => !level || level === '0')) {
+      throw new Error(TAGUCHI_LEVEL_VALIDATION_ERROR);
+    }
+
+    if (new Set(normalizedLevels).size !== normalizedLevels.length) {
+      throw new Error(TAGUCHI_LEVEL_VALIDATION_ERROR);
+    }
+  });
+}
+
 function coerceEngineeringValue(value: string): EngineeringValue {
   const trimmed = value.trim();
   if (!trimmed) return '';
 
   const numericValue = Number(trimmed);
   return Number.isFinite(numericValue) ? numericValue : trimmed;
+}
+
+function normalizeLevelValue(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+
+  const numericValue = Number(trimmed);
+  if (!Number.isFinite(numericValue)) {
+    return trimmed;
+  }
+
+  return String(numericValue);
 }

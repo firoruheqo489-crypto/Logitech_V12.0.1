@@ -30,7 +30,7 @@ describe('analyticsEngine', () => {
 
   it('validates empty, non-numeric, and negative max deviation inputs', () => {
     const activeFactors = buildActiveFactors(
-      { sliderTemp: false, stage2Hold: false, stage3Hold: false },
+      { stage1Hold: true, sliderTemp: false, stage2Hold: false, stage3Hold: false },
       levels,
     );
     const matrix = generateTaguchiMatrix(activeFactors);
@@ -51,7 +51,7 @@ describe('analyticsEngine', () => {
 
   it('returns row S/N, main effects, delta ranking, and theoretical optimum', () => {
     const activeFactors = buildActiveFactors(
-      { sliderTemp: false, stage2Hold: false, stage3Hold: false },
+      { stage1Hold: true, sliderTemp: false, stage2Hold: false, stage3Hold: false },
       levels,
     );
     const matrix = generateTaguchiMatrix(activeFactors);
