@@ -25,3 +25,16 @@
 ## 四、算力与性能红线
 1. 严禁人工延时：UI 交互禁止为了“连贯性”添加无意义的线程阻塞（如 `setTimeout` 或 `Math.max(5000 - elapsed)`）。数据加载完毕必须立刻渲染，过渡动画不得超过 300ms。
 2. IO 阻塞防护：后端 API 的重型初始化（如 DB Warmup）必须置于后台异步执行，绝不允许其阻塞 HTTP 端口的监听释放。前端强依赖接口需配合 503 或定制化 Loading 状态拦截。
+## Release CLI Note
+- Canonical release command with a note:
+  `pnpm run release -- -ReleaseNote "one-line release note"`
+- The package scripts now route through `scripts/release-entrypoint.mjs`.
+- That wrapper strips the standalone `--` token before forwarding arguments to
+  `scripts/release-from-clean-worktree.ps1`, which avoids the old PowerShell
+  ambiguous-parameter failure on Windows.
+- For normal releases, prefer `pnpm run release` instead of calling the
+  PowerShell wrapper directly.
+
+Release command reminder:
+- Preferred form:
+  `pnpm run release -- -ReleaseNote "one-line release note"`
