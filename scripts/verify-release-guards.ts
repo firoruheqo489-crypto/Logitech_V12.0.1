@@ -290,9 +290,9 @@ async function verifyCriticalEntrypoints(): Promise<void> {
       "verify:release-guards",
       ["node --experimental-strip-types --loader ./scripts/ts-path-loader.mjs ./scripts/verify-release-guards.ts"],
     ],
-    ["release", ["-File scripts/release-from-clean-worktree.ps1 -Mode all"]],
-    ["_release:build", ["-File scripts/release-from-clean-worktree.ps1 -Mode build"]],
-    ["_release:deploy", ["-File scripts/release-from-clean-worktree.ps1 -Mode deploy"]],
+    ["release", ["node scripts/release-entrypoint.mjs all"]],
+    ["_release:build", ["node scripts/release-entrypoint.mjs build"]],
+    ["_release:deploy", ["node scripts/release-entrypoint.mjs deploy"]],
     ["release:preview", ["board-flow-preview.cmd"]],
   ] as const;
 
@@ -308,6 +308,7 @@ async function verifyCriticalEntrypoints(): Promise<void> {
     "scripts/start-local-dashboard.mjs",
     "scripts/report-local-dashboard-state.ps1",
     "scripts/show-release-sop.ps1",
+    "scripts/release-entrypoint.mjs",
     "scripts/release-from-clean-worktree.ps1",
     "scripts/release-build.ps1",
     "scripts/single-track-flow.ps1",
@@ -316,6 +317,12 @@ async function verifyCriticalEntrypoints(): Promise<void> {
   ]) {
     assert.equal(await fileExists(relativePath), true, `critical wrapper file missing: ${relativePath}`);
   }
+
+  const releaseEntrypointSource = await readText("scripts/release-entrypoint.mjs");
+  assert.ok(
+    releaseEntrypointSource.includes("release-from-clean-worktree.ps1"),
+    "scripts/release-entrypoint.mjs must forward to scripts/release-from-clean-worktree.ps1",
+  );
 }
 
 async function verifyReleaseSopVisibility(): Promise<void> {

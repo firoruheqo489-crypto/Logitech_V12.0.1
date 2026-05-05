@@ -41,9 +41,9 @@
     "backup": "powershell -File backup.ps1",
     "release:preview": "scripts\\board-flow-preview.cmd",
     "verify:release-guards": "node --experimental-strip-types --loader ./scripts/ts-path-loader.mjs ./scripts/verify-release-guards.ts",
-    "release": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release-from-clean-worktree.ps1 -Mode all",
-    "_release:build": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release-from-clean-worktree.ps1 -Mode build",
-    "_release:deploy": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release-from-clean-worktree.ps1 -Mode deploy",
+    "release": "node scripts/release-entrypoint.mjs all",
+    "_release:build": "node scripts/release-entrypoint.mjs build",
+    "_release:deploy": "node scripts/release-entrypoint.mjs deploy",
     "verify:mold-trial-evidence:e2e:local": "node scripts/verify-mold-trial-evidence-e2e.mjs",
     "verify:tooling-fai:e2e:local": "node scripts/verify-tooling-fai-e2e.mjs",
     "format": "prettier --write ."
