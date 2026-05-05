@@ -15,13 +15,14 @@ describe("mold trial stage isolation", () => {
     const source = await loadSource(
       "./pages/dashboard/components/MoldTrialDatabase.tsx"
     );
+    const normalized = source.replace(/\s+/g, " ");
 
     expect(source).toContain("version: 3");
     expect(source).toContain("stagesByScope: evidenceByTrial");
     expect(source).toContain("fetchDashboardMoldTrialEvidenceState({");
     expect(source).toContain("saveDashboardMoldTrialEvidenceState({");
-    expect(source).toContain(
-      "const currentEvidenceState =\n\t\tevidenceByTrial[activeTrial] || buildEmptyTrialEvidenceStageState(activeTrial);"
+    expect(normalized).toContain(
+      "const currentEvidenceState = evidenceByTrial[activeTrial] || buildEmptyTrialEvidenceStageState(activeTrial);"
     );
     expect(source).toContain(
       "[nextStage]: buildEmptyTrialEvidenceStageState(nextStage),"

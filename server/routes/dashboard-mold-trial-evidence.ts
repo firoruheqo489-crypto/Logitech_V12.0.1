@@ -12,6 +12,7 @@ type TrialEvidenceStageState = {
   slots: TrialEvidenceSlot[];
   groupNote: string;
   recordedAt: string | null;
+  a4ImageUrl?: string;
 };
 
 type MoldTrialEvidenceStateRow = {
@@ -113,14 +114,17 @@ function sanitizeStageState(value: unknown): TrialEvidenceStageState {
       slots: [],
       groupNote: '',
       recordedAt: null,
+      a4ImageUrl: undefined,
     };
   }
 
   const record = value as Record<string, unknown>;
+  const a4ImageUrl = normalizeIdentifier(record.a4ImageUrl, 4000);
   return {
     slots: sanitizeSlots(record.slots),
     groupNote: normalizeGroupNote(record.groupNote),
     recordedAt: normalizeRecordedAt(record.recordedAt),
+    a4ImageUrl: a4ImageUrl || undefined,
   };
 }
 
@@ -128,6 +132,7 @@ function hasStageContent(stageState: TrialEvidenceStageState): boolean {
   return (
     stageState.groupNote.length > 0 ||
     stageState.recordedAt !== null ||
+    (typeof stageState.a4ImageUrl === 'string' && stageState.a4ImageUrl.trim().length > 0) ||
     stageState.slots.some((slot) => typeof slot.imageUrl === 'string' && slot.imageUrl.trim().length > 0)
   );
 }

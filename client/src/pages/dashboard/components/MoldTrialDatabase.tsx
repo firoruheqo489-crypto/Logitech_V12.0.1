@@ -10,7 +10,7 @@ import {
 import imageCompression from "browser-image-compression";
 import {
   Camera,
-  FileSpreadsheet,
+  FileText,
   ImageIcon,
   Microscope,
   RotateCcw,
@@ -18,6 +18,7 @@ import {
   Trash2,
   UploadCloud,
   X,
+  ZoomIn,
 } from "lucide-react";
 import { toast } from "sonner";
 import CyberConfirmDialog from "@/components/ui/CyberConfirmDialog";
@@ -43,6 +44,7 @@ interface TrialEvidenceStageState {
   slots: TrialEvidenceSlot[];
   groupNote: string;
   recordedAt: string | null;
+  a4ImageUrl?: string;
 }
 
 interface MoldTrialDatabaseProps {
@@ -57,6 +59,22 @@ const EVIDENCE_SLOT_COUNT = 15;
 const MOLD_TEMP_EVIDENCE_SLOT_COUNT = 5;
 const DEFECT_EVIDENCE_SLOT_COUNT = 10;
 const SHARED_EVIDENCE_SCOPE = "__shared__";
+const MOLD_TRIAL_LOCAL_SNAPSHOT_PREFIX =
+  "dashboard-mold-trial-database-snapshot:v1:";
+
+type MoldTrialDatabaseIdentity = {
+  moldId: string;
+  moldNo?: string;
+};
+
+type MoldTrialDatabaseLocalSnapshot = {
+  moldId: string;
+  moldNo?: string;
+  trialStages: TrialStage[];
+  clearedTrialStages: TrialStage[];
+  evidenceByTrial: Record<TrialStage, TrialEvidenceStageState>;
+  updatedAt?: string;
+};
 
 function buildEvidenceSlotLabel(index: number): string {
   return `证据 ${index + 1} / EVIDENCE ${index + 1}`;
@@ -115,6 +133,12 @@ function normalizeRecordedAt(value: unknown): string | null {
   const timestamp = new Date(value);
   if (Number.isNaN(timestamp.getTime())) return null;
   return timestamp.toISOString();
+}
+
+function normalizeImageUrl(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed || undefined;
 }
 
 function formatRecordedAt(value: string | null): string {
@@ -223,6 +247,13 @@ function writeStoredClearedTrialStages(
   }
 }
 
+function buildMoldTrialLocalSnapshotKey({
+  moldId,
+  moldNo,
+}: MoldTrialDatabaseIdentity): string {
+  return `${MOLD_TRIAL_LOCAL_SNAPSHOT_PREFIX}${moldId}::${moldNo || ""}`;
+}
+
 function buildEvidenceStateMap(
   stages: TrialStage[]
 ): Record<TrialStage, TrialEvidenceStageState> {
@@ -232,6 +263,7 @@ function buildEvidenceStateMap(
         slots: buildTrialEvidenceSlots(stage),
         groupNote: "",
         recordedAt: null,
+        a4ImageUrl: undefined,
       };
       return acc;
     },
@@ -246,6 +278,7 @@ function buildEmptyTrialEvidenceStageState(
     slots: buildTrialEvidenceSlots(stage),
     groupNote: "",
     recordedAt: null,
+    a4ImageUrl: undefined,
   };
 }
 
@@ -290,6 +323,9 @@ function normalizeEvidenceStageState(
     recordedAt: Array.isArray(value)
       ? null
       : normalizeRecordedAt(value?.recordedAt),
+    a4ImageUrl: Array.isArray(value)
+      ? undefined
+      : normalizeImageUrl(value?.a4ImageUrl),
   };
 }
 
@@ -376,6 +412,91 @@ function normalizeStoredEvidenceStateMap(
   return fallback;
 }
 
+function buildEvidenceGroupNoteDrafts(
+  trialStages: TrialStage[],
+  evidenceByTrial: Record<TrialStage, TrialEvidenceStageState>
+): Record<TrialStage, string> {
+  return trialStages.reduce(
+    (acc, stage) => {
+      acc[stage] = evidenceByTrial[stage]?.groupNote || "";
+      return acc;
+    },
+    {} as Record<TrialStage, string>
+  );
+}
+
+function readSnapshotTime(value?: string): number {
+  if (!value) return 0;
+  const timestamp = new Date(value).getTime();
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function isLocalMoldTrialSnapshotNewer(
+  localSnapshot: MoldTrialDatabaseLocalSnapshot | null,
+  remoteUpdatedAt?: string
+): boolean {
+  if (!localSnapshot) return false;
+  return readSnapshotTime(localSnapshot.updatedAt) > readSnapshotTime(remoteUpdatedAt);
+}
+
+function readLocalMoldTrialSnapshot(
+  identity: MoldTrialDatabaseIdentity
+): MoldTrialDatabaseLocalSnapshot | null {
+  if (typeof window === "undefined") return null;
+
+  const raw = window.localStorage.getItem(buildMoldTrialLocalSnapshotKey(identity));
+  if (!raw) return null;
+
+  try {
+    const parsed = JSON.parse(raw) as Partial<MoldTrialDatabaseLocalSnapshot>;
+    const trialStages = sanitizeTrialStages(parsed.trialStages);
+    const normalizedTrialStages =
+      trialStages.length > 0 ? trialStages : [...defaultTrialStages];
+    const evidenceByTrial = normalizeStoredEvidenceStateMap(
+      {
+        version: 3,
+        stagesByScope: parsed.evidenceByTrial || {},
+      },
+      normalizedTrialStages
+    );
+
+    return {
+      moldId: identity.moldId,
+      moldNo: identity.moldNo,
+      trialStages: normalizedTrialStages,
+      clearedTrialStages: resolveClearedTrialStages(
+        normalizedTrialStages,
+        sanitizeTrialStages(parsed.clearedTrialStages || [])
+      ),
+      evidenceByTrial,
+      updatedAt:
+        typeof parsed.updatedAt === "string" ? parsed.updatedAt : undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeLocalMoldTrialSnapshot(
+  snapshot: Omit<MoldTrialDatabaseLocalSnapshot, "updatedAt"> & {
+    updatedAt?: string;
+  }
+): void {
+  if (typeof window === "undefined") return;
+
+  try {
+    window.localStorage.setItem(
+      buildMoldTrialLocalSnapshotKey(snapshot),
+      JSON.stringify({
+        ...snapshot,
+        updatedAt: snapshot.updatedAt || new Date().toISOString(),
+      })
+    );
+  } catch {
+    // Ignore local snapshot failures; remote persistence remains authoritative.
+  }
+}
+
 function compactEvidenceSlotsWithinRange(
   slots: TrialEvidenceSlot[],
   startIndex: number,
@@ -406,113 +527,49 @@ function compactEvidenceSlotsWithinRange(
   return nextSlots;
 }
 
+function getEvidenceSectionRangeBySlotId(slotId?: string): {
+  startIndex: number;
+  endIndex: number;
+} {
+  const slotNumber = slotId ? parseEvidenceSlotIndex(slotId) : -1;
+  if (slotNumber > 0 && slotNumber <= MOLD_TEMP_EVIDENCE_SLOT_COUNT) {
+    return {
+      startIndex: 0,
+      endIndex: MOLD_TEMP_EVIDENCE_SLOT_COUNT,
+    };
+  }
+
+  return {
+    startIndex: MOLD_TEMP_EVIDENCE_SLOT_COUNT,
+    endIndex: MOLD_TEMP_EVIDENCE_SLOT_COUNT + DEFECT_EVIDENCE_SLOT_COUNT,
+  };
+}
+
+function getEvidenceSectionSlots(
+  slots: TrialEvidenceSlot[],
+  startSlotId?: string
+): TrialEvidenceSlot[] {
+  if (!startSlotId) {
+    return slots;
+  }
+
+  const { startIndex, endIndex } = getEvidenceSectionRangeBySlotId(startSlotId);
+  return slots.slice(startIndex, endIndex);
+}
+
 function revokeEvidenceSlotUrls(
   evidenceMap: Record<TrialStage, TrialEvidenceStageState>
 ): void {
-  Object.values(evidenceMap).forEach(slots => {
-    slots.slots.forEach(slot => {
+  Object.values(evidenceMap).forEach(stageState => {
+    if (stageState.a4ImageUrl?.startsWith("blob:")) {
+      URL.revokeObjectURL(stageState.a4ImageUrl);
+    }
+    stageState.slots.forEach(slot => {
       if (slot.imageUrl?.startsWith("blob:")) {
         URL.revokeObjectURL(slot.imageUrl);
       }
     });
   });
-}
-
-type WorkbookRow = unknown[];
-
-interface ImportedMoldTrialWorkbookState {
-  trialStagesState: TrialStage[];
-  evidenceSlots: TrialEvidenceSlot[];
-}
-
-function normalizeWorkbookCell(value: unknown): string {
-  if (typeof value === "string") return value.trim();
-  if (typeof value === "number") return String(value).trim();
-  if (typeof value === "boolean") return value ? "TRUE" : "FALSE";
-  return "";
-}
-
-function isBlankWorkbookRow(row: WorkbookRow): boolean {
-  return row.every(cell => normalizeWorkbookCell(cell) === "");
-}
-
-function findWorkbookSectionIndex(rows: WorkbookRow[], title: string): number {
-  return rows.findIndex(row => normalizeWorkbookCell(row[0]) === title);
-}
-
-function collectWorkbookSectionRows(
-  rows: WorkbookRow[],
-  sectionTitle: string,
-  stopTitles: string[]
-): WorkbookRow[] {
-  const startIndex = findWorkbookSectionIndex(rows, sectionTitle);
-  if (startIndex < 0) return [];
-
-  const collected: WorkbookRow[] = [];
-  for (let index = startIndex + 1; index < rows.length; index += 1) {
-    const row = rows[index] || [];
-    const label = normalizeWorkbookCell(row[0]);
-    const second = normalizeWorkbookCell(row[1]);
-    const third = normalizeWorkbookCell(row[2]);
-
-    if (isBlankWorkbookRow(row)) break;
-    if (stopTitles.includes(label)) break;
-    if (label === "Label" && second === "Value") continue;
-    if (label === "Slot" && second === "Label" && third === "Image URL")
-      continue;
-
-    collected.push(row);
-  }
-
-  return collected;
-}
-
-function parseWorkbookEvidenceSlots(rows: WorkbookRow[]): TrialEvidenceSlot[] {
-  const baseSlots = buildTrialEvidenceSlots(defaultTrialStages[0]);
-  const parsedRows = collectWorkbookSectionRows(rows, "Evidence", []);
-
-  return baseSlots.map((slot, index) => {
-    const row = parsedRows[index];
-    const label = normalizeWorkbookCell(row?.[1]) || slot.label;
-    const imageUrl = normalizeWorkbookCell(row?.[2]);
-
-    return {
-      ...slot,
-      label,
-      imageUrl: imageUrl && imageUrl !== "--" ? imageUrl : undefined,
-    };
-  });
-}
-
-async function parseImportedMoldTrialWorkbook(
-  file: File
-): Promise<ImportedMoldTrialWorkbookState> {
-  const XLSX = await import("xlsx");
-  const workbook = XLSX.read(await file.arrayBuffer(), { type: "array" });
-  const stageNames = workbook.SheetNames.filter(name =>
-    /^T\d+$/.test(name)
-  ).sort(
-    (a, b) => Number.parseInt(a.slice(1), 10) - Number.parseInt(b.slice(1), 10)
-  );
-
-  if (stageNames.length === 0) {
-    throw new Error("未找到可导入的试模轮次工作表");
-  }
-
-  const evidenceSheet =
-    workbook.Sheets[stageNames[0]] ||
-    workbook.Sheets[workbook.SheetNames[0] || ""];
-  const evidenceRows = evidenceSheet
-    ? (XLSX.utils.sheet_to_json(evidenceSheet, {
-        header: 1,
-        defval: "",
-      }) as WorkbookRow[])
-    : [];
-
-  return {
-    trialStagesState: stageNames,
-    evidenceSlots: parseWorkbookEvidenceSlots(evidenceRows),
-  };
 }
 
 async function compressEvidenceImage(file: File): Promise<File> {
@@ -559,7 +616,7 @@ export default function MoldTrialDatabase({
 }: MoldTrialDatabaseProps) {
   const [trialStagesState, setTrialStagesState] = useState<TrialStage[]>([]);
   const [activeTrial, setActiveTrial] = useState<TrialStage>("");
-  const excelInputRef = useRef<HTMLInputElement>(null);
+  const a4ImageInputRef = useRef<HTMLInputElement>(null);
   const evidenceInputRef = useRef<HTMLInputElement>(null);
   const [clearedTrialStages, setClearedTrialStages] = useState<TrialStage[]>(
     []
@@ -569,7 +626,9 @@ export default function MoldTrialDatabase({
   >({});
   const [evidenceGroupNoteDraftByTrial, setEvidenceGroupNoteDraftByTrial] =
     useState<Record<TrialStage, string>>({});
-  const [isImportingExcel, setIsImportingExcel] = useState(false);
+  const [showA4Preview, setShowA4Preview] = useState(true);
+  const [isA4LightboxOpen, setIsA4LightboxOpen] = useState(false);
+  const [isUploadingA4Image, setIsUploadingA4Image] = useState(false);
   const evidenceByTrialRef = useRef<
     Record<TrialStage, TrialEvidenceStageState>
   >({});
@@ -596,7 +655,8 @@ export default function MoldTrialDatabase({
   const [evidenceLightboxUrl, setEvidenceLightboxUrl] = useState("");
   const [evidenceLightboxRotation, setEvidenceLightboxRotation] = useState(0);
   const currentEvidenceState =
-		evidenceByTrial[activeTrial] || buildEmptyTrialEvidenceStageState(activeTrial);
+    evidenceByTrial[activeTrial] || buildEmptyTrialEvidenceStageState(activeTrial);
+  const currentA4ImageUrl = currentEvidenceState.a4ImageUrl || "";
   const currentEvidenceSlots = normalizeEvidenceSlotsForStage(
     activeTrial,
     currentEvidenceState.slots
@@ -686,11 +746,27 @@ export default function MoldTrialDatabase({
   );
 
   const readRemoteTrialDatabaseSnapshot = useCallback(async (): Promise<RemoteTrialDatabaseSnapshotReadResult> => {
+    const localSnapshot = readLocalMoldTrialSnapshot({ moldId, moldNo });
     const remoteEvidenceState = await fetchDashboardMoldTrialEvidenceState({
       moldId,
       moldNo,
     });
     if (!remoteEvidenceState) {
+      if (localSnapshot) {
+        return {
+          status: "ready",
+          snapshot: {
+            trialStages: localSnapshot.trialStages,
+            clearedTrialStages: localSnapshot.clearedTrialStages,
+            evidenceByTrial: localSnapshot.evidenceByTrial,
+            evidenceGroupNoteDraftByTrial: buildEvidenceGroupNoteDrafts(
+              localSnapshot.trialStages,
+              localSnapshot.evidenceByTrial
+            ),
+          },
+        };
+      }
+
       return {
         status: "empty",
         snapshot: buildLocalFallbackTrialDatabaseSnapshot(),
@@ -721,13 +797,28 @@ export default function MoldTrialDatabase({
       },
       normalizedTrialStages
     );
-    const evidenceGroupNoteDraftByTrial = normalizedTrialStages.reduce(
-      (acc, stage) => {
-        acc[stage] = evidenceByTrial[stage]?.groupNote || "";
-        return acc;
-      },
-      {} as Record<TrialStage, string>
+    const evidenceGroupNoteDraftByTrial = buildEvidenceGroupNoteDrafts(
+      normalizedTrialStages,
+      evidenceByTrial
     );
+
+    if (
+      localSnapshot &&
+      isLocalMoldTrialSnapshotNewer(localSnapshot, remoteEvidenceState.updatedAt)
+    ) {
+      return {
+        status: "ready",
+        snapshot: {
+          trialStages: localSnapshot.trialStages,
+          clearedTrialStages: localSnapshot.clearedTrialStages,
+          evidenceByTrial: localSnapshot.evidenceByTrial,
+          evidenceGroupNoteDraftByTrial: buildEvidenceGroupNoteDrafts(
+            localSnapshot.trialStages,
+            localSnapshot.evidenceByTrial
+          ),
+        },
+      };
+    }
 
     return {
       status: "ready",
@@ -815,6 +906,12 @@ export default function MoldTrialDatabase({
   }, [currentEvidenceSlots, selectedEvidenceSlotId]);
 
   useEffect(() => {
+    if (isA4LightboxOpen && !currentA4ImageUrl) {
+      setIsA4LightboxOpen(false);
+    }
+  }, [currentA4ImageUrl, isA4LightboxOpen]);
+
+  useEffect(() => {
     let cancelled = false;
 
     revokeEvidenceSlotUrls(evidenceByTrialRef.current);
@@ -825,6 +922,8 @@ export default function MoldTrialDatabase({
     evidenceByTrialRef.current = {};
     setEvidenceGroupNoteDraftByTrial({});
     setShowDeleteGroupNoteConfirm(false);
+    setIsA4LightboxOpen(false);
+    setIsUploadingA4Image(false);
     setPendingUploadSlotId(null);
     setShowClearConfirm(false);
     setPendingDeleteEvidenceSlotId(null);
@@ -836,7 +935,6 @@ export default function MoldTrialDatabase({
     setIsDatabaseReady(false);
     setIsOfflineFallbackMode(false);
     setIsRemoteSyncing(true);
-    setIsImportingExcel(false);
 
     void (async () => {
       try {
@@ -927,9 +1025,19 @@ export default function MoldTrialDatabase({
   useEffect(() => {
     if (
       !isEvidenceHydrated ||
-      !isTrialStateHydrated ||
-      isOfflineFallbackMode
+      !isTrialStateHydrated
     ) {
+      return;
+    }
+
+    if (isOfflineFallbackMode) {
+      writeLocalMoldTrialSnapshot({
+        moldId,
+        moldNo,
+        trialStages: trialStagesState,
+        clearedTrialStages,
+        evidenceByTrial,
+      });
       return;
     }
 
@@ -941,6 +1049,14 @@ export default function MoldTrialDatabase({
       return;
     }
 
+    writeLocalMoldTrialSnapshot({
+      moldId,
+      moldNo,
+      trialStages: trialStagesState,
+      clearedTrialStages,
+      evidenceByTrial,
+    });
+
     void (async () => {
       try {
         await saveDashboardMoldTrialEvidenceState({
@@ -950,9 +1066,6 @@ export default function MoldTrialDatabase({
           trialStages: trialStagesState,
           clearedTrialStages,
         });
-        if (shouldRevalidateAfterSave) {
-          void reloadRemoteTrialDatabaseState({ background: true });
-        }
       } catch {
         // Ignore remote storage write failures and keep UI responsive.
       }
@@ -965,10 +1078,54 @@ export default function MoldTrialDatabase({
     isOfflineFallbackMode,
     moldId,
     moldNo,
-    reloadRemoteTrialDatabaseState,
-    shouldRevalidateAfterSave,
     trialStagesState,
   ]);
+
+  const persistMoldTrialStateNow = useCallback(
+    async (
+      nextEvidenceByTrial: Record<TrialStage, TrialEvidenceStageState>,
+      nextTrialStages: TrialStage[] = trialStagesState,
+      nextClearedTrialStages: TrialStage[] = clearedTrialStages
+    ) => {
+      writeLocalMoldTrialSnapshot({
+        moldId,
+        moldNo,
+        trialStages: nextTrialStages,
+        clearedTrialStages: nextClearedTrialStages,
+        evidenceByTrial: nextEvidenceByTrial,
+      });
+
+      if (
+        !isEvidenceHydrated ||
+        !isTrialStateHydrated ||
+        isOfflineFallbackMode
+      ) {
+        return;
+      }
+
+      try {
+        await saveDashboardMoldTrialEvidenceState({
+          moldId,
+          moldNo,
+          stagesByScope: nextEvidenceByTrial,
+          trialStages: nextTrialStages,
+          clearedTrialStages: nextClearedTrialStages,
+        });
+        setIsOfflineFallbackMode(false);
+      } catch {
+        setIsOfflineFallbackMode(true);
+      }
+    },
+    [
+      clearedTrialStages,
+      isEvidenceHydrated,
+      isOfflineFallbackMode,
+      isTrialStateHydrated,
+      moldId,
+      moldNo,
+      trialStagesState,
+    ]
+  );
 
   useEffect(() => {
     if (trialStagesState.length === 0) return;
@@ -1012,6 +1169,13 @@ export default function MoldTrialDatabase({
     evidenceByTrialRef.current = nextEvidenceState;
     setEvidenceGroupNoteDraftByTrial(nextEvidenceDrafts);
     setActiveTrial(nextStage);
+    writeLocalMoldTrialSnapshot({
+      moldId,
+      moldNo,
+      trialStages: nextTrialStages,
+      clearedTrialStages: nextClearedTrialStages,
+      evidenceByTrial: nextEvidenceState,
+    });
 
     if (isOfflineFallbackMode) {
       toast.info("当前处于离线兜底模式", {
@@ -1029,9 +1193,6 @@ export default function MoldTrialDatabase({
         trialStages: nextTrialStages,
         clearedTrialStages: nextClearedTrialStages,
       });
-      if (shouldRevalidateAfterSave) {
-        await reloadRemoteTrialDatabaseState({ background: true });
-      }
     } catch {
       toast.error("新增轮次保存失败", {
         description: "已先更新本地界面，远端稍后再同步。",
@@ -1082,6 +1243,11 @@ export default function MoldTrialDatabase({
     evidenceByTrialRef.current = nextEvidenceState;
     setEvidenceGroupNoteDraftByTrial(nextEvidenceDrafts);
     setActiveTrial(nextActiveTrial);
+    void persistMoldTrialStateNow(
+      nextEvidenceState,
+      nextTrialStages,
+      nextClearedTrialStages
+    );
     setShowClearConfirm(false);
   };
 
@@ -1128,6 +1294,7 @@ export default function MoldTrialDatabase({
       };
       setEvidenceByTrial(nextEvidenceState);
       evidenceByTrialRef.current = nextEvidenceState;
+      void persistMoldTrialStateNow(nextEvidenceState);
 
       if (
         previousUrl &&
@@ -1170,11 +1337,12 @@ export default function MoldTrialDatabase({
         buildEmptyTrialEvidenceStageState(activeTrial)
       ).slots
     );
+    const boundedSlots = getEvidenceSectionSlots(currentSlots, startSlotId);
     const startIndex = startSlotId
-      ? currentSlots.findIndex(slot => slot.id === startSlotId)
-      : currentSlots.findIndex(slot => !slot.imageUrl);
+      ? boundedSlots.findIndex(slot => slot.id === startSlotId)
+      : boundedSlots.findIndex(slot => !slot.imageUrl);
     const candidateSlots =
-      startIndex >= 0 ? currentSlots.slice(startIndex) : currentSlots;
+      startIndex >= 0 ? boundedSlots.slice(startIndex) : boundedSlots;
     const targetSlots = candidateSlots.filter(slot => !slot.imageUrl);
 
     if (targetSlots.length === 0) {
@@ -1309,6 +1477,98 @@ export default function MoldTrialDatabase({
     setPendingUploadSlotId(null);
   };
 
+  const openA4ImagePicker = () => {
+    if (isUploadingA4Image) return;
+    a4ImageInputRef.current?.click();
+  };
+
+  const handleA4ImageUpload = async (file?: File) => {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      window.alert("请选择图片文件");
+      return;
+    }
+    if (!activeTrial) {
+      window.alert("请先选择试模轮次");
+      return;
+    }
+
+    setIsUploadingA4Image(true);
+    try {
+      const processedFile = await compressEvidenceImage(file);
+      const currentStageState =
+        evidenceByTrialRef.current[activeTrial] ||
+        buildEmptyTrialEvidenceStageState(activeTrial);
+      const previousUrl = currentStageState.a4ImageUrl;
+      const uploadResult = await uploadAssetViaServer({
+        file: processedFile,
+        category: "mold-trial-a4",
+        entityId: evidenceAssetEntityId,
+        slot: `${activeTrial}-a4-page`,
+      });
+      const imageUrl = uploadResult.url;
+      const nextEvidenceState = {
+        ...evidenceByTrialRef.current,
+        [activeTrial]: {
+          ...currentStageState,
+          a4ImageUrl: imageUrl,
+        },
+      };
+
+      setEvidenceByTrial(nextEvidenceState);
+      evidenceByTrialRef.current = nextEvidenceState;
+      void persistMoldTrialStateNow(nextEvidenceState);
+
+      if (
+        previousUrl &&
+        previousUrl !== imageUrl &&
+        !previousUrl.startsWith("blob:")
+      ) {
+        void deleteAssetViaServer(previousUrl).catch(() => undefined);
+      }
+
+      toast.success("A4 图片已上传", {
+        description: "图片已保存到当前试模轮次的 A4 页面。",
+        position: "bottom-right",
+      });
+    } catch {
+      window.alert("A4 图片上传失败，请稍后重试");
+    } finally {
+      setIsUploadingA4Image(false);
+    }
+  };
+
+  const handleA4ImageDelete = async () => {
+    if (!currentA4ImageUrl || !activeTrial) return;
+
+    const currentStageState =
+      evidenceByTrialRef.current[activeTrial] ||
+      buildEmptyTrialEvidenceStageState(activeTrial);
+    const nextEvidenceState = {
+      ...evidenceByTrialRef.current,
+      [activeTrial]: {
+        ...currentStageState,
+        a4ImageUrl: undefined,
+      },
+    };
+
+    setEvidenceByTrial(nextEvidenceState);
+    evidenceByTrialRef.current = nextEvidenceState;
+    setIsA4LightboxOpen(false);
+    void persistMoldTrialStateNow(nextEvidenceState);
+
+    if (currentA4ImageUrl.startsWith("blob:")) {
+      URL.revokeObjectURL(currentA4ImageUrl);
+    } else {
+      await deleteAssetViaServer(currentA4ImageUrl).catch(() => undefined);
+    }
+
+    toast.success("A4 图片已删除", {
+      description: "当前试模轮次的 A4 图片已移除。",
+      position: "bottom-right",
+    });
+  };
+
   const handleEvidenceDelete = async (slotId: string) => {
     const currentStageState =
       evidenceByTrialRef.current[activeTrial] ||
@@ -1348,6 +1608,7 @@ export default function MoldTrialDatabase({
     };
     setEvidenceByTrial(nextEvidenceState);
     evidenceByTrialRef.current = nextEvidenceState;
+    void persistMoldTrialStateNow(nextEvidenceState);
 
     if (deletedUrl?.startsWith("blob:")) {
       URL.revokeObjectURL(deletedUrl);
@@ -1459,6 +1720,22 @@ export default function MoldTrialDatabase({
     };
   }, [closeEvidenceLightbox, isEvidenceLightboxOpen, navigateEvidenceLightbox]);
 
+  useEffect(() => {
+    if (!isA4LightboxOpen) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setIsA4LightboxOpen(false);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isA4LightboxOpen]);
+
   const handleSaveEvidenceGroupNote = () => {
     const normalizedNote = (
       evidenceGroupNoteDraftByTrial[activeTrial] || ""
@@ -1480,6 +1757,7 @@ export default function MoldTrialDatabase({
     };
     setEvidenceByTrial(nextEvidenceState);
     evidenceByTrialRef.current = nextEvidenceState;
+    void persistMoldTrialStateNow(nextEvidenceState);
     setEvidenceGroupNoteDraftByTrial(prev => ({
       ...prev,
       [activeTrial]: normalizedNote,
@@ -1503,6 +1781,7 @@ export default function MoldTrialDatabase({
     };
     setEvidenceByTrial(nextEvidenceState);
     evidenceByTrialRef.current = nextEvidenceState;
+    void persistMoldTrialStateNow(nextEvidenceState);
     setEvidenceGroupNoteDraftByTrial(prev => ({
       ...prev,
       [activeTrial]: "",
@@ -1515,76 +1794,140 @@ export default function MoldTrialDatabase({
     });
   };
 
-  const handleExcelImport = async (
-    event: React.ChangeEvent<HTMLInputElement>
-  ) => {
-    const file = event.target.files?.[0];
-    event.target.value = "";
+  const renderA4PageCanvas = (options?: { interactive?: boolean }) => {
+    const interactive = options?.interactive ?? true;
+    const imageActionLabel = currentA4ImageUrl
+      ? "打开横向A4图片"
+      : "上传横向A4图片";
+    const imageAreaContent = currentA4ImageUrl ? (
+      <>
+        <img
+          src={currentA4ImageUrl}
+          alt="横向A4图片"
+          className="h-full w-full rounded-md object-contain"
+        />
+        {interactive ? (
+          <span className="pointer-events-none absolute right-3 top-3 rounded-full border border-slate-200 bg-white/90 p-2 text-slate-500 opacity-0 shadow-sm transition-opacity group-hover/a4image:opacity-100 group-focus-visible/a4image:opacity-100">
+            <ZoomIn className="h-4 w-4" />
+          </span>
+        ) : null}
+      </>
+    ) : (
+      <div className="flex h-full w-full flex-col items-center justify-center gap-2 rounded-md bg-white px-4 text-center">
+        <UploadCloud className="h-8 w-8 text-slate-400" />
+        <div className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
+          {isUploadingA4Image ? "上传中..." : "添加图片 / ADD IMAGE"}
+        </div>
+      </div>
+    );
 
-    if (!file) return;
-    if (!/\.(xlsx|xls)$/i.test(file.name)) {
-      window.alert("请上传 Excel 文件 (.xlsx 或 .xls)");
-      return;
-    }
+    return (
+      <div className="flex h-full min-h-0 flex-col">
+        <div className="flex items-start justify-between gap-4 border-b border-slate-200 pb-3">
+          <div>
+            <div className="text-[10px] font-semibold uppercase tracking-[0.24em] text-slate-500">
+              A4 Landscape Page
+            </div>
+            <div className="mt-1 text-lg font-bold text-slate-900">
+              横向 A4 窗口
+            </div>
+          </div>
+          <div className="text-right text-[11px] text-slate-500">
+            <div>ISO 216</div>
+            <div className="mt-1 text-sm font-semibold text-slate-800">A4</div>
+          </div>
+        </div>
 
-    setIsImportingExcel(true);
-    try {
-      const imported = await parseImportedMoldTrialWorkbook(file);
-      const importedEvidenceMap = buildEvidenceStateMap(
-        imported.trialStagesState
-      );
-      const importedStage =
-        imported.trialStagesState[0] || defaultTrialStages[0];
-      importedEvidenceMap[importedStage] = {
-        ...importedEvidenceMap[importedStage],
-        slots: normalizeEvidenceSlotsForStage(
-          importedStage,
-          imported.evidenceSlots
-        ),
-      };
-      const importedEvidenceDrafts = imported.trialStagesState.reduce(
-        (acc, stage) => {
-          acc[stage] = "";
-          return acc;
-        },
-        {} as Record<TrialStage, string>
-      );
+        <div className="relative mt-6 min-h-0 flex-1">
+          {interactive ? (
+            <button
+              type="button"
+              onClick={() => {
+                if (currentA4ImageUrl) {
+                  setIsA4LightboxOpen(true);
+                  return;
+                }
+                openA4ImagePicker();
+              }}
+              disabled={isUploadingA4Image}
+              className={`group/a4image relative h-full w-full overflow-hidden rounded-lg border border-dashed border-slate-300 bg-white transition-colors focus:outline-none focus:ring-2 focus:ring-cyan-400 ${
+                currentA4ImageUrl
+                  ? "cursor-zoom-in hover:border-cyan-300"
+                  : "cursor-pointer hover:border-cyan-300"
+              } disabled:cursor-wait disabled:opacity-70`}
+              aria-label={imageActionLabel}
+              title={imageActionLabel}
+            >
+              {imageAreaContent}
+            </button>
+          ) : (
+            <div className="relative h-full w-full overflow-hidden rounded-lg border border-dashed border-slate-300 bg-white">
+              {imageAreaContent}
+            </div>
+          )}
 
-      revokeEvidenceSlotUrls(evidenceByTrialRef.current);
-      setTrialStagesState(imported.trialStagesState);
-      setActiveTrial(imported.trialStagesState[0] || defaultTrialStages[0]);
-      setClearedTrialStages([]);
-      writeStoredTrialStages(trialStageStorageKey, imported.trialStagesState);
-      writeStoredClearedTrialStages(clearedTrialStageStorageKey, []);
-      setEvidenceByTrial(importedEvidenceMap);
-      evidenceByTrialRef.current = importedEvidenceMap;
-      setEvidenceGroupNoteDraftByTrial(importedEvidenceDrafts);
-      setSelectedEvidenceSlotId(
-        importedEvidenceMap[importedStage]?.slots.find(slot => slot.imageUrl)
-          ?.id || null
-      );
-      setPendingUploadSlotId(null);
-      setShowClearConfirm(false);
-      setPendingDeleteEvidenceSlotId(null);
-      setShowDeleteGroupNoteConfirm(false);
-      setIsEvidenceLightboxOpen(false);
-      setEvidenceLightboxUrl("");
-      setEvidenceLightboxRotation(0);
+          {interactive && currentA4ImageUrl ? (
+            <div className="absolute right-3 top-3 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={event => {
+                  event.stopPropagation();
+                  openA4ImagePicker();
+                }}
+                disabled={isUploadingA4Image}
+                className="rounded-full border border-slate-300 bg-white/95 p-2 text-slate-600 shadow-sm transition-colors hover:border-cyan-300 hover:text-cyan-600 disabled:cursor-wait disabled:opacity-60"
+                aria-label="替换A4图片"
+                title="替换A4图片"
+              >
+                <UploadCloud className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={event => {
+                  event.stopPropagation();
+                  void handleA4ImageDelete();
+                }}
+                className="rounded-full border border-slate-300 bg-white/95 p-2 text-slate-600 shadow-sm transition-colors hover:border-rose-300 hover:text-rose-600"
+                aria-label="删除A4图片"
+                title="删除A4图片"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
+          ) : null}
+        </div>
 
-      toast.success("Excel 已导入", {
-        description: `已载入 ${imported.trialStagesState.length} 个轮次。`,
-        position: "bottom-right",
-      });
-    } catch (error) {
-      window.alert(error instanceof Error ? error.message : "Excel 导入失败");
-    } finally {
-      setIsImportingExcel(false);
-    }
+        <div className="mt-4 flex items-center justify-between border-t border-slate-200 pt-3 text-[10px] font-medium uppercase tracking-[0.18em] text-slate-400">
+          <span>Landscape</span>
+          <span>297 x 210 mm</span>
+        </div>
+      </div>
+    );
   };
 
-  const handleExcelImportClick = useCallback(() => {
-    excelInputRef.current?.click();
-  }, []);
+  const renderLandscapeA4Preview = () => (
+    <section className="rounded-2xl border border-slate-800 bg-slate-950/55 p-5 shadow-[0_0_0_1px_rgba(251,113,133,0.06)]">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="rounded-xl border border-cyan-900/40 bg-cyan-950/20 p-2.5">
+            <FileText className="h-4 w-4 text-cyan-300" />
+          </div>
+          <div>
+            <h2 className="text-xs font-bold uppercase tracking-[0.14em] text-slate-200">
+              横向 A4 页面 / LANDSCAPE A4
+            </h2>
+          </div>
+        </div>
+        <div className="rounded-md border border-slate-700 bg-slate-900/60 px-3 py-1.5 text-[10px] font-mono uppercase tracking-[0.18em] text-slate-400">
+          297 x 210 mm
+        </div>
+      </div>
+
+      <div className="mt-4 mx-auto aspect-[297/210] w-full max-w-[1120px] overflow-hidden rounded-xl border border-slate-300 bg-white p-6 text-left text-slate-900 shadow-[0_18px_70px_rgba(0,0,0,0.25)]">
+        {renderA4PageCanvas()}
+      </div>
+    </section>
+  );
 
   const renderEvidenceSlotGrid = (slots: TrialEvidenceSlot[]) =>
     slots.map(slot => {
@@ -1720,16 +2063,15 @@ export default function MoldTrialDatabase({
               试模数据档案 / MOLD TRIAL DATABASE
             </h1>
           </div>
-        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3">
             <button
               type="button"
-              onClick={handleExcelImportClick}
-              disabled={isImportingExcel}
-              className="rounded-md border border-cyan-700/50 bg-cyan-950/35 px-4 py-2 text-xs font-bold tracking-wide text-cyan-300 transition-colors hover:bg-cyan-900/45 hover:text-cyan-100 disabled:cursor-not-allowed disabled:opacity-60"
+              onClick={() => setShowA4Preview(prev => !prev)}
+              className="rounded-md border border-cyan-700/50 bg-cyan-950/35 px-4 py-2 text-xs font-bold tracking-wide text-cyan-300 transition-colors hover:bg-cyan-900/45 hover:text-cyan-100"
             >
               <span className="inline-flex items-center gap-1.5">
-                <FileSpreadsheet className="h-4 w-4" />
-                {isImportingExcel ? "导入中..." : "导入Excel"}
+                <FileText className="h-4 w-4" />
+                {showA4Preview ? "隐藏A4页面" : "横向A4页面"}
               </span>
             </button>
             <button
@@ -1777,6 +2119,8 @@ export default function MoldTrialDatabase({
           </button>
         </div>
       </section>
+
+      {showA4Preview ? renderLandscapeA4Preview() : null}
 
       <section className="rounded-2xl border border-rose-900/30 bg-slate-950/55 p-5 shadow-[0_0_0_1px_rgba(251,113,133,0.06)]">
         <div className="flex items-start gap-3">
@@ -1954,11 +2298,14 @@ export default function MoldTrialDatabase({
         cancelText="取消"
       />
       <input
-        ref={excelInputRef}
         type="file"
-        accept=".xlsx,.xls"
+        accept="image/*"
         className="hidden"
-        onChange={handleExcelImport}
+        ref={a4ImageInputRef}
+        onChange={event => {
+          void handleA4ImageUpload(event.target.files?.[0]);
+          event.target.value = "";
+        }}
       />
       <input
         type="file"
@@ -1978,6 +2325,33 @@ export default function MoldTrialDatabase({
           setPendingUploadSlotId(null);
         }}
       />
+      {isA4LightboxOpen && currentA4ImageUrl && (
+        <div
+          onClick={() => setIsA4LightboxOpen(false)}
+          className="fixed inset-0 z-50 flex cursor-zoom-out items-center justify-center bg-slate-950/95 p-6 backdrop-blur-md"
+        >
+          <div
+            className="relative cursor-default"
+            onClick={event => event.stopPropagation()}
+          >
+            <div
+              className="aspect-[297/210] overflow-hidden rounded-xl border border-slate-300 bg-white p-6 text-left text-slate-900 shadow-2xl"
+              style={{ width: "min(94vw, 121.6vh)" }}
+            >
+              {renderA4PageCanvas({ interactive: false })}
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsA4LightboxOpen(false)}
+              className="absolute -right-3 -top-3 rounded-full border border-slate-700 bg-slate-800/95 p-2 transition-colors hover:bg-slate-700"
+              aria-label="关闭A4预览"
+              title="关闭A4预览"
+            >
+              <X className="h-5 w-5 text-slate-300" />
+            </button>
+          </div>
+        </div>
+      )}
       {isEvidenceLightboxOpen && (
         <div
           onClick={closeEvidenceLightbox}

@@ -292,19 +292,6 @@ function writeLocalSnapshot(snapshot: DocxConverterLocalSnapshot): void {
   }
 }
 
-function deleteLocalSnapshot(identity: { moldId: string; moldNo?: string }): void {
-  if (typeof window === 'undefined') {
-    return;
-  }
-
-  const key = buildLocalSnapshotKey(identity);
-  try {
-    window.localStorage.removeItem(key);
-  } catch {
-    // Ignore browser localStorage restrictions.
-  }
-}
-
 function hasSnapshotContent(snapshot: DocxConverterLocalSnapshot | null | undefined): boolean {
   if (!snapshot) {
     return false;
@@ -478,6 +465,43 @@ function mergeStageStateByTrial(
   }, {} as Record<string, DocxConverterRemoteStageState>);
 }
 
+function readSnapshotTime(value?: string): number {
+  if (!value) {
+    return 0;
+  }
+
+  const timestamp = new Date(value).getTime();
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function isLocalSnapshotNewerThanRemote(
+  localSnapshot: DocxConverterLocalSnapshot | null,
+  remoteSnapshot: { updatedAt?: string } | null,
+): boolean {
+  if (!localSnapshot) {
+    return false;
+  }
+
+  return readSnapshotTime(localSnapshot.updatedAt) > readSnapshotTime(remoteSnapshot?.updatedAt);
+}
+
+function filterStageStateByTrial(
+  stageStateByTrial: Record<string, DocxConverterRemoteStageState>,
+  trialStages: TrialStage[],
+): Record<string, DocxConverterRemoteStageState> {
+  const allowedStages = new Set(normalizeTrialStages(trialStages));
+  if (allowedStages.size === 0) {
+    return {};
+  }
+
+  return Object.entries(stageStateByTrial).reduce((acc, [stage, stageState]) => {
+    if (allowedStages.has(stage)) {
+      acc[stage] = stageState;
+    }
+    return acc;
+  }, {} as Record<string, DocxConverterRemoteStageState>);
+}
+
 function normalizeDueDateLines(text: string): string[] {
   const normalized = text.replace(/[，；]/g, ' ').replace(/\s+/g, ' ').trim();
   const dateMatches = normalized.match(/\d{4}-\d{1,2}-\d{1,2}/g);
@@ -611,6 +635,10 @@ function DocxConvertPanel({ panel }: { panel: AssetPanelItem }) {
   const canPersistRef = useRef(false);
   const persistTimerRef = useRef<number | null>(null);
   const hydratedByStageUrlRef = useRef<Record<string, string>>({});
+  const trialStagesStateRef = useRef<TrialStage[]>(DEFAULT_TRIAL_STAGES);
+  const stageStateByTrialRef = useRef<Record<TrialStage, TrialStageViewState>>(
+    createStageStateMap(DEFAULT_TRIAL_STAGES),
+  );
 
   const currentStageState = stageStateByTrial[activeTrial] || createEmptyTrialStageState();
   const fileName = currentStageState.fileName;
@@ -641,15 +669,25 @@ function DocxConvertPanel({ panel }: { panel: AssetPanelItem }) {
       if (nextFileUrl && current.fileUrl !== nextFileUrl) {
         delete hydratedByStageUrlRef.current[trialStage];
       }
-      return {
+      const next = {
         ...prev,
         [trialStage]: {
           ...current,
           ...patch,
         },
       };
+      stageStateByTrialRef.current = next;
+      return next;
     });
   }, []);
+
+  useEffect(() => {
+    trialStagesStateRef.current = trialStagesState;
+  }, [trialStagesState]);
+
+  useEffect(() => {
+    stageStateByTrialRef.current = stageStateByTrial;
+  }, [stageStateByTrial]);
 
   const stats = useMemo(() => {
     if (!result) {
@@ -756,6 +794,8 @@ function DocxConvertPanel({ panel }: { panel: AssetPanelItem }) {
       activeTrial: TrialStage;
       stageStateByTrial: Record<TrialStage, TrialStageViewState>;
     }) => {
+      trialStagesStateRef.current = snapshot.trialStages;
+      stageStateByTrialRef.current = snapshot.stageStateByTrial;
       setTrialStagesState(snapshot.trialStages);
       setActiveTrial(snapshot.activeTrial);
       setStageStateByTrial(snapshot.stageStateByTrial);
@@ -782,7 +822,7 @@ function DocxConvertPanel({ panel }: { panel: AssetPanelItem }) {
               activeTrial: active,
               stageStateByTrial: createStageStateMap(trialStages, localSnapshot.stageStateByTrial),
             });
-            setIsOfflineFallbackMode(true);
+            setIsOfflineFallbackMode(hasSnapshotContent(localSnapshot));
             return;
           }
 
@@ -798,17 +838,24 @@ function DocxConvertPanel({ panel }: { panel: AssetPanelItem }) {
 
         const remoteHasContent = Object.keys(remote.stageStateByTrial || {}).length > 0;
         const localHasContent = hasSnapshotContent(localSnapshot);
-        const mergedStageStateByTrial = mergeStageStateByTrial(
-          localSnapshot?.stageStateByTrial || {},
-          remote.stageStateByTrial || {},
-        );
-        const mergedTrialStages = normalizeTrialStages([
-          ...(remote.trialStages || []),
-          ...(localSnapshot?.trialStages || []),
-          ...Object.keys(mergedStageStateByTrial),
-        ]);
+        const localIsNewer = isLocalSnapshotNewerThanRemote(localSnapshot, remote);
+        const localTrialStages = normalizeTrialStages(localSnapshot?.trialStages || []);
+        const mergedStageStateByTrial =
+          localIsNewer && localTrialStages.length > 0
+            ? filterStageStateByTrial(localSnapshot?.stageStateByTrial || {}, localTrialStages)
+            : mergeStageStateByTrial(localSnapshot?.stageStateByTrial || {}, remote.stageStateByTrial || {});
+        const mergedTrialStages =
+          localIsNewer && localTrialStages.length > 0
+            ? localTrialStages
+            : normalizeTrialStages([
+                ...(remote.trialStages || []),
+                ...(localSnapshot?.trialStages || []),
+                ...Object.keys(mergedStageStateByTrial),
+              ]);
         const trialStages = mergedTrialStages.length > 0 ? mergedTrialStages : [...DEFAULT_TRIAL_STAGES];
-        const preferredActiveTrial = remoteHasContent
+        const preferredActiveTrial = localIsNewer && localSnapshot
+          ? localSnapshot.activeTrial
+          : remoteHasContent
           ? remote.activeTrial
           : localSnapshot?.activeTrial || remote.activeTrial;
         const active =
@@ -861,6 +908,9 @@ function DocxConvertPanel({ panel }: { panel: AssetPanelItem }) {
               }
             }
 
+            if (changed) {
+              stageStateByTrialRef.current = next;
+            }
             return changed ? next : prev;
           });
         });
@@ -913,6 +963,9 @@ function DocxConvertPanel({ panel }: { panel: AssetPanelItem }) {
                 }
               }
 
+              if (changed) {
+                stageStateByTrialRef.current = next;
+              }
               return changed ? next : prev;
             });
           });
@@ -985,6 +1038,7 @@ function DocxConvertPanel({ panel }: { panel: AssetPanelItem }) {
         const parsed = await parseDocxReport(remoteFile, (next) => {
           patchTrialState(activeTrial, { progress: next });
         });
+        await setStageResultCache(panelIdentity, activeTrial, parsed);
         patchTrialState(activeTrial, {
           result: parsed,
           error: null,
@@ -1000,7 +1054,7 @@ function DocxConvertPanel({ panel }: { panel: AssetPanelItem }) {
         patchTrialState(activeTrial, { isParsing: false });
       }
     })();
-  }, [activeTrial, isHydrated, patchTrialState, stageStateByTrial]);
+  }, [activeTrial, isHydrated, panelIdentity, patchTrialState, stageStateByTrial]);
 
   useEffect(() => {
     if (trialStagesState.length === 0) {
@@ -1046,9 +1100,12 @@ function DocxConvertPanel({ panel }: { panel: AssetPanelItem }) {
 
           const hasAnyStageData = Object.keys(payload.stageStateByTrial || {}).length > 0;
           if (!hasAnyStageData) {
-            deleteLocalSnapshot({
+            writeLocalSnapshot({
               moldId: payload.moldId,
               moldNo: payload.moldNo,
+              trialStages: normalizedLocalTrialStages,
+              activeTrial: normalizedLocalActiveTrial,
+              stageStateByTrial: {},
             });
 
             await deleteDashboardDocxConverterState({
@@ -1089,15 +1146,72 @@ function DocxConvertPanel({ panel }: { panel: AssetPanelItem }) {
     };
   }, [activeTrial, isHydrated, persistPayloadJson, stageStateByTrial, trialStagesState]);
 
+  const persistDocxSnapshotNow = useCallback(
+    async (
+      nextTrialStages: TrialStage[],
+      nextActiveTrial: TrialStage,
+      nextStageStateByTrial: Record<TrialStage, TrialStageViewState>,
+    ) => {
+      if (persistTimerRef.current) {
+        window.clearTimeout(persistTimerRef.current);
+        persistTimerRef.current = null;
+      }
+
+      const normalizedTrialStages = normalizeTrialStages(nextTrialStages);
+      const finalTrialStages = normalizedTrialStages.length > 0 ? normalizedTrialStages : [...DEFAULT_TRIAL_STAGES];
+      const normalizedActiveTrial =
+        finalTrialStages.includes(nextActiveTrial) && nextActiveTrial
+          ? nextActiveTrial
+          : finalTrialStages[0] || DEFAULT_TRIAL_STAGES[0];
+      const remoteStageStateByTrial = sanitizeStageStateByTrial(finalTrialStages, nextStageStateByTrial);
+      const localStageStateByTrial = buildLocalStageStateByTrial(finalTrialStages, nextStageStateByTrial);
+
+      writeLocalSnapshot({
+        moldId: panelIdentity.moldId,
+        moldNo: panelIdentity.moldNo,
+        trialStages: finalTrialStages,
+        activeTrial: normalizedActiveTrial,
+        stageStateByTrial: localStageStateByTrial,
+      });
+
+      if (!isHydrated || !canPersistRef.current) {
+        return;
+      }
+
+      try {
+        if (Object.keys(remoteStageStateByTrial).length === 0) {
+          await deleteDashboardDocxConverterState(panelIdentity);
+        } else {
+          await saveDashboardDocxConverterState({
+            moldId: panelIdentity.moldId,
+            moldNo: panelIdentity.moldNo,
+            trialStages: finalTrialStages,
+            activeTrial: normalizedActiveTrial,
+            stageStateByTrial: remoteStageStateByTrial,
+          });
+        }
+        setIsOfflineFallbackMode(false);
+      } catch {
+        setIsOfflineFallbackMode(true);
+      }
+    },
+    [isHydrated, panelIdentity],
+  );
+
   const handleParse = useCallback(
     async (nextFile: File) => {
       const trialStage = activeTrial;
+      const getCurrentTrialStages = () => {
+        const current = normalizeTrialStages(trialStagesStateRef.current);
+        return current.length > 0 ? current : [...DEFAULT_TRIAL_STAGES];
+      };
+      const isTrialStageStillAvailable = () => getCurrentTrialStages().includes(trialStage);
       if (!isDocxFile(nextFile)) {
         patchTrialState(trialStage, { error: '只支持 .docx 文件' });
         return;
       }
 
-      const previousFileUrl = stageStateByTrial[trialStage]?.fileUrl || null;
+      const previousFileUrl = stageStateByTrialRef.current[trialStage]?.fileUrl || null;
 
       patchTrialState(trialStage, {
         fileName: nextFile.name,
@@ -1111,7 +1225,26 @@ function DocxConvertPanel({ panel }: { panel: AssetPanelItem }) {
         const parsed = await parseDocxReport(nextFile, (next) => {
           patchTrialState(trialStage, { progress: next });
         });
-        void setStageResultCache(panelIdentity, trialStage, parsed);
+        await setStageResultCache(panelIdentity, trialStage, parsed);
+
+        if (!isTrialStageStillAvailable()) {
+          return;
+        }
+
+        const parsedTrialStages = getCurrentTrialStages();
+        const parsedStageState: TrialStageViewState = {
+          ...(stageStateByTrialRef.current[trialStage] || createEmptyTrialStageState()),
+          fileName: nextFile.name,
+          fileUrl: null,
+          result: parsed,
+          error: null,
+          isParsing: true,
+        };
+        const parsedStageStateByTrial = {
+          ...stageStateByTrialRef.current,
+          [trialStage]: parsedStageState,
+        };
+        void persistDocxSnapshotNow(parsedTrialStages, trialStage, parsedStageStateByTrial);
 
         let uploadedUrl: string | null = null;
         let uploadFailureMessage: string | null = null;
@@ -1131,6 +1264,27 @@ function DocxConvertPanel({ panel }: { panel: AssetPanelItem }) {
           });
         }
 
+        if (!isTrialStageStillAvailable()) {
+          if (uploadedUrl) {
+            void deleteAssetViaServer(uploadedUrl).catch(() => undefined);
+          }
+          return;
+        }
+
+        const finalTrialStages = getCurrentTrialStages();
+        const finalStageState: TrialStageViewState = {
+          ...(stageStateByTrialRef.current[trialStage] || createEmptyTrialStageState()),
+          fileName: nextFile.name,
+          fileUrl: uploadedUrl,
+          result: parsed,
+          progress: null,
+          error: uploadedUrl ? null : uploadFailureMessage || 'OSS upload failed',
+          isParsing: false,
+        };
+        const finalStageStateByTrial = {
+          ...stageStateByTrialRef.current,
+          [trialStage]: finalStageState,
+        };
         patchTrialState(trialStage, {
           fileName: nextFile.name,
           fileUrl: uploadedUrl,
@@ -1139,30 +1293,44 @@ function DocxConvertPanel({ panel }: { panel: AssetPanelItem }) {
           error: uploadedUrl ? null : `OSS 上传失败：${uploadFailureMessage || '仅本地显示解析结果'}`,
         });
 
+        void persistDocxSnapshotNow(finalTrialStages, trialStage, finalStageStateByTrial);
+
         if (previousFileUrl && uploadedUrl && previousFileUrl !== uploadedUrl) {
           void deleteAssetViaServer(previousFileUrl).catch(() => undefined);
         }
       } catch (parseError) {
         const message = parseError instanceof Error ? parseError.message : '解析失败';
-        patchTrialState(trialStage, { error: message, progress: null });
+        if (isTrialStageStillAvailable()) {
+          patchTrialState(trialStage, { error: message, progress: null });
+        }
       } finally {
-        patchTrialState(trialStage, { isParsing: false });
+        if (isTrialStageStillAvailable()) {
+          patchTrialState(trialStage, { isParsing: false });
+        }
       }
     },
-    [activeTrial, assetEntityId, patchTrialState, stageStateByTrial],
+    [activeTrial, assetEntityId, panelIdentity, patchTrialState, persistDocxSnapshotNow],
   );
 
   const handleClear = useCallback(() => {
       const trialStage = activeTrial;
-      const previousFileUrl = stageStateByTrial[trialStage]?.fileUrl || null;
+      const currentStageStateByTrial = stageStateByTrialRef.current;
+      const nextTrialStages = normalizeTrialStages(trialStagesStateRef.current);
+      const previousFileUrl = currentStageStateByTrial[trialStage]?.fileUrl || null;
+      const nextStageStateByTrial = {
+        ...currentStageStateByTrial,
+        [trialStage]: createEmptyTrialStageState(),
+      };
+      stageStateByTrialRef.current = nextStageStateByTrial;
       delete hydratedByStageUrlRef.current[trialStage];
       patchTrialState(trialStage, createEmptyTrialStageState());
       void deleteStageResultCache(panelIdentity, trialStage);
+      void persistDocxSnapshotNow(nextTrialStages, trialStage, nextStageStateByTrial);
       if (previousFileUrl) {
         void deleteAssetViaServer(previousFileUrl).catch(() => undefined);
       }
       setShowClearConfirm(false);
-  }, [activeTrial, panelIdentity, patchTrialState, stageStateByTrial]);
+  }, [activeTrial, panelIdentity, patchTrialState, persistDocxSnapshotNow]);
 
   const handleRequestClear = useCallback(() => {
     setShowClearConfirm(true);
@@ -1214,19 +1382,26 @@ function DocxConvertPanel({ panel }: { panel: AssetPanelItem }) {
   );
 
   const handleAddTrialStage = useCallback(() => {
-    const maxStageIndex = trialStagesState.reduce((maxValue, stage) => {
+    const currentTrialStages = normalizeTrialStages(trialStagesStateRef.current);
+    const baseTrialStages = currentTrialStages.length > 0 ? currentTrialStages : [...DEFAULT_TRIAL_STAGES];
+    const maxStageIndex = baseTrialStages.reduce((maxValue, stage) => {
       const parsed = Number.parseInt(stage.replace(/^T/, ''), 10);
       return Number.isFinite(parsed) ? Math.max(maxValue, parsed) : maxValue;
     }, 0);
     const nextStage = createTrialStageLabel(maxStageIndex + 1);
-
-    setTrialStagesState((prev) => [...prev, nextStage]);
-    setStageStateByTrial((prev) => ({
-      ...prev,
+    const nextTrialStages = [...baseTrialStages, nextStage];
+    const nextStageStateByTrial = {
+      ...stageStateByTrialRef.current,
       [nextStage]: createEmptyTrialStageState(),
-    }));
+    };
+
+    trialStagesStateRef.current = nextTrialStages;
+    stageStateByTrialRef.current = nextStageStateByTrial;
+    setTrialStagesState(nextTrialStages);
+    setStageStateByTrial(nextStageStateByTrial);
     setActiveTrial(nextStage);
-  }, [trialStagesState]);
+    void persistDocxSnapshotNow(nextTrialStages, nextStage, nextStageStateByTrial);
+  }, [persistDocxSnapshotNow]);
 
   const handleRequestDeleteTrialStage = useCallback(() => {
     if (trialStagesState.length <= 1) {
@@ -1241,33 +1416,37 @@ function DocxConvertPanel({ panel }: { panel: AssetPanelItem }) {
   }, [activeTrial, lastTrialStage, trialStagesState.length]);
 
   const deleteCurrentTrialStage = useCallback(() => {
-    if (trialStagesState.length <= 1) {
+    const currentTrialStages = normalizeTrialStages(trialStagesStateRef.current);
+    const baseTrialStages = currentTrialStages.length > 0 ? currentTrialStages : [...DEFAULT_TRIAL_STAGES];
+    if (baseTrialStages.length <= 1) {
       setShowDeleteTrialConfirm(false);
       return;
     }
-    if (activeTrial !== lastTrialStage) {
+    const currentLastTrialStage = baseTrialStages[baseTrialStages.length - 1] || '';
+    if (activeTrial !== currentLastTrialStage) {
       setShowDeleteTrialConfirm(false);
       return;
     }
 
     const deletingTrial = activeTrial;
-    const currentIndex = trialStagesState.indexOf(deletingTrial);
-    const nextTrialStages = trialStagesState.filter((stage) => stage !== deletingTrial);
+    const currentIndex = baseTrialStages.indexOf(deletingTrial);
+    const nextTrialStages = baseTrialStages.filter((stage) => stage !== deletingTrial);
     const nextActiveTrial =
-      trialStagesState[currentIndex - 1] ||
-      trialStagesState[currentIndex + 1] ||
+      baseTrialStages[currentIndex - 1] ||
+      baseTrialStages[currentIndex + 1] ||
       nextTrialStages[0] ||
       DEFAULT_TRIAL_STAGES[0];
-    const deletedFileUrl = stageStateByTrial[deletingTrial]?.fileUrl || null;
+    const deletedFileUrl = stageStateByTrialRef.current[deletingTrial]?.fileUrl || null;
+    const nextStageStateByTrial = { ...stageStateByTrialRef.current };
+    delete nextStageStateByTrial[deletingTrial];
 
+    trialStagesStateRef.current = nextTrialStages;
+    stageStateByTrialRef.current = nextStageStateByTrial;
     setTrialStagesState(nextTrialStages);
-    setStageStateByTrial((prev) => {
-      const next = { ...prev };
-      delete next[deletingTrial];
-      return next;
-    });
+    setStageStateByTrial(nextStageStateByTrial);
     delete hydratedByStageUrlRef.current[deletingTrial];
     void deleteStageResultCache(panelIdentity, deletingTrial);
+    void persistDocxSnapshotNow(nextTrialStages, nextActiveTrial, nextStageStateByTrial);
 
     if (deletedFileUrl) {
       void deleteAssetViaServer(deletedFileUrl).catch(() => undefined);
@@ -1275,7 +1454,7 @@ function DocxConvertPanel({ panel }: { panel: AssetPanelItem }) {
 
     setActiveTrial(nextActiveTrial);
     setShowDeleteTrialConfirm(false);
-  }, [activeTrial, lastTrialStage, panelIdentity, stageStateByTrial, trialStagesState]);
+  }, [activeTrial, panelIdentity, persistDocxSnapshotNow]);
 
   return (
     <div className="space-y-5">

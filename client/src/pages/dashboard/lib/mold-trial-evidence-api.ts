@@ -10,6 +10,7 @@ export type MoldTrialEvidenceRemoteStageState = {
   slots: MoldTrialEvidenceRemoteSlot[];
   groupNote: string;
   recordedAt: string | null;
+  a4ImageUrl?: string;
 };
 
 export type MoldTrialEvidenceRemoteState = {
@@ -59,6 +60,10 @@ function sanitizeStagesByScope(value: unknown): Record<string, MoldTrialEvidence
       slots: Array.isArray(record.slots) ? (record.slots as MoldTrialEvidenceRemoteSlot[]) : [],
       groupNote: typeof record.groupNote === 'string' ? record.groupNote : '',
       recordedAt: typeof record.recordedAt === 'string' ? record.recordedAt : null,
+      a4ImageUrl:
+        typeof record.a4ImageUrl === 'string' && record.a4ImageUrl.trim()
+          ? record.a4ImageUrl.trim()
+          : undefined,
     };
     return acc;
   }, {} as Record<string, MoldTrialEvidenceRemoteStageState>);
