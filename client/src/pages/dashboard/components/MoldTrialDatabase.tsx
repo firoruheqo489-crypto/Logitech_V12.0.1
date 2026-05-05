@@ -10,6 +10,8 @@ import {
 import imageCompression from "browser-image-compression";
 import {
   Camera,
+  ChevronLeft,
+  ChevronRight,
   FileText,
   ImageIcon,
   Microscope,
@@ -61,6 +63,15 @@ const DEFECT_EVIDENCE_SLOT_COUNT = 10;
 const SHARED_EVIDENCE_SCOPE = "__shared__";
 const MOLD_TRIAL_LOCAL_SNAPSHOT_PREFIX =
   "dashboard-mold-trial-database-snapshot:v1:";
+const A4_GALLERY_ITEM_ID = "__a4_landscape_page__";
+
+type EvidenceLightboxScope = "mold-temp" | "defect";
+
+type EvidenceLightboxItem = {
+  id: string;
+  label: string;
+  imageUrl: string;
+};
 
 type MoldTrialDatabaseIdentity = {
   moldId: string;
@@ -627,7 +638,6 @@ export default function MoldTrialDatabase({
   const [evidenceGroupNoteDraftByTrial, setEvidenceGroupNoteDraftByTrial] =
     useState<Record<TrialStage, string>>({});
   const [showA4Preview, setShowA4Preview] = useState(true);
-  const [isA4LightboxOpen, setIsA4LightboxOpen] = useState(false);
   const [isUploadingA4Image, setIsUploadingA4Image] = useState(false);
   const evidenceByTrialRef = useRef<
     Record<TrialStage, TrialEvidenceStageState>
@@ -653,6 +663,9 @@ export default function MoldTrialDatabase({
   >(null);
   const [isEvidenceLightboxOpen, setIsEvidenceLightboxOpen] = useState(false);
   const [evidenceLightboxUrl, setEvidenceLightboxUrl] = useState("");
+  const [evidenceLightboxItemId, setEvidenceLightboxItemId] = useState("");
+  const [evidenceLightboxScope, setEvidenceLightboxScope] =
+    useState<EvidenceLightboxScope>("mold-temp");
   const [evidenceLightboxRotation, setEvidenceLightboxRotation] = useState(0);
   const currentEvidenceState =
     evidenceByTrial[activeTrial] || buildEmptyTrialEvidenceStageState(activeTrial);
@@ -665,14 +678,11 @@ export default function MoldTrialDatabase({
   const activeEvidenceSlot =
     currentEvidenceSlots.find(
       slot => slot.id === selectedEvidenceSlotId && slot.imageUrl
-    ) ||
-    currentEvidenceSlots.find(slot => slot.imageUrl) ||
-    currentEvidenceSlots[0];
-  const activeEvidenceImageUrl = activeEvidenceSlot?.imageUrl || "";
-  const evidenceSlotsWithImages = currentEvidenceSlots.filter(
-    slot => !!slot.imageUrl
+    ) || null;
+  const moldTempEvidenceSlots = currentEvidenceSlots.slice(
+    0,
+    MOLD_TEMP_EVIDENCE_SLOT_COUNT
   );
-  const moldTempEvidenceSlots = currentEvidenceSlots.slice(0, 5);
 
   type RemoteTrialDatabaseSnapshot = {
     trialStages: TrialStage[];
@@ -853,6 +863,47 @@ export default function MoldTrialDatabase({
     [applyRemoteTrialDatabaseSnapshot, readRemoteTrialDatabaseSnapshot]
   );
   const defectEvidenceSlots = currentEvidenceSlots.slice(5, 15);
+  const moldTempGalleryItems: EvidenceLightboxItem[] = [
+    ...(currentA4ImageUrl
+      ? [
+          {
+            id: A4_GALLERY_ITEM_ID,
+            label: "横向 A4 页面",
+            imageUrl: currentA4ImageUrl,
+          },
+        ]
+      : []),
+    ...moldTempEvidenceSlots
+      .filter((slot): slot is TrialEvidenceSlot & { imageUrl: string } =>
+        Boolean(slot.imageUrl)
+      )
+      .map(slot => ({
+        id: slot.id,
+        label: slot.label,
+        imageUrl: slot.imageUrl,
+      })),
+  ];
+  const defectGalleryItems: EvidenceLightboxItem[] = defectEvidenceSlots
+    .filter((slot): slot is TrialEvidenceSlot & { imageUrl: string } =>
+      Boolean(slot.imageUrl)
+    )
+    .map(slot => ({
+      id: slot.id,
+      label: slot.label,
+      imageUrl: slot.imageUrl,
+    }));
+  const evidenceLightboxItems =
+    evidenceLightboxScope === "mold-temp"
+      ? moldTempGalleryItems
+      : defectGalleryItems;
+  const evidenceLightboxItemIndex = Math.max(
+    0,
+    evidenceLightboxItems.findIndex(
+      item =>
+        item.id === evidenceLightboxItemId ||
+        (!!evidenceLightboxUrl && item.imageUrl === evidenceLightboxUrl)
+    )
+  );
   const trialStageStorageKey = `mold-trial-stages:${moldId}:${moldNo || "default"}`;
   const clearedTrialStageStorageKey = `mold-trial-cleared-stages:${moldId}:${moldNo || "default"}`;
   const trialScopeKey = `${moldId}:${moldNo || "default"}:${activeTrial}`;
@@ -906,10 +957,36 @@ export default function MoldTrialDatabase({
   }, [currentEvidenceSlots, selectedEvidenceSlotId]);
 
   useEffect(() => {
-    if (isA4LightboxOpen && !currentA4ImageUrl) {
-      setIsA4LightboxOpen(false);
+    if (!isEvidenceLightboxOpen) return;
+
+    const hasCurrentItem = evidenceLightboxItems.some(
+      item =>
+        item.id === evidenceLightboxItemId ||
+        (!!evidenceLightboxUrl && item.imageUrl === evidenceLightboxUrl)
+    );
+    if (hasCurrentItem) return;
+
+    const nextItem = evidenceLightboxItems[0];
+    if (nextItem) {
+      setEvidenceLightboxItemId(nextItem.id);
+      setEvidenceLightboxUrl(nextItem.imageUrl);
+      setEvidenceLightboxRotation(0);
+      if (nextItem.id !== A4_GALLERY_ITEM_ID) {
+        setSelectedEvidenceSlotId(nextItem.id);
+      }
+      return;
     }
-  }, [currentA4ImageUrl, isA4LightboxOpen]);
+
+    setIsEvidenceLightboxOpen(false);
+    setEvidenceLightboxUrl("");
+    setEvidenceLightboxItemId("");
+    setEvidenceLightboxRotation(0);
+  }, [
+    evidenceLightboxItemId,
+    evidenceLightboxItems,
+    evidenceLightboxUrl,
+    isEvidenceLightboxOpen,
+  ]);
 
   useEffect(() => {
     let cancelled = false;
@@ -922,7 +999,10 @@ export default function MoldTrialDatabase({
     evidenceByTrialRef.current = {};
     setEvidenceGroupNoteDraftByTrial({});
     setShowDeleteGroupNoteConfirm(false);
-    setIsA4LightboxOpen(false);
+    setIsEvidenceLightboxOpen(false);
+    setEvidenceLightboxUrl("");
+    setEvidenceLightboxItemId("");
+    setEvidenceLightboxRotation(0);
     setIsUploadingA4Image(false);
     setPendingUploadSlotId(null);
     setShowClearConfirm(false);
@@ -1554,7 +1634,24 @@ export default function MoldTrialDatabase({
 
     setEvidenceByTrial(nextEvidenceState);
     evidenceByTrialRef.current = nextEvidenceState;
-    setIsA4LightboxOpen(false);
+    if (
+      evidenceLightboxItemId === A4_GALLERY_ITEM_ID ||
+      evidenceLightboxUrl === currentA4ImageUrl
+    ) {
+      const fallbackItem = moldTempGalleryItems.find(
+        item => item.id !== A4_GALLERY_ITEM_ID
+      );
+      if (fallbackItem) {
+        setEvidenceLightboxItemId(fallbackItem.id);
+        setEvidenceLightboxUrl(fallbackItem.imageUrl);
+        setEvidenceLightboxRotation(0);
+      } else {
+        setIsEvidenceLightboxOpen(false);
+        setEvidenceLightboxUrl("");
+        setEvidenceLightboxItemId("");
+        setEvidenceLightboxRotation(0);
+      }
+    }
     void persistMoldTrialStateNow(nextEvidenceState);
 
     if (currentA4ImageUrl.startsWith("blob:")) {
@@ -1632,11 +1729,13 @@ export default function MoldTrialDatabase({
     if (evidenceLightboxUrl === deletedUrl) {
       if (replacementImageUrl) {
         setSelectedEvidenceSlotId(slotId);
+        setEvidenceLightboxItemId(slotId);
         setEvidenceLightboxUrl(replacementImageUrl);
         setEvidenceLightboxRotation(0);
       } else {
         setIsEvidenceLightboxOpen(false);
         setEvidenceLightboxUrl("");
+        setEvidenceLightboxItemId("");
         setEvidenceLightboxRotation(0);
       }
     }
@@ -1647,7 +1746,13 @@ export default function MoldTrialDatabase({
     });
   };
 
-  const openEvidenceLightbox = (imageUrl: string) => {
+  const openEvidenceLightbox = (
+    itemId: string,
+    imageUrl: string,
+    scope: EvidenceLightboxScope
+  ) => {
+    setEvidenceLightboxScope(scope);
+    setEvidenceLightboxItemId(itemId);
     setEvidenceLightboxUrl(imageUrl);
     setEvidenceLightboxRotation(0);
     setIsEvidenceLightboxOpen(true);
@@ -1656,39 +1761,45 @@ export default function MoldTrialDatabase({
   const closeEvidenceLightbox = () => {
     setIsEvidenceLightboxOpen(false);
     setEvidenceLightboxUrl("");
+    setEvidenceLightboxItemId("");
     setEvidenceLightboxRotation(0);
   };
 
   const navigateEvidenceLightbox = (direction: -1 | 1) => {
-    if (evidenceSlotsWithImages.length === 0) return;
-    if (evidenceSlotsWithImages.length === 1) {
-      const onlySlot = evidenceSlotsWithImages[0];
-      setSelectedEvidenceSlotId(onlySlot.id);
-      setEvidenceLightboxUrl(onlySlot.imageUrl || "");
+    if (evidenceLightboxItems.length === 0) return;
+    if (evidenceLightboxItems.length === 1) {
+      const onlyItem = evidenceLightboxItems[0];
+      setEvidenceLightboxItemId(onlyItem.id);
+      setEvidenceLightboxUrl(onlyItem.imageUrl);
+      if (onlyItem.id !== A4_GALLERY_ITEM_ID) {
+        setSelectedEvidenceSlotId(onlyItem.id);
+      }
       return;
     }
 
-    let currentIndex = evidenceSlotsWithImages.findIndex(
-      slot => slot.id === selectedEvidenceSlotId
+    let currentIndex = evidenceLightboxItems.findIndex(
+      item => item.id === evidenceLightboxItemId
     );
 
     if (currentIndex < 0 && evidenceLightboxUrl) {
-      currentIndex = evidenceSlotsWithImages.findIndex(
-        slot => slot.imageUrl === evidenceLightboxUrl
+      currentIndex = evidenceLightboxItems.findIndex(
+        item => item.imageUrl === evidenceLightboxUrl
       );
     }
     if (currentIndex < 0) currentIndex = 0;
 
-    const nextIndex = currentIndex + direction;
-    if (nextIndex < 0 || nextIndex >= evidenceSlotsWithImages.length) {
-      return;
+    const nextIndex =
+      (currentIndex + direction + evidenceLightboxItems.length) %
+      evidenceLightboxItems.length;
+
+    const nextItem = evidenceLightboxItems[nextIndex];
+    if (!nextItem) return;
+
+    setEvidenceLightboxItemId(nextItem.id);
+    if (nextItem.id !== A4_GALLERY_ITEM_ID) {
+      setSelectedEvidenceSlotId(nextItem.id);
     }
-
-    const nextSlot = evidenceSlotsWithImages[nextIndex];
-    if (!nextSlot) return;
-
-    setSelectedEvidenceSlotId(nextSlot.id);
-    setEvidenceLightboxUrl(nextSlot.imageUrl || "");
+    setEvidenceLightboxUrl(nextItem.imageUrl);
     setEvidenceLightboxRotation(0);
   };
 
@@ -1719,22 +1830,6 @@ export default function MoldTrialDatabase({
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, [closeEvidenceLightbox, isEvidenceLightboxOpen, navigateEvidenceLightbox]);
-
-  useEffect(() => {
-    if (!isA4LightboxOpen) return;
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        setIsA4LightboxOpen(false);
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [isA4LightboxOpen]);
 
   const handleSaveEvidenceGroupNote = () => {
     const normalizedNote = (
@@ -1807,13 +1902,13 @@ export default function MoldTrialDatabase({
           className="h-full w-full rounded-md object-contain"
         />
         {interactive ? (
-          <span className="pointer-events-none absolute right-3 top-3 rounded-full border border-slate-200 bg-white/90 p-2 text-slate-500 opacity-0 shadow-sm transition-opacity group-hover/a4image:opacity-100 group-focus-visible/a4image:opacity-100">
+          <span className="pointer-events-none absolute right-3 top-3 rounded-full border border-slate-700 bg-slate-900/90 p-2 text-slate-300 opacity-0 shadow-sm transition-opacity group-hover/a4image:opacity-100 group-focus-visible/a4image:opacity-100">
             <ZoomIn className="h-4 w-4" />
           </span>
         ) : null}
       </>
     ) : (
-      <div className="flex h-full w-full flex-col items-center justify-center gap-2 rounded-md bg-white px-4 text-center">
+      <div className="flex h-full w-full flex-col items-center justify-center gap-2 rounded-md bg-slate-950/40 px-4 text-center">
         <UploadCloud className="h-8 w-8 text-slate-400" />
         <div className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
           {isUploadingA4Image ? "上传中..." : "添加图片 / ADD IMAGE"}
@@ -1823,18 +1918,18 @@ export default function MoldTrialDatabase({
 
     return (
       <div className="flex h-full min-h-0 flex-col">
-        <div className="flex items-start justify-between gap-4 border-b border-slate-200 pb-3">
+        <div className="flex items-start justify-between gap-4 border-b border-slate-800 pb-3">
           <div>
             <div className="text-[10px] font-semibold uppercase tracking-[0.24em] text-slate-500">
               A4 Landscape Page
             </div>
-            <div className="mt-1 text-lg font-bold text-slate-900">
+            <div className="mt-1 text-lg font-bold text-slate-100">
               横向 A4 窗口
             </div>
           </div>
           <div className="text-right text-[11px] text-slate-500">
             <div>ISO 216</div>
-            <div className="mt-1 text-sm font-semibold text-slate-800">A4</div>
+            <div className="mt-1 text-sm font-semibold text-slate-100">A4</div>
           </div>
         </div>
 
@@ -1844,16 +1939,20 @@ export default function MoldTrialDatabase({
               type="button"
               onClick={() => {
                 if (currentA4ImageUrl) {
-                  setIsA4LightboxOpen(true);
+                  openEvidenceLightbox(
+                    A4_GALLERY_ITEM_ID,
+                    currentA4ImageUrl,
+                    "mold-temp"
+                  );
                   return;
                 }
                 openA4ImagePicker();
               }}
               disabled={isUploadingA4Image}
-              className={`group/a4image relative h-full w-full overflow-hidden rounded-lg border border-dashed border-slate-300 bg-white transition-colors focus:outline-none focus:ring-2 focus:ring-cyan-400 ${
+              className={`group/a4image relative h-full w-full overflow-hidden rounded-lg border border-dashed border-slate-600 bg-slate-950/40 transition-colors focus:outline-none focus:ring-2 focus:ring-cyan-400 ${
                 currentA4ImageUrl
-                  ? "cursor-zoom-in hover:border-cyan-300"
-                  : "cursor-pointer hover:border-cyan-300"
+                  ? "cursor-zoom-in hover:border-cyan-400"
+                  : "cursor-pointer hover:border-cyan-400"
               } disabled:cursor-wait disabled:opacity-70`}
               aria-label={imageActionLabel}
               title={imageActionLabel}
@@ -1861,7 +1960,7 @@ export default function MoldTrialDatabase({
               {imageAreaContent}
             </button>
           ) : (
-            <div className="relative h-full w-full overflow-hidden rounded-lg border border-dashed border-slate-300 bg-white">
+            <div className="relative h-full w-full overflow-hidden rounded-lg border border-dashed border-slate-600 bg-slate-950/40">
               {imageAreaContent}
             </div>
           )}
@@ -1875,7 +1974,7 @@ export default function MoldTrialDatabase({
                   openA4ImagePicker();
                 }}
                 disabled={isUploadingA4Image}
-                className="rounded-full border border-slate-300 bg-white/95 p-2 text-slate-600 shadow-sm transition-colors hover:border-cyan-300 hover:text-cyan-600 disabled:cursor-wait disabled:opacity-60"
+                className="rounded-full border border-slate-700 bg-slate-900/95 p-2 text-slate-300 shadow-sm transition-colors hover:border-cyan-400 hover:text-cyan-200 disabled:cursor-wait disabled:opacity-60"
                 aria-label="替换A4图片"
                 title="替换A4图片"
               >
@@ -1887,7 +1986,7 @@ export default function MoldTrialDatabase({
                   event.stopPropagation();
                   void handleA4ImageDelete();
                 }}
-                className="rounded-full border border-slate-300 bg-white/95 p-2 text-slate-600 shadow-sm transition-colors hover:border-rose-300 hover:text-rose-600"
+                className="rounded-full border border-slate-700 bg-slate-900/95 p-2 text-slate-300 shadow-sm transition-colors hover:border-rose-400 hover:text-rose-300"
                 aria-label="删除A4图片"
                 title="删除A4图片"
               >
@@ -1897,7 +1996,7 @@ export default function MoldTrialDatabase({
           ) : null}
         </div>
 
-        <div className="mt-4 flex items-center justify-between border-t border-slate-200 pt-3 text-[10px] font-medium uppercase tracking-[0.18em] text-slate-400">
+        <div className="mt-4 flex items-center justify-between border-t border-slate-800 pt-3 text-[10px] font-medium uppercase tracking-[0.18em] text-slate-500">
           <span>Landscape</span>
           <span>297 x 210 mm</span>
         </div>
@@ -1923,13 +2022,16 @@ export default function MoldTrialDatabase({
         </div>
       </div>
 
-      <div className="mt-4 mx-auto aspect-[297/210] w-full max-w-[1120px] overflow-hidden rounded-xl border border-slate-300 bg-white p-6 text-left text-slate-900 shadow-[0_18px_70px_rgba(0,0,0,0.25)]">
+      <div className="mt-4 mx-auto aspect-[297/210] w-full max-w-[1120px] overflow-hidden rounded-xl border border-slate-700 bg-slate-950/40 p-6 text-left text-slate-100 shadow-[0_18px_70px_rgba(0,0,0,0.25)]">
         {renderA4PageCanvas()}
       </div>
     </section>
   );
 
-  const renderEvidenceSlotGrid = (slots: TrialEvidenceSlot[]) =>
+  const renderEvidenceSlotGrid = (
+    slots: TrialEvidenceSlot[],
+    lightboxScope: EvidenceLightboxScope
+  ) =>
     slots.map(slot => {
       return (
         <div key={slot.id} className="flex flex-col">
@@ -1938,7 +2040,11 @@ export default function MoldTrialDatabase({
               onClick={() => {
                 if (slot.imageUrl) {
                   setSelectedEvidenceSlotId(slot.id);
-                  openEvidenceLightbox(slot.imageUrl);
+                  openEvidenceLightbox(
+                    slot.id,
+                    slot.imageUrl,
+                    lightboxScope
+                  );
                 }
               }}
               className={`relative flex aspect-square items-center justify-center p-3 ${
@@ -2137,7 +2243,7 @@ export default function MoldTrialDatabase({
           </div>
         </div>
         <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-5">
-          {renderEvidenceSlotGrid(moldTempEvidenceSlots)}
+          {renderEvidenceSlotGrid(moldTempEvidenceSlots, "mold-temp")}
         </div>
       </section>
 
@@ -2208,7 +2314,7 @@ export default function MoldTrialDatabase({
           </div>
         </div>
         <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-5">
-          {renderEvidenceSlotGrid(defectEvidenceSlots)}
+          {renderEvidenceSlotGrid(defectEvidenceSlots, "defect")}
         </div>
 
         <div className="mt-5 rounded-xl border border-slate-800 bg-slate-950/40 p-4">
@@ -2325,38 +2431,39 @@ export default function MoldTrialDatabase({
           setPendingUploadSlotId(null);
         }}
       />
-      {isA4LightboxOpen && currentA4ImageUrl && (
-        <div
-          onClick={() => setIsA4LightboxOpen(false)}
-          className="fixed inset-0 z-50 flex cursor-zoom-out items-center justify-center bg-slate-950/95 p-6 backdrop-blur-md"
-        >
-          <div
-            className="relative cursor-default"
-            onClick={event => event.stopPropagation()}
-          >
-            <div
-              className="aspect-[297/210] overflow-hidden rounded-xl border border-slate-300 bg-white p-6 text-left text-slate-900 shadow-2xl"
-              style={{ width: "min(94vw, 121.6vh)" }}
-            >
-              {renderA4PageCanvas({ interactive: false })}
-            </div>
-            <button
-              type="button"
-              onClick={() => setIsA4LightboxOpen(false)}
-              className="absolute -right-3 -top-3 rounded-full border border-slate-700 bg-slate-800/95 p-2 transition-colors hover:bg-slate-700"
-              aria-label="关闭A4预览"
-              title="关闭A4预览"
-            >
-              <X className="h-5 w-5 text-slate-300" />
-            </button>
-          </div>
-        </div>
-      )}
       {isEvidenceLightboxOpen && (
         <div
           onClick={closeEvidenceLightbox}
           className="fixed inset-0 z-50 flex cursor-pointer flex-col items-center justify-center bg-slate-950/95 p-6 backdrop-blur-md"
         >
+          {evidenceLightboxItems.length > 1 ? (
+            <>
+              <button
+                type="button"
+                onClick={event => {
+                  event.stopPropagation();
+                  navigateEvidenceLightbox(-1);
+                }}
+                className="absolute left-4 top-1/2 z-10 -translate-y-1/2 rounded-full border border-slate-700 bg-slate-900/90 p-3 text-slate-200 shadow-xl transition-colors hover:border-cyan-400 hover:text-cyan-200"
+                aria-label="上一张"
+                title="上一张"
+              >
+                <ChevronLeft className="h-6 w-6" />
+              </button>
+              <button
+                type="button"
+                onClick={event => {
+                  event.stopPropagation();
+                  navigateEvidenceLightbox(1);
+                }}
+                className="absolute right-4 top-1/2 z-10 -translate-y-1/2 rounded-full border border-slate-700 bg-slate-900/90 p-3 text-slate-200 shadow-xl transition-colors hover:border-cyan-400 hover:text-cyan-200"
+                aria-label="下一张"
+                title="下一张"
+              >
+                <ChevronRight className="h-6 w-6" />
+              </button>
+            </>
+          ) : null}
           <div
             className="flex max-w-[90vw] flex-col items-center"
             onClick={event => event.stopPropagation()}
@@ -2375,6 +2482,11 @@ export default function MoldTrialDatabase({
             </div>
 
             <div className="mt-1 flex items-center justify-center gap-3">
+              <div className="min-w-20 rounded-full border border-slate-700 bg-slate-800/90 px-3 py-2 text-center text-xs font-mono text-slate-400">
+                {evidenceLightboxItems.length > 0
+                  ? `${evidenceLightboxItemIndex + 1}/${evidenceLightboxItems.length}`
+                  : "0/0"}
+              </div>
               <button
                 type="button"
                 onClick={() => setEvidenceLightboxRotation(prev => prev - 90)}
