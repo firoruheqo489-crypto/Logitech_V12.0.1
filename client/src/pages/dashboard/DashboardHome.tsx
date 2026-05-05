@@ -45,6 +45,7 @@ import {
 
 const MoldTrialDrawerWorkspace = lazy(() => import('./components/MoldTrialDrawerWorkspace'));
 const ProjectGanttWorkspace = lazy(() => import('./components/ProjectGanttWorkspace'));
+const DoeWorkspace = lazy(() => import('./components/DoeWorkspace'));
 const TrialDocumentsWorkspace = lazy(() => import('./components/TrialDocumentsWorkspace'));
 const MacroStageGateDrawerWorkspace = lazy(() => import('./components/MacroStageGateDrawerWorkspace'));
 const ReliabilityDrawerWorkspace = lazy(() => import('./components/ReliabilityDrawerWorkspace'));
@@ -163,6 +164,7 @@ const DASHBOARD_TABS = [
   'docx-converter',
   'trial-documents',
   'project-gantt',
+  'doe',
   'fmea-analysis',
   'pareto-analysis',
   'measurement-intake',
@@ -831,6 +833,7 @@ export default function DashboardHome() {
               'docx-converter': '问题解析',
               'trial-documents': '每日试验档',
               'project-gantt': '项目甘特图',
+              'doe': 'DOE实验设计',
               'fmea-analysis': 'FMEA分析',
               'mold-reliability': '模具可靠性',
               'measurement-intake': '测量检入表',
@@ -1015,6 +1018,12 @@ export default function DashboardHome() {
         {selectedTab === 'project-gantt' && (
           <LazyWorkspace>
             <ProjectGanttWorkspace />
+          </LazyWorkspace>
+        )}
+
+        {selectedTab === 'doe' && (
+          <LazyWorkspace>
+            <DoeWorkspace />
           </LazyWorkspace>
         )}
 
