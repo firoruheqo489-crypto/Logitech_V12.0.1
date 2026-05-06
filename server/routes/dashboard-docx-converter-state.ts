@@ -195,6 +195,28 @@ function hasStageContent(stageState: DocxConverterStageState): boolean {
   return Boolean(stageState.fileName || stageState.fileUrl || stageState.result);
 }
 
+function trimTrailingEmptyTrialStages(
+  trialStages: string[],
+  stageStateByTrial: Record<string, DocxConverterStageState>,
+): string[] {
+  const normalizedTrialStages = sanitizeTrialStages(trialStages);
+  if (normalizedTrialStages.length === 0) {
+    return [...DEFAULT_TRIAL_STAGES];
+  }
+
+  const trimmedTrialStages = [...normalizedTrialStages];
+  while (trimmedTrialStages.length > DEFAULT_TRIAL_STAGES.length) {
+    const lastStage = trimmedTrialStages[trimmedTrialStages.length - 1];
+    const stageState = stageStateByTrial[lastStage];
+    if (stageState && hasStageContent(stageState)) {
+      break;
+    }
+    trimmedTrialStages.pop();
+  }
+
+  return trimmedTrialStages.length > 0 ? trimmedTrialStages : [...DEFAULT_TRIAL_STAGES];
+}
+
 function sanitizeStageState(value: unknown): DocxConverterStageState | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return null;
@@ -330,12 +352,14 @@ export async function getDashboardDocxConverterState(req: Request, res: Response
       return;
     }
 
-    const trialStages = resolveTrialStages(
+    const resolvedTrialStages = resolveTrialStages(
       sanitizeTrialStages(row.trial_stages),
       sanitizeStageStateByTrial(row.stage_state_by_trial, []),
       normalizeTrialStage(row.active_trial, DEFAULT_TRIAL_STAGES[0]),
     );
-    const stageStateByTrial = sanitizeStageStateByTrial(row.stage_state_by_trial, trialStages);
+    const stageStateByTrial = sanitizeStageStateByTrial(row.stage_state_by_trial, resolvedTrialStages);
+    const trialStages = trimTrailingEmptyTrialStages(resolvedTrialStages, stageStateByTrial);
+    const filteredStageStateByTrial = sanitizeStageStateByTrial(stageStateByTrial, trialStages);
 
     res.status(200).json({
       state: {
@@ -343,7 +367,7 @@ export async function getDashboardDocxConverterState(req: Request, res: Response
         moldNo: row.mold_no || '',
         trialStages,
         activeTrial: normalizeActiveTrial(row.active_trial, trialStages),
-        stageStateByTrial,
+        stageStateByTrial: filteredStageStateByTrial,
         updatedAt: row.updated_at,
       },
     });
@@ -368,16 +392,19 @@ export async function upsertDashboardDocxConverterState(req: Request, res: Respo
 
   const incomingTrialStages = sanitizeTrialStages(body.trialStages);
   const incomingStageState = sanitizeStageStateByTrial(body.stageStateByTrial, []);
-  const trialStages = resolveTrialStages(
+  const resolvedTrialStages = resolveTrialStages(
     incomingTrialStages,
     incomingStageState,
     normalizeTrialStage(body.activeTrial, DEFAULT_TRIAL_STAGES[0]),
   );
+  const requestedActiveTrial = normalizeActiveTrial(body.activeTrial, resolvedTrialStages);
+  const normalizedTrialStages = resolvedTrialStages.includes(requestedActiveTrial)
+    ? resolvedTrialStages
+    : [...resolvedTrialStages, requestedActiveTrial].sort((a, b) => Number.parseInt(a.slice(1), 10) - Number.parseInt(b.slice(1), 10));
+  const sanitizedStageStateByTrial = sanitizeStageStateByTrial(incomingStageState, normalizedTrialStages);
+  const trialStages = trimTrailingEmptyTrialStages(normalizedTrialStages, sanitizedStageStateByTrial);
   const activeTrial = normalizeActiveTrial(body.activeTrial, trialStages);
-  const normalizedTrialStages = trialStages.includes(activeTrial)
-    ? trialStages
-    : [...trialStages, activeTrial].sort((a, b) => Number.parseInt(a.slice(1), 10) - Number.parseInt(b.slice(1), 10));
-  const stageStateByTrial = sanitizeStageStateByTrial(incomingStageState, normalizedTrialStages);
+  const stageStateByTrial = sanitizeStageStateByTrial(sanitizedStageStateByTrial, trialStages);
 
   try {
     await ensureDashboardDocxConverterTable();
@@ -412,7 +439,7 @@ export async function upsertDashboardDocxConverterState(req: Request, res: Respo
       [
         moldId,
         moldNo,
-        JSON.stringify(normalizedTrialStages),
+        JSON.stringify(trialStages),
         activeTrial,
         JSON.stringify(stageStateByTrial),
       ],

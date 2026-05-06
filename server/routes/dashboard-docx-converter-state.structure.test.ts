@@ -20,5 +20,8 @@ describe('dashboard docx converter namespace', () => {
     expect(source).toContain('active_trial VARCHAR(50) NOT NULL');
     expect(source).toContain('stage_state_by_trial JSONB NOT NULL DEFAULT');
     expect(source).toContain('WHERE mold_id = $1 AND mold_no = $2');
+    expect(source).toContain('const filteredStageStateByTrial = sanitizeStageStateByTrial(stageStateByTrial, trialStages);');
+    expect(source).toContain('stageStateByTrial: filteredStageStateByTrial');
+    expect(source).toContain('JSON.stringify(trialStages)');
   });
 });
