@@ -38,6 +38,7 @@ const UPLOADS_ROUTE_ERROR_MESSAGES: Record<UploadsRouteErrorCode, string> = {
 const UPLOADS_TEMP_DIR = path.resolve(process.cwd(), 'uploads_temp');
 const MAX_UPLOAD_FILE_SIZE_BYTES = 100 * 1024 * 1024;
 const STANDARD_DOCX_MIME_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+const STANDARD_JSON_MIME_TYPE = 'application/json';
 const DOCX_COMPATIBLE_MIME_TYPES = new Set([
   '',
   'application/octet-stream',
@@ -45,8 +46,14 @@ const DOCX_COMPATIBLE_MIME_TYPES = new Set([
   'application/x-zip-compressed',
   'multipart/x-zip',
 ]);
+const JSON_COMPATIBLE_MIME_TYPES = new Set([
+  '',
+  'application/octet-stream',
+  'text/plain',
+]);
 const ALLOWED_UPLOAD_RULES: Record<string, ReadonlySet<string>> = {
   [STANDARD_DOCX_MIME_TYPE]: new Set(['.docx']),
+  [STANDARD_JSON_MIME_TYPE]: new Set(['.json']),
   'application/pdf': new Set(['.pdf']),
   'image/jpeg': new Set(['.jpeg', '.jpg']),
   'image/png': new Set(['.png']),
@@ -125,6 +132,10 @@ function normalizeUploadMimeType(input: { originalname: string; mimetype: string
 
   if (extension === '.docx' && DOCX_COMPATIBLE_MIME_TYPES.has(mimetype)) {
     return STANDARD_DOCX_MIME_TYPE;
+  }
+
+  if (extension === '.json' && JSON_COMPATIBLE_MIME_TYPES.has(mimetype)) {
+    return STANDARD_JSON_MIME_TYPE;
   }
 
   return mimetype;
