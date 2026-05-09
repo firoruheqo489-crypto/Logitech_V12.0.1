@@ -5,6 +5,7 @@ export type FaiDimensionRemoteState = {
   fileName: string;
   assetUrl: string;
   selectedFai: string;
+  payload?: unknown;
   updatedAt?: string;
 };
 

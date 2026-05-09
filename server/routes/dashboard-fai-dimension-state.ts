@@ -24,6 +24,7 @@ type FaiDimensionStateRow = {
   file_name: string | null;
   asset_url: string | null;
   selected_fai: string | null;
+  payload_json: unknown | null;
   updated_at: string;
 };
 
@@ -70,10 +71,15 @@ export function ensureDashboardFaiDimensionTable(): Promise<void> {
           scope VARCHAR(80) NOT NULL UNIQUE,
           file_name VARCHAR(255),
           asset_url TEXT,
+          payload_json JSONB,
           selected_fai VARCHAR(100) NOT NULL DEFAULT '',
           created_at TIMESTAMP NOT NULL DEFAULT NOW(),
           updated_at TIMESTAMP NOT NULL DEFAULT NOW()
         )
+      `);
+      await dbSql.unsafe(`
+        ALTER TABLE ${FAI_DIMENSION_STATE_TABLE}
+        ADD COLUMN IF NOT EXISTS payload_json JSONB
       `);
     })();
   }
@@ -92,7 +98,7 @@ export async function getDashboardFaiDimensionState(req: Request, res: Response)
     await ensureDashboardFaiDimensionTable();
     const rows = (await dbSql.unsafe(
       `
-        SELECT scope, file_name, asset_url, selected_fai, updated_at
+        SELECT scope, file_name, asset_url, selected_fai, payload_json, updated_at
         FROM ${FAI_DIMENSION_STATE_TABLE}
         WHERE scope = $1
         LIMIT 1
@@ -112,6 +118,7 @@ export async function getDashboardFaiDimensionState(req: Request, res: Response)
         fileName: row.file_name || '',
         assetUrl: row.asset_url || '',
         selectedFai: row.selected_fai || '',
+        payload: row.payload_json ?? null,
         updatedAt: row.updated_at,
       },
     });
@@ -132,6 +139,7 @@ export async function upsertDashboardFaiDimensionState(req: Request, res: Respon
   const fileName = normalizeFileName(body.fileName);
   const assetUrl = normalizeAssetUrl(body.assetUrl);
   const selectedFai = normalizeSelectedFai(body.selectedFai);
+  const payloadJson = body.payload === undefined ? null : JSON.stringify(body.payload);
 
   try {
     await ensureDashboardFaiDimensionTable();
@@ -146,18 +154,20 @@ export async function upsertDashboardFaiDimensionState(req: Request, res: Respon
           scope,
           file_name,
           asset_url,
+          payload_json,
           selected_fai,
           created_at,
           updated_at
-        ) VALUES ($1, $2, $3, $4, NOW(), NOW())
+        ) VALUES ($1, $2, $3, $4::jsonb, $5, NOW(), NOW())
         ON CONFLICT (scope)
         DO UPDATE SET
           file_name = EXCLUDED.file_name,
           asset_url = EXCLUDED.asset_url,
+          payload_json = EXCLUDED.payload_json,
           selected_fai = EXCLUDED.selected_fai,
           updated_at = NOW()
       `,
-      [scope, fileName, assetUrl, selectedFai],
+      [scope, fileName, assetUrl, payloadJson, selectedFai],
     );
 
     const previousAssetUrl = String(previousRows[0]?.asset_url ?? '').trim();

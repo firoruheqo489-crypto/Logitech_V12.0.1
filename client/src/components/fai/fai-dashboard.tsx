@@ -12,7 +12,7 @@ import {
   generateCavityData,
   generateSPCChartData,
 } from "@/lib/fai-mock-data"
-import { deleteAssetViaServer, uploadAssetViaServer } from "@/lib/ossUpload"
+import { deleteAssetViaServer } from "@/lib/ossUpload"
 import {
   deleteFaiDimensionState,
   fetchFaiDimensionState,
@@ -48,9 +48,7 @@ type PersistedFaiPayload = {
 }
 
 const FAI_REMOTE_PAYLOAD_VERSION = 1
-const FAI_REMOTE_CATEGORY = "fai-dimension"
 const FAI_DEFAULT_ENTITY_ID = "dimension-analyzer"
-const FAI_DEFAULT_SLOT = "parsed-json"
 const FAI_LOCAL_FALLBACK_STORAGE_KEY = "fai_dimension_state_fallback_v1"
 const FAI_LOCAL_SNAPSHOT_STORAGE_KEY = "fai_dimension_snapshot_v1"
 const FAI_DEFAULT_TRIAL_STAGE = "T0"
@@ -673,9 +671,6 @@ export function FAIDashboard({
   const faiScope = `dimension-analyzer:${normalizedMoldId}:${normalizedMoldNo}:${normalizedTrialStage}`
   const fallbackStorageKey = `${FAI_LOCAL_FALLBACK_STORAGE_KEY}:${faiScope}`
   const snapshotStorageKey = `${FAI_LOCAL_SNAPSHOT_STORAGE_KEY}:${faiScope}`
-  const remoteEntityId = `${normalizedMoldId}__${normalizedMoldNo.replace(/[^\w.-]+/g, "-")}`
-  const remoteSlot = `${FAI_DEFAULT_SLOT}-${normalizedTrialStage.toLowerCase()}`
-
   const hasUploadedDataset = parsedWorkbookData.length > 0
   const parsedPointTotal = useMemo(
     () => parsedWorkbookData.reduce((sum, item) => sum + item.flatValues.length, 0),
@@ -701,6 +696,32 @@ export function FAIDashboard({
           persistedState = await fetchFaiDimensionState({ scope: faiScope })
         } catch (error) {
           console.warn("Failed to load server-side FAI state, fallback to local pointer:", error)
+        }
+
+        if (persistedState?.payload) {
+          const normalized = normalizePersistedPayload(
+            persistedState.payload,
+            persistedState.fileName,
+            persistedState.selectedFai
+          )
+          if (normalized.data.length > 0) {
+            if (cancelled) {
+              return
+            }
+
+            setParsedWorkbookData(normalized.data)
+            setUploadedFileName(normalized.fileName)
+            setSelectedFAI(normalized.selectedFai)
+            setRemoteAssetUrl(persistedState.assetUrl || "")
+            writeLocalFaiSnapshotState(snapshotStorageKey, {
+              version: FAI_REMOTE_PAYLOAD_VERSION,
+              fileName: normalized.fileName,
+              selectedFai: normalized.selectedFai,
+              data: normalized.data,
+              savedAt: new Date().toISOString(),
+            })
+            return
+          }
         }
 
         if (!persistedState?.assetUrl) {
@@ -776,15 +797,24 @@ export function FAIDashboard({
   }, [faiScope, fallbackStorageKey, snapshotStorageKey])
 
   useEffect(() => {
-    if (!hasUploadedDataset || !remoteAssetUrl) {
+    if (!hasUploadedDataset) {
       return
+    }
+
+    const payload: PersistedFaiPayload = {
+      version: FAI_REMOTE_PAYLOAD_VERSION,
+      fileName: uploadedFileName || "FAI Dataset",
+      selectedFai: selectedFAI,
+      data: parsedWorkbookData,
+      savedAt: new Date().toISOString(),
     }
 
     const statePayload: FaiDimensionRemoteState = {
       scope: faiScope,
-      fileName: uploadedFileName || "FAI Dataset",
+      fileName: payload.fileName,
       assetUrl: remoteAssetUrl,
       selectedFai: selectedFAI,
+      payload,
     }
 
     void saveFaiDimensionState(statePayload)
@@ -792,10 +822,18 @@ export function FAIDashboard({
         clearLocalFaiFallbackState(fallbackStorageKey)
       })
       .catch((error) => {
-        console.error("Failed to sync selected FAI state, fallback to local pointer:", error)
+        console.error("Failed to sync selected FAI state:", error)
         writeLocalFaiFallbackState(fallbackStorageKey, statePayload)
       })
-  }, [faiScope, fallbackStorageKey, hasUploadedDataset, remoteAssetUrl, selectedFAI, uploadedFileName])
+  }, [
+    faiScope,
+    fallbackStorageKey,
+    hasUploadedDataset,
+    parsedWorkbookData,
+    remoteAssetUrl,
+    selectedFAI,
+    uploadedFileName,
+  ])
 
   const analyzedData = useMemo(() => {
     if (!hasUploadedDataset) {
@@ -1126,39 +1164,22 @@ export function FAIDashboard({
         }
         writeLocalFaiSnapshotState(snapshotStorageKey, payload)
 
-        const payloadBlob = new Blob([JSON.stringify(payload)], {
-          type: "application/json",
-        })
-        const baseName = file.name.replace(/\.[^.]+$/, "") || "fai-dimension"
-        const payloadFile = new File([payloadBlob], `${baseName}-parsed.json`, {
-          type: "application/json",
-        })
-
-        const uploaded = await uploadAssetViaServer({
-          file: payloadFile,
-          category: FAI_REMOTE_CATEGORY,
-          entityId: remoteEntityId,
-          slot: remoteSlot,
-        })
-
         const statePayload: FaiDimensionRemoteState = {
           scope: faiScope,
           fileName: file.name,
-          assetUrl: uploaded.url,
+          assetUrl: "",
           selectedFai: nextSelectedFai,
+          payload,
         }
 
-        setRemoteAssetUrl(uploaded.url)
+        setRemoteAssetUrl("")
 
         try {
           await saveFaiDimensionState(statePayload)
           clearLocalFaiFallbackState(fallbackStorageKey)
         } catch (error) {
-          console.warn("Failed to save server-side FAI state, fallback to local pointer:", error)
-          const savedToLocalFallback = writeLocalFaiFallbackState(fallbackStorageKey, statePayload)
-          if (!savedToLocalFallback) {
-            throw error
-          }
+          console.warn("Failed to save server-side FAI state; local snapshot remains available:", error)
+          throw error
         }
 
       } catch (error) {
