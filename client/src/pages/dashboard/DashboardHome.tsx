@@ -52,12 +52,14 @@ const ReliabilityDrawerWorkspace = lazy(() => import('./components/ReliabilityDr
 const SpcRadarDrawerWorkspace = lazy(() => import('./components/SpcRadarDrawerWorkspace'));
 const SpcCalculatorDrawerWorkspace = lazy(() => import('./components/SpcCalculatorDrawerWorkspace'));
 const FmeaAnalysisWorkspace = lazy(() => import('./components/FmeaAnalysisWorkspace'));
+const ProcessVarianceWorkspace = lazy(() => import('./components/ProcessVarianceWorkspace'));
 const MeasurementIntakeWorkspace = lazy(() => import('./components/MeasurementIntakeWorkspace'));
 const ProductDataDrawerWorkspace = lazy(() => import('./components/ProductDataDrawerWorkspace'));
 const ProductStandardDrawerWorkspace = lazy(() => import('./components/ProductStandardDrawerWorkspace'));
 const ProcessDrawerWorkspace = lazy(() => import('./components/ProcessDrawerWorkspace'));
 const ProgressLogsDrawerWorkspace = lazy(() => import('./components/ProgressLogsDrawerWorkspace'));
 const ParetoQualityDashboard = lazy(() => import('./components/ParetoQualityDashboard'));
+const FishboneDiagramDashboard = lazy(() => import('./components/FishboneDiagramDashboard'));
 const FaiDimensionAnalyzer = lazy(() => import('./components/FaiDimensionAnalyzer'));
 const DocxConvertModule = lazy(() => import('./components/DocxConvertModule'));
 const FmeaIssueWorkspace = lazy(() => import('@/components/FmeaIssueWorkspace'));
@@ -166,7 +168,9 @@ const DASHBOARD_TABS = [
   'project-gantt',
   'doe',
   'fmea-analysis',
+  'boxplot',
   'pareto-analysis',
+  'fishbone-diagram',
   'measurement-intake',
   'mold-reliability',
   'spc-calculator',
@@ -825,6 +829,7 @@ export default function DashboardHome() {
             const labels: Record<string, string> = {
               'overview': '项目总览',
               'pareto-analysis': '柏拉图分析',
+              'fishbone-diagram': '鱼骨图',
               'logs': '推进日志',
               'product': '产品模块',
               'product-standard': '产品标准',
@@ -835,6 +840,7 @@ export default function DashboardHome() {
               'project-gantt': '项目甘特图',
               'doe': 'DOE实验设计',
               'fmea-analysis': 'FMEA分析',
+              'boxplot': '箱线图',
               'mold-reliability': '模具可靠性',
               'measurement-intake': '测量检入表',
               'spc-calculator': 'SPC计算器',
@@ -884,6 +890,12 @@ export default function DashboardHome() {
         {selectedTab === 'pareto-analysis' && (
           <LazyWorkspace>
             <ParetoQualityDashboard />
+          </LazyWorkspace>
+        )}
+
+        {selectedTab === 'fishbone-diagram' && (
+          <LazyWorkspace>
+            <FishboneDiagramDashboard />
           </LazyWorkspace>
         )}
 
@@ -1030,6 +1042,12 @@ export default function DashboardHome() {
         {selectedTab === 'fmea-analysis' && (
           <LazyWorkspace>
             <FmeaAnalysisWorkspace />
+          </LazyWorkspace>
+        )}
+
+        {selectedTab === 'boxplot' && (
+          <LazyWorkspace>
+            <ProcessVarianceWorkspace />
           </LazyWorkspace>
         )}
 

@@ -107,6 +107,7 @@ artifacts/
 .codex-local-*.err
 .codex-local-*.out
 .codex-local-*.json
+**/.codex-*.state.json
 .codex-local-dashboard.*.txt
 .codex-smoke-upload.png
 .codex-sync-autosync-test-*/

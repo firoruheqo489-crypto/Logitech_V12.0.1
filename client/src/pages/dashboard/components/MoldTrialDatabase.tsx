@@ -1340,16 +1340,6 @@ export default function MoldTrialDatabase({
 
     try {
       const processedFile = await compressEvidenceImage(file);
-      const currentStageState =
-        evidenceByTrialRef.current[activeTrial] ||
-        buildEmptyTrialEvidenceStageState(activeTrial);
-      const currentSlots = normalizeEvidenceSlotsForStage(
-        activeTrial,
-        currentStageState.slots
-      );
-      const previousUrl = currentSlots.find(
-        slot => slot.id === slotId
-      )?.imageUrl;
       const uploadResult = await uploadAssetViaServer({
         file: processedFile,
         category: "mold-trial-evidence",
@@ -1359,11 +1349,19 @@ export default function MoldTrialDatabase({
       const imageUrl = uploadResult.url;
       setSelectedEvidenceSlotId(slotId);
 
+      const latestStageState =
+        evidenceByTrialRef.current[activeTrial] ||
+        buildEmptyTrialEvidenceStageState(activeTrial);
+      const latestSlots = normalizeEvidenceSlotsForStage(
+        activeTrial,
+        latestStageState.slots
+      );
+      const previousUrl = latestSlots.find(slot => slot.id === slotId)?.imageUrl;
       const nextEvidenceState = {
         ...evidenceByTrialRef.current,
         [activeTrial]: {
-          ...currentStageState,
-          slots: currentSlots.map(slot => {
+          ...latestStageState,
+          slots: latestSlots.map(slot => {
             if (slot.id !== slotId) return slot;
             if (slot.imageUrl?.startsWith("blob:")) {
               URL.revokeObjectURL(slot.imageUrl);
@@ -1746,16 +1744,19 @@ export default function MoldTrialDatabase({
     });
   };
 
-  const openEvidenceLightbox = (
-    itemId: string,
-    imageUrl: string,
-    scope: EvidenceLightboxScope
-  ) => {
-    setEvidenceLightboxScope(scope);
-    setEvidenceLightboxItemId(itemId);
+  const openEvidenceLightbox = (imageUrl: string) => {
     setEvidenceLightboxUrl(imageUrl);
     setEvidenceLightboxRotation(0);
     setIsEvidenceLightboxOpen(true);
+  };
+
+  const openEvidenceLightboxForSlot = (
+    slot: TrialEvidenceSlot & { imageUrl: string },
+    scope: EvidenceLightboxScope
+  ) => {
+    setEvidenceLightboxScope(scope);
+    setEvidenceLightboxItemId(slot.id);
+    openEvidenceLightbox(slot.imageUrl);
   };
 
   const closeEvidenceLightbox = () => {
@@ -1766,9 +1767,10 @@ export default function MoldTrialDatabase({
   };
 
   const navigateEvidenceLightbox = (direction: -1 | 1) => {
-    if (evidenceLightboxItems.length === 0) return;
-    if (evidenceLightboxItems.length === 1) {
-      const onlyItem = evidenceLightboxItems[0];
+    const evidenceSlotsWithImages = evidenceLightboxItems;
+    if (evidenceSlotsWithImages.length === 0) return;
+    if (evidenceSlotsWithImages.length === 1) {
+      const onlyItem = evidenceSlotsWithImages[0];
       setEvidenceLightboxItemId(onlyItem.id);
       setEvidenceLightboxUrl(onlyItem.imageUrl);
       if (onlyItem.id !== A4_GALLERY_ITEM_ID) {
@@ -1777,22 +1779,23 @@ export default function MoldTrialDatabase({
       return;
     }
 
-    let currentIndex = evidenceLightboxItems.findIndex(
+    let currentIndex = evidenceSlotsWithImages.findIndex(
       item => item.id === evidenceLightboxItemId
     );
 
     if (currentIndex < 0 && evidenceLightboxUrl) {
-      currentIndex = evidenceLightboxItems.findIndex(
+      currentIndex = evidenceSlotsWithImages.findIndex(
         item => item.imageUrl === evidenceLightboxUrl
       );
     }
     if (currentIndex < 0) currentIndex = 0;
 
-    const nextIndex =
-      (currentIndex + direction + evidenceLightboxItems.length) %
-      evidenceLightboxItems.length;
+    const nextIndex = currentIndex + direction;
+    if (nextIndex < 0 || nextIndex >= evidenceSlotsWithImages.length) {
+      return;
+    }
 
-    const nextItem = evidenceLightboxItems[nextIndex];
+    const nextItem = evidenceSlotsWithImages[nextIndex];
     if (!nextItem) return;
 
     setEvidenceLightboxItemId(nextItem.id);
@@ -1939,11 +1942,9 @@ export default function MoldTrialDatabase({
               type="button"
               onClick={() => {
                 if (currentA4ImageUrl) {
-                  openEvidenceLightbox(
-                    A4_GALLERY_ITEM_ID,
-                    currentA4ImageUrl,
-                    "mold-temp"
-                  );
+                  setEvidenceLightboxScope("mold-temp");
+                  setEvidenceLightboxItemId(A4_GALLERY_ITEM_ID);
+                  openEvidenceLightbox(currentA4ImageUrl);
                   return;
                 }
                 openA4ImagePicker();
@@ -2040,9 +2041,8 @@ export default function MoldTrialDatabase({
               onClick={() => {
                 if (slot.imageUrl) {
                   setSelectedEvidenceSlotId(slot.id);
-                  openEvidenceLightbox(
-                    slot.id,
-                    slot.imageUrl,
+                  openEvidenceLightboxForSlot(
+                    { ...slot, imageUrl: slot.imageUrl },
                     lightboxScope
                   );
                 }

@@ -30,15 +30,15 @@ const requiredScriptFragments = [
   },
   {
     name: 'release',
-    fragments: ['-File scripts/release-from-clean-worktree.ps1 -Mode all'],
+    fragments: ['node scripts/release-entrypoint.mjs all'],
   },
   {
     name: '_release:build',
-    fragments: ['-File scripts/release-from-clean-worktree.ps1 -Mode build'],
+    fragments: ['node scripts/release-entrypoint.mjs build'],
   },
   {
     name: '_release:deploy',
-    fragments: ['-File scripts/release-from-clean-worktree.ps1 -Mode deploy'],
+    fragments: ['node scripts/release-entrypoint.mjs deploy'],
   },
 ] as const;
 
@@ -46,6 +46,7 @@ const criticalRepoFiles = [
   'scripts/start-local-dashboard.mjs',
   'scripts/report-local-dashboard-state.ps1',
   'scripts/show-release-sop.ps1',
+  'scripts/release-entrypoint.mjs',
   'scripts/release-from-clean-worktree.ps1',
   'scripts/release-build.ps1',
   'docs/release-sop.md',
