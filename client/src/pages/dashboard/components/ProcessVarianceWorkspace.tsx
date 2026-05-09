@@ -3,11 +3,8 @@ import { BoxplotChart } from "./boxplot/BoxplotChart";
 import { KPICards } from "./boxplot/KPICards";
 import { InsightPanel } from "./boxplot/InsightPanel";
 import { ControlConsole } from "./boxplot/ControlConsole";
-import { Settings2, RefreshCw, Download, Clock, Loader2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { computeBoxplotStats, computeGlobalStats } from "./boxplot/statsEngine";
 import type { BoxplotStats, GlobalStats } from "./boxplot/statsEngine";
-import html2canvas from "html2canvas";
 
 // --- Phase 2: Raw measurement dataset (simulates DB fetch) ---
 const mockRawData: Record<string, number[]> = {
@@ -34,7 +31,6 @@ export default function ProcessVarianceWorkspace() {
   const [dataBatch, setDataBatch] = useState("batch-2024-w48");
   const [xAxisFactor, setXAxisFactor] = useState("station");
   const [labelDisplay, setLabelDisplay] = useState<LabelDisplayMode>("mean");
-  const [exporting, setExporting] = useState(false);
   const reportRef = useRef<HTMLDivElement>(null);
 
   const handleApplyLimits = useCallback(() => {
@@ -45,27 +41,6 @@ export default function ProcessVarianceWorkspace() {
   const handleDatasetChange = useCallback((data: Record<string, number[]>) => {
     setRawDataset(data);
   }, []);
-
-  const handleExport = useCallback(async () => {
-    if (!reportRef.current || exporting) return;
-    setExporting(true);
-    try {
-      const canvas = await html2canvas(reportRef.current, {
-        backgroundColor: '#050505',
-        scale: 2,
-        useCORS: true,
-      });
-      const link = document.createElement('a');
-      const date = new Date().toISOString().slice(0, 10);
-      link.download = `Process_Variance_Report_${date}.png`;
-      link.href = canvas.toDataURL('image/png');
-      link.click();
-    } catch {
-      // Silent fail - export not critical
-    } finally {
-      setExporting(false);
-    }
-  }, [exporting]);
 
   // --- Phase 3: Data Nervous System (useMemo recomputes on rawDataset/usl/lsl change) ---
   const stationStats: BoxplotStats[] = useMemo(() => {
@@ -115,25 +90,6 @@ export default function ProcessVarianceWorkspace() {
           <div>
             <h1 className="text-xl font-semibold text-zinc-100">过程方差与能力监控工作台</h1>
             <p className="font-mono text-sm text-zinc-500">Process Variance & Capability Workspace</p>
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 rounded-md border border-zinc-800 bg-[#0f1115] px-3 py-1.5">
-              <Clock className="h-3.5 w-3.5 text-zinc-500" />
-              <span className="font-mono text-xs text-zinc-400">2024-12-09 14:32:18 UTC+8</span>
-            </div>
-            <Button variant="outline" size="sm" className="border-zinc-700 bg-transparent text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200">
-              <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
-              <span className="text-xs">刷新</span>
-              <span className="ml-1 font-mono text-[10px] text-zinc-600">Refresh</span>
-            </Button>
-            <Button variant="outline" size="sm" className="border-zinc-700 bg-transparent text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200" onClick={handleExport} disabled={exporting}>
-              {exporting ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Download className="mr-1.5 h-3.5 w-3.5" />}
-              <span className="text-xs">导出</span>
-              <span className="ml-1 font-mono text-[10px] text-zinc-600">Export</span>
-            </Button>
-            <Button variant="outline" size="sm" className="border-zinc-700 bg-transparent text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200">
-              <Settings2 className="h-3.5 w-3.5" />
-            </Button>
           </div>
         </div>
         <KPICards globalStats={globalStats} />
