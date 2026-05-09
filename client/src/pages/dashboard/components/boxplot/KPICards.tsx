@@ -9,9 +9,11 @@ interface KPICardProps {
   trend: "up" | "down" | "neutral";
   trendValue: string;
   trendPositive?: boolean;
+  strikethrough?: boolean;
+  normalityStatus?: boolean;
 }
 
-function KPICard({ labelZh, labelEn, value, unit, trend, trendValue, trendPositive }: KPICardProps) {
+function KPICard({ labelZh, labelEn, value, unit, trend, trendValue, trendPositive, strikethrough, normalityStatus }: KPICardProps) {
   const TrendIcon = trend === "up" ? TrendingUp : trend === "down" ? TrendingDown : Minus;
   const trendColor = trendPositive === undefined ? "text-zinc-500" : trendPositive ? "text-emerald-500" : "text-rose-500";
 
@@ -22,13 +24,21 @@ function KPICard({ labelZh, labelEn, value, unit, trend, trendValue, trendPositi
         <span className="ml-2 text-xs text-zinc-500 font-mono">{labelEn}</span>
       </div>
       <div className="flex items-baseline gap-2">
-        <span className="font-mono text-2xl font-semibold text-zinc-100">{value}</span>
+        <span className={`font-mono text-2xl font-semibold text-zinc-100 ${strikethrough ? "line-through opacity-50" : ""}`}>{value}</span>
         {unit && <span className="font-mono text-xs text-zinc-500">{unit}</span>}
       </div>
       <div className={`mt-2 flex items-center gap-1 ${trendColor}`}>
         <TrendIcon className="h-3.5 w-3.5" />
         <span className="font-mono text-xs">{trendValue}</span>
       </div>
+      {normalityStatus !== undefined && (
+        <div className="mt-1.5 flex items-center gap-1">
+          <div className={`h-1.5 w-1.5 rounded-full ${normalityStatus ? "bg-emerald-500" : "bg-amber-500 animate-pulse"}`} />
+          <span className={`text-[9px] font-mono ${normalityStatus ? "text-emerald-500/80" : "text-amber-500/80"}`}>
+            {normalityStatus ? "分布合规" : "Non-Normal"}
+          </span>
+        </div>
+      )}
       <div
         className={`absolute top-2 right-2 h-2 w-2 rounded-full ${trendPositive === undefined ? "bg-zinc-600" : trendPositive ? "bg-emerald-500" : "bg-rose-500"}`}
         style={{ boxShadow: trendPositive === undefined ? "none" : trendPositive ? "0 0 8px rgba(16, 185, 129, 0.5)" : "0 0 8px rgba(244, 63, 94, 0.5)" }}
@@ -75,8 +85,10 @@ export function KPICards({ globalStats }: KPICardsProps) {
       labelEn: "Cpk Index",
       value: globalStats.cpk.toFixed(2),
       trend: globalStats.cpk >= 1.33 ? "up" : "down",
-      trendValue: `Cp=${globalStats.cp.toFixed(2)}`,
-      trendPositive: globalStats.cpk >= 1.33,
+      trendValue: globalStats.isNormal ? `Cp=${globalStats.cp.toFixed(2)}` : "非正态: Cpk失效",
+      trendPositive: globalStats.cpk >= 1.33 && globalStats.isNormal,
+      strikethrough: !globalStats.isNormal,
+      normalityStatus: globalStats.isNormal,
     },
     {
       labelZh: "异常检测数",

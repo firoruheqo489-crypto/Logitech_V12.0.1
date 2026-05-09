@@ -76,9 +76,12 @@ export function InsightPanel({ globalStats }: InsightPanelProps) {
             <div className="font-mono text-zinc-400">Cp</div>
             <div className="font-mono text-sm font-semibold text-zinc-200">{globalStats.cp.toFixed(2)}</div>
           </div>
-          <div className="rounded bg-zinc-900/50 p-1.5">
-            <div className="font-mono text-zinc-400">Cpk</div>
-            <div className="font-mono text-sm font-semibold text-zinc-200">{globalStats.cpk.toFixed(2)}</div>
+          <div className="rounded bg-zinc-900/50 p-1.5 relative">
+            <div className="font-mono text-zinc-400 flex items-center justify-center gap-1">
+              Cpk
+              {!globalStats.isNormal && <AlertTriangle size={10} className="text-amber-500" />}
+            </div>
+            <div className={`font-mono text-sm font-semibold text-zinc-200 ${!globalStats.isNormal ? "line-through opacity-50" : ""}`}>{globalStats.cpk.toFixed(2)}</div>
           </div>
         </div>
       </div>

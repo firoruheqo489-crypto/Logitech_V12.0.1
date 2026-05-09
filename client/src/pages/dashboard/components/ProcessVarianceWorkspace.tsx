@@ -82,18 +82,28 @@ export default function ProcessVarianceWorkspace() {
 
   // Transform stats into BoxplotChart data contract
   const chartData = useMemo(() => {
-    return stationStats.map((s) => ({
-      label: s.label,
-      labelEn: s.labelEn,
-      min: s.whiskerLow,
-      q1: s.q1,
-      median: s.median,
-      q3: s.q3,
-      max: s.whiskerHigh,
-      mean: s.mean,
-      outliers: s.outliers,
-    }));
-  }, [stationStats]);
+    return stationStats.map((s) => {
+      const n = s.n;
+      const iqr = s.q3 - s.q1;
+      // 95% CI for median: Median ± 1.58 * IQR / sqrt(n)
+      const ciMargin = n > 0 ? 1.58 * (iqr / Math.sqrt(n)) : 0;
+      return {
+        label: s.label,
+        labelEn: s.labelEn,
+        min: s.whiskerLow,
+        q1: s.q1,
+        median: s.median,
+        q3: s.q3,
+        max: s.whiskerHigh,
+        mean: s.mean,
+        outliers: s.outliers,
+        rawValues: rawDataset[s.label] || [],
+        n,
+        ciLow: s.median - ciMargin,
+        ciHigh: s.median + ciMargin,
+      };
+    });
+  }, [stationStats, rawDataset]);
 
   return (
     <div className="space-y-4">

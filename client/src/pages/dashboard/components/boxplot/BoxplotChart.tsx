@@ -10,6 +10,10 @@ interface BoxplotData {
   max: number;
   mean: number;
   outliers: number[];
+  rawValues?: number[];
+  n?: number;
+  ciLow?: number;
+  ciHigh?: number;
 }
 
 type LabelDisplayMode = "median" | "mean" | "none";
@@ -49,7 +53,21 @@ export function BoxplotChart({
 
   const padding = { top: 28, right: 85, bottom: 70, left: 70 };
 
+  const isEmpty = data.length === 0 || data.every(d => d.n === 0);
+
   const { yMin, yMax, yScale, yTicks } = useMemo(() => {
+    if (isEmpty) {
+      const yMin = 0;
+      const yMax = 10;
+      const tickCount = 10;
+      const tickStep = (yMax - yMin) / tickCount;
+      const yTicks = Array.from({ length: tickCount + 1 }, (_, i) =>
+        Number((yMin + i * tickStep).toFixed(2))
+      );
+      return { yMin, yMax, yScale: (value: number, chartHeight: number) =>
+        chartHeight - ((value - yMin) / (yMax - yMin)) * chartHeight, yTicks };
+    }
+
     const allValues = data.flatMap((d) => [
       d.min,
       d.max,
@@ -59,7 +77,7 @@ export function BoxplotChart({
     ]);
     const minVal = Math.min(...allValues);
     const maxVal = Math.max(...allValues);
-    const range = maxVal - minVal;
+    const range = maxVal - minVal || 1;
     const yMin = minVal - range * 0.08;
     const yMax = maxVal + range * 0.08;
 
@@ -71,7 +89,23 @@ export function BoxplotChart({
 
     return { yMin, yMax, yScale: (value: number, chartHeight: number) =>
       chartHeight - ((value - yMin) / (yMax - yMin)) * chartHeight, yTicks };
-  }, [data, usl, lsl]);
+  }, [data, usl, lsl, isEmpty]);
+
+  // Deterministic jitter seed per data point
+  const jitterSeed = useMemo(() => {
+    const seeds: number[][] = [];
+    for (const d of data) {
+      const groupSeeds: number[] = [];
+      const raw = d.rawValues || [];
+      for (let i = 0; i < raw.length; i++) {
+        // Simple hash-based pseudo-random from index + value
+        const hash = Math.sin(i * 9301 + raw[i] * 49297) * 49297;
+        groupSeeds.push(hash - Math.floor(hash));
+      }
+      seeds.push(groupSeeds);
+    }
+    return seeds;
+  }, [data]);
 
   const handleBoxHover = (
     event: React.MouseEvent<SVGRectElement>,
@@ -105,10 +139,25 @@ export function BoxplotChart({
           const svgHeight = 450;
           const chartWidth = svgWidth - padding.left - padding.right;
           const chartHeight = svgHeight - padding.top - padding.bottom;
-          const boxWidth = Math.min(55, chartWidth / data.length - 25);
+          const boxWidth = Math.min(55, chartWidth / Math.max(data.length, 1) - 25);
           const getXPosition = (index: number) =>
-            (index + 0.5) * (chartWidth / data.length);
+            (index + 0.5) * (chartWidth / Math.max(data.length, 1));
           const yScaleLocal = (value: number) => yScale(value, chartHeight);
+
+          // Empty state
+          if (isEmpty) {
+            return (
+              <>
+                <rect x={padding.left} y={padding.top} width={chartWidth} height={chartHeight} fill="none" stroke="#3f3f46" strokeWidth="0.5" />
+                <text x={padding.left + chartWidth / 2} y={padding.top + chartHeight / 2 - 10} textAnchor="middle" className="fill-zinc-500 text-[13px]">
+                  等待数据注入
+                </text>
+                <text x={padding.left + chartWidth / 2} y={padding.top + chartHeight / 2 + 12} textAnchor="middle" className="fill-zinc-600 text-[11px] font-mono">
+                  Waiting for Data Input
+                </text>
+              </>
+            );
+          }
 
           return (
             <>
@@ -247,9 +296,21 @@ export function BoxplotChart({
                 const meanY = padding.top + yScaleLocal(d.mean);
                 const boxLeftEdge = x - boxWidth / 2;
                 const boxRightEdge = x + boxWidth / 2;
+                const rawVals = d.rawValues || [];
+                const seeds = jitterSeed[i] || [];
 
                 return (
                   <g key={i}>
+                    {/* Jitter Plot - raw data points behind box */}
+                    {rawVals.map((val, vi) => {
+                      const jitter = (seeds[vi] !== undefined ? seeds[vi] - 0.5 : 0) * 20;
+                      const cy = padding.top + yScaleLocal(val);
+                      if (cy < padding.top - 5 || cy > padding.top + chartHeight + 5) return null;
+                      return (
+                        <circle key={`jitter-${i}-${vi}`} cx={x + jitter} cy={cy} r="1.5" fill="#71717a" fillOpacity="0.35" />
+                      );
+                    })}
+
                     {/* Upper Whisker */}
                     <line x1={x} y1={padding.top + yScaleLocal(d.max)} x2={x} y2={padding.top + yScaleLocal(d.q3)} stroke="#71717a" strokeWidth="1" />
                     <line x1={x - whiskerCapWidth / 2} y1={padding.top + yScaleLocal(d.max)} x2={x + whiskerCapWidth / 2} y2={padding.top + yScaleLocal(d.max)} stroke="#71717a" strokeWidth="1" />
@@ -273,6 +334,29 @@ export function BoxplotChart({
                       onMouseMove={(e) => handleBoxHover(e, d)}
                       onMouseLeave={handleBoxLeave}
                     />
+
+                    {/* 95% CI for Median - frosted glass precision indicator */}
+                    {showConfidenceIntervals && d.ciLow !== undefined && d.ciHigh !== undefined && (d.n ?? rawVals.length) >= 5 && (() => {
+                      const clampedCiHigh = Math.min(d.ciHigh, d.max);
+                      const clampedCiLow = Math.max(d.ciLow, d.min);
+                      if (clampedCiHigh <= clampedCiLow) return null;
+                      const ciTopY = padding.top + yScaleLocal(clampedCiHigh);
+                      const ciBotY = padding.top + yScaleLocal(clampedCiLow);
+                      return (
+                        <rect
+                          x={x - boxWidth * 0.09}
+                          y={ciTopY}
+                          width={boxWidth * 0.18}
+                          height={Math.max(0, ciBotY - ciTopY)}
+                          fill="#22d3ee"
+                          fillOpacity="0.2"
+                          stroke="#22d3ee"
+                          strokeOpacity="0.6"
+                          strokeWidth="1"
+                          rx="1"
+                        />
+                      );
+                    })()}
 
                     {/* Median Line */}
                     <line x1={boxLeftEdge} y1={medianY} x2={boxRightEdge} y2={medianY} stroke="#71717a" strokeWidth="1.5" />
@@ -328,6 +412,10 @@ export function BoxplotChart({
                     <text x={x} y={padding.top + chartHeight + 28} textAnchor="middle" className="fill-zinc-500 text-[8px] font-mono">
                       {d.labelEn}
                     </text>
+                    {/* N-value */}
+                    <text x={x} y={padding.top + chartHeight + 40} textAnchor="middle" className="fill-zinc-500 text-[9px] font-mono">
+                      n={d.n ?? rawVals.length}
+                    </text>
                   </g>
                 );
               })}
@@ -361,7 +449,25 @@ export function BoxplotChart({
                     <text x="427" y="2" className="fill-zinc-500 text-[9px] font-mono">Mean Line</text>
                   </>
                 )}
+                {showConfidenceIntervals && (
+                  <>
+                    <rect x="500" y="-5" width="6" height="10" fill="#22d3ee" fillOpacity="0.2" stroke="#22d3ee" strokeOpacity="0.6" strokeWidth="1" rx="1" />
+                    <text x="510" y="2" className="fill-zinc-500 text-[9px] font-mono">95% CI</text>
+                  </>
+                )}
               </g>
+
+              {/* Administrative CI Rule - top right of chart */}
+              {showConfidenceIntervals && (
+                <text
+                  x={padding.left + chartWidth - 4}
+                  y={padding.top - 10}
+                  textAnchor="end"
+                  className="fill-zinc-500 text-[9px] font-mono"
+                >
+                  CI判定: 两组CI无重叠 = 中位数95%显著差异 / Non-overlapping CIs = Significant Difference
+                </text>
+              )}
             </>
           );
         })()}

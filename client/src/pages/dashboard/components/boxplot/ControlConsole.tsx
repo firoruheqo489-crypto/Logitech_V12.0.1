@@ -104,30 +104,27 @@ export function ControlConsole({
             <span className="text-[10px] text-zinc-500 font-mono">Data & Grouping</span>
           </div>
           <div className="flex items-center gap-2">
-            {/* Tab switcher */}
-            <div className="flex gap-1 rounded bg-zinc-900/50 p-0.5">
+            {/* Segmented Control + Clear - unified style */}
+            <div className="flex items-center gap-2">
               <button
                 onClick={() => setDataSourceTab("upload")}
-                className={`rounded px-3 py-1 text-[10px] font-mono transition-all ${dataSourceTab === "upload" ? "bg-zinc-700 text-zinc-100" : "text-zinc-500 hover:text-zinc-300"}`}
+                className={`px-3 py-1.5 rounded-md border text-[13px] font-medium tracking-wide transition-all ${dataSourceTab === "upload" ? "text-zinc-100 bg-zinc-800 border-zinc-700 shadow-sm" : "text-zinc-500 border-zinc-800 hover:text-zinc-300 hover:bg-zinc-800/40 hover:border-zinc-700"}`}
               >
                 批量导入
               </button>
               <button
                 onClick={() => setDataSourceTab("grid")}
-                className={`rounded px-3 py-1 text-[10px] font-mono transition-all ${dataSourceTab === "grid" ? "bg-zinc-700 text-zinc-100" : "text-zinc-500 hover:text-zinc-300"}`}
+                className={`px-3 py-1.5 rounded-md border text-[13px] font-medium tracking-wide transition-all ${dataSourceTab === "grid" ? "text-zinc-100 bg-zinc-800 border-zinc-700 shadow-sm" : "text-zinc-500 border-zinc-800 hover:text-zinc-300 hover:bg-zinc-800/40 hover:border-zinc-700"}`}
               >
                 工作表
               </button>
+              <button
+                onClick={handleClearData}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-zinc-800 text-zinc-500 hover:text-red-300 hover:bg-red-950/30 hover:border-red-900/50 transition-all text-[13px] font-medium tracking-wide"
+              >
+                <Trash2 className="w-4 h-4" />清除数据
+              </button>
             </div>
-            {/* Clear data button */}
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={handleClearData}
-              className="h-6 border-zinc-700 bg-transparent px-2 text-[10px] text-rose-400 hover:bg-rose-950/30 hover:text-rose-300 hover:border-rose-700"
-            >
-              <Trash2 className="mr-1 h-3 w-3" />清除数据
-            </Button>
           </div>
         </div>
 
@@ -151,14 +148,6 @@ export function ControlConsole({
                 {csvLoading ? <Loader2 className="mr-1.5 h-3 w-3 animate-spin" /> : <Upload className="mr-1.5 h-3 w-3" />}
                 {csvLoading ? "解析中..." : "上传 CSV"}
               </Button>
-              <Select value={xAxisFactor} onValueChange={setXAxisFactor}>
-                <SelectTrigger className="h-8 w-48 border-zinc-700 bg-zinc-900/50 text-xs"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="station">工作站 / Station</SelectItem>
-                  <SelectItem value="dimension">尺寸 / Dimension</SelectItem>
-                  <SelectItem value="shift">班次 / Shift</SelectItem>
-                </SelectContent>
-              </Select>
               {csvError && <p className="text-[10px] text-rose-400 font-mono">{csvError}</p>}
               {csvSuccess && <p className="text-[10px] text-emerald-400 font-mono">{csvSuccess}</p>}
             </div>

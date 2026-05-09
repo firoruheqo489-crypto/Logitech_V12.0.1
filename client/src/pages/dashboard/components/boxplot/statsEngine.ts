@@ -37,7 +37,9 @@ export interface GlobalStats {
   cp: number;
   cpk: number;
   stability: number;
-  // Per-station anomaly details for root cause analysis
+  isNormal: boolean;
+  skewness: number;
+  kurtosis: number;
   anomalyDetails: AnomalyDetail[];
 }
 
@@ -130,12 +132,31 @@ export function computeProcessCapability(avg: number, sigma: number, usl: number
   return { cp: Math.max(0, cp), cpk: Math.max(0, cpk) };
 }
 
+function computeNormality(values: number[]): { skewness: number; kurtosis: number; isNormal: boolean } {
+  const n = values.length;
+  if (n < 4) return { skewness: 0, kurtosis: 0, isNormal: false };
+
+  const avg = values.reduce((s, v) => s + v, 0) / n;
+  const m2 = values.reduce((s, v) => s + (v - avg) ** 2, 0) / n;
+  const m3 = values.reduce((s, v) => s + (v - avg) ** 3, 0) / n;
+  const m4 = values.reduce((s, v) => s + (v - avg) ** 4, 0) / n;
+
+  if (m2 === 0) return { skewness: 0, kurtosis: 0, isNormal: true };
+
+  const skewness = m3 / (m2 ** 1.5);
+  const kurtosis = (m4 / (m2 ** 2)) - 3; // Excess kurtosis
+
+  const isNormal = Math.abs(skewness) <= 1.0 && Math.abs(kurtosis) <= 2.0;
+
+  return { skewness, kurtosis, isNormal };
+}
+
 export function computeGlobalStats(stations: BoxplotStats[], usl: number, lsl: number, rawDataset?: Record<string, number[]>): GlobalStats {
   const totalSamples = stations.reduce((sum, s) => sum + s.n, 0);
   const totalOutliers = stations.reduce((sum, s) => sum + s.outliers.length, 0);
 
   if (totalSamples === 0) {
-    return { totalSamples: 0, globalMean: 0, globalSigma: 0, avgDeviation: 0, totalOutliers: 0, outOfSpecCount: 0, overUslCount: 0, underLslCount: 0, cp: 0, cpk: 0, stability: 0, anomalyDetails: [] };
+    return { totalSamples: 0, globalMean: 0, globalSigma: 0, avgDeviation: 0, totalOutliers: 0, outOfSpecCount: 0, overUslCount: 0, underLslCount: 0, cp: 0, cpk: 0, stability: 0, isNormal: false, skewness: 0, kurtosis: 0, anomalyDetails: [] };
   }
 
   // Collect all raw values for precise global calculations
@@ -197,5 +218,8 @@ export function computeGlobalStats(stations: BoxplotStats[], usl: number, lsl: n
   const outOfSpecCount = overUslCount + underLslCount;
   const stability = totalSamples > 0 ? ((totalSamples - outOfSpecCount) / totalSamples) * 100 : 0;
 
-  return { totalSamples, globalMean, globalSigma, avgDeviation, totalOutliers, outOfSpecCount, overUslCount, underLslCount, cp, cpk, stability, anomalyDetails };
+  // Normality heuristic via Skewness & Excess Kurtosis
+  const { skewness, kurtosis, isNormal } = computeNormality(allValues);
+
+  return { totalSamples, globalMean, globalSigma, avgDeviation, totalOutliers, outOfSpecCount, overUslCount, underLslCount, cp, cpk, stability, isNormal, skewness, kurtosis, anomalyDetails };
 }
