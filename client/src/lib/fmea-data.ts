@@ -1,8 +1,35 @@
+export type FmeaStatus = "pending" | "testing" | "closed"
+export type FmeaClass = "CC" | "SC" | "STD"
+export type FmeaBomIcon =
+  | "root"
+  | "driver"
+  | "thermal"
+  | "optical"
+  | "mechanical"
+  | "surge"
+  | "derating"
+  | "flicker"
+  | "emc"
+  | "heatsink"
+  | "tim"
+  | "cfd"
+  | "junction"
+  | "lens"
+  | "reflector"
+  | "ies"
+  | "spectrum"
+  | "sealing"
+  | "corrosion"
+  | "vent"
+  | "drop"
+
 export interface FmeaRow {
   id: string
   process: string
   mode: string
   effect: string
+  classification: FmeaClass
+  crossRisk: string
   sev: number
   cause: string
   pc: string
@@ -10,510 +37,675 @@ export interface FmeaRow {
   dc: string
   det: number
   rpn: number
-  ap: string
+  dvprLinks: string[]
   action: string
-  resp: string
-  date: string
-  status: "closed" | "pending"
-  sev2: number
-  occ2: number
-  det2: number
-  rpn2: number
+  ownerGate: string
+  status: FmeaStatus
 }
 
-/* ── Helper: Calculate RPN and AP from S/O/D ── */
+export interface FmeaBomNode {
+  id: string
+  label: string
+  description: string
+  owner: string
+  icon: FmeaBomIcon
+  children?: FmeaBomNode[]
+}
+
+export interface SeverityLockMeta {
+  lockedSeverity: 9 | 10
+  matchedRules: string[]
+  helperText: string
+}
+
+type SeverityRule = {
+  severity: 9 | 10
+  label: string
+  pattern: RegExp
+}
+
+type SeedRow = Omit<FmeaRow, "rpn">
+
+export const defaultBomNodeId = "lighting-root"
+
+export const lightingBomTree: FmeaBomNode[] = [
+  {
+    id: defaultBomNodeId,
+    label: "照明行业 FMEA 架构",
+    description: "以四大核心子系统为主轴，建立跨部门联合签审与行政定责。",
+    owner: "系统工程 / 项目负责人",
+    icon: "root",
+    children: [
+      {
+        id: "driver-electrical",
+        label: "驱动与电气系统",
+        description: "寿命短板与电网冲击，预防控制必须绑定关键物料降额审查（Derating）。",
+        owner: "电子研发 / EMC / 认证",
+        icon: "driver",
+        children: [
+          {
+            id: "driver-derating",
+            label: "关键物料降额审查",
+            description: "聚焦电解电容、MOSFET 与磁件寿命裕量。",
+            owner: "电子研发 / 采购",
+            icon: "derating",
+          },
+          {
+            id: "driver-surge",
+            label: "浪涌与输入保护",
+            description: "聚焦 Surge 拦截与雷击后安规风险。",
+            owner: "电子研发 / 认证",
+            icon: "surge",
+          },
+          {
+            id: "driver-flicker",
+            label: "频闪与调光控制",
+            description: "聚焦 Flicker、Pst LM、SVM 与调光边界。",
+            owner: "电子研发 / 测试",
+            icon: "flicker",
+          },
+          {
+            id: "driver-emc",
+            label: "EMC / EMI 合规",
+            description: "聚焦辐射、传导与认证出货门禁。",
+            owner: "电子研发 / 认证",
+            icon: "emc",
+          },
+        ],
+      },
+      {
+        id: "thermal-management",
+        label: "热管理系统",
+        description: "结温是 LED 的生命线，失效后果必须直接挂钩 L70 寿命缩短与色漂移。",
+        owner: "热学 / 结构",
+        icon: "thermal",
+        children: [
+          {
+            id: "thermal-heatsink",
+            label: "散热器与热路径",
+            description: "聚焦热阻预算、鳍片面积与热路径连续性。",
+            owner: "热学 / 结构",
+            icon: "heatsink",
+          },
+          {
+            id: "thermal-tim",
+            label: "导热界面材料涂覆",
+            description: "聚焦 TIM 挥发、厚度离散与装配一致性。",
+            owner: "热学 / 制造",
+            icon: "tim",
+          },
+          {
+            id: "thermal-cfd",
+            label: "热仿真报告（CFD）",
+            description: "聚焦仿真边界条件、八维工况输入与相关性。",
+            owner: "热学 / 系统工程",
+            icon: "cfd",
+          },
+          {
+            id: "thermal-junction",
+            label: "结温实测",
+            description: "聚焦 Tc/Tj 实测与换算链闭环。",
+            owner: "热学 / 测试",
+            icon: "junction",
+          },
+        ],
+      },
+      {
+        id: "optical-system",
+        label: "光学系统",
+        description: "聚焦配光与光品质，探测措施必须写明 IES 测试或积分球光谱分析。",
+        owner: "光学 / 测试",
+        icon: "optical",
+        children: [
+          {
+            id: "optical-lens",
+            label: "透镜与扩散件",
+            description: "聚焦透镜黄化、材料耐 UV 与光通维持。",
+            owner: "光学 / 材料",
+            icon: "lens",
+          },
+          {
+            id: "optical-reflector",
+            label: "反光杯与镀层",
+            description: "聚焦镀层附着、暗区与黄圈投诉。",
+            owner: "光学 / 工艺",
+            icon: "reflector",
+          },
+          {
+            id: "optical-ies",
+            label: "IES 配光验证",
+            description: "聚焦 UGR、配光曲线与应用场景匹配。",
+            owner: "光学 / 应用",
+            icon: "ies",
+          },
+          {
+            id: "optical-spectrum",
+            label: "积分球光谱分析",
+            description: "聚焦光谱、显指与色容差稳定性。",
+            owner: "光学 / SQE",
+            icon: "spectrum",
+          },
+        ],
+      },
+      {
+        id: "mechanical-enclosure",
+        label: "结构与防护系统",
+        description: "聚焦进水、腐蚀与跌落伤害，预防控制必须写明透气阀配型或负压测试。",
+        owner: "结构 / 可靠性",
+        icon: "mechanical",
+        children: [
+          {
+            id: "mechanical-sealing",
+            label: "密封与防护",
+            description: "聚焦密封圈老化、压缩永久变形与 IP 防护失效。",
+            owner: "结构 / 可靠性",
+            icon: "sealing",
+          },
+          {
+            id: "mechanical-corrosion",
+            label: "压铸铝与盐雾",
+            description: "聚焦压铸铝腐蚀与表面处理耐候性。",
+            owner: "结构 / 表处",
+            icon: "corrosion",
+          },
+          {
+            id: "mechanical-vent",
+            label: "防水透气阀与压差",
+            description: "聚焦呼吸效应吸水、内外压差与冷热循环。",
+            owner: "结构 / 可靠性",
+            icon: "vent",
+          },
+          {
+            id: "mechanical-drop",
+            label: "结构固定与跌落",
+            description: "聚焦安装跌落、紧固失效与人身伤害。",
+            owner: "结构 / 安全",
+            icon: "drop",
+          },
+        ],
+      },
+    ],
+  },
+]
+
+export const bomProcessMapping: Record<string, string[]> = {
+  [defaultBomNodeId]: [],
+  "driver-electrical": [
+    "关键物料降额审查",
+    "浪涌与输入保护",
+    "频闪与调光控制",
+    "EMC / EMI 合规",
+  ],
+  "driver-derating": ["关键物料降额审查"],
+  "driver-surge": ["浪涌与输入保护"],
+  "driver-flicker": ["频闪与调光控制"],
+  "driver-emc": ["EMC / EMI 合规"],
+  "thermal-management": [
+    "散热器与热路径",
+    "导热界面材料涂覆",
+    "热仿真报告（CFD）",
+    "结温实测",
+  ],
+  "thermal-heatsink": ["散热器与热路径"],
+  "thermal-tim": ["导热界面材料涂覆"],
+  "thermal-cfd": ["热仿真报告（CFD）"],
+  "thermal-junction": ["结温实测"],
+  "optical-system": [
+    "透镜与扩散件",
+    "反光杯与镀层",
+    "IES 配光验证",
+    "积分球光谱分析",
+  ],
+  "optical-lens": ["透镜与扩散件"],
+  "optical-reflector": ["反光杯与镀层"],
+  "optical-ies": ["IES 配光验证"],
+  "optical-spectrum": ["积分球光谱分析"],
+  "mechanical-enclosure": [
+    "密封与防护",
+    "压铸铝与盐雾",
+    "防水透气阀与压差",
+    "结构固定与跌落",
+  ],
+  "mechanical-sealing": ["密封与防护"],
+  "mechanical-corrosion": ["压铸铝与盐雾"],
+  "mechanical-vent": ["防水透气阀与压差"],
+  "mechanical-drop": ["结构固定与跌落"],
+}
+
+const SEVERITY_LOCK_RULES: SeverityRule[] = [
+  {
+    severity: 10,
+    label: "安规击穿 / 起火",
+    pattern: /(安规|击穿|起火|燃烧|fire)/i,
+  },
+  {
+    severity: 10,
+    label: "跌落伤人",
+    pattern: /(跌落|伤人|坠落)/i,
+  },
+  {
+    severity: 9,
+    label: "进水 / IP 等级失效",
+    pattern: /(进水|IP(?:等级)?失效|防水失效|起雾)/i,
+  },
+]
+
+const seedRows: SeedRow[] = [
+  {
+    id: "lighting-001",
+    process: "关键物料降额审查",
+    mode: "电解电容干涸",
+    effect: "驱动寿命提前终止，整灯死亡，质保期内批量失效。",
+    classification: "CC",
+    crossRisk: "@热学工程师复核驱动腔温升；@采购锁定 105°C 长寿命电容料号。",
+    sev: 9,
+    cause: "关键电容纹波电流与腔体温度降额不足。",
+    pc: "关键物料降额审查（Derating）+ 电容寿命模型复核。",
+    occ: 5,
+    dc: "高温通电寿命试验 + 电容壳温实测。",
+    dvprLinks: ["HTOL 85C", "TM-21 Review"],
+    det: 4,
+    action: "改为 105°C 长寿命电容，并下调纹波负载率。",
+    ownerGate: "李工 @ EVT",
+    status: "pending",
+  },
+  {
+    id: "lighting-002",
+    process: "浪涌与输入保护",
+    mode: "浪涌击穿",
+    effect: "雷击后驱动失效，安规击穿并可能起火。",
+    classification: "CC",
+    crossRisk: "@认证工程师确认雷击等级；@结构工程师复核接地路径。",
+    sev: 6,
+    cause: "MOV / TVS 选型余量不足，前级拦截失效。",
+    pc: "SPD 级联设计 + 关键物料降额审查（Derating）。",
+    occ: 3,
+    dc: "IEC 61000-4-5 浪涌测试 + 绝缘耐压复测。",
+    dvprLinks: ["Surge 4KV", "Hi-Pot"],
+    det: 3,
+    action: "提升 MOV 能量等级并增加共模防护。",
+    ownerGate: "陈工 @ DVT",
+    status: "testing",
+  },
+  {
+    id: "lighting-003",
+    process: "频闪与调光控制",
+    mode: "频闪过高",
+    effect: "视觉不适、视频拍摄条纹，项目验收失败。",
+    classification: "SC",
+    crossRisk: "@光学工程师确认频闪对显色演示影响；@软件工程师同步调光曲线。",
+    sev: 7,
+    cause: "PFC 与输出纹波控制不足，调光边界未覆盖低占空比。",
+    pc: "驱动拓扑评审 + 调光边界条件验证。",
+    occ: 4,
+    dc: "频闪百分比 / Pst LM / SVM 测试。",
+    dvprLinks: ["Flicker Test", "Pst LM", "SVM"],
+    det: 4,
+    action: "优化控制环路并增加输出储能。",
+    ownerGate: "王工 @ DVT",
+    status: "pending",
+  },
+  {
+    id: "lighting-004",
+    process: "EMC / EMI 合规",
+    mode: "EMI 辐射超标",
+    effect: "无法通过 EMC 认证，出货受阻。",
+    classification: "SC",
+    crossRisk: "@PCB 工程师调整布局；@认证工程师联合签字放行。",
+    sev: 8,
+    cause: "共模噪声抑制不足，布线回路过大。",
+    pc: "EMC 预一致性设计审查 + 接地回流路径检查。",
+    occ: 3,
+    dc: "RE / CE 预扫 + LISN 复测。",
+    dvprLinks: ["EN55015 RE", "EN55015 CE"],
+    det: 4,
+    action: "补充共模扼流圈并重构接地回路。",
+    ownerGate: "赵工 @ DVT",
+    status: "closed",
+  },
+  {
+    id: "lighting-005",
+    process: "散热器与热路径",
+    mode: "热阻过高",
+    effect: "LED 结温超限，L70 寿命缩短并出现色漂移。",
+    classification: "CC",
+    crossRisk: "@结构工程师确认体积边界；@光学工程师评估色漂移风险。",
+    sev: 9,
+    cause: "散热鳍片面积不足，热路径中断。",
+    pc: "热仿真报告（CFD）+ 热阻预算评审。",
+    occ: 4,
+    dc: "热电偶 Mapping + 红外热像。",
+    dvprLinks: ["CFD Report", "Tc Mapping"],
+    det: 4,
+    action: "增加鳍片表面积并缩短热传导路径。",
+    ownerGate: "刘工 @ EVT",
+    status: "pending",
+  },
+  {
+    id: "lighting-006",
+    process: "导热界面材料涂覆",
+    mode: "硅脂挥发 / 涂抹不均",
+    effect: "基板局部热点，光通维持率下降，早期光衰。",
+    classification: "SC",
+    crossRisk: "@制造工程师维护点胶治具；@质量工程师追加剖面审核。",
+    sev: 8,
+    cause: "TIM 点胶窗口不稳定，装配厚度漂移。",
+    pc: "TIM 施工窗口标准 + 点胶重量监控。",
+    occ: 5,
+    dc: "剖面厚度检查 + 热阻抽测。",
+    dvprLinks: ["Thermal Shock", "IR Mapping"],
+    det: 5,
+    action: "改用自动点胶并锁定涂覆重量。",
+    ownerGate: "周工 @ PVT",
+    status: "testing",
+  },
+  {
+    id: "lighting-007",
+    process: "热仿真报告（CFD）",
+    mode: "仿真边界条件失真",
+    effect: "量产热设计偏离实测，结温控制失真。",
+    classification: "SC",
+    crossRisk: "@结构工程师提供安装姿态；@项目经理确认八维工况边界。",
+    sev: 8,
+    cause: "环境工况与安装姿态未覆盖真实场景。",
+    pc: "热仿真报告（CFD）强制评审 + 八维工况输入校核。",
+    occ: 3,
+    dc: "仿真 / 实测相关性比对。",
+    dvprLinks: ["CFD Review", "ΔT Correlation"],
+    det: 4,
+    action: "补充封闭腔体与高温工况模型。",
+    ownerGate: "黄工 @ EVT",
+    status: "closed",
+  },
+  {
+    id: "lighting-008",
+    process: "结温实测",
+    mode: "Tj 监控缺失",
+    effect: "过热风险未被及时识别，寿命声明失真。",
+    classification: "CC",
+    crossRisk: "@测试工程师补足稳态记录；@电子工程师提供功耗边界。",
+    sev: 8,
+    cause: "仅测壳温，未建立 Tc 到 Tj 的换算链。",
+    pc: "结温换算规范 + 热电偶布点审查。",
+    occ: 4,
+    dc: "Tc / Tj 联动实测 + 长稳态记录。",
+    dvprLinks: ["LM-80", "Tj Estimation"],
+    det: 4,
+    action: "增加结温换算模板与复核门槛。",
+    ownerGate: "孙工 @ DVT",
+    status: "testing",
+  },
+  {
+    id: "lighting-009",
+    process: "透镜与扩散件",
+    mode: "透镜黄化",
+    effect: "光通下降、色温漂移，外观失真。",
+    classification: "SC",
+    crossRisk: "@采购确认树脂等级；@热学工程师复核温升对黄化加速影响。",
+    sev: 8,
+    cause: "UV 老化抗性不足，材料选型错误。",
+    pc: "材料耐 UV 审查 + 老化样件比对。",
+    occ: 4,
+    dc: "积分球光谱分析 + UV 老化后光通复测。",
+    dvprLinks: ["UV 500h", "Spectral Shift"],
+    det: 4,
+    action: "切换耐 UV 树脂等级并增加老化验证。",
+    ownerGate: "许工 @ DVT",
+    status: "pending",
+  },
+  {
+    id: "lighting-010",
+    process: "反光杯与镀层",
+    mode: "镀层脱落",
+    effect: "配光效率下降，局部暗区与黄圈投诉。",
+    classification: "SC",
+    crossRisk: "@结构工程师确认热循环应力；@供应链同步表面处理规范。",
+    sev: 7,
+    cause: "镀层附着力不足或清洗残留。",
+    pc: "镀层前处理审核 + 盐雾兼容性验证。",
+    occ: 3,
+    dc: "附着力测试 + 光斑均匀性复测。",
+    dvprLinks: ["Salt Spray", "IES Scan"],
+    det: 4,
+    action: "升级真空镀工艺并增加前处理清洁度窗口。",
+    ownerGate: "邓工 @ PVT",
+    status: "closed",
+  },
+  {
+    id: "lighting-011",
+    process: "IES 配光验证",
+    mode: "UGR 超标",
+    effect: "眩光不达标，办公照明项目验收失败。",
+    classification: "CC",
+    crossRisk: "@应用工程师提供场景要求；@结构工程师联合签审遮光边界。",
+    sev: 7,
+    cause: "遮光角设计不足，配光曲线偏离目标。",
+    pc: "配光曲线（IES）测试门禁 + 遮光角评审。",
+    occ: 3,
+    dc: "IES 配光曲线测试 + UGR 仿真复核。",
+    dvprLinks: ["IES Test", "UGR Calc"],
+    det: 3,
+    action: "优化遮光结构并调整透镜二次配光。",
+    ownerGate: "郑工 @ DVT",
+    status: "testing",
+  },
+  {
+    id: "lighting-012",
+    process: "积分球光谱分析",
+    mode: "显色一致性漂移",
+    effect: "批次色容差超标，客户抱怨色差。",
+    classification: "SC",
+    crossRisk: "@采购确认 LED bin 锁定；@计划工程师避免批次混料。",
+    sev: 6,
+    cause: "LED bin 管控与混光策略不足。",
+    pc: "LED bin 锁定 + 混光配比评审。",
+    occ: 4,
+    dc: "积分球光谱分析 + 色容差 SPC。",
+    dvprLinks: ["Integrating Sphere", "TM-30"],
+    det: 3,
+    action: "收紧 bin 组合并建立来料色坐标门限。",
+    ownerGate: "冯工 @ IPQC",
+    status: "closed",
+  },
+  {
+    id: "lighting-013",
+    process: "密封与防护",
+    mode: "密封圈老化 / 压缩永久变形",
+    effect: "进水、起雾，IP等级失效，户外返修。",
+    classification: "CC",
+    crossRisk: "@材料工程师确认橡胶配方；@热学工程师复核温升对老化加速影响。",
+    sev: 6,
+    cause: "材料耐候性不足，压缩量设计偏大。",
+    pc: "防水透气阀配型 + 密封寿命验证 + 八维工况联审。",
+    occ: 4,
+    dc: "负压测试 + IP65 Test + 温湿循环验证。",
+    dvprLinks: ["IP65 Test", "Negative Pressure"],
+    det: 3,
+    action: "更换高回弹密封材料并重算压缩量。",
+    ownerGate: "钱工 @ DVT",
+    status: "pending",
+  },
+  {
+    id: "lighting-014",
+    process: "压铸铝与盐雾",
+    mode: "盐雾腐蚀",
+    effect: "壳体腐蚀穿孔，防护失效，外观投诉。",
+    classification: "SC",
+    crossRisk: "@供应商质量确认膜厚能力；@认证工程师复核户外等级声明。",
+    sev: 8,
+    cause: "表面处理耐蚀等级不足。",
+    pc: "涂层厚度规范 + 240h 盐雾门禁。",
+    occ: 3,
+    dc: "盐雾试验 + 截面膜厚测量。",
+    dvprLinks: ["Salt Spray 240h", "Coating Thickness"],
+    det: 3,
+    action: "升级涂层体系并追加切边封闭工艺。",
+    ownerGate: "吴工 @ SQE",
+    status: "closed",
+  },
+  {
+    id: "lighting-015",
+    process: "防水透气阀与压差",
+    mode: "呼吸效应吸水",
+    effect: "冷热循环后内腔吸水起雾，IP等级失效。",
+    classification: "SC",
+    crossRisk: "@热学工程师提供内外压差模型；@工艺工程师确认安装方向。",
+    sev: 7,
+    cause: "透气阀流量选型偏差，压差释放不足。",
+    pc: "防水透气阀配型 + 负压测试 + 温湿循环验证。",
+    occ: 3,
+    dc: "冷热冲击后称重比对 + 腔体湿度记录。",
+    dvprLinks: ["Negative Pressure", "Temp Cycle"],
+    det: 4,
+    action: "上调透气量并优化阀位避水路径。",
+    ownerGate: "朱工 @ PVT",
+    status: "testing",
+  },
+  {
+    id: "lighting-016",
+    process: "结构固定与跌落",
+    mode: "安装件松脱 / 跌落",
+    effect: "灯体跌落伤人，项目停线与法律风险。",
+    classification: "CC",
+    crossRisk: "@现场应用工程师提供安装工况；@认证工程师联合签发安规结论。",
+    sev: 7,
+    cause: "固定点强度不足或扭矩控制失效。",
+    pc: "跌落 FEA + 扭矩防错 + 双保险结构审查。",
+    occ: 2,
+    dc: "整灯跌落测试 + 安装力矩追溯。",
+    dvprLinks: ["Drop Test", "Bracket Pull Test"],
+    det: 3,
+    action: "增加防脱结构并引入扭矩追溯工装。",
+    ownerGate: "何工 @ DVT",
+    status: "pending",
+  },
+]
+
 export function calculateRpn(sev: number, occ: number, det: number): number {
   return sev * occ * det
 }
 
-export function calculateAp(rpn: number): string {
-  if (rpn >= 100) return "H"
-  if (rpn >= 50) return "M"
-  return "L"
+export function clampScore(value: unknown): number {
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric)) {
+    return 1
+  }
+
+  return Math.max(1, Math.min(10, Math.round(numeric)))
 }
 
-/* ── Helper: Create a new blank FMEA row ── */
-export function createBlankRow(process: string = ""): FmeaRow {
+export function normalizeDvprLinks(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return Array.from(
+      new Set(
+        value
+          .map((item) => String(item ?? "").trim())
+          .filter((item) => item.length > 0)
+      )
+    )
+  }
+
+  return String(value ?? "")
+    .split(/[,\n/|]+/)
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0)
+}
+
+export function normalizeStatus(value: unknown): FmeaStatus {
+  const normalized = String(value ?? "").trim().toLowerCase()
+  if (normalized === "testing") return "testing"
+  if (normalized === "closed") return "closed"
+  return "pending"
+}
+
+export function getSeverityLockMeta(effect: string): SeverityLockMeta | null {
+  const trimmed = effect.trim()
+  if (!trimmed) {
+    return null
+  }
+
+  const matchedRules = SEVERITY_LOCK_RULES.filter((rule) => rule.pattern.test(trimmed))
+  if (matchedRules.length === 0) {
+    return null
+  }
+
+  const lockedSeverity = matchedRules.reduce<9 | 10>(
+    (current, rule) => (rule.severity > current ? rule.severity : current),
+    9
+  )
+
   return {
-    id: `new-${Date.now()}`,
+    lockedSeverity,
+    matchedRules: matchedRules.map((rule) => rule.label),
+    helperText: `S 锚点已锁定为 ${lockedSeverity}：${matchedRules
+      .map((rule) => rule.label)
+      .join(" + ")}`,
+  }
+}
+
+export function finalizeFmeaRow(row: FmeaRow): FmeaRow {
+  const severityLock = getSeverityLockMeta(row.effect)
+  const sev = severityLock ? severityLock.lockedSeverity : clampScore(row.sev)
+  const occ = clampScore(row.occ)
+  const det = clampScore(row.det)
+
+  return {
+    ...row,
+    classification: row.classification || "STD",
+    sev,
+    occ,
+    det,
+    rpn: calculateRpn(sev, occ, det),
+    dvprLinks: normalizeDvprLinks(row.dvprLinks),
+    status: normalizeStatus(row.status),
+  }
+}
+
+export function createBlankRow(process: string = ""): FmeaRow {
+  return finalizeFmeaRow({
+    id: `lighting-${Date.now()}`,
     process,
     mode: "",
     effect: "",
+    classification: "SC",
+    crossRisk: "",
     sev: 5,
     cause: "",
     pc: "",
     occ: 3,
     dc: "",
     det: 3,
-    rpn: 45,
-    ap: "L",
+    rpn: 0,
+    dvprLinks: [],
     action: "",
-    resp: "",
-    date: new Date().toISOString().slice(0, 10),
+    ownerGate: "",
     status: "pending",
-    sev2: 5,
-    occ2: 2,
-    det2: 2,
-    rpn2: 20,
+  })
+}
+
+export function findBomNodeById(
+  nodes: FmeaBomNode[],
+  targetId: string
+): FmeaBomNode | null {
+  for (const node of nodes) {
+    if (node.id === targetId) {
+      return node
+    }
+
+    if (node.children?.length) {
+      const nested = findBomNodeById(node.children, targetId)
+      if (nested) {
+        return nested
+      }
+    }
   }
+
+  return null
 }
 
-/* ── Initial FMEA Data ── */
-export const initialFmeaData: FmeaRow[] = [
-  {
-    id: "fmea-001",
-    process: "上盖注塑",
-    mode: "收缩变形",
-    effect: "装配间隙过大",
-    sev: 8,
-    cause: "保压时间不足",
-    pc: "模流分析",
-    occ: 4,
-    dc: "首件三次元测量",
-    det: 3,
-    rpn: 96,
-    ap: "M",
-    action: "增加保压时间2s",
-    resp: "工艺工程部",
-    date: "2026-05-10",
-    status: "closed",
-    sev2: 8,
-    occ2: 2,
-    det2: 3,
-    rpn2: 48,
-  },
-  {
-    id: "fmea-002",
-    process: "卡扣结构",
-    mode: "根部断裂",
-    effect: "上下盖脱落",
-    sev: 9,
-    cause: "R角设计不足",
-    pc: "DFM评审",
-    occ: 5,
-    dc: "拉力测试",
-    det: 4,
-    rpn: 180,
-    ap: "H",
-    action: "增大根部R角",
-    resp: "结构设计部",
-    date: "2026-05-12",
-    status: "pending",
-    sev2: 9,
-    occ2: 2,
-    det2: 2,
-    rpn2: 36,
-  },
-  {
-    id: "fmea-003",
-    process: "密封圈装配",
-    mode: "漏装",
-    effect: "防水失效IP等级不达标",
-    sev: 9,
-    cause: "手工作业遗漏",
-    pc: "防错夹具",
-    occ: 3,
-    dc: "气密性测试",
-    det: 2,
-    rpn: 54,
-    ap: "M",
-    action: "增加视觉检测工位",
-    resp: "品质工程部",
-    date: "2026-05-15",
-    status: "closed",
-    sev2: 9,
-    occ2: 1,
-    det2: 2,
-    rpn2: 18,
-  },
-  {
-    id: "fmea-004",
-    process: "SMT贴片",
-    mode: "虚焊/偏移",
-    effect: "电路板功能异常",
-    sev: 7,
-    cause: "锡膏印刷参数偏差",
-    pc: "SPI检测",
-    occ: 3,
-    dc: "AOI光学检测",
-    det: 2,
-    rpn: 42,
-    ap: "L",
-    action: "优化钢网开口设计",
-    resp: "SMT工程部",
-    date: "2026-05-18",
-    status: "closed",
-    sev2: 7,
-    occ2: 2,
-    det2: 2,
-    rpn2: 28,
-  },
-  {
-    id: "fmea-005",
-    process: "波峰焊",
-    mode: "桥接短路",
-    effect: "PCB烧毁",
-    sev: 10,
-    cause: "助焊剂涂覆不均",
-    pc: "波峰焊参数监控",
-    occ: 2,
-    dc: "ICT在线测试",
-    det: 2,
-    rpn: 40,
-    ap: "L",
-    action: "增加助焊剂流量传感器",
-    resp: "焊接工程部",
-    date: "2026-05-20",
-    status: "closed",
-    sev2: 10,
-    occ2: 1,
-    det2: 2,
-    rpn2: 20,
-  },
-  {
-    id: "fmea-006",
-    process: "功能测试",
-    mode: "误判PASS",
-    effect: "不良品流出",
-    sev: 8,
-    cause: "测试程序覆盖率不足",
-    pc: "测试用例评审",
-    occ: 3,
-    dc: "抽检复测",
-    det: 5,
-    rpn: 120,
-    ap: "H",
-    action: "补充边界条件测试用例",
-    resp: "测试工程部",
-    date: "2026-05-22",
-    status: "pending",
-    sev2: 8,
-    occ2: 2,
-    det2: 3,
-    rpn2: 48,
-  },
-  {
-    id: "fmea-007",
-    process: "下盖注塑",
-    mode: "飞边/毛刺",
-    effect: "外观不良",
-    sev: 5,
-    cause: "模具磨损",
-    pc: "模具寿命管理",
-    occ: 4,
-    dc: "外观全检",
-    det: 2,
-    rpn: 40,
-    ap: "L",
-    action: "制定模具保养计划",
-    resp: "模具工程部",
-    date: "2026-05-25",
-    status: "closed",
-    sev2: 5,
-    occ2: 2,
-    det2: 2,
-    rpn2: 20,
-  },
-  {
-    id: "fmea-008",
-    process: "螺柱结构",
-    mode: "螺柱断裂",
-    effect: "结构松动异响",
-    sev: 7,
-    cause: "扭矩过大",
-    pc: "扭矩控制",
-    occ: 3,
-    dc: "扭矩监测",
-    det: 3,
-    rpn: 63,
-    ap: "M",
-    action: "电动螺丝刀扭矩校准",
-    resp: "装配工程部",
-    date: "2026-05-28",
-    status: "closed",
-    sev2: 7,
-    occ2: 2,
-    det2: 2,
-    rpn2: 28,
-  },
-  {
-    id: "fmea-009",
-    process: "电池仓",
-    mode: "接触不良",
-    effect: "设备间歇断电",
-    sev: 8,
-    cause: "弹片弹力衰减",
-    pc: "弹片寿命测试",
-    occ: 3,
-    dc: "接触电阻测量",
-    det: 3,
-    rpn: 72,
-    ap: "M",
-    action: "更换高弹性材料弹片",
-    resp: "结构设计部",
-    date: "2026-06-01",
-    status: "closed",
-    sev2: 8,
-    occ2: 1,
-    det2: 2,
-    rpn2: 16,
-  },
-  {
-    id: "fmea-010",
-    process: "按键组装",
-    mode: "按键卡死",
-    effect: "用户无法操作",
-    sev: 7,
-    cause: "导光柱偏位",
-    pc: "装配工装定位",
-    occ: 2,
-    dc: "按键力测试",
-    det: 3,
-    rpn: 42,
-    ap: "L",
-    action: "优化导光柱定位结构",
-    resp: "结构设计部",
-    date: "2026-06-05",
-    status: "closed",
-    sev2: 7,
-    occ2: 1,
-    det2: 2,
-    rpn2: 14,
-  },
-  {
-    id: "fmea-011",
-    process: "线束连接",
-    mode: "端子退针",
-    effect: "信号中断",
-    sev: 8,
-    cause: "压接力不足",
-    pc: "压接参数监控",
-    occ: 3,
-    dc: "拉拔力测试",
-    det: 3,
-    rpn: 72,
-    ap: "M",
-    action: "增加压接力在线监测",
-    resp: "装配工程部",
-    date: "2026-06-08",
-    status: "pending",
-    sev2: 8,
-    occ2: 1,
-    det2: 2,
-    rpn2: 16,
-  },
-  {
-    id: "fmea-012",
-    process: "外壳喷涂",
-    mode: "附着力不良",
-    effect: "掉漆/外观缺陷",
-    sev: 5,
-    cause: "底材处理不足",
-    pc: "等离子处理参数",
-    occ: 3,
-    dc: "百格测试",
-    det: 2,
-    rpn: 30,
-    ap: "L",
-    action: "增加等离子处理时间",
-    resp: "涂装工程部",
-    date: "2026-06-10",
-    status: "closed",
-    sev2: 5,
-    occ2: 1,
-    det2: 2,
-    rpn2: 10,
-  },
-  {
-    id: "fmea-013",
-    process: "防水测试",
-    mode: "泄漏",
-    effect: "IP等级降级",
-    sev: 9,
-    cause: "密封胶涂覆不均",
-    pc: "胶量监控",
-    occ: 2,
-    dc: "水浸测试",
-    det: 2,
-    rpn: 36,
-    ap: "L",
-    action: "自动点胶设备升级",
-    resp: "工艺工程部",
-    date: "2026-06-12",
-    status: "closed",
-    sev2: 9,
-    occ2: 1,
-    det2: 1,
-    rpn2: 9,
-  },
-  {
-    id: "fmea-014",
-    process: "老化测试",
-    mode: "误判合格",
-    effect: "早期失效流出",
-    sev: 8,
-    cause: "老化时间不足",
-    pc: "老化程序验证",
-    occ: 2,
-    dc: "出货前全检",
-    det: 4,
-    rpn: 64,
-    ap: "M",
-    action: "延长老化周期至48h",
-    resp: "测试工程部",
-    date: "2026-06-15",
-    status: "pending",
-    sev2: 8,
-    occ2: 1,
-    det2: 3,
-    rpn2: 24,
-  },
-  {
-    id: "fmea-015",
-    process: "包装入库",
-    mode: "标签贴错",
-    effect: "发货错误",
-    sev: 6,
-    cause: "人工贴标差错",
-    pc: "条码扫描核对",
-    occ: 3,
-    dc: "出库复核",
-    det: 2,
-    rpn: 36,
-    ap: "L",
-    action: "导入自动贴标系统",
-    resp: "仓储物流部",
-    date: "2026-06-18",
-    status: "closed",
-    sev2: 6,
-    occ2: 1,
-    det2: 2,
-    rpn2: 12,
-  },
-  {
-    id: "fmea-016",
-    process: "FPC焊接",
-    mode: "焊盘剥离",
-    effect: "信号断路",
-    sev: 8,
-    cause: "烙铁温度过高",
-    pc: "温度曲线监控",
-    occ: 3,
-    dc: "微切片检查",
-    det: 4,
-    rpn: 96,
-    ap: "M",
-    action: "导入脉冲热压焊",
-    resp: "焊接工程部",
-    date: "2026-06-20",
-    status: "closed",
-    sev2: 8,
-    occ2: 1,
-    det2: 3,
-    rpn2: 24,
-  },
-  {
-    id: "fmea-017",
-    process: "屏幕贴合",
-    mode: "气泡/异物",
-    effect: "显示不良",
-    sev: 6,
-    cause: "洁净度不足",
-    pc: "千级洁净室管控",
-    occ: 3,
-    dc: "AOI外观检测",
-    det: 2,
-    rpn: 36,
-    ap: "L",
-    action: "增加离子风枪除尘",
-    resp: "贴合工程部",
-    date: "2026-06-22",
-    status: "closed",
-    sev2: 6,
-    occ2: 1,
-    det2: 2,
-    rpn2: 12,
-  },
-  {
-    id: "fmea-018",
-    process: "散热设计",
-    mode: "热阻过高",
-    effect: "芯片降频/死机",
-    sev: 9,
-    cause: "导热硅脂涂覆不均",
-    pc: "涂覆量监控",
-    occ: 3,
-    dc: "热成像检测",
-    det: 3,
-    rpn: 81,
-    ap: "M",
-    action: "导入自动点胶涂覆",
-    resp: "热设计部",
-    date: "2026-06-25",
-    status: "pending",
-    sev2: 9,
-    occ2: 1,
-    det2: 2,
-    rpn2: 18,
-  },
-  {
-    id: "fmea-019",
-    process: "天线装配",
-    mode: "辐射效率低",
-    effect: "通信距离缩短",
-    sev: 7,
-    cause: "天线间距不当",
-    pc: "仿真验证",
-    occ: 2,
-    dc: "暗室测试",
-    det: 3,
-    rpn: 42,
-    ap: "L",
-    action: "优化天线布局间距",
-    resp: "射频工程部",
-    date: "2026-06-28",
-    status: "closed",
-    sev2: 7,
-    occ2: 1,
-    det2: 2,
-    rpn2: 14,
-  },
-  {
-    id: "fmea-020",
-    process: "ESD防护",
-    mode: "静电击穿",
-    effect: "IC损坏",
-    sev: 9,
-    cause: "TVS管选型不当",
-    pc: "ESD仿真分析",
-    occ: 2,
-    dc: "ESD枪测试",
-    det: 3,
-    rpn: 54,
-    ap: "M",
-    action: "升级TVS管规格",
-    resp: "硬件工程部",
-    date: "2026-07-01",
-    status: "pending",
-    sev2: 9,
-    occ2: 1,
-    det2: 2,
-    rpn2: 18,
-  },
-]
-
-/* ── BOM Tree Node to Process Mapping ── */
-export const bomProcessMapping: Record<string, string[]> = {
-  "asm-001": [], // All (root level shows everything)
-  "sub-001": ["上盖注塑", "卡扣结构", "密封圈装配"],
-  "sub-002": ["SMT贴片", "波峰焊", "功能测试", "FPC焊接"],
-  "sub-003": ["下盖注塑", "螺柱结构"],
-  "prt-001": ["上盖注塑"],
-  "prt-002": ["卡扣结构"],
-  "prt-003": ["密封圈装配"],
-  "prt-004": ["SMT贴片"],
-  "prt-005": ["波峰焊"],
-  "prt-006": ["功能测试"],
-  "prt-007": ["下盖注塑"],
-  "prt-008": ["螺柱结构"],
-}
+export const initialFmeaData: FmeaRow[] = seedRows.map((row) =>
+  finalizeFmeaRow({
+    ...row,
+    rpn: 0,
+  })
+)

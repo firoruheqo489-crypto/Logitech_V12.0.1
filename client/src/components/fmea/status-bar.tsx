@@ -1,6 +1,6 @@
 "use client"
 
-import { Clock, Database, AlertCircle } from "lucide-react"
+import { AlertCircle, Clock, Database } from "lucide-react"
 
 interface StatusBarProps {
   totalRows: number
@@ -16,29 +16,29 @@ export function StatusBar({ totalRows, filteredRows, pendingCount }: StatusBarPr
   })
 
   return (
-    <footer className="h-7 shrink-0 border-t border-white/5 bg-zinc-950/80 flex items-center justify-between px-4 text-[10px] text-zinc-600">
-      {/* Left: Status */}
+    <footer className="flex h-7 shrink-0 items-center justify-between border-t border-white/5 bg-zinc-950/85 px-4 text-[10px] text-zinc-600">
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-1.5">
-          <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_4px_rgba(16,185,129,0.6)]" />
+          <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 shadow-[0_0_4px_rgba(16,185,129,0.55)]" />
           <span>系统就绪</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <Database className="w-3 h-3" />
-          <span>显示 {filteredRows} / {totalRows} 条记录</span>
+          <Database className="h-3 w-3" />
+          <span>
+            显示 {filteredRows} / {totalRows} 条记录
+          </span>
         </div>
-        {pendingCount > 0 && (
+        {pendingCount > 0 ? (
           <div className="flex items-center gap-1.5 text-amber-500">
-            <AlertCircle className="w-3 h-3" />
+            <AlertCircle className="h-3 w-3" />
             <span>{pendingCount} 项待处理</span>
           </div>
-        )}
+        ) : null}
       </div>
 
-      {/* Right: Sync time */}
       <div className="flex items-center gap-1.5">
-        <Clock className="w-3 h-3" />
-        <span>最后同步: {timeString}</span>
+        <Clock className="h-3 w-3" />
+        <span>最后同步 {timeString}</span>
       </div>
     </footer>
   )
