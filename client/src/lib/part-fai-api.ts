@@ -31,6 +31,7 @@ export type PartFaiDataRow = {
   minusTol: number | null;
   usl: number | null;
   lsl: number | null;
+  gtolRange?: number | null;
   judgeFos: string;
   judgeGtol: string;
   isNG: boolean;

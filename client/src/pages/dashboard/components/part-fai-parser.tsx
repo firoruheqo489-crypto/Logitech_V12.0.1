@@ -47,6 +47,7 @@ type FaiDataRow = {
   minusTol: number | null;
   usl: number | null;
   lsl: number | null;
+  gtolRange: number | null;
   judgeFos: string;
   judgeGtol: string;
   isNG: boolean;
@@ -60,6 +61,10 @@ type FaiParseSummary = {
   qualifiedRows: number;
   qualifiedRate: number | null;
 };
+
+type LimitBreachDirection = "above" | "below";
+type NgReason = "none" | "upper" | "lower" | "mixed" | "unknown";
+type RowAlertTone = "neutral" | "upper" | "lower";
 
 export type FaiMeasurementPoint = {
   cavity: string;
@@ -179,6 +184,64 @@ function getJudgeStatus(value: string): "ok" | "ng" | "other" {
   }
 
   return "other";
+}
+
+function classifyShotLimitBreach(
+  value: number | null,
+  usl: number | null,
+  lsl: number | null
+): LimitBreachDirection | null {
+  if (value === null) {
+    return null;
+  }
+
+  if (usl !== null && value > usl) {
+    return "above";
+  }
+
+  if (lsl !== null && value < lsl) {
+    return "below";
+  }
+
+  return null;
+}
+
+export function classifyJudgeNgReason(
+  judge: string,
+  shots: ShotTuple,
+  usl: number | null,
+  lsl: number | null
+): NgReason {
+  if (getJudgeStatus(normalizeJudge(judge)) !== "ng") {
+    return "none";
+  }
+
+  let hasUpperBreach = false;
+  let hasLowerBreach = false;
+
+  shots.forEach(value => {
+    const breach = classifyShotLimitBreach(value, usl, lsl);
+    if (breach === "above") {
+      hasUpperBreach = true;
+    }
+    if (breach === "below") {
+      hasLowerBreach = true;
+    }
+  });
+
+  if (hasUpperBreach && hasLowerBreach) {
+    return "mixed";
+  }
+
+  if (hasLowerBreach) {
+    return "lower";
+  }
+
+  if (hasUpperBreach) {
+    return "upper";
+  }
+
+  return "unknown";
 }
 
 function summarizeParsedRows(rows: FaiDataRow[]): FaiParseSummary {
@@ -360,6 +423,7 @@ function sanitizePersistedRows(value: unknown): FaiDataRow[] {
         minusTol: coerceNumber(record.minusTol),
         usl: coerceNumber(record.usl),
         lsl: coerceNumber(record.lsl),
+        gtolRange: coerceNumber(record.gtolRange),
         judgeFos: normalizeJudge(record.judgeFos),
         judgeGtol: normalizeJudge(record.judgeGtol),
         isNG: Boolean(record.isNG),
@@ -562,6 +626,63 @@ function computeJudgeFromShots(
   }
 
   return values.some(value => value > usl || value < lsl) ? "NG" : "OK";
+}
+
+function getRowAlertTone(reasons: NgReason[]): RowAlertTone {
+  const activeReasons = reasons.filter(reason => reason !== "none");
+  if (activeReasons.length === 0) {
+    return "neutral";
+  }
+
+  return activeReasons.every(reason => reason === "lower") ? "lower" : "upper";
+}
+
+function getRowSurfaceClass(tone: RowAlertTone): string {
+  if (tone === "lower") {
+    return "border-blue-500/20 bg-blue-950/20 text-blue-300 hover:bg-blue-950/30";
+  }
+
+  if (tone === "upper") {
+    return "border-red-500/20 bg-red-500/10 text-red-400 hover:bg-red-500/15";
+  }
+
+  return "border-slate-800/80 bg-slate-900/30 hover:bg-slate-900/60";
+}
+
+function getRowPrimaryTextClass(tone: RowAlertTone): string {
+  if (tone === "lower") {
+    return "text-blue-300";
+  }
+
+  if (tone === "upper") {
+    return "text-red-400";
+  }
+
+  return "text-slate-300";
+}
+
+function getRowMutedTextClass(tone: RowAlertTone): string {
+  if (tone === "lower") {
+    return "text-blue-200";
+  }
+
+  if (tone === "upper") {
+    return "text-red-300";
+  }
+
+  return "text-slate-400";
+}
+
+function getRowStrongTextClass(tone: RowAlertTone): string {
+  if (tone === "lower") {
+    return "text-blue-200";
+  }
+
+  if (tone === "upper") {
+    return "text-red-300";
+  }
+
+  return "text-slate-100";
 }
 
 function findShotIndexesByHeader(
@@ -899,6 +1020,7 @@ function buildContractSnapshot(rows: unknown[][]): ParsedWorkbookSnapshot {
             minusTol,
             usl: computedUsl,
             lsl: computedLsl,
+            gtolRange,
             judgeFos,
             judgeGtol,
             isNG: judgeFos === "NG" || judgeGtol === "NG",
@@ -1194,8 +1316,12 @@ function filterDimensionRowsByDimTypes(
   });
 }
 
-function getJudgeBadgeClass(judge: string): string {
+function getJudgeBadgeClass(judge: string, ngReason: NgReason = "none"): string {
   if (judge.includes("NG")) {
+    if (ngReason === "lower") {
+      return "border border-blue-500/35 bg-blue-950/45 text-blue-200";
+    }
+
     return "border border-red-500/30 bg-red-500/15 text-red-300";
   }
 
@@ -1204,6 +1330,28 @@ function getJudgeBadgeClass(judge: string): string {
   }
 
   return "border border-slate-700 bg-slate-950 text-slate-400";
+}
+
+function getShotBadgeClass(
+  value: number | null,
+  usl: number | null,
+  lsl: number | null,
+  judgeStatus: "ok" | "ng" | "other"
+): string {
+  const breach = classifyShotLimitBreach(value, usl, lsl);
+  if (breach === "below") {
+    return "border border-blue-500/35 bg-blue-950/45 text-blue-200";
+  }
+
+  if (breach === "above") {
+    return "border border-red-500/30 bg-red-500/15 text-red-200";
+  }
+
+  if (judgeStatus === "ok") {
+    return "text-emerald-300";
+  }
+
+  return "text-slate-200";
 }
 
 function getFilterCardClass(
@@ -1978,33 +2126,27 @@ export default function PartFaiParserSection({
                     {filteredRows.map((row, index) => {
                       const fosJudgeStatus = getJudgeStatus(row.judgeFos);
                       const gtolJudgeStatus = getJudgeStatus(row.judgeGtol);
-                      const rowValueClass = row.isNG
-                        ? "text-red-400"
-                        : "text-slate-300";
-                      const rowMutedValueClass = row.isNG
-                        ? "text-red-300"
-                        : "text-slate-400";
-                      const fosShotValueClass =
-                        fosJudgeStatus === "ok"
-                          ? "text-emerald-300"
-                          : fosJudgeStatus === "ng"
-                            ? "text-red-300"
-                            : "text-slate-200";
-                      const gtolShotValueClass =
-                        gtolJudgeStatus === "ok"
-                          ? "text-emerald-300"
-                          : gtolJudgeStatus === "ng"
-                            ? "text-red-300"
-                            : "text-slate-200";
+                      const fosNgReason = classifyJudgeNgReason(
+                        row.judgeFos,
+                        row.fosShots,
+                        row.usl,
+                        row.lsl
+                      );
+                      const gtolNgReason = classifyJudgeNgReason(
+                        row.judgeGtol,
+                        row.gtolShots,
+                        row.gtolRange,
+                        0
+                      );
+                      const rowTone = getRowAlertTone([fosNgReason, gtolNgReason]);
+                      const rowValueClass = getRowPrimaryTextClass(rowTone);
+                      const rowMutedValueClass = getRowMutedTextClass(rowTone);
+                      const rowStrongTextClass = getRowStrongTextClass(rowTone);
 
                       return (
                         <tr
                           key={`${row.dim}-${index}`}
-                          className={`border-t transition-colors ${
-                            row.isNG
-                              ? "border-red-500/20 bg-red-500/10 text-red-400 hover:bg-red-500/15"
-                              : "border-slate-800/80 bg-slate-900/30 hover:bg-slate-900/60"
-                          }`}
+                          className={`border-t transition-colors ${getRowSurfaceClass(rowTone)}`}
                         >
                           {visibleColumns.map(column => {
                             switch (column.id) {
@@ -2012,7 +2154,7 @@ export default function PartFaiParserSection({
                                 return (
                                   <td
                                     key={`${row.dim}-${column.id}`}
-                                    className={`px-3 py-3 font-mono text-xs font-semibold ${row.isNG ? "text-red-300" : "text-slate-100"}`}
+                                    className={`px-3 py-3 font-mono text-xs font-semibold ${rowStrongTextClass}`}
                                   >
                                     {row.dim}
                                   </td>
@@ -2069,7 +2211,7 @@ export default function PartFaiParserSection({
                                     className="px-3 py-3"
                                   >
                                     <span
-                                      className={`inline-flex min-w-[74px] items-center justify-center rounded-md px-2.5 py-1.5 font-mono text-xs ${getJudgeBadgeClass(row.judgeFos)}`}
+                                      className={`inline-flex min-w-[74px] items-center justify-center rounded-md px-2.5 py-1.5 font-mono text-xs ${getJudgeBadgeClass(row.judgeFos, fosNgReason)}`}
                                     >
                                       {row.judgeFos || "--"}
                                     </span>
@@ -2079,7 +2221,7 @@ export default function PartFaiParserSection({
                                 return (
                                   <td
                                     key={`${row.dim}-${column.id}`}
-                                    className={`px-3 py-3 font-mono text-xs ${row.isNG ? "text-red-300" : "text-slate-300"}`}
+                                    className={`px-3 py-3 font-mono text-xs ${rowStrongTextClass}`}
                                   >
                                     {row.cavity || "--"}
                                   </td>
@@ -2096,7 +2238,12 @@ export default function PartFaiParserSection({
                                     className="px-3 py-2"
                                   >
                                     <span
-                                      className={`inline-flex min-w-[74px] items-center justify-center rounded-md px-2.5 py-1.5 font-mono text-xs tabular-nums ${fosShotValueClass}`}
+                                      className={`inline-flex min-w-[74px] items-center justify-center rounded-md px-2.5 py-1.5 font-mono text-xs tabular-nums ${getShotBadgeClass(
+                                        row.fosShots[shotIndex],
+                                        row.usl,
+                                        row.lsl,
+                                        fosJudgeStatus
+                                      )}`}
                                     >
                                       {formatNumber(row.fosShots[shotIndex])}
                                     </span>
@@ -2110,7 +2257,7 @@ export default function PartFaiParserSection({
                                     className="px-3 py-3"
                                   >
                                     <span
-                                      className={`inline-flex min-w-[74px] items-center justify-center rounded-md px-2.5 py-1.5 font-mono text-xs ${getJudgeBadgeClass(row.judgeGtol)}`}
+                                      className={`inline-flex min-w-[74px] items-center justify-center rounded-md px-2.5 py-1.5 font-mono text-xs ${getJudgeBadgeClass(row.judgeGtol, gtolNgReason)}`}
                                     >
                                       {row.judgeGtol || "--"}
                                     </span>
@@ -2128,7 +2275,12 @@ export default function PartFaiParserSection({
                                     className="px-3 py-2"
                                   >
                                     <span
-                                      className={`inline-flex min-w-[74px] items-center justify-center rounded-md px-2.5 py-1.5 font-mono text-xs tabular-nums ${gtolShotValueClass}`}
+                                      className={`inline-flex min-w-[74px] items-center justify-center rounded-md px-2.5 py-1.5 font-mono text-xs tabular-nums ${getShotBadgeClass(
+                                        row.gtolShots[shotIndex],
+                                        row.gtolRange,
+                                        0,
+                                        gtolJudgeStatus
+                                      )}`}
                                     >
                                       {formatNumber(row.gtolShots[shotIndex])}
                                     </span>
@@ -2150,7 +2302,11 @@ export default function PartFaiParserSection({
             <div className="flex flex-wrap items-center gap-4 text-[11px] text-slate-500">
               <div className="flex items-center gap-2">
                 <span className="h-2.5 w-2.5 rounded-full bg-red-400" />
-                <span>RED = Judge FOS or Judge G-Tol contains NG</span>
+                <span>RED = NG caused by upper-limit breach or unknown source</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="h-2.5 w-2.5 rounded-full bg-blue-400" />
+                <span>BLUE = NG caused by lower-limit breach</span>
               </div>
               <div className="flex items-center gap-2">
                 <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />

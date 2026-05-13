@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  classifyJudgeNgReason,
   parseSheetJsonRowsToContract,
   parseSheetRows,
   parseSheetRowsToContract,
@@ -707,5 +708,43 @@ describe("Part FAI SPC parser", () => {
     expect(parsed.data).toHaveLength(1);
     expect(parsed.data[0]?.cavity).toBe("CAV1");
     expect(parsed.data[0]?.fosShots).toEqual([null, null, null]);
+  });
+
+  it("classifies lower-limit NG separately from upper-limit NG", () => {
+    expect(classifyJudgeNgReason("NG", [5.76, 5.8, 5.81], 6.1, 5.78)).toBe("lower");
+    expect(classifyJudgeNgReason("NG", [6.12, 6.08, 6.09], 6.1, 5.78)).toBe("upper");
+    expect(classifyJudgeNgReason("NG", [6.12, 5.76, 5.9], 6.1, 5.78)).toBe("mixed");
+    expect(classifyJudgeNgReason("NG", [null, null, null], 6.1, 5.78)).toBe("unknown");
+  });
+
+  it("preserves gtolRange on parsed rows so lower-limit coloring survives reloads", () => {
+    const rows: unknown[][] = [
+      buildHeaderRow(),
+      [
+        "FAI12",
+        "",
+        "PROFILE",
+        "",
+        "CAV1",
+        "",
+        5,
+        0.1,
+        -0.1,
+        "",
+        "OK",
+        5.01,
+        5.02,
+        5.03,
+        0.05,
+        "",
+        "NG",
+        -0.01,
+        0.02,
+        0.03,
+      ],
+    ];
+
+    const parsed = parseSheetRows(rows);
+    expect(parsed.data[0]?.gtolRange).toBe(0.05);
   });
 });
