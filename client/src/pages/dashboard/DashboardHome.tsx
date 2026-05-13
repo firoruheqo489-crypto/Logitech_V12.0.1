@@ -60,6 +60,7 @@ const ProcessDrawerWorkspace = lazy(() => import('./components/ProcessDrawerWork
 const ProgressLogsDrawerWorkspace = lazy(() => import('./components/ProgressLogsDrawerWorkspace'));
 const ParetoQualityDashboard = lazy(() => import('./components/ParetoQualityDashboard'));
 const FishboneDiagramDashboard = lazy(() => import('./components/FishboneDiagramDashboard'));
+const ImageStitcherWorkspace = lazy(() => import('./components/ImageStitcherWorkspace'));
 const FaiDimensionAnalyzer = lazy(() => import('./components/FaiDimensionAnalyzer'));
 const DocxConvertModule = lazy(() => import('./components/DocxConvertModule'));
 const FmeaIssueWorkspace = lazy(() => import('@/components/FmeaIssueWorkspace'));
@@ -170,6 +171,7 @@ const DASHBOARD_TABS = [
   'fmea-analysis',
   'boxplot',
   'pareto-analysis',
+  'image-stitcher',
   'fishbone-diagram',
   'measurement-intake',
   'mold-reliability',
@@ -829,6 +831,7 @@ export default function DashboardHome() {
             const labels: Record<string, string> = {
               'overview': '项目总览',
               'pareto-analysis': '柏拉图分析',
+              'image-stitcher': '图片拼接',
               'fishbone-diagram': '鱼骨图',
               'logs': '推进日志',
               'product': '产品模块',
@@ -890,6 +893,12 @@ export default function DashboardHome() {
         {selectedTab === 'pareto-analysis' && (
           <LazyWorkspace>
             <ParetoQualityDashboard />
+          </LazyWorkspace>
+        )}
+
+        {selectedTab === 'image-stitcher' && (
+          <LazyWorkspace>
+            <ImageStitcherWorkspace />
           </LazyWorkspace>
         )}
 
