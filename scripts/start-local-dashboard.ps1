@@ -200,7 +200,7 @@ function Start-LoggedProcess {
   $escapedStdErrPath = Escape-PowerShellSingleQuotedText -Value $resolvedStdErrPath
 
   $commandText = switch ($Name) {
-    "api" { "& 'node' --experimental-strip-types --loader './scripts/ts-path-loader.mjs' 'server/index.ts'" }
+    "api" { "& 'node' --import './scripts/register-ts-path-loader.mjs' --experimental-strip-types 'server/index.ts'" }
     "vite" { "& 'node' './node_modules/vite/bin/vite.js' --host --configLoader native" }
     default { throw "unsupported process name: $Name" }
   }

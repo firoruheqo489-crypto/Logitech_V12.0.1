@@ -159,7 +159,7 @@ async function launchApiProcessWithRetry(maxAttempts = 3) {
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     lastProcessInfo = launchProcess(
       "api",
-      ["--experimental-strip-types", "--loader", "./scripts/ts-path-loader.mjs", "server/index.ts"],
+      ["--import", "./scripts/register-ts-path-loader.mjs", "--experimental-strip-types", "server/index.ts"],
       apiOutLog,
       apiErrLog,
       {

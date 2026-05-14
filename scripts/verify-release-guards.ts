@@ -288,7 +288,7 @@ async function verifyCriticalEntrypoints(): Promise<void> {
     ["dev:dashboard:status", ["-File scripts/report-local-dashboard-state.ps1"]],
     [
       "verify:release-guards",
-      ["node --experimental-strip-types --loader ./scripts/ts-path-loader.mjs ./scripts/verify-release-guards.ts"],
+      ["node --import ./scripts/register-ts-path-loader.mjs --experimental-strip-types ./scripts/verify-release-guards.ts"],
     ],
     ["release", ["node scripts/release-entrypoint.mjs all"]],
     ["_release:build", ["node scripts/release-entrypoint.mjs build"]],

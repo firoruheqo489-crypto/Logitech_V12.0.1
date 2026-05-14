@@ -26,7 +26,7 @@ const requiredScriptFragments = [
   },
   {
     name: 'verify:release-guards',
-    fragments: ['node --experimental-strip-types --loader ./scripts/ts-path-loader.mjs ./scripts/verify-release-guards.ts'],
+    fragments: ['node --import ./scripts/register-ts-path-loader.mjs --experimental-strip-types ./scripts/verify-release-guards.ts'],
   },
   {
     name: 'release',

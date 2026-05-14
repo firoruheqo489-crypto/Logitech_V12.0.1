@@ -8,6 +8,7 @@
  * 本模块不再自行调用 dotenv，避免 ESM hoisting 导致加载顺序问题。
  */
 
+import './env.js';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import * as schema from '../shared/schema.js';

@@ -83,7 +83,7 @@ try {
 
   Write-Host "[INFO] Starting isolated local API on port $Port"
   $launcher = Start-Process -FilePath "pnpm.cmd" `
-    -ArgumentList @("exec", "cross-env", "DEV_API=1", "PORT=$Port", "node", "--experimental-strip-types", "--loader", "./scripts/ts-path-loader.mjs", "server/index.ts") `
+    -ArgumentList @("exec", "cross-env", "DEV_API=1", "PORT=$Port", "node", "--import", "./scripts/register-ts-path-loader.mjs", "--experimental-strip-types", "server/index.ts") `
     -WorkingDirectory $projectRoot `
     -RedirectStandardOutput $stdoutPath `
     -RedirectStandardError $stderrPath `
