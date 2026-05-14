@@ -164,12 +164,12 @@ const DASHBOARD_TABS = [
   'product-standard',
   'mold-trial-database',
   'dimension-analysis',
-  'image-stitcher',
   'docx-converter',
   'trial-documents',
   'project-gantt',
   'doe',
   'fmea-analysis',
+  'image-stitcher',
   'boxplot',
   'pareto-analysis',
   'fishbone-diagram',
@@ -252,7 +252,6 @@ export default function DashboardHome() {
     if (typeof window === 'undefined') return null;
     return sessionStorage.getItem('dashboard_active_module') || null;
   });
-  const [standaloneTool, setStandaloneTool] = useState<'image-stitcher' | null>(null);
   const [dbProjects, setDbProjects] = useState<ProjectData[]>([]);
   const [loading, setLoading] = useState(true);
   const [localProjects, setLocalProjects] = useState<ProjectData[]>([]);
@@ -651,14 +650,6 @@ export default function DashboardHome() {
     setActiveTab(tab);
   }, []);
 
-  const openStandaloneImageStitcher = useCallback(() => {
-    setStandaloneTool('image-stitcher');
-  }, []);
-
-  const closeStandaloneTool = useCallback(() => {
-    setStandaloneTool(null);
-  }, []);
-
   const handleOpenAdmin = useCallback(() => {
     if (selectedTab === 'product') {
       setIsProductAdminModalOpen(true);
@@ -764,13 +755,6 @@ export default function DashboardHome() {
               <Button variant="outline" onClick={handleLoadDemo} className="w-full h-12 text-base" disabled={isInitialLoading}>
                 <Sparkles className="w-5 h-5 mr-2" />加载演示数据
               </Button>
-              <Button
-                variant="outline"
-                onClick={openStandaloneImageStitcher}
-                className="mt-3 w-full h-12 text-base"
-              >
-                打开图片拼接
-              </Button>
             </div>
           </div>
         </div>
@@ -793,34 +777,6 @@ export default function DashboardHome() {
     );
   }
 
-  if (!activeModule && standaloneTool === 'image-stitcher') {
-    return (
-      <>
-        <div className="min-h-screen bg-slate-950">
-          <div className="mx-auto w-full max-w-7xl px-4 md:px-8 pt-9 md:pt-11 pb-8">
-            <div className="mt-2 mb-8 flex w-full items-end justify-between gap-4 px-1">
-              <div className="flex flex-col gap-1.5">
-                <h1 className="text-3xl font-extrabold tracking-tight text-white">图片拼接工具</h1>
-                <p className="text-sm font-medium text-slate-400">独立工具入口，可直接上传、拼接、标注并导出图片</p>
-              </div>
-              <button
-                onClick={closeStandaloneTool}
-                className="mb-1 flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-800 px-4 py-2.5 text-slate-300 shadow-sm transition-all hover:bg-slate-700 hover:text-white"
-              >
-                <ArrowLeft className="w-4 h-4" />
-                返回项目大厅
-              </button>
-            </div>
-            <LazyWorkspace>
-              <ImageStitcherWorkspace />
-            </LazyWorkspace>
-          </div>
-        </div>
-        {adminControls}
-      </>
-    );
-  }
-
   // Lobby gate: show the lobby when no module is selected.
   if (!activeModule) {
     if (!hasAnyProjects) {
@@ -830,19 +786,11 @@ export default function DashboardHome() {
     return (
       <>
         <ProjectLobby onSelect={(name) => {
-          setStandaloneTool(null);
           setActiveModule(name);
           setSearchProjectName('');
           setSearchMoldId('');
           setFilterStatus('ALL');
         }} />
-        <button
-          type="button"
-          onClick={openStandaloneImageStitcher}
-          className="fixed bottom-6 right-6 z-30 rounded-full border border-cyan-500/40 bg-slate-900/90 px-5 py-3 text-sm font-medium text-cyan-300 shadow-lg shadow-cyan-950/40 backdrop-blur transition-all hover:border-cyan-400/60 hover:bg-slate-800 hover:text-cyan-200"
-        >
-          图片拼接
-        </button>
         {adminControls}
       </>
     );
