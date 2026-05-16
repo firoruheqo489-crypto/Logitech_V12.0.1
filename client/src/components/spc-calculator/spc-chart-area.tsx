@@ -386,7 +386,10 @@ function ControlChart({
   )
   const [domainMin, domainMax] = getDomain(values, limits.lcl, limits.ucl)
   const yTicks = buildYAxisTicks(domainMin, domainMax)
-  const yAxisDomain = [yTicks[0] ?? domainMin, yTicks[yTicks.length - 1] ?? domainMax] as const
+  const yAxisDomain: [number, number] = [
+    yTicks[0] ?? domainMin,
+    yTicks[yTicks.length - 1] ?? domainMax,
+  ]
   const showPhaseBoundary = phaseOneBoundary > 0 && phaseOneBoundary < data.length
 
   const meta = (
@@ -539,10 +542,10 @@ function AttributesChart({
   const [domainMin, domainMax] = getDomain(values, lower, upper)
   const clampedDomainMin = Math.max(0, domainMin)
   const yTicks = buildYAxisTicks(clampedDomainMin, domainMax)
-  const yAxisDomain = [
+  const yAxisDomain: [number, number] = [
     yTicks[0] ?? clampedDomainMin,
     yTicks[yTicks.length - 1] ?? domainMax,
-  ] as const
+  ]
   const showPhaseBoundary = phaseOneBoundary > 0 && phaseOneBoundary < data.length
 
   const meta = (
