@@ -1,27 +1,26 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useCallback, useState } from 'react'
 import type { ChartType, RawDataRow } from '@/lib/spc/spc-types'
 import { processDataPayload } from '@/lib/spc/spc-parser'
-import { 
-  calculateVariablesSPC, 
+import {
   calculateAttributesSPC,
-  type SPCComputedResult,
+  calculateVariablesSPC,
   type AttributesSPCResult,
+  type SPCComputedResult,
   type SpecLimits,
 } from '@/lib/spc/spc-math'
 import { SPCHeader } from './spc-header'
 import { SPCSidebar } from './spc-sidebar'
 import { SPCMainArea } from './spc-main-area'
+import './spc-terminal.css'
 
-// ─── Parse Status Type ───────────────────────────────────────────────────────
 export interface ParseStatus {
   type: 'idle' | 'success' | 'error'
   message?: string
   rowCount?: number
 }
 
-// ─── Spec Inputs (string form for input binding) ─────────────────────────────
 export interface SpecInputs {
   usl: string
   target: string
@@ -29,121 +28,144 @@ export interface SpecInputs {
 }
 
 export function SPCTerminal() {
-  // ─── Input State ─────────────────────────────────────────────────────────────
   const [selectedChart, setSelectedChart] = useState<ChartType>('Xbar-R')
   const [subgroupSize, setSubgroupSize] = useState(5)
   const [phaseOneLimit, setPhaseOneLimit] = useState(0)
   const [rawText, setRawText] = useState('')
-  const [specInputs, setSpecInputs] = useState<SpecInputs>({ usl: '', target: '', lsl: '' })
+  const [specInputs, setSpecInputs] = useState<SpecInputs>({
+    usl: '',
+    target: '',
+    lsl: '',
+  })
 
-  // ─── Parsed Data State ───────────────────────────────────────────────────────
   const [parsedData, setParsedData] = useState<RawDataRow[]>([])
   const [parseStatus, setParseStatus] = useState<ParseStatus>({ type: 'idle' })
-
-  // ─── Computed SPC Results ────────────────────────────────────────────────────
   const [spcResult, setSpcResult] = useState<SPCComputedResult | null>(null)
-  const [attributesResult, setAttributesResult] = useState<AttributesSPCResult | null>(null)
+  const [attributesResult, setAttributesResult] =
+    useState<AttributesSPCResult | null>(null)
 
-  // ─── Parse spec inputs to numeric limits ─────────────────────────────────────
-  const parseSpecLimits = (): SpecLimits => {
-    return {
-      usl: specInputs.usl.trim() !== '' ? parseFloat(specInputs.usl) : null,
-      target: specInputs.target.trim() !== '' ? parseFloat(specInputs.target) : null,
-      lsl: specInputs.lsl.trim() !== '' ? parseFloat(specInputs.lsl) : null,
-    }
-  }
+  const parseSpecLimits = (): SpecLimits => ({
+    usl: specInputs.usl.trim() !== '' ? parseFloat(specInputs.usl) : null,
+    target: specInputs.target.trim() !== '' ? parseFloat(specInputs.target) : null,
+    lsl: specInputs.lsl.trim() !== '' ? parseFloat(specInputs.lsl) : null,
+  })
 
-  // ─── Helper to clear error state ───────────────────────────────────────────
   const clearErrorIfPresent = useCallback(() => {
     if (parseStatus.type === 'error') {
       setParseStatus({ type: 'idle' })
     }
   }, [parseStatus.type])
 
-  // ─── Input Change Handlers (auto-clear error) ────────────────────────────────
-  const handleRawTextChange = useCallback((text: string) => {
-    setRawText(text)
-    clearErrorIfPresent()
-  }, [clearErrorIfPresent])
+  const handleRawTextChange = useCallback(
+    (text: string) => {
+      setRawText(text)
+      clearErrorIfPresent()
+    },
+    [clearErrorIfPresent],
+  )
 
-  const handleSubgroupSizeChange = useCallback((size: number) => {
-    setSubgroupSize(size)
-    clearErrorIfPresent()
-  }, [clearErrorIfPresent])
+  const handleSubgroupSizeChange = useCallback(
+    (size: number) => {
+      setSubgroupSize(size)
+      clearErrorIfPresent()
+    },
+    [clearErrorIfPresent],
+  )
 
-  const handlePhaseOneLimitChange = useCallback((limit: number) => {
-    setPhaseOneLimit(limit)
-    clearErrorIfPresent()
-  }, [clearErrorIfPresent])
+  const handlePhaseOneLimitChange = useCallback(
+    (limit: number) => {
+      setPhaseOneLimit(limit)
+      clearErrorIfPresent()
+    },
+    [clearErrorIfPresent],
+  )
 
-  const handleSpecInputsChange = useCallback((specs: SpecInputs) => {
-    setSpecInputs(specs)
-    clearErrorIfPresent()
-  }, [clearErrorIfPresent])
+  const handleSpecInputsChange = useCallback(
+    (specs: SpecInputs) => {
+      setSpecInputs(specs)
+      clearErrorIfPresent()
+    },
+    [clearErrorIfPresent],
+  )
 
-  // ─── Execute Handler ─────────────────────────────────────────────────────────
   const handleExecute = useCallback(() => {
-    // Clear any previous error before re-running
-    setParseStatus({ type: 'idle' })
-    
-    const result = processDataPayload(rawText, selectedChart, subgroupSize)
+    try {
+      setParseStatus({ type: 'idle' })
 
-    if (result.success) {
-      setParsedData(result.data)
-      setParseStatus({
-        type: 'success',
-        message: `DATA INGESTED: ${result.rowCount} ROWS`,
-        rowCount: result.rowCount,
-      })
+      const result = processDataPayload(rawText, selectedChart, subgroupSize)
 
-      // Route to correct engine based on chart type
-      const isVariablesChart = ['Xbar-R', 'Xbar-s', 'I-MR'].includes(selectedChart)
+      if (result.success) {
+        setParsedData(result.data)
+        setParseStatus({
+          type: 'success',
+          message: `已导入 ${result.rowCount} 行数据`,
+          rowCount: result.rowCount,
+        })
 
-      if (isVariablesChart) {
-        // Calculate Variables SPC metrics with spec limits and Phase I freeze
-        const specLimits = parseSpecLimits()
-        const computed = calculateVariablesSPC(result.data, selectedChart, subgroupSize, specLimits, phaseOneLimit)
-        setSpcResult(computed)
-        setAttributesResult(null)
+        const isVariablesChart = ['Xbar-R', 'Xbar-s', 'I-MR'].includes(selectedChart)
+
+        if (isVariablesChart) {
+          const specLimits = parseSpecLimits()
+          const computed = calculateVariablesSPC(
+            result.data,
+            selectedChart,
+            subgroupSize,
+            specLimits,
+            phaseOneLimit,
+          )
+          setSpcResult(computed)
+          setAttributesResult(null)
+        } else {
+          const computed = calculateAttributesSPC(
+            result.data,
+            selectedChart,
+            subgroupSize,
+            phaseOneLimit,
+          )
+          setAttributesResult(computed)
+          setSpcResult(null)
+        }
       } else {
-        // Calculate Attributes SPC metrics with Phase I freeze
-        const computed = calculateAttributesSPC(result.data, selectedChart, subgroupSize, phaseOneLimit)
-        setAttributesResult(computed)
+        setParsedData([])
         setSpcResult(null)
+        setAttributesResult(null)
+        setParseStatus({
+          type: 'error',
+          message: result.error,
+        })
       }
-    } else {
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '未知执行失败'
       setParsedData([])
       setSpcResult(null)
       setAttributesResult(null)
       setParseStatus({
         type: 'error',
-        message: result.error,
+        message: `执行失败：${message}`,
       })
     }
   }, [rawText, selectedChart, subgroupSize, specInputs, phaseOneLimit])
 
-  // ─── Chart Change Handler (reset parse status) ───────────────────────────────
-  const handleChartChange = useCallback((chart: ChartType) => {
-    setSelectedChart(chart)
-    // Reset status when chart type changes
-    if (parseStatus.type !== 'idle') {
-      setParseStatus({ type: 'idle' })
-      setParsedData([])
-      setSpcResult(null)
-      setAttributesResult(null)
-    }
-  }, [parseStatus.type])
+  const handleChartChange = useCallback(
+    (chart: ChartType) => {
+      setSelectedChart(chart)
+      if (parseStatus.type !== 'idle') {
+        setParseStatus({ type: 'idle' })
+        setParsedData([])
+        setSpcResult(null)
+        setAttributesResult(null)
+      }
+    },
+    [parseStatus.type],
+  )
 
   return (
-    <div className="spc-scanline relative flex min-h-[calc(100vh-16rem)] flex-col overflow-hidden rounded-2xl border border-slate-800 bg-slate-950">
-      {/* Top Header */}
+    <div className="spc-terminal-shell relative flex min-h-[calc(100vh-16rem)] flex-col overflow-hidden rounded-[28px] border border-white/10">
       <SPCHeader activeChart={selectedChart} />
 
-      {/* Main Body Grid */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Left Sidebar — THE FUNNEL */}
         <div className="w-[340px] shrink-0 overflow-y-auto xl:w-[380px]">
-            <SPCSidebar
+          <SPCSidebar
             selectedChart={selectedChart}
             onChartChange={handleChartChange}
             subgroupSize={subgroupSize}
@@ -159,9 +181,8 @@ export function SPCTerminal() {
           />
         </div>
 
-        {/* Right Main Area — THE AUDIT */}
-        <SPCMainArea 
-          activeChart={selectedChart} 
+        <SPCMainArea
+          activeChart={selectedChart}
           parseStatus={parseStatus}
           parsedData={parsedData}
           spcResult={spcResult}
@@ -172,6 +193,5 @@ export function SPCTerminal() {
     </div>
   )
 }
-
 
 export default SPCTerminal

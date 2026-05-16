@@ -13,9 +13,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { AlertTriangle, Crosshair, Database, Ruler, Settings2, Zap } from 'lucide-react'
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Crosshair,
+  Database,
+  Ruler,
+  Settings2,
+  Zap,
+} from 'lucide-react'
 import type { ChartType } from '@/lib/spc/spc-types'
-import { CHART_GROUPS } from '@/lib/spc/spc-types'
 import { getExpectedFormatHint } from '@/lib/spc/spc-parser'
 import type { ParseStatus, SpecInputs } from './spc-terminal'
 
@@ -34,6 +41,43 @@ interface SPCSidebarProps {
   parseStatus: ParseStatus
 }
 
+const VARIABLES_CHARTS = new Set<ChartType>(['Xbar-R', 'Xbar-s', 'I-MR'])
+
+const CHART_SECTIONS: Array<{
+  label: string
+  charts: Array<{ value: ChartType; name: string; description: string }>
+}> = [
+  {
+    label: '计量型图表',
+    charts: [
+      {
+        value: 'Xbar-R',
+        name: 'Xbar-R',
+        description: '子组均值与极差图',
+      },
+      {
+        value: 'Xbar-s',
+        name: 'Xbar-s',
+        description: '子组均值与标准差图',
+      },
+      {
+        value: 'I-MR',
+        name: 'I-MR',
+        description: '单值与移动极差图',
+      },
+    ],
+  },
+  {
+    label: '计数型图表',
+    charts: [
+      { value: 'p', name: 'p', description: '不良率图' },
+      { value: 'np', name: 'np', description: '不良数图' },
+      { value: 'c', name: 'c', description: '缺陷数图' },
+      { value: 'u', name: 'u', description: '单位缺陷数图' },
+    ],
+  },
+]
+
 export function SPCSidebar({
   selectedChart,
   onChartChange,
@@ -49,200 +93,262 @@ export function SPCSidebar({
   parseStatus,
 }: SPCSidebarProps) {
   const formatHint = getExpectedFormatHint(selectedChart, subgroupSize)
-  const isVariablesChart = ['Xbar-R', 'Xbar-s', 'I-MR'].includes(selectedChart)
+  const isVariablesChart = VARIABLES_CHARTS.has(selectedChart)
+  const fieldClassName =
+    'spc-premium-input h-10 rounded-xl px-3 font-mono text-xs text-slate-100 placeholder:text-slate-500'
 
-  // Helper to update spec inputs
   const updateSpec = (key: keyof SpecInputs, value: string) => {
     onSpecInputsChange({ ...specInputs, [key]: value })
   }
 
   return (
-    <aside className="flex flex-col gap-6 border-r border-slate-800 bg-slate-900/60 p-6 backdrop-blur-md">
-      {/* Section Header */}
-      <div className="flex items-center gap-2">
-        <Database className="size-3 text-blue-400/70" />
-        <h2 className="font-mono text-[10px] font-semibold tracking-[0.2em] uppercase text-slate-400">
-          THE FUNNEL
-        </h2>
-        <span className="font-mono text-[9px] text-slate-600">
-          // 数据导入
-        </span>
+    <aside className="spc-sidebar-shell flex h-full flex-col gap-5 border-r border-white/8 p-5 xl:p-6">
+      <div className="flex items-center gap-3">
+        <div className="spc-icon-tile flex size-10 items-center justify-center rounded-2xl">
+          <Database className="size-4 text-cyan-300" />
+        </div>
+        <div>
+          <p className="spc-section-kicker">数据入口</p>
+          <p className="spc-section-note text-xs">
+            用于录入数据与配置SPC图表参数
+          </p>
+        </div>
       </div>
 
-      {/* Data Input Textarea */}
-      <div className="flex flex-col gap-2">
-        <label className="font-mono text-[10px] font-semibold tracking-[0.2em] uppercase text-slate-400">
-          原始工厂数据
+      <section className="spc-card-shell rounded-[22px] p-4">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div>
+            <h2 className="spc-panel-title font-mono text-sm font-semibold tracking-[0.1em]">
+              原始数据
+            </h2>
+            <p className="spc-section-note text-[11px]">
+              粘贴逗号分隔或按行分隔的测量值
+            </p>
+          </div>
+          <span className="rounded-full border border-cyan-400/15 bg-cyan-400/10 px-2.5 py-1 font-mono text-[10px] tracking-[0.16em] text-cyan-300">
+            导入
+          </span>
+        </div>
+
+        <label className="mb-2 block font-mono text-[10px] font-semibold tracking-[0.18em] text-slate-400">
+          数据流
         </label>
         <Textarea
-          placeholder={"粘贴原始数据...\n示例:\n25.1, 25.3, 25.0, 24.9, 25.2\n25.4, 25.1, 25.3, 25.0, 25.2"}
-          className="h-36 resize-none border border-slate-800 bg-slate-900/80 font-mono text-sm text-slate-100 ring-0 transition-all placeholder:text-slate-600 focus-visible:border-blue-500/50 focus-visible:outline-none"
+          placeholder="25.1, 25.3, 25.0, 24.9, 25.2&#10;25.4, 25.1, 25.3, 25.0, 25.2"
+          className={`${fieldClassName} min-h-[170px] resize-none px-3 py-3 leading-6`}
           value={rawText}
-          onChange={(e) => onRawTextChange(e.target.value)}
+          onChange={(event) => onRawTextChange(event.target.value)}
         />
-        {/* Dynamic Format Hint */}
-        <p className="font-mono text-[10px] text-slate-600">
-          {formatHint}
-        </p>
-      </div>
 
-      {/* Chart Router Select */}
-      <div className="flex flex-col gap-2">
-        <label className="flex items-center gap-1.5 font-mono text-[10px] font-semibold tracking-[0.2em] uppercase text-slate-400">
-          <Settings2 className="size-3 text-slate-500" />
-          控制图路由
-        </label>
-        <Select
-          value={selectedChart}
-          onValueChange={(val) => onChartChange(val as ChartType)}
-        >
-          <SelectTrigger className="w-full border border-slate-800 bg-slate-900/80 font-mono text-xs text-slate-100 transition-all focus:border-blue-500/50 focus:outline-none">
-            <SelectValue placeholder="选择控制图类型" />
-          </SelectTrigger>
-          <SelectContent className="border border-slate-800 bg-slate-900/95 backdrop-blur-xl">
-            {CHART_GROUPS.map((group, gi) => (
-              <div key={group.label}>
-                {gi > 0 && <SelectSeparator />}
-                <SelectGroup>
-                  <SelectLabel className="font-mono text-[10px] tracking-[0.2em] uppercase text-slate-600">
-                    {group.label}
-                  </SelectLabel>
-                  {group.charts.map((chart) => (
-                    <SelectItem
-                      key={chart.value}
-                      value={chart.value}
-                      className="font-mono text-xs text-slate-300 focus:bg-slate-800/50 focus:text-white"
-                    >
-                      <span className="font-medium text-slate-100">{chart.name}</span>
-                      <span className="ml-2 text-slate-500">
-                        {chart.description}
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              </div>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      {/* Subgroup Size */}
-      <div className="flex flex-col gap-2">
-        <label className="flex items-center gap-1.5 font-mono text-[10px] font-semibold tracking-[0.2em] uppercase text-slate-400">
-          <Crosshair className="size-3 text-slate-500" />
-          子组大小 (n)
-        </label>
-        <Input
-          type="number"
-          min={1}
-          max={50}
-          value={subgroupSize}
-          onChange={(e) => onSubgroupSizeChange(Number(e.target.value))}
-          className="border border-slate-800 bg-slate-900/80 font-mono text-xs text-slate-100 transition-all focus-visible:border-blue-500/50 focus-visible:outline-none"
-          disabled={selectedChart === 'I-MR'}
-        />
-        {selectedChart === 'I-MR' && (
-          <p className="font-mono text-[10px] text-slate-600">
-            I-MR 控制图固定 n=1
+        <div className="mt-3 rounded-2xl border border-white/6 bg-black/20 px-3 py-2.5">
+          <p className="font-mono text-[10px] font-semibold tracking-[0.18em] text-cyan-300/75">
+            格式要求
           </p>
-        )}
-      </div>
+          <p className="mt-1 whitespace-pre-wrap font-mono text-[11px] leading-5 text-slate-400">
+            {formatHint}
+          </p>
+        </div>
+      </section>
 
-      {/* Specification Limits (Variables charts only) */}
+      <section className="spc-card-shell rounded-[22px] p-4">
+        <div className="mb-4">
+          <h2 className="spc-panel-title font-mono text-sm font-semibold tracking-[0.1em]">
+            图表配置
+          </h2>
+          <p className="spc-section-note text-[11px]">
+            选择图表类型并设置基线参数
+          </p>
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <label className="mb-2 flex items-center gap-2 font-mono text-[10px] font-semibold tracking-[0.18em] text-slate-400">
+              <Settings2 className="size-3 text-cyan-300/80" />
+              图表类型
+            </label>
+            <Select
+              value={selectedChart}
+              onValueChange={(value) => onChartChange(value as ChartType)}
+            >
+              <SelectTrigger className={`${fieldClassName} w-full justify-between`}>
+                <SelectValue placeholder="请选择图表类型" />
+              </SelectTrigger>
+              <SelectContent className="spc-select-panel rounded-2xl p-1">
+                {CHART_SECTIONS.map((section, index) => (
+                  <div key={section.label}>
+                    {index > 0 && <SelectSeparator className="bg-white/8" />}
+                    <SelectGroup>
+                      <SelectLabel className="font-mono text-[10px] tracking-[0.18em] text-slate-500">
+                        {section.label}
+                      </SelectLabel>
+                      {section.charts.map((chart) => (
+                        <SelectItem
+                          key={chart.value}
+                          value={chart.value}
+                          className="rounded-xl font-mono text-xs text-slate-300 focus:bg-cyan-400/10 focus:text-white"
+                        >
+                          <div className="flex flex-col py-0.5">
+                            <span className="text-slate-100">{chart.name}</span>
+                            <span className="text-[10px] text-slate-500">
+                              {chart.description}
+                            </span>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </div>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div>
+            <label className="mb-2 flex items-center gap-2 font-mono text-[10px] font-semibold tracking-[0.18em] text-slate-400">
+              <Crosshair className="size-3 text-cyan-300/80" />
+              子组大小
+            </label>
+            <Input
+              type="number"
+              min={1}
+              max={50}
+              value={subgroupSize}
+              onChange={(event) => onSubgroupSizeChange(Number(event.target.value))}
+              className={fieldClassName}
+              disabled={selectedChart === 'I-MR'}
+            />
+            <p className="mt-2 font-mono text-[10px] text-slate-500">
+              {selectedChart === 'I-MR'
+                ? '单值图固定为 n=1'
+                : '请填写实际抽样计划中的子组数量'}
+            </p>
+          </div>
+        </div>
+      </section>
+
       {isVariablesChart && (
-        <div className="flex flex-col gap-2">
-          <label className="flex items-center gap-1.5 font-mono text-[10px] font-semibold tracking-[0.2em] uppercase text-slate-400">
-            <Ruler className="size-3 text-slate-500" />
-            规格限 (Cp/Cpk 计算)
+        <section className="spc-card-shell rounded-[22px] p-4">
+          <div className="mb-4">
+            <h2 className="spc-panel-title font-mono text-sm font-semibold tracking-[0.1em]">
+              规格界限
+            </h2>
+            <p className="spc-section-note text-[11px]">
+              解析完成后用于能力指数计算
+            </p>
+          </div>
+
+          <label className="mb-2 flex items-center gap-2 font-mono text-[10px] font-semibold tracking-[0.18em] text-slate-400">
+            <Ruler className="size-3 text-cyan-300/80" />
+            能力窗口
           </label>
           <div className="grid grid-cols-3 gap-2">
-            <div className="flex flex-col gap-1">
-              <span className="font-mono text-[8px] text-slate-500">USL</span>
+            <div>
+              <span className="mb-1 block font-mono text-[10px] tracking-[0.18em] text-slate-500">
+                USL 上限
+              </span>
               <Input
                 type="number"
                 step="any"
                 placeholder="上限"
                 value={specInputs.usl}
-                onChange={(e) => updateSpec('usl', e.target.value)}
-                className="border border-slate-800 bg-slate-900/80 font-mono text-xs text-slate-100 transition-all focus-visible:border-blue-500/50 focus-visible:outline-none"
+                onChange={(event) => updateSpec('usl', event.target.value)}
+                className={fieldClassName}
               />
             </div>
-            <div className="flex flex-col gap-1">
-              <span className="font-mono text-[8px] text-slate-500">Target</span>
+            <div>
+              <span className="mb-1 block font-mono text-[10px] tracking-[0.18em] text-slate-500">
+                目标值
+              </span>
               <Input
                 type="number"
                 step="any"
-                placeholder="目标"
+                placeholder="目标值"
                 value={specInputs.target}
-                onChange={(e) => updateSpec('target', e.target.value)}
-                className="border border-slate-800 bg-slate-900/80 font-mono text-xs text-slate-100 transition-all focus-visible:border-blue-500/50 focus-visible:outline-none"
+                onChange={(event) => updateSpec('target', event.target.value)}
+                className={fieldClassName}
               />
             </div>
-            <div className="flex flex-col gap-1">
-              <span className="font-mono text-[8px] text-slate-500">LSL</span>
+            <div>
+              <span className="mb-1 block font-mono text-[10px] tracking-[0.18em] text-slate-500">
+                LSL 下限
+              </span>
               <Input
                 type="number"
                 step="any"
                 placeholder="下限"
                 value={specInputs.lsl}
-                onChange={(e) => updateSpec('lsl', e.target.value)}
-                className="border border-slate-800 bg-slate-900/80 font-mono text-xs text-slate-100 transition-all focus-visible:border-blue-500/50 focus-visible:outline-none"
+                onChange={(event) => updateSpec('lsl', event.target.value)}
+                className={fieldClassName}
               />
             </div>
           </div>
-          <p className="font-mono text-[10px] text-slate-600">
-            留空 = 不计算过程能力指数
+          <p className="mt-2 font-mono text-[10px] text-slate-500">
+            如果只看控制界限，不做能力分析，这里可以留空
           </p>
-        </div>
+        </section>
       )}
 
-      {/* Phase I Baseline Limit */}
-      <div className="flex flex-col gap-2">
-        <label className="flex items-center gap-1.5 font-mono text-[10px] font-semibold tracking-[0.2em] uppercase text-slate-400">
-          <Zap className="size-3 text-slate-500" />
-          Phase I 基线限值
+      <section className="spc-card-shell rounded-[22px] p-4">
+        <div className="mb-4">
+          <h2 className="spc-panel-title font-mono text-sm font-semibold tracking-[0.1em]">
+            一期冻结
+          </h2>
+          <p className="spc-section-note text-[11px]">
+            需要时将控制界限锁定在初始基线窗口
+          </p>
+        </div>
+
+        <label className="mb-2 flex items-center gap-2 font-mono text-[10px] font-semibold tracking-[0.18em] text-slate-400">
+          <Zap className="size-3 text-cyan-300/80" />
+          基线边界
         </label>
         <Input
           type="number"
           min={0}
           value={phaseOneLimit}
-          onChange={(e) => onPhaseOneLimitChange(Number(e.target.value))}
-          className="border border-slate-800 bg-slate-900/80 font-mono text-xs text-slate-100 transition-all focus-visible:border-blue-500/50 focus-visible:outline-none"
+          onChange={(event) => onPhaseOneLimitChange(Number(event.target.value))}
+          className={fieldClassName}
         />
-        <p className="font-mono text-[10px] text-slate-600">
-          冻结控制限的样本数 (0 = 全部)
+        <p className="mt-2 font-mono text-[10px] text-slate-500">
+          设为 <span className="text-slate-300">0</span> 表示基于全量数据计算
         </p>
-      </div>
+      </section>
 
-      {/* Error Message Block */}
       {parseStatus.type === 'error' && parseStatus.message && (
-        <div className="flex items-start gap-2 rounded-xl border border-red-500/20 bg-red-500/10 p-3">
+        <div className="spc-message-shell spc-message-shell--error flex items-start gap-3 rounded-2xl p-3.5">
           <AlertTriangle className="mt-0.5 size-4 shrink-0 text-red-400" />
-          <p className="font-mono text-xs font-semibold text-red-400">
-            {parseStatus.message}
-          </p>
+          <div>
+            <p className="font-mono text-[10px] font-semibold tracking-[0.18em] text-red-300">
+              解析失败
+            </p>
+            <p className="mt-1 font-mono text-xs leading-5 text-red-100/90">
+              {parseStatus.message}
+            </p>
+          </div>
         </div>
       )}
 
-      {/* Success Message Block */}
       {parseStatus.type === 'success' && parseStatus.message && (
-        <div className="flex items-start gap-2 rounded-xl border border-blue-500/20 bg-blue-500/10 p-3">
-          <Zap className="mt-0.5 size-4 shrink-0 text-blue-400" />
-          <p className="font-mono text-xs font-semibold text-blue-400">
-            {parseStatus.message}
-          </p>
+        <div className="spc-message-shell spc-message-shell--success flex items-start gap-3 rounded-2xl p-3.5">
+          <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-cyan-300" />
+          <div>
+            <p className="font-mono text-[10px] font-semibold tracking-[0.18em] text-cyan-200">
+              数据已接收
+            </p>
+            <p className="mt-1 font-mono text-xs leading-5 text-slate-100">
+              {parseStatus.message}
+            </p>
+          </div>
         </div>
       )}
 
-      {/* Execute Button — Enterprise Blue */}
-      <div className="mt-auto">
+      <div className="mt-auto pt-1">
         <Button
           onClick={onExecute}
-          className="w-full border-none bg-blue-600 font-mono text-sm font-bold tracking-wide text-white transition-all hover:bg-blue-500 hover:shadow-[0_0_20px_rgba(59,130,246,0.4)]"
+          className="spc-execute-button h-12 w-full rounded-2xl font-mono text-sm font-bold tracking-[0.12em]"
           size="lg"
         >
           <Zap className="mr-2 size-4" />
-          PARSE & EXECUTE AUDIT
+          运行SPC计算
         </Button>
       </div>
     </aside>

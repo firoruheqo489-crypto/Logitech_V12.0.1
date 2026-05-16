@@ -20,6 +20,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { createClientId } from "@/lib/create-client-id";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -63,7 +64,7 @@ export function InspectionTable({ items, onUpdate }: InspectionTableProps) {
     }
 
     const newItem: InspectionItem = {
-      id: crypto.randomUUID(),
+      id: createClientId("sip"),
       sequence: items.length + 1,
       inspectionItem: "",
       specification: "",
