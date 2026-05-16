@@ -52,6 +52,7 @@ const ReliabilityDrawerWorkspace = lazy(() => import('./components/ReliabilityDr
 const SpcRadarDrawerWorkspace = lazy(() => import('./components/SpcRadarDrawerWorkspace'));
 const SpcCalculatorDrawerWorkspace = lazy(() => import('./components/SpcCalculatorDrawerWorkspace'));
 const FmeaAnalysisWorkspace = lazy(() => import('./components/FmeaAnalysisWorkspace'));
+const SipWorkspace = lazy(() => import('./components/SipWorkspace'));
 const ProcessVarianceWorkspace = lazy(() => import('./components/ProcessVarianceWorkspace'));
 const MeasurementIntakeWorkspace = lazy(() => import('./components/MeasurementIntakeWorkspace'));
 const ProductDataDrawerWorkspace = lazy(() => import('./components/ProductDataDrawerWorkspace'));
@@ -169,6 +170,7 @@ const DASHBOARD_TABS = [
   'project-gantt',
   'doe',
   'fmea-analysis',
+  'sip',
   'image-stitcher',
   'boxplot',
   'pareto-analysis',
@@ -862,7 +864,7 @@ export default function DashboardHome() {
                   onClick={() => handleTabSelect(tab)}
                   className={`relative flex-shrink-0 whitespace-nowrap pb-4 text-[15px] font-medium transition-all ${isActive ? moduleTheme.text : 'text-slate-500 hover:text-slate-300'}`}
                 >
-                {labels[tab]}
+                {labels[tab] ?? tab.toUpperCase()}
                 {isActive && (
                   <span
                     className={`absolute bottom-[-1px] left-0 h-[2px] w-full ${moduleTheme.bg} ${themeGlow}`}
@@ -1051,6 +1053,12 @@ export default function DashboardHome() {
         {selectedTab === 'fmea-analysis' && (
           <LazyWorkspace>
             <FmeaAnalysisWorkspace />
+          </LazyWorkspace>
+        )}
+
+        {selectedTab === 'sip' && (
+          <LazyWorkspace>
+            <SipWorkspace />
           </LazyWorkspace>
         )}
 

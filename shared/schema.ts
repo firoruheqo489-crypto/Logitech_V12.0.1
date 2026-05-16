@@ -319,12 +319,69 @@ export const progressNotes = pgTable(
   ],
 );
 
+export const sipMaster = pgTable(
+  'sip_master',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    partNo: varchar('part_no', { length: 255 }).notNull(),
+    partName: text('part_name'),
+    version: varchar('version', { length: 32 }).default('V1.0').notNull(),
+    status: text('status').default('草稿').notNull(),
+    effectiveDate: date('effective_date'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (table) => [
+    index('sip_master_part_no_idx').on(table.partNo),
+    index('sip_master_status_idx').on(table.status),
+    index('sip_master_updated_at_idx').on(table.updatedAt),
+  ],
+);
+
+export const sipDetails = pgTable(
+  'sip_details',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    sipId: uuid('sip_id')
+      .references(() => sipMaster.id, { onDelete: 'cascade' })
+      .notNull(),
+    stepSeq: integer('step_seq').notNull(),
+    inspectionItem: text('inspection_item'),
+    spec: text('spec'),
+    lsl: text('lsl'),
+    usl: text('usl'),
+    tool: text('tool'),
+    defectLevel: varchar('defect_level', { length: 32 }),
+    aql: varchar('aql', { length: 32 }),
+    imageUrl: varchar('image_url', { length: 1024 }),
+  },
+  (table) => [
+    index('sip_details_sip_id_idx').on(table.sipId),
+    index('sip_details_sip_step_seq_idx').on(table.sipId, table.stepSeq),
+  ],
+);
+
+export const sipMasterRelations = relations(sipMaster, ({ many }) => ({
+  details: many(sipDetails),
+}));
+
+export const sipDetailsRelations = relations(sipDetails, ({ one }) => ({
+  master: one(sipMaster, {
+    fields: [sipDetails.sipId],
+    references: [sipMaster.id],
+  }),
+}));
+
 export type ProgressNote = typeof progressNotes.$inferSelect;
 export type NewProgressNote = typeof progressNotes.$inferInsert;
 
 
 export type DashboardProject = typeof dashboardProjects.$inferSelect;
 export type NewDashboardProject = typeof dashboardProjects.$inferInsert;
+export type SipMaster = typeof sipMaster.$inferSelect;
+export type NewSipMaster = typeof sipMaster.$inferInsert;
+export type SipDetail = typeof sipDetails.$inferSelect;
+export type NewSipDetail = typeof sipDetails.$inferInsert;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Type Exports — 供前端和引擎使用
