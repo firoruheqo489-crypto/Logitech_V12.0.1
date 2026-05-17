@@ -1,5 +1,6 @@
 export type FmeaStatus = "pending" | "testing" | "closed"
 export type FmeaClass = "CC" | "SC" | "STD"
+export type FmeaRiskBand = "critical" | "warning" | "safe"
 export type FmeaBomIcon =
   | "root"
   | "driver"
@@ -25,6 +26,7 @@ export type FmeaBomIcon =
 
 export interface FmeaRow {
   id: string
+  systemId: string
   process: string
   mode: string
   effect: string
@@ -64,7 +66,9 @@ type SeverityRule = {
   pattern: RegExp
 }
 
-type SeedRow = Omit<FmeaRow, "rpn">
+type SeedRow = Omit<FmeaRow, "rpn" | "systemId"> & {
+  systemId?: string
+}
 
 export const defaultBomNodeId = "lighting-root"
 
@@ -271,6 +275,27 @@ export const bomProcessMapping: Record<string, string[]> = {
   "mechanical-vent": ["防水透气阀与压差"],
   "mechanical-drop": ["结构固定与跌落"],
 }
+
+const CORE_SYSTEM_NODE_IDS = [
+  "driver-electrical",
+  "thermal-management",
+  "optical-system",
+  "mechanical-enclosure",
+] as const
+
+const PROCESS_TO_SYSTEM_ID = Object.entries(bomProcessMapping).reduce<
+  Record<string, string>
+>((accumulator, [nodeId, processes]) => {
+  if (!CORE_SYSTEM_NODE_IDS.includes(nodeId as (typeof CORE_SYSTEM_NODE_IDS)[number])) {
+    return accumulator
+  }
+
+  for (const process of processes) {
+    accumulator[process] = nodeId
+  }
+
+  return accumulator
+}, {})
 
 const SEVERITY_LOCK_RULES: SeverityRule[] = [
   {
@@ -585,6 +610,22 @@ export function calculateRpn(sev: number, occ: number, det: number): number {
   return sev * occ * det
 }
 
+export function isCriticalFmeaRisk(sev: number, rpn: number): boolean {
+  return sev >= 9 || rpn >= 100
+}
+
+export function getFmeaRiskBand(sev: number, rpn: number): FmeaRiskBand {
+  if (isCriticalFmeaRisk(sev, rpn)) {
+    return "critical"
+  }
+
+  if (rpn >= 60) {
+    return "warning"
+  }
+
+  return "safe"
+}
+
 export function clampScore(value: unknown): number {
   const numeric = Number(value)
   if (!Number.isFinite(numeric)) {
@@ -616,6 +657,10 @@ export function normalizeStatus(value: unknown): FmeaStatus {
   if (normalized === "testing") return "testing"
   if (normalized === "closed") return "closed"
   return "pending"
+}
+
+export function inferSystemIdFromProcess(process: string): string {
+  return PROCESS_TO_SYSTEM_ID[process] ?? defaultBomNodeId
 }
 
 export function getSeverityLockMeta(effect: string): SeverityLockMeta | null {
@@ -651,6 +696,7 @@ export function finalizeFmeaRow(row: FmeaRow): FmeaRow {
 
   return {
     ...row,
+    systemId: row.systemId || inferSystemIdFromProcess(row.process),
     classification: row.classification || "STD",
     sev,
     occ,
@@ -664,6 +710,7 @@ export function finalizeFmeaRow(row: FmeaRow): FmeaRow {
 export function createBlankRow(process: string = ""): FmeaRow {
   return finalizeFmeaRow({
     id: `lighting-${Date.now()}`,
+    systemId: inferSystemIdFromProcess(process),
     process,
     mode: "",
     effect: "",
@@ -706,6 +753,7 @@ export function findBomNodeById(
 export const initialFmeaData: FmeaRow[] = seedRows.map((row) =>
   finalizeFmeaRow({
     ...row,
+    systemId: row.systemId || inferSystemIdFromProcess(row.process),
     rpn: 0,
   })
 )

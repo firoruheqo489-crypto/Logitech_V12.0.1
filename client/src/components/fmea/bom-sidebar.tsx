@@ -84,8 +84,8 @@ function TreeItem({
         }}
         className={`group flex w-full items-start gap-2 py-2 pr-3 text-left transition-colors ${
           isActive
-            ? "bg-cyan-500/10 text-cyan-300"
-            : "text-zinc-400 hover:bg-white/5 hover:text-cyan-200"
+            ? "border-l-2 border-blue-500 bg-blue-900/30 text-blue-400"
+            : "border-l-2 border-transparent text-zinc-400 hover:bg-white/5 hover:text-cyan-200"
         }`}
         style={{ paddingLeft: `${depth * 16 + 12}px` }}
       >

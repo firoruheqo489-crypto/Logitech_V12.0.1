@@ -16,7 +16,7 @@ export function StatusBar({ totalRows, filteredRows, pendingCount }: StatusBarPr
   })
 
   return (
-    <footer className="flex h-7 shrink-0 items-center justify-between border-t border-white/5 bg-zinc-950/85 px-4 text-[10px] text-zinc-600">
+    <footer className="flex h-6 shrink-0 items-center justify-between border-t border-white/5 bg-zinc-950/85 px-4 text-[10px] text-zinc-600">
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-1.5">
           <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 shadow-[0_0_4px_rgba(16,185,129,0.55)]" />
