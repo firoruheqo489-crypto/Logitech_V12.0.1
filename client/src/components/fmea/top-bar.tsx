@@ -38,6 +38,9 @@ interface TopBarProps {
   onPrint: () => void
   onResetControls: () => void
   onCloseDrawer: () => void
+  moduleLabel?: string
+  moduleVersion?: string
+  searchPlaceholder?: string
 }
 
 const riskFilterLabels: Record<RiskFilter, string> = {
@@ -65,6 +68,9 @@ export function TopBar({
   onPrint,
   onResetControls,
   onCloseDrawer,
+  moduleLabel = "FMEA",
+  moduleVersion = "Lighting v5.0",
+  searchPlaceholder = "搜索失效模式 / 原因 / 责任人",
 }: TopBarProps) {
   const [activePanel, setActivePanel] = useState<"notifications" | "settings" | null>(null)
 
@@ -84,16 +90,16 @@ export function TopBar({
       <div className="flex min-w-0 items-center gap-3">
         <div className="flex items-center gap-2">
           <Shield className="h-4 w-4 text-cyan-500" />
-          <span className="text-sm font-semibold tracking-wide text-zinc-200">FMEA</span>
+          <span className="text-sm font-semibold tracking-wide text-zinc-200">{moduleLabel}</span>
           <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-zinc-600">
-            Lighting v5.0
+            {moduleVersion}
           </span>
         </div>
         <div className="h-5 w-px bg-white/10" />
         <div className="min-w-0">
           <p className="truncate text-xs font-medium text-zinc-300">{contextLabel}</p>
           <p className="truncate text-[10px] tracking-[0.16em] text-zinc-600">
-            责任域: {contextOwner}
+            责任域 {contextOwner}
           </p>
         </div>
       </div>
@@ -113,7 +119,7 @@ export function TopBar({
               type="text"
               value={searchTerm}
               onChange={(event) => onSearchTermChange(event.target.value)}
-              placeholder="搜索失效模式 / 原因 / 责任人"
+              placeholder={searchPlaceholder}
               className="w-52 bg-transparent text-xs text-zinc-200 outline-none placeholder:text-zinc-500"
             />
             <button
@@ -152,7 +158,7 @@ export function TopBar({
         />
         <IconButton
           icon={Filter}
-          label={`筛选: ${riskFilterLabels[riskFilter]}`}
+          label={`筛选 ${riskFilterLabels[riskFilter]}`}
           active={filterActive}
           onClick={onCycleRiskFilter}
         />

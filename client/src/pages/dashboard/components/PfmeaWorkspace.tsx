@@ -3,66 +3,58 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { toast } from "sonner"
 
-import { BomSidebar } from "@/components/fmea/bom-sidebar"
-import { FmeaAuditDrawer } from "@/components/fmea/fmea-audit-drawer"
+import { PfmeaAuditDrawer } from "@/components/pfmea/pfmea-audit-drawer"
 import {
-  FmeaContextHeader,
-  type FmeaHeaderFields,
-} from "@/components/fmea/fmea-context-header"
-import { FmeaDataGrid } from "@/components/fmea/fmea-data-grid"
-import { exportFmeaPdf, printFmeaDocument } from "@/components/fmea/export-fmea-pdf"
+  PfmeaContextHeader,
+  type PfmeaHeaderFields,
+} from "@/components/pfmea/pfmea-context-header"
+import { PfmeaDataGrid } from "@/components/pfmea/pfmea-data-grid"
+import {
+  exportPfmeaPdf,
+  printPfmeaDocument,
+} from "@/components/pfmea/export-pfmea-pdf"
+import { ProcessSidebar } from "@/components/pfmea/process-sidebar"
 import { StatusBar } from "@/components/fmea/status-bar"
 import { TopBar } from "@/components/fmea/top-bar"
 import {
-  bomProcessMapping,
-  createBlankRow,
-  defaultBomNodeId,
-  finalizeFmeaRow,
-  findBomNodeById,
-  getFmeaRiskBand,
-  initialFmeaData,
-  isCriticalFmeaRisk,
-  lightingBomTree,
-  type FmeaRow,
-} from "@/lib/fmea-data"
+  createBlankPfmeaRow,
+  defaultProcessNodeId,
+  finalizePfmeaRow,
+  findPfmeaNodeById,
+  getPfmeaRiskBand,
+  initialPfmeaData,
+  isCriticalPfmeaRisk,
+  pfmeaTree,
+  processNodeMapping,
+  type PfmeaRow,
+} from "@/lib/pfmea-data"
 
 type RiskFilter = "all" | "critical" | "warning" | "safe"
 
-const initialHeaderFields: FmeaHeaderFields = {
+const initialHeaderFields: PfmeaHeaderFields = {
   projectName: "",
   partNumber: "",
   owner: "",
   reviewDate: "",
 }
 
-export default function FmeaAnalysisWorkspace() {
-  const [activeNodeId, setActiveNodeId] = useState(defaultBomNodeId)
-  const [tableData, setTableData] = useState<FmeaRow[]>(initialFmeaData)
-  const [headerFields, setHeaderFields] = useState<FmeaHeaderFields>(initialHeaderFields)
+export default function PfmeaWorkspace() {
+  const [activeNodeId, setActiveNodeId] = useState(defaultProcessNodeId)
+  const [tableData, setTableData] = useState<PfmeaRow[]>(initialPfmeaData)
+  const [headerFields, setHeaderFields] = useState<PfmeaHeaderFields>(initialHeaderFields)
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState("")
   const [riskFilter, setRiskFilter] = useState<RiskFilter>("all")
   const [searchVisible, setSearchVisible] = useState(false)
-  const [visibleRows, setVisibleRows] = useState<FmeaRow[]>([])
+  const [visibleRows, setVisibleRows] = useState<PfmeaRow[]>([])
 
   const scopedData = useMemo(() => {
-    if (activeNodeId === defaultBomNodeId) {
+    if (activeNodeId === defaultProcessNodeId) {
       return tableData
     }
 
-    const coreSystemNodeIds = new Set([
-      "driver-electrical",
-      "thermal-management",
-      "optical-system",
-      "mechanical-enclosure",
-    ])
-
-    if (coreSystemNodeIds.has(activeNodeId)) {
-      return tableData.filter((row) => row.systemId === activeNodeId)
-    }
-
-    const processes = bomProcessMapping[activeNodeId] ?? []
-    return tableData.filter((row) => processes.includes(row.process))
+    const opCodes = processNodeMapping[activeNodeId] ?? []
+    return tableData.filter((row) => opCodes.includes(row.opCode))
   }, [activeNodeId, tableData])
 
   const filteredData = useMemo(() => {
@@ -73,10 +65,10 @@ export default function FmeaAnalysisWorkspace() {
         riskFilter === "all"
           ? true
           : riskFilter === "critical"
-            ? isCriticalFmeaRisk(row.sev, row.rpn)
+            ? isCriticalPfmeaRisk(row.sev, row.rpn)
             : riskFilter === "warning"
-              ? getFmeaRiskBand(row.sev, row.rpn) === "warning"
-              : getFmeaRiskBand(row.sev, row.rpn) === "safe"
+              ? getPfmeaRiskBand(row.sev, row.rpn) === "warning"
+              : getPfmeaRiskBand(row.sev, row.rpn) === "safe"
 
       if (!riskMatch) {
         return false
@@ -87,8 +79,9 @@ export default function FmeaAnalysisWorkspace() {
       }
 
       const corpus = [
+        row.opCode,
         row.process,
-        row.mode,
+        row.requirement,
         row.effect,
         row.cause,
         row.pc,
@@ -121,27 +114,26 @@ export default function FmeaAnalysisWorkspace() {
   }, [searchTerm, searchVisible])
 
   const selectedNode = useMemo(
-    () => findBomNodeById(lightingBomTree, activeNodeId) ?? lightingBomTree[0],
+    () => findPfmeaNodeById(pfmeaTree, activeNodeId) ?? pfmeaTree[0],
     [activeNodeId]
   )
 
   const stats = useMemo(() => {
     const total = filteredData.length
-    const high = filteredData.filter((row) => isCriticalFmeaRisk(row.sev, row.rpn)).length
+    const high = filteredData.filter((row) => isCriticalPfmeaRisk(row.sev, row.rpn)).length
     const medium = filteredData.filter(
-      (row) => getFmeaRiskBand(row.sev, row.rpn) === "warning"
+      (row) => getPfmeaRiskBand(row.sev, row.rpn) === "warning"
     ).length
     const low = filteredData.filter(
-      (row) => getFmeaRiskBand(row.sev, row.rpn) === "safe"
+      (row) => getPfmeaRiskBand(row.sev, row.rpn) === "safe"
     ).length
     return { total, high, medium, low }
   }, [filteredData])
 
   const handleAddRow = useCallback(() => {
-    const processes = bomProcessMapping[activeNodeId] ?? []
-    const defaultProcess =
-      activeNodeId === defaultBomNodeId ? "" : (processes[0] ?? "")
-    const nextRow = createBlankRow(defaultProcess)
+    const opCodes = processNodeMapping[activeNodeId] ?? []
+    const defaultOpCode = activeNodeId === defaultProcessNodeId ? "" : opCodes[0] ?? ""
+    const nextRow = createBlankPfmeaRow(defaultOpCode)
 
     setTableData((prev) => [nextRow, ...prev])
     setSelectedRowId(nextRow.id)
@@ -150,13 +142,13 @@ export default function FmeaAnalysisWorkspace() {
   const handleUpdateRow = useCallback(
     (
       id: string,
-      field: keyof FmeaRow,
-      value: string | number | string[]
+      field: keyof PfmeaRow,
+      value: string | number
     ) => {
       setTableData((prev) =>
         prev.map((row) =>
           row.id === id
-            ? finalizeFmeaRow({ ...row, [field]: value } as FmeaRow)
+            ? finalizePfmeaRow({ ...row, [field]: value } as PfmeaRow)
             : row
         )
       )
@@ -178,14 +170,14 @@ export default function FmeaAnalysisWorkspace() {
     const exportRows = visibleRows.length > 0 ? visibleRows : filteredData
 
     if (exportRows.length === 0) {
-      toast.error("当前没有可导出的 FMEA 数据")
+      toast.error("当前没有可导出的 PFMEA 数据")
       return
     }
 
     try {
-      await exportFmeaPdf({
+      await exportPfmeaPdf({
         rows: exportRows,
-        contextLabel: selectedNode?.label ?? "DFMEA Analysis",
+        contextLabel: selectedNode?.label ?? "PFMEA Analysis",
         contextOwner: selectedNode?.owner ?? "-",
         activeNodeId,
         headerFields,
@@ -213,14 +205,14 @@ export default function FmeaAnalysisWorkspace() {
     const printRows = visibleRows.length > 0 ? visibleRows : filteredData
 
     if (printRows.length === 0) {
-      toast.error("当前没有可打印的 FMEA 数据")
+      toast.error("当前没有可打印的 PFMEA 数据")
       return
     }
 
     try {
-      printFmeaDocument({
+      printPfmeaDocument({
         rows: printRows,
-        contextLabel: selectedNode?.label ?? "DFMEA Analysis",
+        contextLabel: selectedNode?.label ?? "PFMEA Analysis",
         contextOwner: selectedNode?.owner ?? "-",
         activeNodeId,
         headerFields,
@@ -240,13 +232,13 @@ export default function FmeaAnalysisWorkspace() {
   const criticalOpenCount = useMemo(
     () =>
       tableData.filter(
-        (row) => row.status === "pending" && isCriticalFmeaRisk(row.sev, row.rpn)
+        (row) => row.status === "pending" && isCriticalPfmeaRisk(row.sev, row.rpn)
       ).length,
     [tableData]
   )
 
   const handleHeaderFieldChange = useCallback(
-    (field: keyof FmeaHeaderFields, value: string) => {
+    (field: keyof PfmeaHeaderFields, value: string) => {
       setHeaderFields((current) => ({ ...current, [field]: value }))
     },
     []
@@ -256,8 +248,8 @@ export default function FmeaAnalysisWorkspace() {
     <div className="flex h-[calc(100vh-210px)] min-h-[780px] max-h-[calc(100vh-120px)] flex-col overflow-hidden rounded-lg border border-white/10 bg-zinc-950 shadow-[0_18px_60px_rgba(0,0,0,0.36)]">
       <TopBar
         stats={stats}
-        contextLabel={selectedNode?.label ?? "Lighting DFMEA"}
-        contextOwner={selectedNode?.owner ?? "系统负责人"}
+        contextLabel={selectedNode?.label ?? "Manufacturing PFMEA"}
+        contextOwner={selectedNode?.owner ?? "PE / ME / QE"}
         isSearchOpen={searchVisible}
         searchTerm={searchTerm}
         riskFilter={riskFilter}
@@ -272,28 +264,29 @@ export default function FmeaAnalysisWorkspace() {
         onPrint={handlePrint}
         onResetControls={handleResetControls}
         onCloseDrawer={() => setSelectedRowId(null)}
-        moduleLabel="DFMEA"
-        moduleVersion="Design v5.0"
+        moduleLabel="PFMEA"
+        moduleVersion="Process v1.0"
+        searchPlaceholder="搜索工序 / 原因 / 责任人"
       />
-      <FmeaContextHeader fields={headerFields} onChange={handleHeaderFieldChange} />
+      <PfmeaContextHeader fields={headerFields} onChange={handleHeaderFieldChange} />
       <div className="flex flex-1 overflow-hidden">
-        <BomSidebar
+        <ProcessSidebar
           activeNodeId={activeNodeId}
           onSelectNode={setActiveNodeId}
-          totalParts={tableData.length}
+          totalRows={tableData.length}
           highRiskCount={
-            tableData.filter((row) => isCriticalFmeaRisk(row.sev, row.rpn)).length
+            tableData.filter((row) => isCriticalPfmeaRisk(row.sev, row.rpn)).length
           }
         />
         <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
-          <FmeaDataGrid
+          <PfmeaDataGrid
             data={filteredData}
             selectedRowId={selectedRowId}
             onSelectRow={setSelectedRowId}
             onVisibleRowsChange={setVisibleRows}
             onUpdateRow={handleUpdateRow}
           />
-          <FmeaAuditDrawer
+          <PfmeaAuditDrawer
             row={selectedRow}
             onClose={() => setSelectedRowId(null)}
             onDeleteRow={handleDeleteRow}

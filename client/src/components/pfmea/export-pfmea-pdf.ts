@@ -1,12 +1,12 @@
-import type { FmeaHeaderFields } from "@/components/fmea/fmea-context-header"
-import { getFmeaRiskBand, isCriticalFmeaRisk, type FmeaRow } from "@/lib/fmea-data"
+import type { PfmeaHeaderFields } from "@/components/pfmea/pfmea-context-header"
+import { getPfmeaRiskBand, isCriticalPfmeaRisk, type PfmeaRow } from "@/lib/pfmea-data"
 
-type ExportFmeaPdfOptions = {
-  rows: FmeaRow[]
+type ExportPfmeaPdfOptions = {
+  rows: PfmeaRow[]
   contextLabel: string
   contextOwner: string
   activeNodeId: string
-  headerFields: FmeaHeaderFields
+  headerFields: PfmeaHeaderFields
 }
 
 type ExportColumn = {
@@ -15,11 +15,11 @@ type ExportColumn = {
   width: number
   align?: "left" | "center"
   wrap?: boolean
-  render: (row: FmeaRow, index: number) => string
+  render: (row: PfmeaRow, index: number) => string
 }
 
 type ExportRowItem = {
-  row: FmeaRow
+  row: PfmeaRow
   index: number
 }
 
@@ -42,19 +42,19 @@ const WRAP_ROW_PADDING_PX = 10
 
 const columns: ExportColumn[] = [
   { id: "seq", label: "#", width: 28, align: "center", render: (_row, index) => String(index + 1) },
-  { id: "process", label: "系统/部件", width: 96, wrap: true, render: (row) => row.process || "-" },
-  { id: "mode", label: "失效模式", width: 102, wrap: true, render: (row) => row.mode || "-" },
-  { id: "effect", label: "失效后果", width: 118, wrap: true, render: (row) => row.effect || "-" },
+  { id: "process", label: "工序步骤", width: 100, wrap: true, render: (row) => row.process || "-" },
+  { id: "requirement", label: "工序要求", width: 126, wrap: true, render: (row) => row.requirement || "-" },
+  { id: "effect", label: "失效影响", width: 114, wrap: true, render: (row) => row.effect || "-" },
   { id: "sev", label: "S", width: 24, align: "center", render: (row) => String(row.sev) },
-  { id: "cause", label: "失效原因", width: 120, wrap: true, render: (row) => row.cause || "-" },
-  { id: "pc", label: "预防控制", width: 124, wrap: true, render: (row) => row.pc || "-" },
+  { id: "cause", label: "根本原因", width: 122, wrap: true, render: (row) => row.cause || "-" },
   { id: "occ", label: "O", width: 24, align: "center", render: (row) => String(row.occ) },
-  { id: "dc", label: "探测控制", width: 124, wrap: true, render: (row) => row.dc || "-" },
+  { id: "pc", label: "预防控制", width: 118, wrap: true, render: (row) => row.pc || "-" },
+  { id: "dc", label: "探测控制", width: 118, wrap: true, render: (row) => row.dc || "-" },
   { id: "det", label: "D", width: 24, align: "center", render: (row) => String(row.det) },
   { id: "rpn", label: "RPN", width: 40, align: "center", render: (row) => String(row.rpn) },
-  { id: "action", label: "建议措施", width: 130, wrap: true, render: (row) => row.action || "-" },
-  { id: "ownerGate", label: "责任人", width: 62, wrap: true, render: (row) => row.ownerGate || "-" },
-  { id: "status", label: "状态", width: 58, align: "center", render: (row) => getStatusLabel(row.status) },
+  { id: "action", label: "建议措施", width: 122, wrap: true, render: (row) => row.action || "-" },
+  { id: "ownerGate", label: "责任人", width: 56, wrap: true, render: (row) => row.ownerGate || "-" },
+  { id: "status", label: "状态", width: 52, align: "center", render: (row) => getStatusLabel(row.status) },
 ]
 
 function escapeHtml(value: string) {
@@ -70,24 +70,24 @@ function normalizeText(value: string) {
   return value.replace(/\s+/g, " ").trim()
 }
 
-function getStatusLabel(status: FmeaRow["status"]) {
+function getStatusLabel(status: PfmeaRow["status"]) {
   if (status === "closed") return "已闭环"
   if (status === "testing") return "验证中"
   return "待处理"
 }
 
-function getStatusClass(status: FmeaRow["status"]) {
+function getStatusClass(status: PfmeaRow["status"]) {
   if (status === "closed") return "status-text status-text-closed"
   if (status === "testing") return "status-text status-text-testing"
   return "status-text status-text-pending"
 }
 
-function getRpnCellClass(row: FmeaRow) {
-  if (isCriticalFmeaRisk(row.sev, row.rpn)) {
+function getRpnCellClass(row: PfmeaRow) {
+  if (isCriticalPfmeaRisk(row.sev, row.rpn)) {
     return "rpn-critical"
   }
 
-  if (getFmeaRiskBand(row.sev, row.rpn) === "warning") {
+  if (getPfmeaRiskBand(row.sev, row.rpn) === "warning") {
     return "rpn-warning"
   }
 
@@ -104,7 +104,7 @@ function estimateWrappedLineCount(column: ExportColumn, value: string) {
   return Math.max(1, Math.ceil(Array.from(normalized).length / charsPerLine))
 }
 
-function estimateRowHeight(row: FmeaRow, index: number) {
+function estimateRowHeight(row: PfmeaRow, index: number) {
   const maxLines = columns.reduce((highest, column) => {
     const rendered = column.render(row, index)
     return Math.max(highest, estimateWrappedLineCount(column, rendered))
@@ -113,7 +113,7 @@ function estimateRowHeight(row: FmeaRow, index: number) {
   return Math.max(BASE_ROW_HEIGHT_PX, maxLines * WRAP_LINE_HEIGHT_PX + WRAP_ROW_PADDING_PX)
 }
 
-function splitRowsIntoPages(rows: FmeaRow[]) {
+function splitRowsIntoPages(rows: PfmeaRow[]) {
   const pages: ExportRowItem[][] = []
   let currentPage: ExportRowItem[] = []
   let currentHeight = 0
@@ -138,12 +138,12 @@ function splitRowsIntoPages(rows: FmeaRow[]) {
   return pages.length > 0 ? pages : [[]]
 }
 
-function buildHeaderFieldsMarkup(headerFields: FmeaHeaderFields) {
+function buildHeaderFieldsMarkup(headerFields: PfmeaHeaderFields) {
   const items: Array<{ label: string; value: string }> = [
-    { label: "产品名称", value: headerFields.projectName || "" },
-    { label: "规格型号", value: headerFields.partNumber || "" },
-    { label: "产品料号", value: headerFields.owner || "" },
-    { label: "文件编号", value: headerFields.reviewDate || "" },
+    { label: "项目名称", value: headerFields.projectName || "" },
+    { label: "产品/机种", value: headerFields.partNumber || "" },
+    { label: "责任部门", value: headerFields.owner || "" },
+    { label: "评审日期", value: headerFields.reviewDate || "" },
   ]
 
   return items
@@ -165,7 +165,7 @@ function buildPageMarkup(
   contextLabel: string,
   contextOwner: string,
   totalRows: number,
-  headerFields: FmeaHeaderFields
+  headerFields: PfmeaHeaderFields
 ) {
   const colGroup = columns.map((column) => `<col style="width:${column.width}px" />`).join("")
 
@@ -196,7 +196,7 @@ function buildPageMarkup(
         })
         .join("")
 
-      const rowTone = isCriticalFmeaRisk(row.sev, row.rpn) ? "critical-row" : ""
+      const rowTone = isCriticalPfmeaRisk(row.sev, row.rpn) ? "critical-row" : ""
       return `<tr class="${rowTone}">${cells}</tr>`
     })
     .join("")
@@ -210,8 +210,8 @@ function buildPageMarkup(
     <div class="fmea-pdf-page">
       <div class="fmea-page-header">
         <div class="fmea-title-block">
-          <div class="fmea-title">DFMEA REPORT</div>
-          <div class="fmea-subtitle">${escapeHtml(contextLabel || "DFMEA Analysis")}</div>
+          <div class="fmea-title">PFMEA REPORT</div>
+          <div class="fmea-subtitle">${escapeHtml(contextLabel || "PFMEA Analysis")}</div>
         </div>
         <div class="fmea-meta">
           <div><span>责任节点</span><strong>${escapeHtml(contextOwner || "-")}</strong></div>
@@ -234,10 +234,10 @@ function buildPageMarkup(
 }
 
 function buildExportHost(
-  rows: FmeaRow[],
+  rows: PfmeaRow[],
   contextLabel: string,
   contextOwner: string,
-  headerFields: FmeaHeaderFields
+  headerFields: PfmeaHeaderFields
 ) {
   const pages = splitRowsIntoPages(rows)
 
@@ -466,30 +466,25 @@ function buildExportHost(
 
 function buildFileName(activeNodeId: string) {
   const date = new Date().toISOString().slice(0, 10)
-  return `fmea-${activeNodeId}-${date}.pdf`
+  return `pfmea-${activeNodeId}-${date}.pdf`
 }
 
-export async function exportFmeaPdf({
+export async function exportPfmeaPdf({
   rows,
   contextLabel,
   contextOwner,
   activeNodeId,
   headerFields,
-}: ExportFmeaPdfOptions) {
+}: ExportPfmeaPdfOptions) {
   if (rows.length === 0) {
-    throw new Error("当前没有可导出的 FMEA 数据")
+    throw new Error("当前没有可导出的 PFMEA 数据")
   }
 
   const { default: html2canvas } = await import("html2canvas")
   const jspdfModule = await import("jspdf")
   const jsPDF = jspdfModule.jsPDF || jspdfModule.default
 
-  const { host, pageCount } = buildExportHost(
-    rows,
-    contextLabel,
-    contextOwner,
-    headerFields
-  )
+  const { host, pageCount } = buildExportHost(rows, contextLabel, contextOwner, headerFields)
   document.body.appendChild(host)
 
   try {
@@ -530,7 +525,7 @@ export async function exportFmeaPdf({
         PAGE_MARGIN_MM,
         CONTENT_WIDTH_MM,
         CONTENT_HEIGHT_MM,
-        `fmea-page-${index + 1}-of-${pageCount}`,
+        `pfmea-page-${index + 1}-of-${pageCount}`,
         "FAST"
       )
     }
@@ -541,15 +536,15 @@ export async function exportFmeaPdf({
   }
 }
 
-export function printFmeaDocument({
+export function printPfmeaDocument({
   rows,
   contextLabel,
   contextOwner,
   activeNodeId: _activeNodeId,
   headerFields,
-}: ExportFmeaPdfOptions) {
+}: ExportPfmeaPdfOptions) {
   if (rows.length === 0) {
-    throw new Error("当前没有可打印的 FMEA 数据")
+    throw new Error("当前没有可打印的 PFMEA 数据")
   }
 
   const { host } = buildExportHost(rows, contextLabel, contextOwner, headerFields)
@@ -563,7 +558,7 @@ export function printFmeaDocument({
       <html lang="zh-CN">
         <head>
           <meta charset="utf-8" />
-          <title>DFMEA Print Preview</title>
+          <title>PFMEA Print Preview</title>
           ${embeddedStyle}
           <style>
             @page {
@@ -688,7 +683,7 @@ export function printFmeaDocument({
         <body>
           <div class="preview-toolbar">
             <div>
-              <div class="preview-toolbar__title">DFMEA 打印预览</div>
+              <div class="preview-toolbar__title">PFMEA 打印预览</div>
               <div class="preview-toolbar__meta">先检查版式与分页，确认后再点击打印</div>
             </div>
             <div class="preview-toolbar__actions">

@@ -52,6 +52,7 @@ const ReliabilityDrawerWorkspace = lazy(() => import('./components/ReliabilityDr
 const SpcRadarDrawerWorkspace = lazy(() => import('./components/SpcRadarDrawerWorkspace'));
 const SpcCalculatorDrawerWorkspace = lazy(() => import('./components/SpcCalculatorDrawerWorkspace'));
 const FmeaAnalysisWorkspace = lazy(() => import('./components/FmeaAnalysisWorkspace'));
+const PfmeaWorkspace = lazy(() => import('./components/PfmeaWorkspace'));
 const SipWorkspace = lazy(() => import('./components/SipWorkspace'));
 const ProcessVarianceWorkspace = lazy(() => import('./components/ProcessVarianceWorkspace'));
 const MeasurementIntakeWorkspace = lazy(() => import('./components/MeasurementIntakeWorkspace'));
@@ -170,6 +171,7 @@ const DASHBOARD_TABS = [
   'project-gantt',
   'doe',
   'fmea-analysis',
+  'pfmea',
   'sip',
   'image-stitcher',
   'boxplot',
@@ -844,7 +846,8 @@ export default function DashboardHome() {
               'trial-documents': '每日试验档',
               'project-gantt': '项目甘特图',
               'doe': 'DOE实验设计',
-              'fmea-analysis': 'FMEA分析',
+              'fmea-analysis': 'DFMEA',
+              'pfmea': 'PFMEA',
               'boxplot': '箱线图',
               'mold-reliability': '模具可靠性',
               'measurement-intake': '测量检入表',
@@ -1053,6 +1056,12 @@ export default function DashboardHome() {
         {selectedTab === 'fmea-analysis' && (
           <LazyWorkspace>
             <FmeaAnalysisWorkspace />
+          </LazyWorkspace>
+        )}
+
+        {selectedTab === 'pfmea' && (
+          <LazyWorkspace>
+            <PfmeaWorkspace />
           </LazyWorkspace>
         )}
 
