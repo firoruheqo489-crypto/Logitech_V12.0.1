@@ -81,6 +81,8 @@ const isDevApiOnly = process.env.DEV_API === "1";
 type DbWarmupTask = { name: string; run: () => Promise<unknown> };
 const MAX_RETRIES = 5;
 const BASE_DELAY = 1000;
+const MAX_WARMUP_CYCLES = 4;
+const WARMUP_RECOVERY_DELAY_MS = 5000;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -133,6 +135,29 @@ function createDbWarmupFailedError(taskName: string, cause: unknown): Error {
   codedError.code = "DB_WARMUP_FAILED";
   codedError.cause = cause;
   return error;
+}
+
+function isRecoverableWarmupFailure(error: unknown): boolean {
+  if (isRetryableWarmupError(error)) {
+    return true;
+  }
+
+  if (error instanceof Error) {
+    const maybeCoded = error as Error & { code?: unknown; cause?: unknown };
+    if (maybeCoded.code === "DB_WARMUP_FAILED") {
+      return true;
+    }
+
+    if ("cause" in maybeCoded) {
+      return isRecoverableWarmupFailure(maybeCoded.cause);
+    }
+  }
+
+  if (error && typeof error === "object" && "cause" in (error as Record<string, unknown>)) {
+    return isRecoverableWarmupFailure((error as { cause?: unknown }).cause);
+  }
+
+  return false;
 }
 
 async function runWithWarmupRetry<T>(taskName: string, run: () => Promise<T>): Promise<T> {
@@ -190,29 +215,51 @@ async function startServer() {
     { name: "issues", run: ensureIssuesTable },
     { name: "reliability", run: ensureReliabilityTables },
   ];
-  const startDbWarmup = () => {
+  const startDbWarmup = (cycle = 1) => {
+    if (cycle === 1) {
+      warmupState.startedAt = new Date().toISOString();
+    }
     warmupState.phase = "running";
-    warmupState.startedAt = new Date().toISOString();
     warmupState.finishedAt = null;
     warmupState.failedTasks = [];
 
     void Promise.allSettled(warmupTasks.map((task) => runWithWarmupRetry(task.name, task.run))).then((results) => {
-      const failedTasks = results
+      const failedTaskEntries = results
         .map((result, index) => {
-          if (result.status !== "rejected") return null;
-          return warmupTasks[index]?.name ?? `task-${index}`;
+          if (result.status !== "rejected") {
+            return null;
+          }
+
+          return {
+            name: warmupTasks[index]?.name ?? `task-${index}`,
+            reason: result.reason,
+          };
         })
-        .filter((name): name is string => Boolean(name));
+        .filter((entry): entry is { name: string; reason: unknown } => Boolean(entry));
+
+      const failedTasks = failedTaskEntries.map((entry) => entry.name);
+      const canRetryBatch =
+        failedTaskEntries.length > 0 &&
+        cycle < MAX_WARMUP_CYCLES &&
+        failedTaskEntries.every((entry) => isRecoverableWarmupFailure(entry.reason));
+
+      failedTaskEntries.forEach((entry) => {
+        console.error(`[db-warmup] ${entry.name} failed during cycle ${cycle}:`, entry.reason);
+      });
+
+      if (canRetryBatch) {
+        console.warn(
+          `[db-warmup] recoverable batch failure in cycle ${cycle}; retrying warmup cycle ${cycle + 1}/${MAX_WARMUP_CYCLES} after ${WARMUP_RECOVERY_DELAY_MS}ms`,
+        );
+        warmupState.phase = "running";
+        warmupState.failedTasks = failedTasks;
+        setTimeout(() => startDbWarmup(cycle + 1), WARMUP_RECOVERY_DELAY_MS);
+        return;
+      }
 
       warmupState.failedTasks = failedTasks;
       warmupState.phase = failedTasks.length > 0 ? "failed" : "ready";
       warmupState.finishedAt = new Date().toISOString();
-
-      results.forEach((result, index) => {
-        if (result.status === "rejected") {
-          console.error(`[db-warmup] ${warmupTasks[index]?.name ?? `task-${index}`} failed:`, result.reason);
-        }
-      });
     });
   };
   const sendFreshSpaHtml = (res: express.Response, staticPath: string) => {
