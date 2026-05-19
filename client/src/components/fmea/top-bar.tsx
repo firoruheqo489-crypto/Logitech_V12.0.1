@@ -3,6 +3,7 @@
 import { useMemo, useState, type ElementType, type ReactNode } from "react"
 import {
   Bell,
+  Cloud,
   Download,
   Filter,
   Plus,
@@ -30,6 +31,7 @@ interface TopBarProps {
   pendingCount: number
   criticalOpenCount: number
   isDrawerOpen: boolean
+  isArchiveOpen?: boolean
   onAddRow: () => void
   onToggleSearch: () => void
   onSearchTermChange: (value: string) => void
@@ -38,9 +40,13 @@ interface TopBarProps {
   onPrint: () => void
   onResetControls: () => void
   onCloseDrawer: () => void
+  onOpenArchive?: () => void
   moduleLabel?: string
   moduleVersion?: string
   searchPlaceholder?: string
+  syncStatusLabel?: string
+  syncStatusTone?: "neutral" | "saving" | "saved" | "error"
+  onRetrySync?: () => void
 }
 
 const riskFilterLabels: Record<RiskFilter, string> = {
@@ -52,14 +58,13 @@ const riskFilterLabels: Record<RiskFilter, string> = {
 
 export function TopBar({
   stats,
-  contextLabel,
-  contextOwner,
   isSearchOpen,
   searchTerm,
   riskFilter,
   pendingCount,
   criticalOpenCount,
   isDrawerOpen,
+  isArchiveOpen = false,
   onAddRow,
   onToggleSearch,
   onSearchTermChange,
@@ -68,9 +73,13 @@ export function TopBar({
   onPrint,
   onResetControls,
   onCloseDrawer,
+  onOpenArchive,
   moduleLabel = "FMEA",
   moduleVersion = "Lighting v5.0",
   searchPlaceholder = "搜索失效模式 / 原因 / 责任人",
+  syncStatusLabel,
+  syncStatusTone = "neutral",
+  onRetrySync,
 }: TopBarProps) {
   const [activePanel, setActivePanel] = useState<"notifications" | "settings" | null>(null)
 
@@ -79,10 +88,10 @@ export function TopBar({
   const notificationItems = useMemo(
     () => [
       { label: "待处理项", value: pendingCount, tone: "text-amber-400" },
-      { label: "高风险待闭环", value: criticalOpenCount, tone: "text-rose-400" },
+      { label: "高风险待关闭", value: criticalOpenCount, tone: "text-rose-400" },
       { label: "当前风险视图", value: riskFilterLabels[riskFilter], tone: "text-cyan-300" },
     ],
-    [criticalOpenCount, pendingCount, riskFilter]
+    [criticalOpenCount, pendingCount, riskFilter],
   )
 
   return (
@@ -95,13 +104,24 @@ export function TopBar({
             {moduleVersion}
           </span>
         </div>
-        <div className="h-5 w-px bg-white/10" />
-        <div className="min-w-0">
-          <p className="truncate text-xs font-medium text-zinc-300">{contextLabel}</p>
-          <p className="truncate text-[10px] tracking-[0.16em] text-zinc-600">
-            责任域 {contextOwner}
-          </p>
-        </div>
+        {syncStatusLabel ? (
+          <button
+            type="button"
+            onClick={syncStatusTone === "error" && onRetrySync ? onRetrySync : undefined}
+            disabled={syncStatusTone !== "error" || !onRetrySync}
+            className={`rounded-full border px-2 py-0.5 text-[9px] uppercase tracking-[0.16em] ${
+              syncStatusTone === "saved"
+                ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-300"
+                : syncStatusTone === "saving"
+                  ? "border-cyan-500/20 bg-cyan-500/10 text-cyan-300"
+                  : syncStatusTone === "error"
+                    ? "border-rose-500/20 bg-rose-500/10 text-rose-300"
+                    : "border-white/10 bg-white/[0.04] text-zinc-400"
+            } ${syncStatusTone === "error" && onRetrySync ? "cursor-pointer hover:bg-rose-500/16" : "cursor-default"}`}
+          >
+            {syncStatusLabel}
+          </button>
+        ) : null}
       </div>
 
       <div className="hidden items-center gap-6 md:flex">
@@ -136,6 +156,21 @@ export function TopBar({
           </div>
         ) : null}
 
+        {onOpenArchive ? (
+          <button
+            type="button"
+            onClick={onOpenArchive}
+            className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${
+              isArchiveOpen
+                ? "border-cyan-400/40 bg-cyan-500/18 text-cyan-100"
+                : "border-white/10 bg-white/[0.03] text-zinc-200 hover:border-cyan-500/25 hover:bg-cyan-500/10 hover:text-cyan-200"
+            }`}
+          >
+            <Cloud className="h-3.5 w-3.5" />
+            云端档案
+          </button>
+        ) : null}
+
         <button
           type="button"
           onClick={onAddRow}
@@ -158,7 +193,7 @@ export function TopBar({
         />
         <IconButton
           icon={Filter}
-          label={`筛选 ${riskFilterLabels[riskFilter]}`}
+          label={`筛选：${riskFilterLabels[riskFilter]}`}
           active={filterActive}
           onClick={onCycleRiskFilter}
         />
@@ -171,9 +206,7 @@ export function TopBar({
           badge={criticalOpenCount > 0}
           active={activePanel === "notifications"}
           onClick={() =>
-            setActivePanel((current) =>
-              current === "notifications" ? null : "notifications"
-            )
+            setActivePanel((current) => (current === "notifications" ? null : "notifications"))
           }
         />
         <IconButton
@@ -215,7 +248,7 @@ export function TopBar({
             />
             <ActionRow
               label="关闭审计抽屉"
-              subtext={isDrawerOpen ? "当前抽屉已打开" : "当前没有抽屉打开"}
+              subtext={isDrawerOpen ? "当前审计抽屉已打开" : "当前没有审计抽屉打开"}
               disabled={!isDrawerOpen}
               onClick={() => {
                 onCloseDrawer()

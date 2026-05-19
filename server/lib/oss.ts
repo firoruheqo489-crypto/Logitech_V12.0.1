@@ -43,6 +43,13 @@ type UploadedAsset = {
   size: number;
 };
 
+type PutOssObjectOptions = {
+  objectKey: string;
+  body: Buffer | NodeJS.ReadableStream;
+  mimeType?: string;
+  cacheControl?: string;
+};
+
 const ASSET_PROXY_PATH = '/api/uploads/object';
 
 const MIME_EXTENSION_MAP: Record<string, string> = {
@@ -248,6 +255,32 @@ export async function uploadAssetToOss(options: UploadAssetOptions): Promise<Upl
   };
 }
 
+export async function putOssObject(options: PutOssObjectOptions): Promise<UploadedAsset> {
+  const objectKey = options.objectKey.trim();
+  if (!objectKey) {
+    throw new Error('object key is required');
+  }
+
+  const mimeType = options.mimeType?.trim() || 'application/octet-stream';
+  const client = getClient();
+
+  await client.put(objectKey, options.body, {
+    headers: {
+      'Cache-Control': options.cacheControl?.trim() || 'no-cache',
+      'Content-Type': mimeType,
+    },
+  });
+
+  const resolvedSize = Buffer.isBuffer(options.body) ? options.body.byteLength : 0;
+
+  return {
+    url: buildAssetProxyUrl(objectKey),
+    objectKey,
+    mimeType,
+    size: resolvedSize,
+  };
+}
+
 export function buildAssetProxyUrl(objectKey: string): string {
   return `${ASSET_PROXY_PATH}?key=${encodeURIComponent(objectKey)}`;
 }
@@ -412,22 +445,50 @@ export function getTrialDocumentObjectStream(
   return getOssObjectStream(objectKey, rangeHeader, readTrialDocumentsBucket());
 }
 
+export async function getOssObjectBuffer(
+  objectKey: string,
+  bucketOverride?: string,
+): Promise<Buffer> {
+  const { stream } = await getOssObjectStream(objectKey, undefined, bucketOverride);
+  const chunks: Buffer[] = [];
+
+  for await (const chunk of stream) {
+    if (Buffer.isBuffer(chunk)) {
+      chunks.push(chunk);
+      continue;
+    }
+
+    chunks.push(Buffer.from(chunk));
+  }
+
+  return Buffer.concat(chunks);
+}
+
+export async function deleteOssObject(objectKey: string): Promise<DeleteAssetResult> {
+  const normalizedKey = objectKey.trim();
+  if (!normalizedKey) {
+    return { deleted: false, skipped: true };
+  }
+
+  try {
+    const client = getClient();
+    await client.delete(normalizedKey);
+    return { deleted: true, skipped: false, objectKey: normalizedKey };
+  } catch (error) {
+    if (isNotFoundError(error)) {
+      return { deleted: false, skipped: true, objectKey: normalizedKey };
+    }
+    throw error;
+  }
+}
+
 export async function deleteAssetFromOssUrl(assetUrl: string | null | undefined): Promise<DeleteAssetResult> {
   const objectKey = parseOssObjectKeyFromUrl(assetUrl);
   if (!objectKey) {
     return { deleted: false, skipped: true };
   }
 
-  try {
-    const client = getClient();
-    await client.delete(objectKey);
-    return { deleted: true, skipped: false, objectKey };
-  } catch (error) {
-    if (isNotFoundError(error)) {
-      return { deleted: false, skipped: true, objectKey };
-    }
-    throw error;
-  }
+  return deleteOssObject(objectKey);
 }
 
 export async function deleteAssetsFromOssUrls(urls: Array<string | null | undefined>): Promise<void> {

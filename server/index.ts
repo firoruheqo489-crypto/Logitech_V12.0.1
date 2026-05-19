@@ -31,6 +31,17 @@ import {
   upsertDashboardDocxConverterState,
 } from "./routes/dashboard-docx-converter-state.js";
 import {
+  createDashboardFmeaArchiveDocument,
+  deleteDashboardFmeaArchiveDocument,
+  getDashboardFmeaArchiveDocument,
+  listDashboardFmeaArchiveDocuments,
+} from "./routes/dashboard-fmea-archive.js";
+import {
+  deleteDashboardFmeaState,
+  getDashboardFmeaState,
+  upsertDashboardFmeaState,
+} from "./routes/dashboard-fmea-state.js";
+import {
   deleteDashboardProjectGanttState,
   ensureDashboardProjectGanttStateTable,
   getDashboardProjectGanttState,
@@ -318,6 +329,13 @@ async function startServer() {
   app.get("/api/dashboard/docx-converter-state", getDashboardDocxConverterState);
   app.put("/api/dashboard/docx-converter-state", upsertDashboardDocxConverterState);
   app.delete("/api/dashboard/docx-converter-state", deleteDashboardDocxConverterState);
+  app.get("/api/dashboard/fmea-state", getDashboardFmeaState);
+  app.put("/api/dashboard/fmea-state", upsertDashboardFmeaState);
+  app.delete("/api/dashboard/fmea-state", deleteDashboardFmeaState);
+  app.get("/api/dashboard/fmea-archives", listDashboardFmeaArchiveDocuments);
+  app.post("/api/dashboard/fmea-archives", createDashboardFmeaArchiveDocument);
+  app.delete("/api/dashboard/fmea-archives", deleteDashboardFmeaArchiveDocument);
+  app.get("/api/dashboard/fmea-archives/document", getDashboardFmeaArchiveDocument);
   app.get("/api/dashboard/project-gantt-state", getDashboardProjectGanttState);
   app.put("/api/dashboard/project-gantt-state", upsertDashboardProjectGanttState);
   app.delete("/api/dashboard/project-gantt-state", deleteDashboardProjectGanttState);
