@@ -169,35 +169,31 @@ function deleteLocalSnapshot(identity: { moldId: string; moldNo?: string }): voi
   }
 }
 
-function hasPersistedStageContent(stageState?: PersistedTrialStageStateLike | null): boolean {
-  if (!stageState) {
-    return false;
-  }
-
-  const fileName = String(stageState.fileName || '').trim();
-  const fileUrl = String(stageState.fileUrl || '').trim();
-  return Boolean(fileName || fileUrl || stageState.result);
-}
-
 function trimTrailingEmptyTrialStages<T extends PersistedTrialStageStateLike>(
   trialStages: TrialStage[],
-  stageStateByTrial: Record<string, T>,
+  _stageStateByTrial: Record<string, T>,
 ): TrialStage[] {
   const normalizedTrialStages = normalizeTrialStages(trialStages);
   if (normalizedTrialStages.length === 0) {
     return [...DEFAULT_TRIAL_STAGES];
   }
 
-  const trimmedTrialStages = [...normalizedTrialStages];
-  while (trimmedTrialStages.length > DEFAULT_TRIAL_STAGES.length) {
-    const lastStage = trimmedTrialStages[trimmedTrialStages.length - 1];
-    if (hasPersistedStageContent(stageStateByTrial[lastStage])) {
-      break;
-    }
-    trimmedTrialStages.pop();
-  }
+  return normalizedTrialStages;
+}
 
-  return trimmedTrialStages.length > 0 ? trimmedTrialStages : [...DEFAULT_TRIAL_STAGES];
+function hasDefaultTrialStages(trialStages: TrialStage[]): boolean {
+  const normalizedTrialStages = normalizeTrialStages(trialStages);
+  return (
+    normalizedTrialStages.length === DEFAULT_TRIAL_STAGES.length &&
+    DEFAULT_TRIAL_STAGES.every((stage, index) => normalizedTrialStages[index] === stage)
+  );
+}
+
+function shouldPersistDocxSnapshot(
+  trialStages: TrialStage[],
+  stageStateByTrial: Record<string, PersistedTrialStageStateLike>,
+): boolean {
+  return Object.keys(stageStateByTrial || {}).length > 0 || !hasDefaultTrialStages(trialStages);
 }
 
 function buildStageResultCacheKey(identity: { moldId: string; moldNo?: string }, stage: string): string {
@@ -922,14 +918,16 @@ function DocxConvertPanel({ panel }: { panel: AssetPanelItem }) {
         const localStageStateByTrial = filterStageStateByTrial(localSnapshot?.stageStateByTrial || {}, localTrialStages);
         const localStageStateByRemoteTrial = filterStageStateByTrial(localStageStateByTrial, remoteTrialStages);
         const localCanOverrideRemote = !remoteHasContent && localIsNewer && localTrialStages.length > 0;
+        const localStageStateForMerge = localIsNewer ? localStageStateByTrial : localStageStateByRemoteTrial;
         const mergedStageStateByTrial = localCanOverrideRemote
           ? localStageStateByTrial
-          : mergeStageStateByTrial(localStageStateByRemoteTrial, remote.stageStateByTrial || {});
+          : mergeStageStateByTrial(localStageStateForMerge, remote.stageStateByTrial || {});
         const mergedTrialStages = trimTrailingEmptyTrialStages(
           localCanOverrideRemote
             ? localTrialStages
             : normalizeTrialStages([
                 ...(remote.trialStages || []),
+                ...(localIsNewer ? localTrialStages : []),
                 ...Object.keys(mergedStageStateByTrial),
               ]),
           mergedStageStateByTrial,
@@ -1184,8 +1182,7 @@ function DocxConvertPanel({ panel }: { panel: AssetPanelItem }) {
             normalizedLocalTrialStages,
           );
 
-          const hasAnyStageData = Object.keys(payload.stageStateByTrial || {}).length > 0;
-          if (!hasAnyStageData) {
+          if (!shouldPersistDocxSnapshot(payload.trialStages, payload.stageStateByTrial || {})) {
             deleteLocalSnapshot({
               moldId: payload.moldId,
               moldNo: payload.moldNo,
@@ -1252,7 +1249,7 @@ function DocxConvertPanel({ panel }: { panel: AssetPanelItem }) {
           ? nextActiveTrial
           : finalTrialStages[0] || DEFAULT_TRIAL_STAGES[0];
 
-      if (Object.keys(filteredLocalStageStateByTrial).length === 0) {
+      if (!shouldPersistDocxSnapshot(finalTrialStages, filteredLocalStageStateByTrial)) {
         deleteLocalSnapshot(panelIdentity);
       } else {
         writeLocalSnapshot({
@@ -1269,7 +1266,7 @@ function DocxConvertPanel({ panel }: { panel: AssetPanelItem }) {
       }
 
       try {
-        if (Object.keys(filteredRemoteStageStateByTrial).length === 0) {
+        if (!shouldPersistDocxSnapshot(finalTrialStages, filteredRemoteStageStateByTrial)) {
           await deleteDashboardDocxConverterState(panelIdentity);
         } else {
           await saveDashboardDocxConverterState({

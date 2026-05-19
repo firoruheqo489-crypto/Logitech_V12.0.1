@@ -55,10 +55,22 @@ describe("docx converter delete persistence", () => {
       "const localCanOverrideRemote = !remoteHasContent && localIsNewer && localTrialStages.length > 0"
     );
     expect(source).toContain(
-      "mergeStageStateByTrial(localStageStateByRemoteTrial, remote.stageStateByTrial || {})"
+      "const localStageStateForMerge = localIsNewer ? localStageStateByTrial : localStageStateByRemoteTrial"
     );
+    expect(source).toContain(
+      "mergeStageStateByTrial(localStageStateForMerge, remote.stageStateByTrial || {})"
+    );
+    expect(source).toContain("...(localIsNewer ? localTrialStages : [])");
     expect(source).toContain("trimTrailingEmptyTrialStages");
     expect(source).toContain("deleteLocalSnapshot");
+    expect(source).toContain("function shouldPersistDocxSnapshot");
+    expect(source).toContain("!hasDefaultTrialStages(trialStages)");
+    expect(source).toContain(
+      "if (!shouldPersistDocxSnapshot(payload.trialStages, payload.stageStateByTrial || {}))"
+    );
+    expect(source).toContain(
+      "if (!shouldPersistDocxSnapshot(finalTrialStages, filteredRemoteStageStateByTrial))"
+    );
 
     const persistStart = source.indexOf("const persistDocxSnapshotNow");
     const localSnapshotIndex = source.indexOf("writeLocalSnapshot({", persistStart);
@@ -69,5 +81,11 @@ describe("docx converter delete persistence", () => {
     expect(persistStart).toBeGreaterThan(-1);
     expect(localSnapshotIndex).toBeGreaterThan(persistStart);
     expect(remoteGuardIndex).toBeGreaterThan(localSnapshotIndex);
+
+    const trimStart = source.indexOf("function trimTrailingEmptyTrialStages");
+    const trimEnd = source.indexOf("function buildStageResultCacheKey", trimStart);
+    const trimSource = source.slice(trimStart, trimEnd);
+    expect(trimSource).not.toContain(".pop()");
+    expect(trimSource).toContain("return normalizedTrialStages;");
   });
 });

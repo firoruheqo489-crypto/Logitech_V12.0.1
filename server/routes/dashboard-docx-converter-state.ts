@@ -197,24 +197,14 @@ function hasStageContent(stageState: DocxConverterStageState): boolean {
 
 function trimTrailingEmptyTrialStages(
   trialStages: string[],
-  stageStateByTrial: Record<string, DocxConverterStageState>,
+  _stageStateByTrial: Record<string, DocxConverterStageState>,
 ): string[] {
   const normalizedTrialStages = sanitizeTrialStages(trialStages);
   if (normalizedTrialStages.length === 0) {
     return [...DEFAULT_TRIAL_STAGES];
   }
 
-  const trimmedTrialStages = [...normalizedTrialStages];
-  while (trimmedTrialStages.length > DEFAULT_TRIAL_STAGES.length) {
-    const lastStage = trimmedTrialStages[trimmedTrialStages.length - 1];
-    const stageState = stageStateByTrial[lastStage];
-    if (stageState && hasStageContent(stageState)) {
-      break;
-    }
-    trimmedTrialStages.pop();
-  }
-
-  return trimmedTrialStages.length > 0 ? trimmedTrialStages : [...DEFAULT_TRIAL_STAGES];
+  return normalizedTrialStages;
 }
 
 function sanitizeStageState(value: unknown): DocxConverterStageState | null {

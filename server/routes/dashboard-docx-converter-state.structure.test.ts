@@ -23,5 +23,11 @@ describe('dashboard docx converter namespace', () => {
     expect(source).toContain('const filteredStageStateByTrial = sanitizeStageStateByTrial(stageStateByTrial, trialStages);');
     expect(source).toContain('stageStateByTrial: filteredStageStateByTrial');
     expect(source).toContain('JSON.stringify(trialStages)');
+
+    const trimStart = source.indexOf('function trimTrailingEmptyTrialStages');
+    const trimEnd = source.indexOf('function sanitizeStageState', trimStart);
+    const trimSource = source.slice(trimStart, trimEnd);
+    expect(trimSource).not.toContain('.pop()');
+    expect(trimSource).toContain('return normalizedTrialStages;');
   });
 });
