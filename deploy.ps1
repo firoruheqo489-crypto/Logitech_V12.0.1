@@ -16,8 +16,6 @@ param(
     [string]$MetadataPath = "",
     [string]$OutputDir = "artifacts/releases",
     [string]$RemoteDir = "",
-    [switch]$SkipVerification,
-    [switch]$SkipRemoteSmoke,
     [string]$HostAlias = "",
     [switch]$DeepVerification,
     [switch]$RequirePreviewArtifact,
@@ -252,15 +250,17 @@ Assert-ReleaseGuards `
     -IsPreflightOnly:$PreflightOnly
 
 $resolvedHostAlias = Resolve-DeployHostAlias $HostAlias
-$effectiveSkipRemoteSmoke = $SkipRemoteSmoke -or (-not $DeepVerification)
 
 if ($Mode -eq "build") {
+    if (-not $DeepVerification -and -not $PreflightOnly) {
+        Warn "DeepVerification is mandatory for release builds. Enabling it automatically."
+    }
+
     Log "Running artifact build mode..."
     & $releaseBuildScript `
         -ReleaseNote $ReleaseNote `
         -OutputDir $OutputDir `
-        -SkipVerification:$SkipVerification `
-        -DeepVerification:$DeepVerification `
+        -DeepVerification:$true `
         -PreflightOnly:$PreflightOnly
 
     if ($LASTEXITCODE -ne 0) {
@@ -288,8 +288,7 @@ if ($Mode -eq "deploy") {
         -ArtifactPath $ArtifactPath `
         -MetadataPath $MetadataPath `
         -HostAlias $resolvedHostAlias `
-        -RemoteDir $resolvedRemoteDir `
-        -SkipRemoteSmoke:$effectiveSkipRemoteSmoke
+        -RemoteDir $resolvedRemoteDir
 
     if ($LASTEXITCODE -ne 0) {
         Err "Artifact deploy failed."

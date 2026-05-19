@@ -5,6 +5,11 @@ $ErrorActionPreference = "Stop"
 
 function Err($msg) { Write-Host "[ERR] $msg" -ForegroundColor Red; exit 1 }
 
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+[Console]::InputEncoding = $utf8NoBom
+[Console]::OutputEncoding = $utf8NoBom
+$OutputEncoding = $utf8NoBom
+
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $sopPath = Join-Path $repoRoot "docs/release-sop.md"
 
@@ -12,7 +17,7 @@ if (-not (Test-Path -LiteralPath $sopPath)) {
   Err "Missing release SOP: $sopPath"
 }
 
-$sopText = Get-Content -LiteralPath $sopPath -Raw
+$sopText = Get-Content -LiteralPath $sopPath -Raw -Encoding UTF8
 if ([string]::IsNullOrWhiteSpace($sopText)) {
   Err "Release SOP is empty: $sopPath"
 }

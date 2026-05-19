@@ -341,6 +341,54 @@ async function verifyReleaseSopVisibility(): Promise<void> {
   }
 }
 
+async function verifyReleaseWrapperCleanWorkspacePolicy(): Promise<void> {
+  const source = await readText("scripts/release-from-clean-worktree.ps1");
+
+  assert.ok(
+    source.includes("Require-CleanWorkspace -RepoRootPath $repoRoot"),
+    "release wrapper must require a clean workspace before backup/build flows",
+  );
+  assert.ok(
+    !source.includes("Invoke-AutoCommit"),
+    "release wrapper must not auto-commit workspace changes",
+  );
+
+  const cleanCheckIndex = source.indexOf("Require-CleanWorkspace -RepoRootPath $repoRoot");
+  const backupIndex = source.indexOf('Log "Creating physical backup snapshot..."');
+  assert.ok(cleanCheckIndex >= 0, "release wrapper clean-workspace check must exist");
+  assert.ok(backupIndex > cleanCheckIndex, "release wrapper must refuse dirty workspaces before backup");
+}
+
+async function verifyReleaseGateBypassPolicy(): Promise<void> {
+  const releaseBuildSource = await readText("scripts/release-build.ps1");
+  assert.ok(
+    !releaseBuildSource.includes("AllowDirtyWorkspace"),
+    "release build script must not allow dirty workspaces",
+  );
+  assert.ok(
+    !releaseBuildSource.includes("SkipVerification"),
+    "release build script must not allow verification bypass",
+  );
+  assert.ok(
+    releaseBuildSource.includes('Err "DeepVerification is required for release builds."'),
+    "release build script must require deep verification for artifact builds",
+  );
+
+  const deploySource = await readText("scripts/deploy-release-artifact.ps1");
+  assert.ok(
+    !deploySource.includes("SkipRemoteSmoke"),
+    "artifact deploy script must not allow remote smoke to be skipped",
+  );
+  assert.ok(
+    deploySource.includes('Log "Running remote OSS upload/delete smoke..."'),
+    "artifact deploy script must always run the remote OSS smoke gate",
+  );
+  assert.ok(
+    deploySource.includes('Log "Running remote reliability smoke..."'),
+    "artifact deploy script must always run the remote reliability smoke gate",
+  );
+}
+
 async function verifyDashboardApi(): Promise<void> {
   const {
     DashboardApiError,
@@ -766,6 +814,8 @@ async function main(): Promise<void> {
   await runCheck("server error payload structure", verifyServerErrorPayloadStructure);
   await runCheck("critical entrypoints", verifyCriticalEntrypoints);
   await runCheck("release SOP visibility", verifyReleaseSopVisibility);
+  await runCheck("release wrapper clean workspace policy", verifyReleaseWrapperCleanWorkspacePolicy);
+  await runCheck("release gate bypass policy", verifyReleaseGateBypassPolicy);
   await runCheck("dashboard API error normalization", verifyDashboardApi);
   await runCheck("api CORS policy", verifyApiCors);
   await runCheck("api access policy", verifyApiAccessPolicy);

@@ -3,8 +3,7 @@ param(
   [string]$ArtifactPath,
   [string]$MetadataPath = "",
   [string]$HostAlias = "",
-  [string]$RemoteDir = "",
-  [switch]$SkipRemoteSmoke
+  [string]$RemoteDir = ""
 )
 
 Set-StrictMode -Version Latest
@@ -444,30 +443,26 @@ if ([string]$remoteRelease.commit -ne $targetCommit) {
 }
 Log "Remote release verified: version=$targetVersion commit=$targetCommitShort"
 
-if (-not $SkipRemoteSmoke) {
-  $remoteSmokeCmd = @(
-    "cd $remoteDirLiteral",
-    "node scripts/verify-oss-http-smoke.mjs --base-url http://127.0.0.1:3000 --env-file .env --label remote-artifact-deploy --wait-for-db-ready"
-  ) -join " && "
+$remoteSmokeCmd = @(
+  "cd $remoteDirLiteral",
+  "node scripts/verify-oss-http-smoke.mjs --base-url http://127.0.0.1:3000 --env-file .env --label remote-artifact-deploy --wait-for-db-ready"
+) -join " && "
 
-  Log "Running remote OSS upload/delete smoke..."
-  Invoke-Ssh -RepoRootPath $repoRoot -TargetHost $resolvedHostAlias -RemoteCommand $remoteSmokeCmd
-  if ($LASTEXITCODE -ne 0) {
-    Invoke-RemoteRollbackAndErr "Remote OSS upload/delete smoke failed." $repoRoot $resolvedHostAlias $resolvedRemoteDir
-  }
+Log "Running remote OSS upload/delete smoke..."
+Invoke-Ssh -RepoRootPath $repoRoot -TargetHost $resolvedHostAlias -RemoteCommand $remoteSmokeCmd
+if ($LASTEXITCODE -ne 0) {
+  Invoke-RemoteRollbackAndErr "Remote OSS upload/delete smoke failed." $repoRoot $resolvedHostAlias $resolvedRemoteDir
+}
 
-  $remoteReliabilitySmokeCmd = @(
-    "cd $remoteDirLiteral",
-    "node scripts/verify-reliability-smoke.mjs --base-url http://127.0.0.1:3000 --env-file .env --wait-for-db-ready"
-  ) -join " && "
+$remoteReliabilitySmokeCmd = @(
+  "cd $remoteDirLiteral",
+  "node scripts/verify-reliability-smoke.mjs --base-url http://127.0.0.1:3000 --env-file .env --wait-for-db-ready"
+) -join " && "
 
-  Log "Running remote reliability smoke..."
-  Invoke-Ssh -RepoRootPath $repoRoot -TargetHost $resolvedHostAlias -RemoteCommand $remoteReliabilitySmokeCmd
-  if ($LASTEXITCODE -ne 0) {
-    Invoke-RemoteRollbackAndErr "Remote reliability smoke failed." $repoRoot $resolvedHostAlias $resolvedRemoteDir
-  }
-} else {
-  Warn "SkipRemoteSmoke is enabled. Remote OSS smoke was skipped."
+Log "Running remote reliability smoke..."
+Invoke-Ssh -RepoRootPath $repoRoot -TargetHost $resolvedHostAlias -RemoteCommand $remoteReliabilitySmokeCmd
+if ($LASTEXITCODE -ne 0) {
+  Invoke-RemoteRollbackAndErr "Remote reliability smoke failed." $repoRoot $resolvedHostAlias $resolvedRemoteDir
 }
 
 $releaseHistoryLine = "$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss zzz')) | V$targetVersion | $changeType | $releaseNote | $targetCommitShort"

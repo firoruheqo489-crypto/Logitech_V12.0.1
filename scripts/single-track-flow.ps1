@@ -3,9 +3,7 @@ param(
   [string]$Mode = "status",
   [string]$ReleaseNote = "",
   [string]$ServerUrl = "http://120.27.153.140:3000",
-  [int]$Port = 3000,
-  [switch]$SkipVerification,
-  [switch]$SkipRemoteSmoke
+  [int]$Port = 3000
 )
 
 Set-StrictMode -Version Latest
@@ -251,7 +249,7 @@ if ($Mode -eq "status") {
 
 if ($Mode -eq "preview") {
   Log "Building release artifact from the clean current workspace..."
-  & $deployScript -Mode build -ReleaseNote $ReleaseNote -SkipVerification:$SkipVerification
+  & $deployScript -Mode build -ReleaseNote $ReleaseNote -DeepVerification
   if ($LASTEXITCODE -ne 0) {
     Err "Artifact build failed."
   }
@@ -310,8 +308,7 @@ Log "Deploying the same artifact validated locally..."
 & $deployScript `
   -Mode deploy `
   -ArtifactPath $artifactToDeploy `
-  -MetadataPath $metadataToDeploy `
-  -SkipRemoteSmoke:$SkipRemoteSmoke
+  -MetadataPath $metadataToDeploy
 if ($LASTEXITCODE -ne 0) {
   Err "Deploy failed."
 }

@@ -1,10 +1,8 @@
 param(
   [string]$ReleaseNote = "",
   [string]$OutputDir = "artifacts/releases",
-  [switch]$SkipVerification,
   [switch]$DeepVerification,
-  [switch]$PreflightOnly,
-  [switch]$AllowDirtyWorkspace
+  [switch]$PreflightOnly
 )
 
 Set-StrictMode -Version Latest
@@ -218,20 +216,11 @@ Push-Location $repoRoot
 try {
   Show-ReleaseSop $repoRoot
   Assert-NoMixedLineEndings $repoRoot
+  Require-CleanGitWorkspace $repoRoot
+  $workspaceStatus = ""
 
-  $workspaceStatus = git -C $repoRoot status --porcelain=v1 --untracked-files=all 2>$null
-  if ($LASTEXITCODE -ne 0) {
-    Err "Failed to read git workspace state."
-  }
-
-  if ($workspaceStatus -and -not $AllowDirtyWorkspace) {
-    Write-Host $workspaceStatus -ForegroundColor Yellow
-    Err "Refusing release build from a dirty workspace."
-  }
-
-  if ($workspaceStatus -and $AllowDirtyWorkspace) {
-    Write-Host $workspaceStatus -ForegroundColor Yellow
-    Warn "Dirty workspace allowed for this release run."
+  if (-not $DeepVerification -and -not $PreflightOnly) {
+    Err "DeepVerification is required for release builds."
   }
 
   $releaseNoteNormalized = Resolve-ReleaseNote $ReleaseNote -AllowEmpty:$PreflightOnly
@@ -250,22 +239,16 @@ try {
   $changeType = [string]$plan.ChangeType
   Log "Release version: $($plan.BaseSource) -> $targetVersion"
 
-  if (-not $SkipVerification) {
-    Invoke-Step "Running TypeScript verification..." { pnpm exec tsc --noEmit } "TypeScript verification failed"
+  Invoke-Step "Running TypeScript verification..." { pnpm exec tsc --noEmit } "TypeScript verification failed"
 
-    if ($DeepVerification) {
-      Invoke-Step "Running release guard checks..." { pnpm.cmd run verify:release-guards } "Release guard checks failed"
+  if ($DeepVerification) {
+    Invoke-Step "Running release guard checks..." { pnpm.cmd run verify:release-guards } "Release guard checks failed"
 
-      $ossSmokePort = Get-FreeLocalPort
-      Invoke-Step "Running local OSS upload/delete smoke on port $ossSmokePort..." { powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-local-oss-smoke.ps1 -Port $ossSmokePort -Retries 60 -RetryIntervalMs 1500 } "Local OSS upload/delete smoke failed"
+    $ossSmokePort = Get-FreeLocalPort
+    Invoke-Step "Running local OSS upload/delete smoke on port $ossSmokePort..." { powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-local-oss-smoke.ps1 -Port $ossSmokePort -Retries 60 -RetryIntervalMs 1500 } "Local OSS upload/delete smoke failed"
 
-      $reliabilitySmokePort = Get-FreeLocalPort -StartPort ($ossSmokePort + 1)
-      Invoke-Step "Running local reliability smoke on port $reliabilitySmokePort..." { powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-local-reliability-smoke.ps1 -Port $reliabilitySmokePort -Retries 60 -RetryIntervalMs 1500 } "Local reliability smoke failed"
-    } else {
-      Warn "DeepVerification is disabled. Skipping release guard and smoke checks."
-    }
-  } else {
-    Warn "SkipVerification is enabled. Build will continue without verification gates."
+    $reliabilitySmokePort = Get-FreeLocalPort -StartPort ($ossSmokePort + 1)
+    Invoke-Step "Running local reliability smoke on port $reliabilitySmokePort..." { powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-local-reliability-smoke.ps1 -Port $reliabilitySmokePort -Retries 60 -RetryIntervalMs 1500 } "Local reliability smoke failed"
   }
 
   if ($PreflightOnly) {

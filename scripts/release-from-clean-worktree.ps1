@@ -8,8 +8,6 @@
   [string]$MetadataPath = "",
   [string]$HostAlias = "",
   [string]$RemoteDir = "",
-  [switch]$SkipVerification,
-  [switch]$SkipRemoteSmoke,
   [Parameter(ValueFromRemainingArguments = $true)]
   [string[]]$RemainingArgs = @()
 )
@@ -68,14 +66,6 @@ if ($RemainingArgs.Count -gt 0) {
           $RemoteDir = [string]$RemainingArgs[$index + 1]
           $index += 1
         }
-        continue
-      }
-      "-SkipVerification" {
-        $SkipVerification = $true
-        continue
-      }
-      "-SkipRemoteSmoke" {
-        $SkipRemoteSmoke = $true
         continue
       }
     }
@@ -172,26 +162,14 @@ function Get-GitStatus([string]$RepoRootPath) {
   return @($status | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
 }
 
-function Invoke-AutoCommit([string]$RepoRootPath, [string]$CommitMsg) {
+function Require-CleanWorkspace([string]$RepoRootPath) {
   $statusLines = Get-GitStatus $RepoRootPath
   if (@($statusLines).Count -eq 0) {
-    Log "Workspace is clean; no auto-commit needed."
     return
   }
 
   Write-Host (@($statusLines) -join "`n") -ForegroundColor Yellow
-  Log "Auto-committing release checkpoint..."
-  & git -C $RepoRootPath add -A
-  if ($LASTEXITCODE -ne 0) {
-    Err "git add failed."
-  }
-
-  & git -C $RepoRootPath commit -m $CommitMsg
-  if ($LASTEXITCODE -ne 0) {
-    Err "git commit failed."
-  }
-
-  Log "Auto-commit created: $((& git -C $RepoRootPath rev-parse --short HEAD).Trim())"
+  Err "Refusing release from a dirty workspace. Please commit or stash changes before running the release flow."
 }
 
 function Resolve-LatestReleaseMetadata([string]$RepoRootPath, [string]$ConfiguredOutputDir) {
@@ -252,11 +230,7 @@ function Invoke-ReleaseBuild(
     Err "Missing script: $deployScriptPath"
   }
 
-  if (-not $SkipVerification) {
-    & $deployScriptPath -Mode build -ReleaseNote $ReleaseText -OutputDir $OutputDir -DeepVerification
-  } else {
-    & $deployScriptPath -Mode build -ReleaseNote $ReleaseText -OutputDir $OutputDir
-  }
+  & $deployScriptPath -Mode build -ReleaseNote $ReleaseText -OutputDir $OutputDir -DeepVerification
 
   if ($LASTEXITCODE -ne 0) {
     Err "deploy.ps1 build failed with exit code $LASTEXITCODE"
@@ -284,10 +258,6 @@ function Invoke-ReleaseDeploy(
   if (-not [string]::IsNullOrWhiteSpace($RemoteDir)) {
     $deployParams.RemoteDir = $RemoteDir
   }
-  if (-not $SkipRemoteSmoke) {
-    $deployParams.DeepVerification = $true
-  }
-
   & $deployScriptPath @deployParams
 
   if ($LASTEXITCODE -ne 0) {
@@ -301,11 +271,6 @@ try {
   Show-ReleaseSop -RepoRootPath $repoRoot
   $flowLabel = Resolve-FlowLabel
   $releaseText = Resolve-ReleaseText -PrimaryNote $ReleaseNote -FallbackCommitMessage $CommitMessage -FallbackLabel $flowLabel -RepoRootPath $repoRoot
-  $commitText = if (-not [string]::IsNullOrWhiteSpace((Normalize-SingleLine $CommitMessage))) {
-    (Normalize-SingleLine $CommitMessage)
-  } else {
-    "release: $releaseText"
-  }
 
   Log "Flow label: $flowLabel"
   Log "Release text: $releaseText"
@@ -323,12 +288,9 @@ try {
     exit 0
   }
 
+  Require-CleanWorkspace -RepoRootPath $repoRoot
   Log "Creating physical backup snapshot..."
   Invoke-Backup -RepoRootPath $repoRoot
-
-  if ($Mode -in @("build", "all")) {
-    Invoke-AutoCommit -RepoRootPath $repoRoot -CommitMsg $commitText
-  }
 
   if ($Mode -eq "build") {
     Log "Running verified release build..."
