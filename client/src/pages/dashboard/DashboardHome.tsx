@@ -53,6 +53,7 @@ const SpcRadarDrawerWorkspace = lazy(() => import('./components/SpcRadarDrawerWo
 const SpcCalculatorDrawerWorkspace = lazy(() => import('./components/SpcCalculatorDrawerWorkspace'));
 const FmeaAnalysisWorkspace = lazy(() => import('./components/FmeaAnalysisWorkspace'));
 const PfmeaWorkspace = lazy(() => import('./components/PfmeaWorkspace'));
+const Report8DWorkspace = lazy(() => import('./components/Report8DWorkspace'));
 const SipWorkspace = lazy(() => import('./components/SipWorkspace'));
 const ProcessVarianceWorkspace = lazy(() => import('./components/ProcessVarianceWorkspace'));
 const MeasurementIntakeWorkspace = lazy(() => import('./components/MeasurementIntakeWorkspace'));
@@ -172,6 +173,7 @@ const DASHBOARD_TABS = [
   'doe',
   'fmea-analysis',
   'pfmea',
+  'report-8d',
   'sip',
   'image-stitcher',
   'boxplot',
@@ -848,6 +850,7 @@ export default function DashboardHome() {
               'doe': 'DOE实验设计',
               'fmea-analysis': 'DFMEA',
               'pfmea': 'PFMEA',
+              'report-8d': '8D报告',
               'boxplot': '箱线图',
               'mold-reliability': '模具可靠性',
               'measurement-intake': '测量检入表',
@@ -1062,6 +1065,16 @@ export default function DashboardHome() {
         {selectedTab === 'pfmea' && (
           <LazyWorkspace>
             <PfmeaWorkspace />
+          </LazyWorkspace>
+        )}
+
+        {selectedTab === 'report-8d' && (
+          <LazyWorkspace>
+            <Report8DWorkspace
+              projectName={activeModule || ''}
+              productName={currentModuleData[0]?.identity?.productName?.trim() || ''}
+              moldNumbers={currentModuleMoldIds}
+            />
           </LazyWorkspace>
         )}
 

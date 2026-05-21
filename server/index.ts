@@ -31,6 +31,14 @@ import {
   upsertDashboardDocxConverterState,
 } from "./routes/dashboard-docx-converter-state.js";
 import {
+  deleteDashboardReport8DState,
+  ensureDashboardReport8DSubmissionTable,
+  getDashboardReport8DState,
+  listDashboardReport8DArchive,
+  submitDashboardReport8DState,
+  upsertDashboardReport8DState,
+} from "./routes/dashboard-report-8d-state.js";
+import {
   createDashboardFmeaArchiveDocument,
   deleteDashboardFmeaArchiveDocument,
   getDashboardFmeaArchiveDocument,
@@ -207,6 +215,7 @@ async function startServer() {
     { name: "dashboard_mold_trial_evidence", run: ensureDashboardMoldTrialEvidenceTable },
     { name: "dashboard_docx_converter", run: ensureDashboardDocxConverterTable },
     { name: "dashboard_project_gantt", run: ensureDashboardProjectGanttStateTable },
+    { name: "dashboard_report_8d_submissions", run: ensureDashboardReport8DSubmissionTable },
     { name: "dashboard_trial_documents", run: ensureTrialDocumentsTable },
     { name: "dashboard_health", run: ensureDashboardHealthTable },
     { name: "dashboard_module_order", run: ensureDashboardModuleOrderTable },
@@ -376,6 +385,11 @@ async function startServer() {
   app.get("/api/dashboard/docx-converter-state", getDashboardDocxConverterState);
   app.put("/api/dashboard/docx-converter-state", upsertDashboardDocxConverterState);
   app.delete("/api/dashboard/docx-converter-state", deleteDashboardDocxConverterState);
+  app.get("/api/dashboard/report-8d-state", getDashboardReport8DState);
+  app.put("/api/dashboard/report-8d-state", upsertDashboardReport8DState);
+  app.delete("/api/dashboard/report-8d-state", deleteDashboardReport8DState);
+  app.get("/api/dashboard/report-8d-archive", listDashboardReport8DArchive);
+  app.post("/api/dashboard/report-8d-submit", submitDashboardReport8DState);
   app.get("/api/dashboard/fmea-state", getDashboardFmeaState);
   app.put("/api/dashboard/fmea-state", upsertDashboardFmeaState);
   app.delete("/api/dashboard/fmea-state", deleteDashboardFmeaState);
