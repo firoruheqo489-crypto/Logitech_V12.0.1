@@ -63,6 +63,7 @@ const ProcessDrawerWorkspace = lazy(() => import('./components/ProcessDrawerWork
 const ProgressLogsDrawerWorkspace = lazy(() => import('./components/ProgressLogsDrawerWorkspace'));
 const ParetoQualityDashboard = lazy(() => import('./components/ParetoQualityDashboard'));
 const FishboneDiagramDashboard = lazy(() => import('./components/FishboneDiagramDashboard'));
+const ComplaintInsightDashboard = lazy(() => import('./components/ComplaintInsightDashboard'));
 const ImageStitcherWorkspace = lazy(() => import('./components/ImageStitcherWorkspace'));
 const FaiDimensionAnalyzer = lazy(() => import('./components/FaiDimensionAnalyzer'));
 const DocxConvertModule = lazy(() => import('./components/DocxConvertModule'));
@@ -179,6 +180,7 @@ const DASHBOARD_TABS = [
   'boxplot',
   'pareto-analysis',
   'fishbone-diagram',
+  'complaint-insight',
   'measurement-intake',
   'mold-reliability',
   'spc-calculator',
@@ -839,6 +841,7 @@ export default function DashboardHome() {
               'pareto-analysis': '柏拉图分析',
               'image-stitcher': '图片拼接',
               'fishbone-diagram': '鱼骨图',
+              'complaint-insight': '客诉异常',
               'logs': '推进日志',
               'product': '产品模块',
               'product-standard': '产品标准',
@@ -913,6 +916,12 @@ export default function DashboardHome() {
         {selectedTab === 'fishbone-diagram' && (
           <LazyWorkspace>
             <FishboneDiagramDashboard />
+          </LazyWorkspace>
+        )}
+
+        {selectedTab === 'complaint-insight' && (
+          <LazyWorkspace>
+            <ComplaintInsightDashboard />
           </LazyWorkspace>
         )}
 
