@@ -47,12 +47,81 @@ const DASHBOARD_ROUTE_ERROR_MESSAGES: Record<DashboardRouteErrorCode, string> = 
 
 let dashboardHealthTableReady: Promise<void> | null = null;
 let dashboardModuleOrderTableReady: Promise<void> | null = null;
+const DASHBOARD_DB_RETRY_MAX = 3;
+const DASHBOARD_DB_RETRY_DELAY_MS = 600;
 
 function sendDashboardRouteError(res: Response, status: number, code: DashboardRouteErrorCode): void {
   res.status(status).json({
     error: DASHBOARD_ROUTE_ERROR_MESSAGES[code],
     code,
   });
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getErrorSignature(error: unknown): string {
+  if (!error) return "";
+  if (error instanceof Error) {
+    const maybeWithCause = error as Error & { cause?: unknown; code?: unknown; errno?: unknown };
+    return [
+      error.name,
+      error.message,
+      typeof maybeWithCause.code === "string" ? maybeWithCause.code : "",
+      typeof maybeWithCause.errno === "string" ? maybeWithCause.errno : "",
+      maybeWithCause.cause ? getErrorSignature(maybeWithCause.cause) : "",
+    ]
+      .join(" ")
+      .toUpperCase();
+  }
+
+  if (typeof error === "object") {
+    const maybeRecord = error as Record<string, unknown>;
+    return [
+      typeof maybeRecord.code === "string" ? maybeRecord.code : "",
+      typeof maybeRecord.errno === "string" ? maybeRecord.errno : "",
+      typeof maybeRecord.message === "string" ? maybeRecord.message : "",
+      "cause" in maybeRecord ? getErrorSignature(maybeRecord.cause) : "",
+    ]
+      .join(" ")
+      .toUpperCase();
+  }
+
+  return String(error).toUpperCase();
+}
+
+function isRetryableDashboardDbError(error: unknown): boolean {
+  const signature = getErrorSignature(error);
+  return [
+    "CONNECT_TIMEOUT",
+    "ECONNRESET",
+    "ETIMEDOUT",
+    "CONNECTION TERMINATED",
+    "SOCKET HANG UP",
+    "EPIPE",
+  ].some((token) => signature.includes(token));
+}
+
+async function withDashboardDbRetry<T>(label: string, run: () => Promise<T>): Promise<T> {
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= DASHBOARD_DB_RETRY_MAX; attempt += 1) {
+    try {
+      return await run();
+    } catch (error) {
+      lastError = error;
+      if (!isRetryableDashboardDbError(error) || attempt === DASHBOARD_DB_RETRY_MAX) {
+        throw error;
+      }
+
+      const delayMs = DASHBOARD_DB_RETRY_DELAY_MS * attempt;
+      console.warn(`[dashboard-db-retry] ${label} attempt ${attempt} failed, retrying in ${delayMs}ms`, error);
+      await sleep(delayMs);
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error(`${label} failed`);
 }
 
 function normalizeModuleName(value: unknown): string {
@@ -190,7 +259,10 @@ function isLikelyValidDate(raw: string): boolean {
 
 export async function runDashboardHealthCheck(): Promise<DashboardHealthReport | null> {
   if (!db) return null;
-  const rows = await db.select().from(dashboardProjects);
+  const dashboardDb = db;
+  const rows = await withDashboardDbRetry('dashboard health check', () =>
+    dashboardDb.select().from(dashboardProjects),
+  );
 
   const molds = rows
     .map((row) => String(row.moldId || '').trim())
@@ -228,9 +300,14 @@ export async function runDashboardHealthCheck(): Promise<DashboardHealthReport |
 /** GET /api/dashboard/projects — 获取所有看板项目 */
 export async function listDashboardProjects(_req: Request, res: Response): Promise<void> {
   if (!db) { sendDashboardRouteError(res, 503, 'DATABASE_NOT_CONFIGURED'); return; }
+  const dashboardDb = db;
   try {
-    const rows = await db.select().from(dashboardProjects).orderBy(asc(dashboardProjects.id));
-    const moduleOrderMap = await syncDashboardModuleOrder(rows as Array<Record<string, unknown>>);
+    const rows = await withDashboardDbRetry('list dashboard projects', () =>
+      dashboardDb.select().from(dashboardProjects).orderBy(asc(dashboardProjects.id)),
+    );
+    const moduleOrderMap = await withDashboardDbRetry('sync dashboard module order', () =>
+      syncDashboardModuleOrder(rows as Array<Record<string, unknown>>),
+    );
     const sortedRows = [...rows].sort((left, right) => {
       const leftOrder = moduleOrderMap.get(normalizeModuleName(left.projectName)) ?? Number.MAX_SAFE_INTEGER;
       const rightOrder = moduleOrderMap.get(normalizeModuleName(right.projectName)) ?? Number.MAX_SAFE_INTEGER;
@@ -247,10 +324,13 @@ export async function listDashboardProjects(_req: Request, res: Response): Promi
 /** GET /api/dashboard/projects/:id */
 export async function getDashboardProject(req: Request, res: Response): Promise<void> {
   if (!db) { sendDashboardRouteError(res, 503, 'DATABASE_NOT_CONFIGURED'); return; }
+  const dashboardDb = db;
   const id = Number(req.params.id);
   if (isNaN(id)) { sendDashboardRouteError(res, 400, 'INVALID_ID'); return; }
   try {
-    const [row] = await db.select().from(dashboardProjects).where(eq(dashboardProjects.id, id)).limit(1);
+    const [row] = await withDashboardDbRetry('get dashboard project', () =>
+      dashboardDb.select().from(dashboardProjects).where(eq(dashboardProjects.id, id)).limit(1),
+    );
     if (!row) { sendDashboardRouteError(res, 404, 'NOT_FOUND'); return; }
     res.json(row);
   } catch (err) {
@@ -262,6 +342,7 @@ export async function getDashboardProject(req: Request, res: Response): Promise<
 /** POST /api/dashboard/projects/batch-replace — 批量替换项目（保持每次上传为最新快照） */
 export async function batchReplaceDashboardProjects(req: Request, res: Response): Promise<void> {
   if (!db) { sendDashboardRouteError(res, 503, 'DATABASE_NOT_CONFIGURED'); return; }
+  const dashboardDb = db;
   const items = req.body;
   if (!Array.isArray(items)) { sendDashboardRouteError(res, 400, 'BODY_MUST_BE_ARRAY'); return; }
   try {
@@ -279,20 +360,24 @@ export async function batchReplaceDashboardProjects(req: Request, res: Response)
     }
 
     const normalizedItems = [...noMoldItems, ...Array.from(dedupedByMold.values())];
-    await syncDashboardModuleOrder(normalizedItems);
+    await withDashboardDbRetry('sync dashboard module order before replace', () =>
+      syncDashboardModuleOrder(normalizedItems),
+    );
     const batchNow = new Date();
-    await db.transaction(async (tx) => {
-      await tx.delete(dashboardProjects);
-      if (normalizedItems.length > 0) {
-        await tx.insert(dashboardProjects).values(
-          normalizedItems.map((item) => ({
-            ...(item || {}),
-            createdAt: batchNow,
-            updatedAt: batchNow,
-          })),
-        );
-      }
-    });
+    await withDashboardDbRetry('batch replace dashboard projects', () =>
+      dashboardDb.transaction(async (tx) => {
+        await tx.delete(dashboardProjects);
+        if (normalizedItems.length > 0) {
+          await tx.insert(dashboardProjects).values(
+            normalizedItems.map((item) => ({
+              ...(item || {}),
+              createdAt: batchNow,
+              updatedAt: batchNow,
+            })),
+          );
+        }
+      }),
+    );
     res.json({ success: true, count: normalizedItems.length });
   } catch (err) {
     console.error('POST /api/dashboard/projects/batch-replace error:', err);
@@ -303,8 +388,9 @@ export async function batchReplaceDashboardProjects(req: Request, res: Response)
 /** DELETE /api/dashboard/projects — 清空所有项目 */
 export async function clearDashboardProjects(_req: Request, res: Response): Promise<void> {
   if (!db) { sendDashboardRouteError(res, 503, 'DATABASE_NOT_CONFIGURED'); return; }
+  const dashboardDb = db;
   try {
-    await db.delete(dashboardProjects);
+    await withDashboardDbRetry('clear dashboard projects', () => dashboardDb.delete(dashboardProjects));
     res.json({ success: true });
   } catch (err) {
     console.error('DELETE /api/dashboard/projects error:', err);
