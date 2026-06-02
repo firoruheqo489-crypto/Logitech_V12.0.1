@@ -67,7 +67,7 @@ function getErrorSignature(error: unknown): string {
     const maybeWithCause = error as Error & { cause?: unknown; code?: unknown; errno?: unknown };
     return [
       error.name,
-      error.message,
+      String(error),
       typeof maybeWithCause.code === "string" ? maybeWithCause.code : "",
       typeof maybeWithCause.errno === "string" ? maybeWithCause.errno : "",
       maybeWithCause.cause ? getErrorSignature(maybeWithCause.cause) : "",
@@ -81,7 +81,7 @@ function getErrorSignature(error: unknown): string {
     return [
       typeof maybeRecord.code === "string" ? maybeRecord.code : "",
       typeof maybeRecord.errno === "string" ? maybeRecord.errno : "",
-      typeof maybeRecord.message === "string" ? maybeRecord.message : "",
+      String(error),
       "cause" in maybeRecord ? getErrorSignature(maybeRecord.cause) : "",
     ]
       .join(" ")
