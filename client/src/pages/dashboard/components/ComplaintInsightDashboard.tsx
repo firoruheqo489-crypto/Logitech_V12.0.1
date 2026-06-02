@@ -42,7 +42,6 @@ import {
   parseComplaintInsightExcel,
 } from "./complaintInsightParser";
 
-const STORAGE_KEY = "dashboard_complaint_insight_payloads_v1";
 const CHART_BG = "#18181B";
 const CHART_TEXT = "#F8FAFC";
 const CHART_MUTED = "#94A3B8";
@@ -76,6 +75,18 @@ type SourceKey = "complaint" | "inspection" | "outsourcing";
 type SourcePayloadMap = Record<SourceKey, ComplaintInsightsPayload | null>;
 type SourceErrorMap = Record<SourceKey, string>;
 type SourceParsingMap = Record<SourceKey, boolean>;
+type SourceStateResponse = {
+  state: Record<
+    SourceKey,
+    | {
+        sourceFile: string;
+        assetUrl: string;
+        payload: ComplaintInsightsPayload;
+        updatedAt: string;
+      }
+    | null
+  >;
+};
 
 type SourceConfig = {
   key: SourceKey;
@@ -223,22 +234,6 @@ function createEmptyParsingMap(): SourceParsingMap {
   };
 }
 
-function readCachedPayloads(): SourcePayloadMap {
-  if (typeof window === "undefined") return createEmptyPayloadMap();
-  try {
-    const cached = window.localStorage.getItem(STORAGE_KEY);
-    if (!cached) return createEmptyPayloadMap();
-    const parsed = JSON.parse(cached) as Partial<SourcePayloadMap>;
-    return {
-      complaint: parsed.complaint ?? null,
-      inspection: parsed.inspection ?? null,
-      outsourcing: parsed.outsourcing ?? null,
-    };
-  } catch {
-    return createEmptyPayloadMap();
-  }
-}
-
 function TimelineTooltipContent(props: { active?: boolean; payload?: Array<{ payload?: { label?: string; issueDescription?: string } }> }) {
   const record = props.payload?.[0]?.payload;
   if (!props.active || !record) return null;
@@ -260,7 +255,7 @@ export default function ComplaintInsightDashboard() {
     outsourcing: null,
   });
   const trackingTableRef = useRef<HTMLDivElement>(null);
-  const [payloads, setPayloads] = useState<SourcePayloadMap>(() => readCachedPayloads());
+  const [payloads, setPayloads] = useState<SourcePayloadMap>(() => createEmptyPayloadMap());
   const [errors, setErrors] = useState<SourceErrorMap>(() => createEmptyErrorMap());
   const [parsingStates, setParsingStates] = useState<SourceParsingMap>(() => createEmptyParsingMap());
   const [activeSourceKey, setActiveSourceKey] = useState<SourceKey>("complaint");
@@ -398,10 +393,59 @@ export default function ComplaintInsightDashboard() {
 
   const activeSourceConfig = SOURCE_CONFIGS.find((source) => source.key === activeSourceKey) ?? SOURCE_CONFIGS[0];
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payloads));
-  }, [payloads]);
+  const uploadWorkbookToOss = async (sourceKey: SourceKey, file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("category", "complaint-insight");
+    formData.append("entityId", sourceKey);
+    formData.append("slot", "workbook");
+
+    const response = await fetch("/api/uploads/assets", {
+      method: "POST",
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errorPayload = (await response.json().catch(() => null)) as { error?: string } | null;
+      throw new Error(errorPayload?.error || `OSS 上传失败：HTTP ${response.status}`);
+    }
+
+    return (await response.json()) as { url: string };
+  };
+
+  const persistSourceState = async (
+    sourceKey: SourceKey,
+    payload: ComplaintInsightsPayload,
+    assetUrl: string
+  ) => {
+    const response = await fetch(`/api/dashboard/complaint-insight-state/${sourceKey}`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        sourceKey,
+        sourceFile: payload.sourceFile,
+        assetUrl,
+        payload,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorPayload = (await response.json().catch(() => null)) as { error?: string } | null;
+      throw new Error(errorPayload?.error || `状态保存失败：HTTP ${response.status}`);
+    }
+  };
+
+  const deleteUploadedAsset = async (assetUrl: string) => {
+    await fetch("/api/uploads/assets", {
+      method: "DELETE",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ url: assetUrl }),
+    }).catch(() => undefined);
+  };
 
   useEffect(() => {
     if (payloads[activeSourceKey]) return;
@@ -410,6 +454,43 @@ export default function ComplaintInsightDashboard() {
       setActiveSourceKey(fallback);
     }
   }, [activeSourceKey, payloads]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadPersistedState = async () => {
+      try {
+        const response = await fetch("/api/dashboard/complaint-insight-state");
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+
+        const result = (await response.json()) as SourceStateResponse;
+        if (cancelled) return;
+
+        setPayloads({
+          complaint: result.state?.complaint?.payload ?? null,
+          inspection: result.state?.inspection?.payload ?? null,
+          outsourcing: result.state?.outsourcing?.payload ?? null,
+        });
+        setErrors(createEmptyErrorMap());
+      } catch (error) {
+        if (cancelled) return;
+        const message = error instanceof Error ? error.message : "状态恢复失败";
+        setErrors({
+          complaint: message,
+          inspection: message,
+          outsourcing: message,
+        });
+      }
+    };
+
+    void loadPersistedState();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -514,11 +595,18 @@ export default function ComplaintInsightDashboard() {
 
     setParsingStates((current) => ({ ...current, [sourceKey]: true }));
     setErrors((current) => ({ ...current, [sourceKey]: "" }));
+    let uploadedAssetUrl = "";
     try {
+      const uploaded = await uploadWorkbookToOss(sourceKey, file);
+      uploadedAssetUrl = uploaded.url;
       const parsed = await parseComplaintInsightExcel(file);
+      await persistSourceState(sourceKey, parsed, uploaded.url);
       setPayloads((current) => ({ ...current, [sourceKey]: parsed }));
       setActiveSourceKey(sourceKey);
     } catch (loadError) {
+      if (uploadedAssetUrl) {
+        await deleteUploadedAsset(uploadedAssetUrl);
+      }
       setPayloads((current) => ({ ...current, [sourceKey]: null }));
       setErrors((current) => ({
         ...current,
@@ -530,8 +618,25 @@ export default function ComplaintInsightDashboard() {
   };
 
   const clearPayload = (sourceKey: SourceKey) => {
-    setPayloads((current) => ({ ...current, [sourceKey]: null }));
-    setErrors((current) => ({ ...current, [sourceKey]: "" }));
+    void (async () => {
+      try {
+        const response = await fetch(`/api/dashboard/complaint-insight-state/${sourceKey}`, {
+          method: "DELETE",
+        });
+        if (!response.ok) {
+          const errorPayload = (await response.json().catch(() => null)) as { error?: string } | null;
+          throw new Error(errorPayload?.error || `删除失败：HTTP ${response.status}`);
+        }
+
+        setPayloads((current) => ({ ...current, [sourceKey]: null }));
+        setErrors((current) => ({ ...current, [sourceKey]: "" }));
+      } catch (error) {
+        setErrors((current) => ({
+          ...current,
+          [sourceKey]: error instanceof Error ? error.message : "删除失败",
+        }));
+      }
+    })();
   };
 
   const handleConfirmAction = () => {

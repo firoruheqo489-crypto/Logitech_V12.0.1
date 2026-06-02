@@ -39,6 +39,8 @@ const UPLOADS_TEMP_DIR = path.resolve(process.cwd(), 'uploads_temp');
 const MAX_UPLOAD_FILE_SIZE_BYTES = 100 * 1024 * 1024;
 const STANDARD_DOCX_MIME_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 const STANDARD_JSON_MIME_TYPE = 'application/json';
+const STANDARD_XLSX_MIME_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+const STANDARD_XLS_MIME_TYPE = 'application/vnd.ms-excel';
 const DOCX_COMPATIBLE_MIME_TYPES = new Set([
   '',
   'application/octet-stream',
@@ -51,9 +53,21 @@ const JSON_COMPATIBLE_MIME_TYPES = new Set([
   'application/octet-stream',
   'text/plain',
 ]);
+const XLSX_COMPATIBLE_MIME_TYPES = new Set([
+  '',
+  'application/octet-stream',
+  'application/zip',
+  'application/x-zip-compressed',
+]);
+const XLS_COMPATIBLE_MIME_TYPES = new Set([
+  '',
+  'application/octet-stream',
+]);
 const ALLOWED_UPLOAD_RULES: Record<string, ReadonlySet<string>> = {
   [STANDARD_DOCX_MIME_TYPE]: new Set(['.docx']),
   [STANDARD_JSON_MIME_TYPE]: new Set(['.json']),
+  [STANDARD_XLSX_MIME_TYPE]: new Set(['.xlsx']),
+  [STANDARD_XLS_MIME_TYPE]: new Set(['.xls']),
   'application/pdf': new Set(['.pdf']),
   'image/jpeg': new Set(['.jpeg', '.jpg']),
   'image/png': new Set(['.png']),
@@ -136,6 +150,14 @@ function normalizeUploadMimeType(input: { originalname: string; mimetype: string
 
   if (extension === '.json' && JSON_COMPATIBLE_MIME_TYPES.has(mimetype)) {
     return STANDARD_JSON_MIME_TYPE;
+  }
+
+  if (extension === '.xlsx' && XLSX_COMPATIBLE_MIME_TYPES.has(mimetype)) {
+    return STANDARD_XLSX_MIME_TYPE;
+  }
+
+  if (extension === '.xls' && XLS_COMPATIBLE_MIME_TYPES.has(mimetype)) {
+    return STANDARD_XLS_MIME_TYPE;
   }
 
   return mimetype;

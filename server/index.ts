@@ -17,6 +17,12 @@ import { listDashboardProjects, getDashboardProject, batchReplaceDashboardProjec
 import { listDashboardProjectAssets, upsertDashboardProjectAsset, deleteDashboardProjectAsset, ensureDashboardProjectAssetsTable } from "./routes/dashboard-assets.js";
 import { deleteDashboardPartFaiState, ensureDashboardPartFaiTable, getDashboardPartFaiState, upsertDashboardPartFaiState } from "./routes/dashboard-part-fai.js";
 import {
+  deleteDashboardComplaintInsightState,
+  ensureDashboardComplaintInsightStateTable,
+  getDashboardComplaintInsightState,
+  upsertDashboardComplaintInsightState,
+} from "./routes/dashboard-complaint-insight-state.js";
+import {
   deleteDashboardFaiDimensionState,
   ensureDashboardFaiDimensionTable,
   getDashboardFaiDimensionState,
@@ -212,6 +218,7 @@ async function startServer() {
     { name: "dashboard_product_data", run: ensureDashboardProductDataTable },
     { name: "dashboard_tooling_fai", run: ensureDashboardToolingFaiTable },
     { name: "dashboard_part_fai", run: ensureDashboardPartFaiTable },
+    { name: "dashboard_complaint_insight", run: ensureDashboardComplaintInsightStateTable },
     { name: "dashboard_fai_dimension", run: ensureDashboardFaiDimensionTable },
     { name: "dashboard_mold_trial_evidence", run: ensureDashboardMoldTrialEvidenceTable },
     { name: "dashboard_docx_converter", run: ensureDashboardDocxConverterTable },
@@ -372,6 +379,9 @@ async function startServer() {
   app.patch("/api/dashboard/product-docs/:moldNumber/:slotType", upsertDashboardProductDoc);
   app.delete("/api/dashboard/product-docs/:moldNumber/:slotType", deleteDashboardProductDoc);
   app.get("/api/dashboard/complaint-insights", getDashboardComplaintInsights);
+  app.get("/api/dashboard/complaint-insight-state", getDashboardComplaintInsightState);
+  app.put("/api/dashboard/complaint-insight-state/:sourceKey", upsertDashboardComplaintInsightState);
+  app.delete("/api/dashboard/complaint-insight-state/:sourceKey", deleteDashboardComplaintInsightState);
   app.get("/api/dashboard/tooling-fai-state", getDashboardToolingFaiState);
   app.put("/api/dashboard/tooling-fai-state", upsertDashboardToolingFaiState);
   app.delete("/api/dashboard/tooling-fai-state", deleteDashboardToolingFaiState);
