@@ -240,19 +240,19 @@ async function startServer() {
     warmupState.finishedAt = null;
     warmupState.failedTasks = [];
 
-    void Promise.allSettled(warmupTasks.map((task) => runWithWarmupRetry(task.name, task.run))).then((results) => {
-      const failedTaskEntries = results
-        .map((result, index) => {
-          if (result.status !== "rejected") {
-            return null;
-          }
+    void (async () => {
+      const failedTaskEntries: Array<{ name: string; reason: unknown }> = [];
 
-          return {
-            name: warmupTasks[index]?.name ?? `task-${index}`,
-            reason: result.reason,
-          };
-        })
-        .filter((entry): entry is { name: string; reason: unknown } => Boolean(entry));
+      for (const task of warmupTasks) {
+        try {
+          await runWithWarmupRetry(task.name, task.run);
+        } catch (error) {
+          failedTaskEntries.push({
+            name: task.name,
+            reason: error,
+          });
+        }
+      }
 
       const failedTasks = failedTaskEntries.map((entry) => entry.name);
       const canRetryBatch =
@@ -277,7 +277,7 @@ async function startServer() {
       warmupState.failedTasks = failedTasks;
       warmupState.phase = failedTasks.length > 0 ? "failed" : "ready";
       warmupState.finishedAt = new Date().toISOString();
-    });
+    })();
   };
   const sendFreshSpaHtml = (res: express.Response, staticPath: string) => {
     res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
