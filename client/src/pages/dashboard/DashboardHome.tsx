@@ -841,7 +841,7 @@ export default function DashboardHome() {
               'pareto-analysis': '柏拉图分析',
               'image-stitcher': '图片拼接',
               'fishbone-diagram': '鱼骨图',
-              'complaint-insight': '客诉异常',
+              'complaint-insight': '宜胜客诉台账看板',
               'logs': '推进日志',
               'product': '产品模块',
               'product-standard': '产品标准',

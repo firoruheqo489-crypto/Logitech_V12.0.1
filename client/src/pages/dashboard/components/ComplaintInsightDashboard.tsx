@@ -659,7 +659,7 @@ export default function ComplaintInsightDashboard() {
             <BarChart3 className="h-5 w-5" />
           </div>
           <div>
-            <h2 className="text-2xl font-bold text-slate-100">客诉异常看板</h2>
+            <h2 className="text-2xl font-bold text-slate-100">宜胜客诉台账看板</h2>
             <p className="text-sm text-slate-500">
               分别上传客诉、客验、委外客诉三类台账，独立查看，并在同一视角下比较整体分布。
             </p>
@@ -1154,16 +1154,16 @@ export default function ComplaintInsightDashboard() {
       </div>
 
       <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
-        <div className="mb-3 text-sm font-semibold text-slate-200">核心物理因果链追踪</div>
+        <div className="mb-3 text-sm font-semibold text-slate-200">事件详细记录</div>
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>发生时间</TableHead>
-              <TableHead>问题描述</TableHead>
-              <TableHead>原因分析</TableHead>
-              <TableHead>临时措施</TableHead>
-              <TableHead>长期措施</TableHead>
-              <TableHead>是否根本解决</TableHead>
+              <TableHead className="border-r border-slate-700/70 pr-4">发生时间</TableHead>
+              <TableHead className="border-r border-slate-700/70 px-4">问题描述</TableHead>
+              <TableHead className="border-r border-slate-700/70 px-4">原因分析</TableHead>
+              <TableHead className="border-r border-slate-700/70 px-4">临时措施</TableHead>
+              <TableHead className="border-r border-slate-700/70 px-4">长期措施</TableHead>
+              <TableHead className="pl-4">是否根本解决</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -1174,20 +1174,22 @@ export default function ComplaintInsightDashboard() {
                   index % 2 === 0 ? "bg-white/[0.035]" : "bg-white/[0.015]"
                 }`}
               >
-                <TableCell className="whitespace-nowrap">{formatDate(row.occurredAt)}</TableCell>
-                <TableCell className="max-w-[260px] whitespace-normal text-slate-200">
+                <TableCell className="whitespace-nowrap border-r border-slate-800/80 pr-4">
+                  {formatDate(row.occurredAt)}
+                </TableCell>
+                <TableCell className="max-w-[260px] whitespace-normal border-r border-slate-800/80 px-4 text-slate-200">
                   {row.issueDescription || "-"}
                 </TableCell>
-                <TableCell className="max-w-[300px] whitespace-normal text-slate-300">
+                <TableCell className="max-w-[300px] whitespace-normal border-r border-slate-800/80 px-4 text-slate-300">
                   {row.causeAnalysis || "-"}
                 </TableCell>
-                <TableCell className="max-w-[220px] whitespace-normal text-slate-300">
+                <TableCell className="max-w-[220px] whitespace-normal border-r border-slate-800/80 px-4 text-slate-300">
                   {row.temporaryAction || "-"}
                 </TableCell>
-                <TableCell className="max-w-[320px] whitespace-normal text-slate-300">
+                <TableCell className="max-w-[320px] whitespace-normal border-r border-slate-800/80 px-4 text-slate-300">
                   {row.longTermAction || "-"}
                 </TableCell>
-                <TableCell className="whitespace-nowrap text-slate-200">
+                <TableCell className="whitespace-nowrap pl-4 text-slate-200">
                   {row.rootSolved || "-"}
                 </TableCell>
               </TableRow>
