@@ -103,6 +103,7 @@
     "nanoid": "^5.1.5",
     "next-themes": "^0.4.6",
     "pdfjs-dist": "5.5.207",
+    "plotly.js-dist-min": "^3.6.0",
     "postgres": "^3.4.5",
     "react": "^19.2.1",
     "react-day-picker": "^9.11.1",

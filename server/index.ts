@@ -57,6 +57,7 @@ import {
 } from "./routes/dashboard-project-gantt-state.js";
 import { listDashboardProductData, batchUpsertDashboardProductData, ensureDashboardProductDataTable } from "./routes/dashboard-product-data.js";
 import { listDashboardProductDocs, upsertDashboardProductDoc, deleteDashboardProductDoc } from "./routes/dashboard-product-docs.js";
+import { getDashboardComplaintInsights } from "./routes/dashboard-complaint-insights.js";
 import { getProgressNotes, getLatestProgressBackup, saveProgressNotes, upsertProgressNote, createProgressBackup, restoreLatestProgressNotes, deleteProgressNote, getProgressNoteAuditLogs, ensureBackupTable, ensureProgressAuditTable } from "./routes/progress-notes.js";
 import { listIssues, createIssue, updateIssue, deleteIssue, ensureIssuesTable } from "./routes/issues.js";
 import {
@@ -370,6 +371,7 @@ async function startServer() {
   app.get("/api/dashboard/product-docs", listDashboardProductDocs);
   app.patch("/api/dashboard/product-docs/:moldNumber/:slotType", upsertDashboardProductDoc);
   app.delete("/api/dashboard/product-docs/:moldNumber/:slotType", deleteDashboardProductDoc);
+  app.get("/api/dashboard/complaint-insights", getDashboardComplaintInsights);
   app.get("/api/dashboard/tooling-fai-state", getDashboardToolingFaiState);
   app.put("/api/dashboard/tooling-fai-state", upsertDashboardToolingFaiState);
   app.delete("/api/dashboard/tooling-fai-state", deleteDashboardToolingFaiState);
