@@ -58,8 +58,6 @@ const SipWorkspace = lazy(() => import('./components/SipWorkspace'));
 const ProcessVarianceWorkspace = lazy(() => import('./components/ProcessVarianceWorkspace'));
 const MeasurementIntakeWorkspace = lazy(() => import('./components/MeasurementIntakeWorkspace'));
 const ProductDataDrawerWorkspace = lazy(() => import('./components/ProductDataDrawerWorkspace'));
-const ProductStandardDrawerWorkspace = lazy(() => import('./components/ProductStandardDrawerWorkspace'));
-const ProcessDrawerWorkspace = lazy(() => import('./components/ProcessDrawerWorkspace'));
 const ProgressLogsDrawerWorkspace = lazy(() => import('./components/ProgressLogsDrawerWorkspace'));
 const ParetoQualityDashboard = lazy(() => import('./components/ParetoQualityDashboard'));
 const FishboneDiagramDashboard = lazy(() => import('./components/FishboneDiagramDashboard'));
@@ -67,7 +65,6 @@ const ComplaintInsightDashboard = lazy(() => import('./components/ComplaintInsig
 const ImageStitcherWorkspace = lazy(() => import('./components/ImageStitcherWorkspace'));
 const FaiDimensionAnalyzer = lazy(() => import('./components/FaiDimensionAnalyzer'));
 const DocxConvertModule = lazy(() => import('./components/DocxConvertModule'));
-const FmeaIssueWorkspace = lazy(() => import('@/components/FmeaIssueWorkspace'));
 const VDISurfaceGrid = lazy(() => import('@/components/VDISurfaceGrid'));
 const DefectLab = lazy(() => import('@/components/DefectLab'));
 const AdminModal = lazy(() =>
@@ -164,8 +161,8 @@ type ProgressEntry = DashboardProgressEntry;
 const DASHBOARD_TABS = [
   'overview',
   'logs',
+  'complaint-insight',
   'product',
-  'product-standard',
   'mold-trial-database',
   'dimension-analysis',
   'docx-converter',
@@ -180,12 +177,9 @@ const DASHBOARD_TABS = [
   'boxplot',
   'pareto-analysis',
   'fishbone-diagram',
-  'complaint-insight',
   'measurement-intake',
   'mold-reliability',
   'spc-calculator',
-  'fmea',
-  'process',
   'defect-library',
   'injection-clinic',
   'mass-production-monitoring',
@@ -844,7 +838,6 @@ export default function DashboardHome() {
               'complaint-insight': '宜胜客诉台账看板',
               'logs': '推进日志',
               'product': '产品模块',
-              'product-standard': '产品标准',
               'mold-trial-database': '试模数据库',
               'dimension-analysis': '尺寸分析',
               'docx-converter': '问题解析',
@@ -858,8 +851,6 @@ export default function DashboardHome() {
               'mold-reliability': '模具可靠性',
               'measurement-intake': '测量检入表',
               'spc-calculator': 'SPC计算器',
-              'fmea': 'FMEA知识库',
-              'process': '工艺模块',
               'defect-library': 'VDI 3400 对照库',
               'injection-clinic': '注塑诊所',
               'mass-production-monitoring': '量产监控',
@@ -997,16 +988,6 @@ export default function DashboardHome() {
           </LazyWorkspace>
         )}
 
-        {selectedTab === 'fmea' && (
-          <LazyWorkspace>
-            <FmeaIssueWorkspace
-              projectName={activeModule || ''}
-              projectIds={currentModuleMoldIds}
-              defaultProductName={currentModuleData[0]?.identity?.productName?.trim() || ''}
-            />
-          </LazyWorkspace>
-        )}
-
         {/* Product module drawer workspace */}
         {selectedTab === 'product' && (
           <LazyWorkspace>
@@ -1017,21 +998,6 @@ export default function DashboardHome() {
               productDataByMold={productModuleDataByLookup}
               productSequenceByMold={productModuleSequenceByMold}
             />
-          </LazyWorkspace>
-        )}
-
-        {selectedTab === 'product-standard' && (
-          <LazyWorkspace>
-            <ProductStandardDrawerWorkspace
-              panels={currentModuleTrialPanels}
-              theme={moduleTheme}
-            />
-          </LazyWorkspace>
-        )}
-
-        {isAdminMode && selectedTab === 'process' && (
-          <LazyWorkspace>
-            <ProcessDrawerWorkspace panels={currentModuleTrialPanels} />
           </LazyWorkspace>
         )}
 

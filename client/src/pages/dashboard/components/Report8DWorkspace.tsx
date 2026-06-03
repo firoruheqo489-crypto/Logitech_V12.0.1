@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+﻿import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   FileDown,
   FolderOpen,
@@ -277,6 +277,11 @@ function compactPrintText(value: string | undefined, fallback = "待填写", max
   return normalized.length > maxLength ? `${normalized.slice(0, maxLength)}...` : normalized;
 }
 
+function formatPrintMultiline(value: string | undefined, fallback = "待填写"): string {
+  const normalized = (value || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
+  return normalized ? escapeHtml(normalized).replace(/\n/g, "<br />") : escapeHtml(fallback);
+}
+
 function joinLimited(items: string[], limit: number, fallback = "待填写"): string {
   const cleaned = items.map((item) => compactPrintText(item, "", 72)).filter(Boolean);
   if (cleaned.length === 0) {
@@ -288,25 +293,36 @@ function joinLimited(items: string[], limit: number, fallback = "待填写"): st
   return remaining > 0 ? `${visible}；等 ${remaining} 项` : visible;
 }
 
+function joinAllMultiline(items: string[], fallback = "待填写"): string {
+  const cleaned = items
+    .map((item) => item.replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim())
+    .filter(Boolean);
+
+  if (cleaned.length === 0) {
+    return fallback;
+  }
+
+  return cleaned.map((item, index) => `${index + 1}. ${item}`).join("\n");
+}
+
 function formatTeamPreview(members: Report8DTeamMember[]): string {
-  return joinLimited(
+  return joinAllMultiline(
     members.map((member) =>
       [member.name, member.department, member.role].map((value) => value.trim()).filter(Boolean).join(" / "),
     ),
-    4,
   );
 }
 
 function formatContainmentPreview(actions: Report8DContainmentAction[]): string[] {
-  return actions.slice(0, 3).map((action, index) => {
+  return actions.map((action, index) => {
     const status = STATUS_STYLES[action.status]?.label ?? action.status;
-    return `${index + 1}. ${compactPrintText(action.action, "待填写措施", 58)} | ${compactPrintText(action.owner, "责任人", 18)} | ${status}`;
+    return `${index + 1}. ${action.action || "待填写措施"} | ${action.owner || "责任人"} | ${status}`;
   });
 }
 
 function formatCorrectivePreview(actions: Report8DCorrectiveAction[]): string[] {
-  return actions.slice(0, 3).map((action, index) =>
-    `${index + 1}. ${compactPrintText(action.action, "待填写措施", 58)} | ${compactPrintText(action.type, "类型", 16)} | ${compactPrintText(action.owner, "责任人", 18)}`,
+  return actions.map((action, index) =>
+    `${index + 1}. ${action.action || "待填写措施"} | ${action.type || "类型"} | ${action.owner || "责任人"}`,
   );
 }
 
@@ -343,8 +359,8 @@ function buildReport8DPrintCss(): string {
 
     .report-8d-a4-page {
       width: 210mm;
-      height: 297mm;
-      overflow: hidden;
+      min-height: 297mm;
+      overflow: visible;
       margin: 0 auto;
       padding: 8.5mm 9mm;
       background: #ffffff;
@@ -403,9 +419,9 @@ function buildReport8DPrintCss(): string {
       color: #0f172a;
       font-size: 7.7px;
       font-weight: 600;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }
 
     .report-8d-print-span-2 {
@@ -417,9 +433,10 @@ function buildReport8DPrintCss(): string {
     }
 
     .report-8d-print-box {
-      display: flex;
-      gap: 1.4mm;
-      min-height: 19.6mm;
+      display: grid;
+      grid-template-columns: 31mm minmax(0, 1fr);
+      align-items: start;
+      column-gap: 2.2mm;
       border: 0.65px solid #cbd5e1;
       border-left: 2.4mm solid #0f766e;
       border-radius: 1.2mm;
@@ -429,32 +446,27 @@ function buildReport8DPrintCss(): string {
     }
 
     .report-8d-print-box h2 {
-      align-items: flex-start;
       color: #0f172a;
-      display: flex;
-      flex: 0 0 31mm;
-      flex-direction: column;
-      gap: 0.7mm;
       margin: 0;
       font-size: 8.5px;
       font-weight: 800;
-      line-height: 1.12;
+      line-height: 1.2;
     }
 
     .report-8d-print-code {
       border: 0.6px solid #0f766e;
       border-radius: 1mm;
       color: #0f766e;
-      display: inline-flex;
+      display: inline-block;
       font-size: 7.2px;
       font-weight: 800;
-      justify-content: center;
       min-width: 8mm;
-      padding: 0.25mm 1.1mm;
+      padding: 0.35mm 1.2mm;
+      margin-bottom: 0.9mm;
+      text-align: center;
     }
 
     .report-8d-print-body {
-      flex: 1 1 auto;
       min-width: 0;
     }
 
@@ -462,12 +474,20 @@ function buildReport8DPrintCss(): string {
       color: #1f2937;
       font-size: 7.9px;
       margin: 0;
+      line-height: 1.45;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }
 
     .report-8d-print-muted {
       color: #64748b;
       font-size: 7.3px;
       margin: 0;
+      line-height: 1.4;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }
 
     .report-8d-print-list {
@@ -478,6 +498,9 @@ function buildReport8DPrintCss(): string {
     .report-8d-print-list li {
       margin: 0 0 0.45mm;
       padding: 0;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }
 
     .report-8d-print-table {
@@ -489,37 +512,28 @@ function buildReport8DPrintCss(): string {
     .report-8d-print-table td,
     .report-8d-print-table th {
       border: 0.5px solid #cbd5e1;
-      padding: 0.45mm 0.8mm;
+      padding: 0.95mm 1.1mm;
       text-align: left;
       vertical-align: top;
+      line-height: 1.4;
     }
 
     .report-8d-print-table th {
       background: #f1f5f9;
       color: #334155;
-      font-size: 6.7px;
+      font-size: 7.2px;
       font-weight: 700;
-      width: 22%;
+      width: 24%;
     }
 
     .report-8d-print-clamp-1,
     .report-8d-print-clamp-2,
     .report-8d-print-clamp-3 {
-      display: -webkit-box;
-      overflow: hidden;
-      -webkit-box-orient: vertical;
-    }
-
-    .report-8d-print-clamp-1 {
-      -webkit-line-clamp: 1;
-    }
-
-    .report-8d-print-clamp-2 {
-      -webkit-line-clamp: 2;
-    }
-
-    .report-8d-print-clamp-3 {
-      -webkit-line-clamp: 3;
+      display: block;
+      overflow: visible;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }
 
     .report-8d-print-sign {
@@ -558,7 +572,7 @@ function buildReport8DPrintCss(): string {
 
 function buildPrintField(label: string, value: string, span?: 2 | 4): string {
   const spanClass = span === 2 ? " report-8d-print-span-2" : span === 4 ? " report-8d-print-span-4" : "";
-  return `<div class="report-8d-print-field${spanClass}"><strong>${escapeHtml(label)}</strong><span>${escapeHtml(compactPrintText(value, "待填写", span === 4 ? 160 : 64))}</span></div>`;
+  return `<div class="report-8d-print-field${spanClass}"><strong>${escapeHtml(label)}</strong><span>${formatPrintMultiline(value, "待填写")}</span></div>`;
 }
 
 function buildPrintBox(code: string, title: string, content: string): string {
@@ -570,21 +584,21 @@ function buildReport8DDocumentMarkup({ state, projectName, moldNumbers }: Report
   const problemRows = state.problemItems.slice(0, 7);
   const containmentRows = formatContainmentPreview(state.containmentActions);
   const correctiveRows = formatCorrectivePreview(state.correctiveActions);
-  const verificationPreview = joinLimited(state.d6.verificationItems, 3);
-  const systemUpdatePreview = joinLimited(state.d7.systemUpdates, 4);
+  const verificationPreview = joinAllMultiline(state.d6.verificationItems);
+  const systemUpdatePreview = joinAllMultiline(state.d7.systemUpdates);
 
   const problemTable = problemRows
     .map((item) => `
       <tr>
         <th>${escapeHtml(compactPrintText(item.label, "字段", 18))}</th>
-        <td><span class="report-8d-print-clamp-1">${escapeHtml(compactPrintText(item.value, "待填写", 60))}</span></td>
+        <td><span class="report-8d-print-copy">${formatPrintMultiline(item.value, "待填写")}</span></td>
       </tr>`)
     .join("");
   const containmentList = (containmentRows.length ? containmentRows : ["1. 待填写临时遏制措施"])
-    .map((item) => `<li class="report-8d-print-clamp-1">${escapeHtml(item)}</li>`)
+    .map((item) => `<li class="report-8d-print-clamp-1">${formatPrintMultiline(item, "")}</li>`)
     .join("");
   const correctiveList = (correctiveRows.length ? correctiveRows : ["1. 待填写永久纠正措施"])
-    .map((item) => `<li class="report-8d-print-clamp-1">${escapeHtml(item)}</li>`)
+    .map((item) => `<li class="report-8d-print-clamp-1">${formatPrintMultiline(item, "")}</li>`)
     .join("");
 
   return `
@@ -608,55 +622,55 @@ function buildReport8DDocumentMarkup({ state, projectName, moldNumbers }: Report
         ${buildPrintBox(
           "D0",
           "问题准备与紧急响应",
-          `<p class="report-8d-print-copy report-8d-print-clamp-2">严重级别：${escapeHtml(compactPrintText(state.d0.severityLabel, "待评估", 76))}</p>
-           <p class="report-8d-print-copy report-8d-print-clamp-3">${escapeHtml(compactPrintText(state.d0.summary, "问题来源、影响范围、风险等级待填写", 150))}</p>`,
+          `<p class="report-8d-print-copy">严重级别：${escapeHtml(compactPrintText(state.d0.severityLabel, "待评估", 76))}</p>
+           <p class="report-8d-print-copy">${formatPrintMultiline(state.d0.summary, "问题来源、影响范围、风险等级待填写")}</p>`,
         )}
         ${buildPrintBox(
           "D1",
           "团队组建",
-          `<p class="report-8d-print-copy report-8d-print-clamp-3">${escapeHtml(formatTeamPreview(state.teamMembers))}</p>`,
+          `<p class="report-8d-print-copy">${formatPrintMultiline(formatTeamPreview(state.teamMembers), "待填写")}</p>`,
         )}
         ${buildPrintBox("D2", "问题描述 (5W2H)", `<table class="report-8d-print-table"><tbody>${problemTable}</tbody></table>`)}
         ${buildPrintBox(
           "D3",
           "临时遏制措施",
-          `<p class="report-8d-print-copy report-8d-print-clamp-2">遏制说明：${escapeHtml(compactPrintText(state.d0.containment, "待填写", 95))}</p>
+          `<p class="report-8d-print-copy">遏制说明：${formatPrintMultiline(state.d0.containment, "待填写")}</p>
            <ul class="report-8d-print-list">${containmentList}</ul>`,
         )}
         ${buildPrintBox(
           "D4",
           "根本原因分析",
-          `<p class="report-8d-print-copy report-8d-print-clamp-3">发生原因：${escapeHtml(compactPrintText(state.d4.occurrence, "待填写", 135))}</p>
-           <p class="report-8d-print-copy report-8d-print-clamp-2">逃逸原因：${escapeHtml(compactPrintText(state.d4.escape, "待填写", 105))}</p>`,
+          `<p class="report-8d-print-copy">发生原因：${formatPrintMultiline(state.d4.occurrence, "待填写")}</p>
+           <p class="report-8d-print-copy">逃逸原因：${formatPrintMultiline(state.d4.escape, "待填写")}</p>`,
         )}
         ${buildPrintBox("D5", "永久纠正措施", `<ul class="report-8d-print-list">${correctiveList}</ul>`)}
         ${buildPrintBox(
           "D6",
           "实施与验证",
-          `<p class="report-8d-print-copy report-8d-print-clamp-2">验证摘要：${escapeHtml(compactPrintText(state.d6.summary, "待填写", 100))}</p>
-           <p class="report-8d-print-copy report-8d-print-clamp-2">验证项：${escapeHtml(verificationPreview)}</p>
+          `<p class="report-8d-print-copy">验证摘要：${formatPrintMultiline(state.d6.summary, "待填写")}</p>
+           <p class="report-8d-print-copy">验证项：${formatPrintMultiline(verificationPreview, "待填写")}</p>
            <p class="report-8d-print-muted">状态：${escapeHtml(compactPrintText(state.d6.verifiedStatus, "待验证", 36))}；日期：${escapeHtml(compactPrintText(state.d6.verifiedAt, "待定", 18))}</p>`,
         )}
         ${buildPrintBox(
           "D7",
           "防止再发",
-          `<p class="report-8d-print-copy report-8d-print-clamp-2">系统回写：${escapeHtml(systemUpdatePreview)}</p>
-           <p class="report-8d-print-copy report-8d-print-clamp-2">横向展开：${escapeHtml(compactPrintText(state.d7.rolloutNotes, "待填写", 105))}</p>`,
+          `<p class="report-8d-print-copy">系统回写：${formatPrintMultiline(systemUpdatePreview, "待填写")}</p>
+           <p class="report-8d-print-copy">横向展开：${formatPrintMultiline(state.d7.rolloutNotes, "待填写")}</p>`,
         )}
         ${buildPrintBox(
           "D8",
           "结案与团队认可",
-          `<p class="report-8d-print-copy report-8d-print-clamp-3">结案总结：${escapeHtml(compactPrintText(state.d8.closureSummary, "待填写", 135))}</p>
+          `<p class="report-8d-print-copy">结案总结：${formatPrintMultiline(state.d8.closureSummary, "待填写")}</p>
            <p class="report-8d-print-muted">客户确认：${escapeHtml(compactPrintText(state.d8.customerClosureDate, "待定", 18))}；内部结案：${escapeHtml(compactPrintText(state.d8.internalClosureDate, "待定", 18))}</p>`,
         )}
         ${buildPrintBox(
           "签核",
           "审批签核",
           `<div class="report-8d-print-sign"><div>编制</div><div>质量确认</div><div>责任部门</div><div>批准</div></div>
-           <p class="report-8d-print-copy report-8d-print-clamp-2">团队认可：${escapeHtml(compactPrintText(state.d8.recognition, "记录团队贡献、客户反馈和后续复盘安排", 90))}</p>`,
+           <p class="report-8d-print-copy">团队认可：${formatPrintMultiline(state.d8.recognition, "记录团队贡献、客户反馈和后续复盘安排")}</p>`,
         )}
       </div>
-      <div class="report-8d-print-footer">本页为 8D 报告 A4 单页摘要，完整证据、记录和附件以系统工作区为准。</div>
+      <div class="report-8d-print-footer">本页为 8D 报告 A4 打印版，完整证据、记录和附件以系统工作区为准。</div>
     </article>
   `;
 }
@@ -750,7 +764,7 @@ function buildReport8DPreviewHtml(options: Report8DDocumentOptions): string {
         <div class="report-8d-preview-toolbar">
           <div>
             <div class="report-8d-preview-title">8D 报告打印预览</div>
-            <div class="report-8d-preview-meta">单页 A4 摘要版，确认版式后再打印</div>
+            <div class="report-8d-preview-meta">A4 打印版，支持较长正文内容换行显示</div>
           </div>
           <div class="report-8d-preview-actions">
             <button class="report-8d-preview-button secondary" type="button" onclick="window.close()">关闭</button>
@@ -829,10 +843,22 @@ async function exportReport8DPdf(options: Report8DDocumentOptions): Promise<void
       format: "a4",
       compress: false,
     });
-    pdf.addImage(canvas.toDataURL("image/png", 1), "PNG", 0, 0, 210, 297, "report-8d-a4", "FAST");
+    const imageData = canvas.toDataURL("image/png", 1);
+    const pdfWidth = 210;
+    const pdfHeight = 297;
+    const imageHeight = (canvas.height * pdfWidth) / canvas.width;
 
-    while (pdf.getNumberOfPages() > 1) {
-      pdf.deletePage(pdf.getNumberOfPages());
+    let heightLeft = imageHeight;
+    let position = 0;
+
+    pdf.addImage(imageData, "PNG", 0, position, pdfWidth, imageHeight, "report-8d-a4", "FAST");
+    heightLeft -= pdfHeight;
+
+    while (heightLeft > 0) {
+      position = heightLeft - imageHeight;
+      pdf.addPage();
+      pdf.addImage(imageData, "PNG", 0, position, pdfWidth, imageHeight, undefined, "FAST");
+      heightLeft -= pdfHeight;
     }
 
     pdf.save(buildReport8DFileName(options.state));
