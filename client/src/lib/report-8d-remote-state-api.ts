@@ -17,6 +17,15 @@ export type EightDReport = {
 
 export type Report8DHeaderFields = {
   reportNo: string;
+  finishedPartNumber: string;
+  finishedPartName: string;
+  finishedPartSpec: string;
+  replyTo: string;
+  abnormalPart: string;
+  reportSubject: string;
+  reportDate: string;
+  projectModule: string;
+  moldNumber: string;
   customer: string;
   product: string;
   defectIssue: string;
@@ -54,6 +63,12 @@ export type Report8DCorrectiveAction = {
   targetDate: string;
 };
 
+export type Report8DVerificationRound = {
+  id: string;
+  verification: string;
+  images: string[];
+};
+
 export type Report8DWorkspaceState = {
   module: "report-8d";
   workspaceKey: string;
@@ -67,8 +82,8 @@ export type Report8DWorkspaceState = {
   problemItems: Report8DProblemItem[];
   containmentActions: Report8DContainmentAction[];
   d4: {
-    occurrence: string;
-    escape: string;
+    rootCauseAnalysis: string;
+    verificationRounds: Report8DVerificationRound[];
   };
   correctiveActions: Report8DCorrectiveAction[];
   d6: {

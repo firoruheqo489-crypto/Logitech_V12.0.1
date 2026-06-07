@@ -2,17 +2,20 @@
 import {
   FileDown,
   FolderOpen,
+  Loader2,
   Plus,
   Printer,
   RefreshCw,
-  SearchCheck,
   SendHorizontal,
   ShieldAlert,
   Trash2,
   Trophy,
   Users2,
   Wrench,
+  X,
+  ZoomIn,
 } from "lucide-react";
+import imageCompression from "browser-image-compression";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -29,6 +32,7 @@ import {
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { useEightDCaseArchive } from "@/hooks/use-eight-d-case-archive";
+import { deleteAssetViaServer, uploadAssetViaServer } from "@/lib/ossUpload";
 import { cn } from "@/lib/utils";
 import {
   DEFAULT_REPORT_8D_WORKSPACE_KEY,
@@ -39,6 +43,7 @@ import {
   type Report8DCorrectiveAction,
   type Report8DHeaderFields,
   type Report8DProblemItem,
+  type Report8DVerificationRound,
   type Report8DTeamMember,
   type Report8DWorkspaceState,
 } from "@/lib/report-8d-remote-state-api";
@@ -59,14 +64,6 @@ type DisciplineSectionProps = {
   children: ReactNode;
 };
 
-type InsightEditorProps = {
-  title: string;
-  accentClassName: string;
-  value: string;
-  onChange: (value: string) => void;
-  placeholder: string;
-};
-
 type Report8DDocumentOptions = {
   state: Report8DWorkspaceState;
   projectName: string;
@@ -75,6 +72,10 @@ type Report8DDocumentOptions = {
 
 const SAVE_DEBOUNCE_MS = 900;
 const EMPTY_MOLD_NUMBERS: string[] = [];
+const FIXED_ROW_TEXTAREA_CLASS =
+  "h-28 min-h-28 max-h-28 resize-none overflow-x-hidden overflow-y-auto whitespace-pre-wrap break-all [field-sizing:fixed]";
+const ROUND_INDEX_LABELS = ["一", "二", "三", "四", "五", "六", "七", "八", "九", "十"];
+const REPORT_8D_IMAGE_MAX_SIZE_BYTES = 500 * 1024;
 
 const STATUS_OPTIONS: Array<Report8DContainmentAction["status"]> = [
   "completed",
@@ -99,6 +100,37 @@ const STATUS_STYLES: Record<Report8DContainmentAction["status"], { label: string
 
 function createId(prefix: string): string {
   return `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function buildVerificationRound(verification = "", images: string[] = []): Report8DVerificationRound {
+  return {
+    id: createId("verification-round"),
+    verification,
+    images,
+  };
+}
+
+function ensureVerificationRounds(items: Report8DVerificationRound[] | undefined | null): Report8DVerificationRound[] {
+  return Array.isArray(items) ? items : [];
+}
+
+function formatRoundIndexLabel(index: number): string {
+  return ROUND_INDEX_LABELS[index] || String(index + 1);
+}
+
+async function compressReport8DImage(file: File): Promise<File> {
+  if (file.size <= REPORT_8D_IMAGE_MAX_SIZE_BYTES) {
+    return file;
+  }
+
+  return imageCompression(file, {
+    maxSizeMB: 0.48,
+    maxWidthOrHeight: 1600,
+    useWebWorker: true,
+    fileType: "image/webp",
+    initialQuality: 0.82,
+    maxIteration: 10,
+  });
 }
 
 function normalizeWorkspaceKey(projectName: string): string {
@@ -149,6 +181,15 @@ function buildInitialState(
     workspaceKey,
     headerFields: {
       reportNo: reportId || `8D-${openedDate.replaceAll("-", "").slice(0, 6)}-${moldSuffix}`,
+      finishedPartNumber: moldNumbers.join(" / ") || "待填写",
+      finishedPartName: productName || `${projectName || "项目"} / 待填写`,
+      finishedPartSpec: "待填写",
+      replyTo: "内部",
+      abnormalPart: moldNumbers.join(" / ") || "待填写",
+      reportSubject: "一句话描述问题：对象 + 不良模式 + 影响",
+      reportDate: openedDate,
+      projectModule: projectName || "当前项目模块",
+      moldNumber: moldNumbers.join(" / ") || "当前模块未绑定模号",
       customer: "客户 / 内部提出部门",
       product: productName || `${projectName || "项目"} / 产品或零件名称`,
       defectIssue: "一句话描述问题：对象 + 不良模式 + 影响",
@@ -203,10 +244,10 @@ function buildInitialState(
       },
     ],
     d4: {
-      occurrence:
-        "发生根因：说明导致问题发生的物理、过程或管理原因。\n证据：列明样品、数据、实验、记录、照片、测量或复现结果。\n5 Why / 鱼骨结论：把直接原因追到可被系统控制的根因，不停留在“人员疏忽”。",
-      escape:
-        "逃逸根因：说明为什么现有检验、测试、审核、报警或评审没有拦住问题。\n控制缺口：列明频次、抽样、标准、设备、人员、系统或信息传递方面的漏洞。\n风险文件：确认 DFMEA / PFMEA / 控制计划是否遗漏或低估该失效模式。",
+      rootCauseAnalysis: "",
+      verificationRounds: [
+        buildVerificationRound(),
+      ],
     },
     correctiveActions: [
       {
@@ -405,8 +446,7 @@ function buildReport8DPrintCss(): string {
       break-inside: avoid;
     }
 
-    .report-8d-print-field strong,
-    .report-8d-print-box h2 {
+    .report-8d-print-field strong {
       display: block;
       margin: 0 0 0.45mm;
       color: #64748b;
@@ -445,25 +485,37 @@ function buildReport8DPrintCss(): string {
       background: linear-gradient(90deg, #f8fafc 0, #ffffff 24mm);
     }
 
-    .report-8d-print-box h2 {
+    .report-8d-print-side {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 0.9mm;
+      min-width: 0;
+      padding-top: 0.15mm;
+    }
+
+    .report-8d-print-side h2 {
       color: #0f172a;
       margin: 0;
       font-size: 8.5px;
       font-weight: 800;
-      line-height: 1.2;
+      line-height: 1.22;
     }
 
     .report-8d-print-code {
       border: 0.6px solid #0f766e;
       border-radius: 1mm;
       color: #0f766e;
-      display: inline-block;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
       font-size: 7.2px;
       font-weight: 800;
       min-width: 8mm;
+      line-height: 1;
       padding: 0.35mm 1.2mm;
-      margin-bottom: 0.9mm;
       text-align: center;
+      white-space: nowrap;
     }
 
     .report-8d-print-body {
@@ -576,7 +628,7 @@ function buildPrintField(label: string, value: string, span?: 2 | 4): string {
 }
 
 function buildPrintBox(code: string, title: string, content: string): string {
-  return `<section class="report-8d-print-box"><h2><span class="report-8d-print-code">${escapeHtml(code)}</span>${escapeHtml(title)}</h2><div class="report-8d-print-body">${content}</div></section>`;
+  return `<section class="report-8d-print-box"><div class="report-8d-print-side"><span class="report-8d-print-code">${escapeHtml(code)}</span><h2>${escapeHtml(title)}</h2></div><div class="report-8d-print-body">${content}</div></section>`;
 }
 
 function buildReport8DDocumentMarkup({ state, projectName, moldNumbers }: Report8DDocumentOptions): string {
@@ -584,6 +636,7 @@ function buildReport8DDocumentMarkup({ state, projectName, moldNumbers }: Report
   const problemRows = state.problemItems.slice(0, 7);
   const containmentRows = formatContainmentPreview(state.containmentActions);
   const correctiveRows = formatCorrectivePreview(state.correctiveActions);
+  const verificationRounds = ensureVerificationRounds(state.d4?.verificationRounds).slice(0, 20);
   const verificationPreview = joinAllMultiline(state.d6.verificationItems);
   const systemUpdatePreview = joinAllMultiline(state.d7.systemUpdates);
 
@@ -600,6 +653,14 @@ function buildReport8DDocumentMarkup({ state, projectName, moldNumbers }: Report
   const correctiveList = (correctiveRows.length ? correctiveRows : ["1. 待填写永久纠正措施"])
     .map((item) => `<li class="report-8d-print-clamp-1">${formatPrintMultiline(item, "")}</li>`)
     .join("");
+  const rootCauseAnalysis = state.d4?.rootCauseAnalysis || "";
+  const verificationRoundList = (verificationRounds.length ? verificationRounds : [buildVerificationRound()])
+    .map((item, index) => {
+      const verificationLabel = `验证${formatRoundIndexLabel(index)}`;
+      const imageSummary = item.images.length > 0 ? `；验证图片 ${item.images.length} 张` : "";
+      return `<li class="report-8d-print-clamp-1"><strong>${escapeHtml(verificationLabel)}：</strong>${formatPrintMultiline(item.verification, "待填写")}${escapeHtml(imageSummary)}</li>`;
+    })
+    .join("");
 
   return `
     <article class="report-8d-a4-page" aria-label="8D 报告 A4 页面">
@@ -608,14 +669,14 @@ function buildReport8DDocumentMarkup({ state, projectName, moldNumbers }: Report
       </div>
 
       <div class="report-8d-print-grid report-8d-print-header">
-        ${buildPrintField("客户 / 部门", headerFields.customer)}
-        ${buildPrintField("项目模块", projectName || "当前项目")}
-        ${buildPrintField("产品对象", headerFields.product)}
-        ${buildPrintField("责任人", headerFields.champion)}
-        ${buildPrintField("关联模号", moldNumbers.length ? moldNumbers.join(" / ") : "未绑定模号", 2)}
-        ${buildPrintField("开案日期", headerFields.dateOpened)}
-        ${buildPrintField("当前状态", headerFields.currentStatus)}
-        ${buildPrintField("异常主题", headerFields.defectIssue, 4)}
+        ${buildPrintField("成品料号", headerFields.finishedPartNumber)}
+        ${buildPrintField("成品名称", headerFields.finishedPartName)}
+        ${buildPrintField("成品规格", headerFields.finishedPartSpec)}
+        ${buildPrintField("异常部件", headerFields.abnormalPart)}
+        ${buildPrintField("回复对象", headerFields.replyTo)}
+        ${buildPrintField("报告主题", headerFields.reportSubject)}
+        ${buildPrintField("报告编号", headerFields.reportNo)}
+        ${buildPrintField("报告日期", headerFields.reportDate || headerFields.dateOpened)}
       </div>
 
       <div class="report-8d-d-flow">
@@ -640,8 +701,8 @@ function buildReport8DDocumentMarkup({ state, projectName, moldNumbers }: Report
         ${buildPrintBox(
           "D4",
           "根本原因分析",
-          `<p class="report-8d-print-copy">发生原因：${formatPrintMultiline(state.d4.occurrence, "待填写")}</p>
-           <p class="report-8d-print-copy">逃逸原因：${formatPrintMultiline(state.d4.escape, "待填写")}</p>`,
+          `<p class="report-8d-print-copy">原因分析：${formatPrintMultiline(rootCauseAnalysis, "待填写")}</p>
+           <ul class="report-8d-print-list">${verificationRoundList}</ul>`,
         )}
         ${buildPrintBox("D5", "永久纠正措施", `<ul class="report-8d-print-list">${correctiveList}</ul>`)}
         ${buildPrintBox(
@@ -680,6 +741,30 @@ function buildReport8DFileName(state: Report8DWorkspaceState): string {
     .replace(/[\\/:*?"<>|]+/g, "-")
     .replace(/\s+/g, "-");
   return `${base || "8D-report"}.pdf`;
+}
+
+function mergeWorkspaceStateWithBaseline(
+  state: Report8DWorkspaceState,
+  baselineState: Report8DWorkspaceState,
+  workspaceKey: string,
+): Report8DWorkspaceState {
+  const nextVerificationRounds = ensureVerificationRounds(state.d4?.verificationRounds);
+  const hasRootCauseAnalysis = typeof state.d4?.rootCauseAnalysis === "string";
+  const hasVerificationRounds = Array.isArray(state.d4?.verificationRounds);
+  return {
+    ...state,
+    workspaceKey,
+    headerFields: {
+      ...baselineState.headerFields,
+      ...state.headerFields,
+    },
+    d4: {
+      ...baselineState.d4,
+      ...state.d4,
+      rootCauseAnalysis: hasRootCauseAnalysis ? state.d4.rootCauseAnalysis : baselineState.d4.rootCauseAnalysis,
+      verificationRounds: hasVerificationRounds ? nextVerificationRounds : baselineState.d4.verificationRounds,
+    },
+  };
 }
 
 function buildReport8DPreviewHtml(options: Report8DDocumentOptions): string {
@@ -939,17 +1024,43 @@ export default function Report8DWorkspace({
   const [isSubmittingReport, setIsSubmittingReport] = useState(false);
 
   const isMountedRef = useRef(false);
+  const workspaceStateRef = useRef<Report8DWorkspaceState>(baselineState);
   const lastSavedPayloadRef = useRef("");
   const statePayloadRef = useRef("");
   const syncInFlightRef = useRef(false);
   const hasShownSaveFailureRef = useRef(false);
+  const suppressFocusSyncRef = useRef(false);
 
   const statePayload = useMemo(() => JSON.stringify(workspaceState), [workspaceState]);
   const hasUnsavedChanges = !isHydrating && statePayload !== lastSavedPayloadRef.current;
+  const verificationRounds = ensureVerificationRounds(workspaceState.d4?.verificationRounds);
+  const [uploadingVerificationRoundId, setUploadingVerificationRoundId] = useState<string | null>(null);
+  const [previewVerificationImageUrl, setPreviewVerificationImageUrl] = useState("");
+
+  useEffect(() => {
+    workspaceStateRef.current = workspaceState;
+  }, [workspaceState]);
 
   useEffect(() => {
     statePayloadRef.current = statePayload;
   }, [statePayload]);
+
+  useEffect(() => {
+    if (!previewVerificationImageUrl) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setPreviewVerificationImageUrl("");
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [previewVerificationImageUrl]);
 
   const markWorkspaceSaved = useCallback((state: Report8DWorkspaceState, updatedAt?: string) => {
     const nextPayload = JSON.stringify(state);
@@ -959,18 +1070,40 @@ export default function Report8DWorkspace({
     setSyncStatusTone("saved");
   }, []);
 
+  const persistWorkspaceStateImmediately = useCallback(async (
+    nextState: Report8DWorkspaceState,
+    failureMessage: string,
+  ) => {
+    setSyncStatusLabel("8D 工作区保存中");
+    setSyncStatusTone("saving");
+
+    try {
+      const result = await saveReport8DRemoteWorkspaceState(nextState);
+      if (!isMountedRef.current) {
+        return;
+      }
+
+      markWorkspaceSaved(nextState, result.updatedAt);
+    } catch (error) {
+      if (!isMountedRef.current) {
+        return;
+      }
+
+      setSyncStatusLabel("8D 工作区保存失败");
+      setSyncStatusTone("error");
+      toast.error(error instanceof Error ? error.message : failureMessage);
+    }
+  }, [markWorkspaceSaved]);
+
   const applyLoadedWorkspaceState = useCallback((state: Report8DWorkspaceState) => {
-    const nextState = {
-      ...state,
-      workspaceKey,
-    };
+    const nextState = mergeWorkspaceStateWithBaseline(state, baselineState, workspaceKey);
     setWorkspaceState(nextState);
     lastSavedPayloadRef.current = JSON.stringify(nextState);
     hasShownSaveFailureRef.current = false;
     setLoadError(null);
     setSyncStatusLabel(formatSyncLabel("云端已同步", nextState.updatedAt));
     setSyncStatusTone("saved");
-  }, [workspaceKey]);
+  }, [baselineState, workspaceKey]);
 
   const buildEmptyCaseState = useCallback((reportId: string) => {
     const nextState = buildInitialState(workspaceKey, projectName, productName?.trim() || "", stableMoldNumbers, reportId);
@@ -991,7 +1124,9 @@ export default function Report8DWorkspace({
   });
 
   const applyRemoteState = useCallback((remoteState: Report8DWorkspaceState | null) => {
-    const nextState = remoteState ? { ...remoteState, workspaceKey } : baselineState;
+    const nextState = remoteState
+      ? mergeWorkspaceStateWithBaseline(remoteState, baselineState, workspaceKey)
+      : baselineState;
     setWorkspaceState(nextState);
     return JSON.stringify(nextState);
   }, [baselineState, workspaceKey]);
@@ -1110,6 +1245,15 @@ export default function Report8DWorkspace({
 
   useEffect(() => {
     const handleFocus = () => {
+      if (suppressFocusSyncRef.current) {
+        suppressFocusSyncRef.current = false;
+        return;
+      }
+
+      if (document.visibilityState === "hidden") {
+        return;
+      }
+
       void loadRemoteState({ silent: true, skipIfLocalChanges: true });
     };
 
@@ -1162,6 +1306,120 @@ export default function Report8DWorkspace({
       ),
     }));
   }, []);
+
+  const updateRootCauseAnalysis = useCallback((value: string) => {
+    setWorkspaceState((current) => ({
+      ...current,
+      d4: {
+        ...current.d4,
+        rootCauseAnalysis: value,
+      },
+    }));
+  }, []);
+
+  const updateVerificationRound = useCallback((id: string, value: string) => {
+    setWorkspaceState((current) => ({
+      ...current,
+      d4: {
+        ...current.d4,
+        verificationRounds: ensureVerificationRounds(current.d4.verificationRounds).map((item) =>
+          item.id === id ? { ...item, verification: value } : item,
+        ),
+      },
+    }));
+  }, []);
+
+  const addVerificationRound = useCallback(() => {
+    const nextState: Report8DWorkspaceState = {
+      ...workspaceStateRef.current,
+      d4: {
+        ...workspaceStateRef.current.d4,
+        verificationRounds: [...ensureVerificationRounds(workspaceStateRef.current.d4.verificationRounds), buildVerificationRound()],
+      },
+    };
+    setWorkspaceState(nextState);
+    void persistWorkspaceStateImmediately(nextState, "新增验证轮次保存失败");
+  }, [persistWorkspaceStateImmediately]);
+
+  const removeVerificationRound = useCallback(async (id: string) => {
+    const targetRound = verificationRounds.find((item) => item.id === id);
+    if (targetRound) {
+      await Promise.all(targetRound.images.map((imageUrl) => deleteAssetViaServer(imageUrl).catch(() => undefined)));
+    }
+
+    const nextState: Report8DWorkspaceState = {
+      ...workspaceStateRef.current,
+      d4: {
+        ...workspaceStateRef.current.d4,
+        verificationRounds: ensureVerificationRounds(workspaceStateRef.current.d4.verificationRounds).filter((item) => item.id !== id),
+      },
+    };
+    setWorkspaceState(nextState);
+    void persistWorkspaceStateImmediately(nextState, "删除验证轮次保存失败");
+  }, [persistWorkspaceStateImmediately, verificationRounds]);
+
+  const handleVerificationImageUpload = useCallback(async (roundId: string, event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files || []);
+    event.target.value = "";
+    if (files.length === 0) {
+      return;
+    }
+
+    setUploadingVerificationRoundId(roundId);
+    try {
+      const uploadedUrls: string[] = [];
+      for (const file of files) {
+        if (!file.type.startsWith("image/")) {
+          continue;
+        }
+
+        const processedFile = await compressReport8DImage(file);
+        const uploadResult = await uploadAssetViaServer({
+          file: processedFile,
+          category: "report-8d-root-cause-image",
+          entityId: workspaceState.headerFields.reportNo || workspaceKey,
+          slot: `${roundId}-${Date.now()}`,
+        });
+        uploadedUrls.push(uploadResult.url);
+      }
+
+      if (uploadedUrls.length === 0) {
+        toast.error("请选择图片文件后再上传");
+        return;
+      }
+
+      const nextState: Report8DWorkspaceState = {
+        ...workspaceStateRef.current,
+        d4: {
+          ...workspaceStateRef.current.d4,
+          verificationRounds: ensureVerificationRounds(workspaceStateRef.current.d4.verificationRounds).map((item) =>
+            item.id === roundId ? { ...item, images: [...item.images, ...uploadedUrls] } : item,
+          ),
+        },
+      };
+      setWorkspaceState(nextState);
+      await persistWorkspaceStateImmediately(nextState, "验证图片上传后保存失败");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "验证图片上传失败");
+    } finally {
+      setUploadingVerificationRoundId(null);
+    }
+  }, [persistWorkspaceStateImmediately, workspaceKey, workspaceState.headerFields.reportNo]);
+
+  const removeVerificationImage = useCallback(async (roundId: string, imageUrl: string) => {
+    await deleteAssetViaServer(imageUrl).catch(() => undefined);
+    const nextState: Report8DWorkspaceState = {
+      ...workspaceStateRef.current,
+      d4: {
+        ...workspaceStateRef.current.d4,
+        verificationRounds: ensureVerificationRounds(workspaceStateRef.current.d4.verificationRounds).map((item) =>
+          item.id === roundId ? { ...item, images: item.images.filter((url) => url !== imageUrl) } : item,
+        ),
+      },
+    };
+    setWorkspaceState(nextState);
+    void persistWorkspaceStateImmediately(nextState, "删除验证图片保存失败");
+  }, [persistWorkspaceStateImmediately]);
 
   const updateCorrectiveAction = useCallback((
     id: string,
@@ -1413,9 +1671,6 @@ export default function Report8DWorkspace({
         <div className="flex flex-col gap-5 p-6 md:p-7">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="space-y-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge className="border-cyan-400/25 bg-cyan-400/10 text-cyan-200">8D 报告</Badge>
-              </div>
               <div>
                 <h2 className="text-2xl font-bold tracking-tight text-white md:text-3xl">8D 纠正措施报告</h2>
               </div>
@@ -1469,53 +1724,50 @@ export default function Report8DWorkspace({
 
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <SummaryInput
+              label="成品料号"
+              value={workspaceState.headerFields.finishedPartNumber}
+              onChange={(value) => updateHeaderField("finishedPartNumber", value)}
+            />
+            <SummaryInput
+              label="成品名称"
+              value={workspaceState.headerFields.finishedPartName}
+              onChange={(value) => updateHeaderField("finishedPartName", value)}
+            />
+            <SummaryInput
+              label="成品规格"
+              value={workspaceState.headerFields.finishedPartSpec}
+              onChange={(value) => updateHeaderField("finishedPartSpec", value)}
+            />
+            <SummaryInput
+              label="异常部件"
+              value={workspaceState.headerFields.abnormalPart}
+              onChange={(value) => updateHeaderField("abnormalPart", value)}
+            />
+            <SummaryInput
+              label="回复对象"
+              value={workspaceState.headerFields.replyTo}
+              onChange={(value) => updateHeaderField("replyTo", value)}
+            />
+            <SummaryInput
+              label="报告主题"
+              value={workspaceState.headerFields.reportSubject}
+              danger
+              onChange={(value) => updateHeaderField("reportSubject", value)}
+            />
+            <SummaryInput
               label="报告编号"
               value={workspaceState.headerFields.reportNo}
               mono
               onChange={(value) => updateHeaderField("reportNo", value)}
             />
             <SummaryInput
-              label="项目模块"
-              value={projectName}
-              readOnly
-            />
-            <SummaryInput
-              label="客户"
-              value={workspaceState.headerFields.customer}
-              onChange={(value) => updateHeaderField("customer", value)}
-            />
-            <SummaryInput
-              label="产品对象"
-              value={workspaceState.headerFields.product}
-              onChange={(value) => updateHeaderField("product", value)}
-            />
-            <SummaryInput
-              label="关联模号"
-              value={stableMoldNumbers.length > 0 ? stableMoldNumbers.join(" / ") : "当前模块未绑定模号"}
-              readOnly
-            />
-            <SummaryInput
-              label="异常主题"
-              value={workspaceState.headerFields.defectIssue}
-              danger
-              onChange={(value) => updateHeaderField("defectIssue", value)}
-            />
-            <SummaryInput
-              label="开案日期"
-              value={workspaceState.headerFields.dateOpened}
+              label="报告日期"
+              value={workspaceState.headerFields.reportDate || workspaceState.headerFields.dateOpened}
               mono
-              onChange={(value) => updateHeaderField("dateOpened", value)}
-            />
-            <SummaryInput
-              label="当前状态"
-              value={workspaceState.headerFields.currentStatus}
-              onChange={(value) => updateHeaderField("currentStatus", value)}
-            />
-            <SummaryInput
-              label="责任人"
-              value={workspaceState.headerFields.champion}
-              onChange={(value) => updateHeaderField("champion", value)}
-              className="xl:col-span-2"
+              onChange={(value) => {
+                updateHeaderField("reportDate", value);
+                updateHeaderField("dateOpened", value);
+              }}
             />
           </div>
         </div>
@@ -1626,7 +1878,7 @@ export default function Report8DWorkspace({
               <Textarea
                 value={item.value}
                 onChange={(event) => updateProblemItem(item.id, "value", event.target.value)}
-                className="min-h-20 border-white/10 bg-white/[0.04] text-white"
+                className={cn(FIXED_ROW_TEXTAREA_CLASS, "border-white/10 bg-white/[0.04] text-white")}
                 placeholder="填写问题描述"
               />
               <div className="flex justify-end">
@@ -1649,38 +1901,38 @@ export default function Report8DWorkspace({
           </Button>
         }
       >
-        <Table>
+        <Table className="table-fixed">
           <TableHeader>
             <TableRow className="border-white/8">
-              <TableHead className="text-slate-300">措施</TableHead>
-              <TableHead className="text-slate-300">责任人</TableHead>
-              <TableHead className="text-slate-300">日期</TableHead>
-              <TableHead className="text-slate-300">状态</TableHead>
-              <TableHead className="w-[72px] text-slate-300">操作</TableHead>
+              <TableHead className="w-[56%] text-slate-300">措施</TableHead>
+              <TableHead className="w-[156px] text-slate-300">责任人</TableHead>
+              <TableHead className="w-[148px] text-slate-300">日期</TableHead>
+              <TableHead className="w-[128px] text-slate-300">状态</TableHead>
+              <TableHead className="w-[88px] text-slate-300">操作</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {workspaceState.containmentActions.map((action) => (
               <TableRow key={action.id} className="border-white/6 hover:bg-white/[0.03]">
-                <TableCell className="align-top">
+                <TableCell className="align-top whitespace-normal">
                   <Textarea
                     value={action.action}
                     onChange={(event) => updateContainmentAction(action.id, "action", event.target.value)}
-                    className="min-h-20 border-white/10 bg-white/[0.04] text-white"
+                    className={cn(FIXED_ROW_TEXTAREA_CLASS, "border-white/10 bg-white/[0.04] text-white")}
                   />
                 </TableCell>
                 <TableCell className="align-top">
-                  <Input value={action.owner} onChange={(e) => updateContainmentAction(action.id, "owner", e.target.value)} className="border-white/10 bg-white/[0.04] text-white" />
+                  <Input value={action.owner} onChange={(e) => updateContainmentAction(action.id, "owner", e.target.value)} className="h-11 border-white/10 bg-white/[0.04] text-white" />
                 </TableCell>
                 <TableCell className="align-top">
-                  <Input value={action.date} onChange={(e) => updateContainmentAction(action.id, "date", e.target.value)} className="border-white/10 bg-white/[0.04] font-mono text-white" />
+                  <Input value={action.date} onChange={(e) => updateContainmentAction(action.id, "date", e.target.value)} className="h-11 border-white/10 bg-white/[0.04] font-mono text-white" />
                 </TableCell>
                 <TableCell className="align-top">
                   <select
                     value={action.status}
                     onChange={(event) => updateContainmentAction(action.id, "status", event.target.value)}
                     className={cn(
-                      "h-9 w-full rounded-md border border-white/10 bg-white/[0.04] px-3 text-sm outline-none",
+                      "h-11 w-full rounded-md border border-white/10 bg-white/[0.04] px-3 text-sm outline-none",
                       STATUS_STYLES[action.status].className,
                     )}
                   >
@@ -1702,32 +1954,155 @@ export default function Report8DWorkspace({
         </Table>
       </DisciplineSection>
 
-      <DisciplineSection code="D4" title="根本原因分析" action={<SearchCheck className="h-5 w-5 text-cyan-300" />}>
-        <div className="grid gap-4 lg:grid-cols-2">
-          <InsightEditor
-            title="发生原因"
-            accentClassName="text-amber-300"
-            value={workspaceState.d4.occurrence}
-            onChange={(value) =>
-              setWorkspaceState((current) => ({
-                ...current,
-                d4: { ...current.d4, occurrence: value },
-              }))
-            }
-            placeholder="填写发生原因、5 Why、系统原因"
-          />
-          <InsightEditor
-            title="逃逸原因"
-            accentClassName="text-rose-300"
-            value={workspaceState.d4.escape}
-            onChange={(value) =>
-              setWorkspaceState((current) => ({
-                ...current,
-                d4: { ...current.d4, escape: value },
-              }))
-            }
-            placeholder="填写检测遗漏、过程缺陷、标准缺失"
-          />
+      <DisciplineSection
+        code="D4"
+        title="根本原因分析"
+        action={
+          <Button variant="outline" size="sm" className="border-white/10 bg-white/[0.03] text-slate-100" onClick={addVerificationRound}>
+            <Plus className="h-4 w-4" />
+            新增轮次
+          </Button>
+        }
+      >
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.045),rgba(255,255,255,0.02))] p-5 shadow-[0_12px_30px_rgba(0,0,0,0.18)]">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-amber-300">原因分析</p>
+                <p className="mt-1 text-xs text-slate-500">先在这里沉淀完整的根因判断、5 Why 路径、系统原因与关键证据。</p>
+              </div>
+              <div className="rounded-full border border-amber-400/20 bg-amber-400/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-200">
+                Root Cause
+              </div>
+            </div>
+            <Textarea
+              value={workspaceState.d4.rootCauseAnalysis}
+              onChange={(event) => updateRootCauseAnalysis(event.target.value)}
+              className="min-h-48 border-white/10 bg-white/[0.04] text-white"
+              placeholder="在这里集中填写根本原因分析、5 Why、鱼骨结论、系统原因与关键证据。"
+            />
+          </div>
+
+          {verificationRounds.map((item, index) => {
+            const verificationLabel = `验证${formatRoundIndexLabel(index)}`;
+            const inputId = `report-8d-verification-image-${item.id}`;
+
+            return (
+              <div
+                key={item.id}
+                className="rounded-2xl border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.018))] p-5 shadow-[0_12px_30px_rgba(0,0,0,0.16)]"
+              >
+                <div className="mb-5 flex flex-wrap items-center justify-between gap-3 border-b border-white/6 pb-4">
+                  <div>
+                    <p className="text-base font-semibold text-rose-200">{verificationLabel}</p>
+                    <p className="mt-1 text-xs text-slate-500">左侧记录验证过程与结论，右侧归档对应图片证据。</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="rounded-full border border-cyan-400/15 bg-cyan-400/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-200">
+                      Round {index + 1}
+                    </div>
+                    <IconButton label={`删除${verificationLabel}`} onClick={() => { void removeVerificationRound(item.id); }}>
+                      <Trash2 className="h-4 w-4" />
+                    </IconButton>
+                  </div>
+                </div>
+
+                <div className="grid items-stretch gap-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.95fr)]">
+                  <section className="flex min-w-0 flex-col rounded-2xl border border-white/8 bg-slate-950/45 p-4">
+                    <div className="mb-4 flex items-center justify-between gap-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">{verificationLabel}</p>
+                      <span className="text-[11px] text-slate-500">文本记录</span>
+                    </div>
+                    <Textarea
+                      value={item.verification}
+                      onChange={(event) => updateVerificationRound(item.id, event.target.value)}
+                      className="min-h-[260px] flex-1 border-white/10 bg-white/[0.04] text-white"
+                      placeholder="填写该轮验证的方法、样本、实验数据、判定结果与结论。"
+                    />
+                  </section>
+
+                  <section className="flex min-w-0 flex-col rounded-2xl border border-white/8 bg-slate-950/45 p-4">
+                    <div className="mb-4 flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">{verificationLabel}图片</p>
+                        <p className="mt-1 text-[11px] text-slate-500">点击缩略图可放大查看，按 Esc 退出。</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {uploadingVerificationRoundId === item.id ? (
+                          <span className="inline-flex items-center gap-1 text-xs text-cyan-300">
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            上传中
+                          </span>
+                        ) : null}
+                        <label
+                          htmlFor={inputId}
+                          className="inline-flex h-9 cursor-pointer items-center rounded-md border border-white/10 bg-white/[0.04] px-3 text-sm text-slate-100 transition-colors hover:bg-white/[0.08]"
+                        >
+                          <Plus className="mr-1 h-4 w-4" />
+                          添加图片
+                        </label>
+                        <input
+                          id={inputId}
+                          type="file"
+                          accept="image/*"
+                          multiple
+                          className="hidden"
+                          onClick={() => {
+                            suppressFocusSyncRef.current = true;
+                          }}
+                          onChange={(event) => {
+                            void handleVerificationImageUpload(item.id, event);
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex min-h-[260px] flex-1 rounded-2xl border border-dashed border-white/10 bg-slate-950/40 p-3">
+                      {item.images.length > 0 ? (
+                        <div className="grid w-full grid-cols-2 gap-3 self-stretch">
+                          {item.images.map((imageUrl, imageIndex) => (
+                            <div
+                              key={`${item.id}-${imageIndex}`}
+                              className="group relative overflow-hidden rounded-xl border border-white/10 bg-slate-950 text-left transition-transform hover:-translate-y-0.5"
+                              onClick={() => setPreviewVerificationImageUrl(imageUrl)}
+                            >
+                              <img src={imageUrl} alt={`${verificationLabel}图片${imageIndex + 1}`} className="h-36 w-full object-cover" />
+                              <div className="absolute inset-0 flex items-center justify-center bg-slate-950/0 opacity-0 transition-all group-hover:bg-slate-950/35 group-hover:opacity-100">
+                                <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-slate-950/80 px-3 py-1 text-xs text-slate-100">
+                                  <ZoomIn className="h-3.5 w-3.5" />
+                                  放大查看
+                                </span>
+                              </div>
+                              <button
+                                type="button"
+                                className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-slate-950/85 text-slate-100 opacity-0 transition-opacity group-hover:opacity-100"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  void removeVerificationImage(item.id, imageUrl);
+                                }}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="flex w-full flex-col items-center justify-center rounded-xl border border-white/6 bg-slate-950/30 px-4 text-center text-sm text-slate-500">
+                          <span>暂无验证图片</span>
+                          <span className="mt-1 text-xs text-slate-600">点击右上角“添加图片”上传。</span>
+                        </div>
+                      )}
+                    </div>
+                  </section>
+                </div>
+              </div>
+            );
+          })}
+          {verificationRounds.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-white/10 bg-white/[0.02] px-4 py-5 text-sm text-slate-400">
+              暂无验证轮次，点击右上角“新增轮次”继续添加。
+            </div>
+          ) : null}
         </div>
       </DisciplineSection>
 
@@ -1741,20 +2116,20 @@ export default function Report8DWorkspace({
           </Button>
         }
       >
-        <Table>
+        <Table className="table-fixed">
           <TableHeader>
             <TableRow className="border-white/8">
               <TableHead className="text-slate-300">纠正措施</TableHead>
-              <TableHead className="text-slate-300">类型</TableHead>
-              <TableHead className="text-slate-300">责任人</TableHead>
-              <TableHead className="text-slate-300">目标日期</TableHead>
+              <TableHead className="w-[120px] text-slate-300">类型</TableHead>
+              <TableHead className="w-[120px] text-slate-300">责任人</TableHead>
+              <TableHead className="w-[112px] text-slate-300">目标日期</TableHead>
               <TableHead className="w-[72px] text-slate-300">操作</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {workspaceState.correctiveActions.map((action) => (
               <TableRow key={action.id} className="border-white/6 hover:bg-white/[0.03]">
-                <TableCell className="align-top"><Textarea value={action.action} onChange={(e) => updateCorrectiveAction(action.id, "action", e.target.value)} className="min-h-20 border-white/10 bg-white/[0.04] text-white" /></TableCell>
+                <TableCell className="align-top whitespace-normal"><Textarea value={action.action} onChange={(e) => updateCorrectiveAction(action.id, "action", e.target.value)} className={cn(FIXED_ROW_TEXTAREA_CLASS, "border-white/10 bg-white/[0.04] text-white")} /></TableCell>
                 <TableCell className="align-top"><Input value={action.type} onChange={(e) => updateCorrectiveAction(action.id, "type", e.target.value)} className="border-white/10 bg-white/[0.04] text-white" /></TableCell>
                 <TableCell className="align-top"><Input value={action.owner} onChange={(e) => updateCorrectiveAction(action.id, "owner", e.target.value)} className="border-white/10 bg-white/[0.04] text-white" /></TableCell>
                 <TableCell className="align-top"><Input value={action.targetDate} onChange={(e) => updateCorrectiveAction(action.id, "targetDate", e.target.value)} className="border-white/10 bg-white/[0.04] font-mono text-white" /></TableCell>
@@ -1799,7 +2174,7 @@ export default function Report8DWorkspace({
                 <Textarea
                   value={item}
                   onChange={(event) => updateVerificationItem(index, event.target.value)}
-                  className="min-h-20 border-white/10 bg-white/[0.04] text-white"
+                  className={cn(FIXED_ROW_TEXTAREA_CLASS, "border-white/10 bg-white/[0.04] text-white")}
                 />
                 <div className="flex justify-end">
                   <IconButton label="删除验证项" onClick={() => removeVerificationItem(index)}>
@@ -1963,6 +2338,30 @@ export default function Report8DWorkspace({
         onCreateCase={eightDArchive.createCase}
         onLoadCase={eightDArchive.loadCase}
       />
+      {previewVerificationImageUrl ? (
+        <div
+          className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/88 p-4 backdrop-blur-sm"
+          onClick={() => setPreviewVerificationImageUrl("")}
+        >
+          <button
+            type="button"
+            className="absolute right-4 top-4 inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-slate-950/85 text-slate-100 transition-colors hover:bg-slate-900"
+            onClick={() => setPreviewVerificationImageUrl("")}
+          >
+            <X className="h-5 w-5" />
+          </button>
+          <div
+            className="flex max-h-[92vh] max-w-[92vw] items-center justify-center"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <img
+              src={previewVerificationImageUrl}
+              alt="验证图片预览"
+              className="max-h-[92vh] max-w-[92vw] rounded-2xl border border-white/10 object-contain shadow-2xl"
+            />
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1997,26 +2396,6 @@ function SummaryInput({
           danger && "text-rose-300",
           readOnly && "cursor-default opacity-80",
         )}
-      />
-    </div>
-  );
-}
-
-function InsightEditor({
-  title,
-  accentClassName,
-  value,
-  onChange,
-  placeholder,
-}: InsightEditorProps) {
-  return (
-    <div className="rounded-xl border border-white/8 bg-white/[0.03] p-4">
-      <p className={cn("mb-3 text-sm font-semibold", accentClassName)}>{title}</p>
-      <Textarea
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="min-h-52 border-white/10 bg-white/[0.04] text-white"
-        placeholder={placeholder}
       />
     </div>
   );

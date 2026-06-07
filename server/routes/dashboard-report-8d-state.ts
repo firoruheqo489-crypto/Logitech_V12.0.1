@@ -15,6 +15,15 @@ type EightDCaseStatus = "Open" | "Pending" | "Closed";
 
 type Report8DHeaderFields = {
   reportNo: string;
+  finishedPartNumber: string;
+  finishedPartName: string;
+  finishedPartSpec: string;
+  replyTo: string;
+  abnormalPart: string;
+  reportSubject: string;
+  reportDate: string;
+  projectModule: string;
+  moldNumber: string;
   customer: string;
   product: string;
   defectIssue: string;
@@ -52,6 +61,12 @@ type Report8DCorrectiveAction = {
   targetDate: string;
 };
 
+type Report8DVerificationRound = {
+  id: string;
+  verification: string;
+  images: string[];
+};
+
 export type Report8DWorkspaceState = {
   module: "report-8d";
   workspaceKey: string;
@@ -65,8 +80,8 @@ export type Report8DWorkspaceState = {
   problemItems: Report8DProblemItem[];
   containmentActions: Report8DContainmentAction[];
   d4: {
-    occurrence: string;
-    escape: string;
+    rootCauseAnalysis: string;
+    verificationRounds: Report8DVerificationRound[];
   };
   correctiveActions: Report8DCorrectiveAction[];
   d6: {
@@ -290,6 +305,15 @@ function sanitizeHeaderFields(value: unknown): Report8DHeaderFields {
 
   return {
     reportNo: normalizeText(record.reportNo, 120),
+    finishedPartNumber: normalizeText(record.finishedPartNumber, 255, normalizeText(record.moldNumber, 255)),
+    finishedPartName: normalizeText(record.finishedPartName, 255, normalizeText(record.product, 255)),
+    finishedPartSpec: normalizeText(record.finishedPartSpec, 255),
+    replyTo: normalizeText(record.replyTo, 255, normalizeText(record.customer, 255)),
+    abnormalPart: normalizeText(record.abnormalPart, 255, normalizeText(record.moldNumber, 255)),
+    reportSubject: normalizeText(record.reportSubject, 4000, normalizeText(record.defectIssue, 4000)),
+    reportDate: normalizeIsoDate(record.reportDate) || normalizeIsoDate(record.dateOpened),
+    projectModule: normalizeText(record.projectModule, 255),
+    moldNumber: normalizeText(record.moldNumber, 255),
     customer: normalizeText(record.customer, 255),
     product: normalizeText(record.product, 255),
     defectIssue: normalizeText(record.defectIssue, 4000),
@@ -376,6 +400,51 @@ function sanitizeCorrectiveActions(value: unknown): Report8DCorrectiveAction[] {
   });
 }
 
+function sanitizeVerificationRounds(
+  value: unknown,
+  legacyRootCauses?: unknown,
+  legacyVerification?: unknown,
+): Report8DVerificationRound[] {
+  if (Array.isArray(value)) {
+    return value.slice(0, 20).map((item, index) => {
+      const record = item && typeof item === "object" && !Array.isArray(item)
+        ? (item as Record<string, unknown>)
+        : {};
+
+      return {
+        id: normalizeText(record.id, 120, `verification-round-${index + 1}`),
+        verification: normalizeText(record.verification, 4000),
+        images: sanitizeStringArray(record.images, 10, 2048),
+      };
+    });
+  }
+
+  if (Array.isArray(legacyRootCauses)) {
+    return legacyRootCauses.slice(0, 20).map((item, index) => {
+      const record = item && typeof item === "object" && !Array.isArray(item)
+        ? (item as Record<string, unknown>)
+        : {};
+
+      return {
+        id: normalizeText(record.id, 120, `verification-round-${index + 1}`),
+        verification: normalizeText(record.verification, 4000),
+        images: sanitizeStringArray(record.images, 10, 2048),
+      };
+    }).filter((item) => item.verification || item.images.length > 0);
+  }
+
+  const verification = normalizeText(legacyVerification, 4000);
+  if (!verification) {
+    return [];
+  }
+
+  return [{
+    id: "verification-round-1",
+    verification,
+    images: [],
+  }];
+}
+
 function sanitizeWorkspaceState(value: unknown, workspaceKey: string): Report8DWorkspaceState {
   const record = value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -409,8 +478,22 @@ function sanitizeWorkspaceState(value: unknown, workspaceKey: string): Report8DW
     problemItems: sanitizeProblemItems(record.problemItems),
     containmentActions: sanitizeContainmentActions(record.containmentActions),
     d4: {
-      occurrence: normalizeText(d4.occurrence, 4000),
-      escape: normalizeText(d4.escape, 4000),
+      rootCauseAnalysis: normalizeText(
+        d4.rootCauseAnalysis,
+        12000,
+        Array.isArray(d4.rootCauses)
+          ? d4.rootCauses
+            .map((item) => {
+              const record = item && typeof item === "object" && !Array.isArray(item)
+                ? (item as Record<string, unknown>)
+                : {};
+              return normalizeText(record.cause, 4000);
+            })
+            .filter(Boolean)
+            .join("\n\n")
+          : normalizeText(d4.occurrence, 12000),
+      ),
+      verificationRounds: sanitizeVerificationRounds(d4.verificationRounds, d4.rootCauses, d4.escape),
     },
     correctiveActions: sanitizeCorrectiveActions(record.correctiveActions),
     d6: {
@@ -474,7 +557,7 @@ function extractCaseStatusFromState(state: Report8DWorkspaceState): EightDCaseSt
 }
 
 function extractArchiveMonthFromState(state: Report8DWorkspaceState): string {
-  const openedMonth = normalizeText(state.headerFields.dateOpened, 7);
+  const openedMonth = normalizeText(state.headerFields.reportDate || state.headerFields.dateOpened, 7);
   if (ARCHIVE_MONTH_PATTERN.test(openedMonth)) {
     return openedMonth;
   }
@@ -524,7 +607,7 @@ function buildArchiveReportFromState(
 
   return {
     reportId,
-    issueSubject: normalizeText(state.headerFields.defectIssue, 400, reportId),
+    issueSubject: normalizeText(state.headerFields.reportSubject || state.headerFields.defectIssue, 400, reportId),
     currentStage: extractStageFromState(state),
     status: extractCaseStatusFromState(state),
     owner: normalizeText(state.headerFields.champion, 120, "未指定"),
