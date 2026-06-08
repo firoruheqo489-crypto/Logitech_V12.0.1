@@ -103,7 +103,7 @@ export function useEightDCaseArchive({
       });
 
       if (!state) {
-        throw new Error("该 8D 案卷在 OSS 中不存在或已被删除");
+        throw new Error("该 8D 案件在 OSS 中不存在或已被删除");
       }
 
       onWorkspaceLoaded(state);

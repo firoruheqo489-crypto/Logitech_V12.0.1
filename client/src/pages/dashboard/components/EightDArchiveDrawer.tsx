@@ -130,10 +130,10 @@ export default function EightDArchiveDrawer({
   const handleCreateCase = async () => {
     try {
       await onCreateCase();
-      toast.success("新的 8D 案卷已建档");
+      toast.success("新的 8D 案件已建档");
       onOpenChange(false);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "新建 8D 案卷失败");
+      toast.error(error instanceof Error ? error.message : "新建 8D 案件失败");
     }
   };
 
@@ -148,7 +148,7 @@ export default function EightDArchiveDrawer({
       setLoadTarget(null);
       onOpenChange(false);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "8D 案卷加载失败");
+      toast.error(error instanceof Error ? error.message : "8D 案件加载失败");
     }
   };
 
@@ -164,7 +164,7 @@ export default function EightDArchiveDrawer({
         toast.success(`已载入 ${report.reportId}`);
         onOpenChange(false);
       } catch (error) {
-        toast.error(error instanceof Error ? error.message : "8D 案卷加载失败");
+        toast.error(error instanceof Error ? error.message : "8D 案件加载失败");
       }
     })();
   };
@@ -178,10 +178,10 @@ export default function EightDArchiveDrawer({
               <div className="space-y-2">
                 <div className="inline-flex items-center gap-2 rounded-full border border-cyan-500/20 bg-cyan-500/10 px-3 py-1 text-[11px] uppercase tracking-[0.24em] text-cyan-200">
                   <Archive className="h-3.5 w-3.5" />
-                  Case Archive
+                  Case Library
                 </div>
                 <DrawerTitle className="text-xl font-semibold tracking-wide text-zinc-50">
-                  历史 8D 案卷
+                  8D 案件库
                 </DrawerTitle>
                 <DrawerDescription className="text-sm leading-6 text-zinc-400">
                   当前项目：<span className="font-mono text-zinc-200">{projectName}</span>
@@ -195,7 +195,7 @@ export default function EightDArchiveDrawer({
                 className="h-11 rounded-xl border border-cyan-400/30 bg-cyan-500/15 px-4 text-cyan-100 hover:bg-cyan-500/25"
               >
                 {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <FolderPlus className="h-4 w-4" />}
-                新建 8D
+                新建案件
               </Button>
             </div>
           </DrawerHeader>
@@ -203,7 +203,7 @@ export default function EightDArchiveDrawer({
           <div className="flex items-center justify-between border-b border-white/10 px-6 py-3 text-xs text-zinc-400">
             <div className="flex items-center gap-2">
               <Cloud className="h-3.5 w-3.5 text-cyan-300" />
-              {archiveMonth} 月案卷，按最后更新时间倒序展示
+              {archiveMonth} 月案件，按最后更新时间倒序展示
               {archiveLimit ? <span className="text-zinc-600">上限 {archiveLimit} 份/月</span> : null}
             </div>
             <div className="flex items-center gap-2">
@@ -211,7 +211,7 @@ export default function EightDArchiveDrawer({
                 value={archiveMonth}
                 onChange={(event) => onArchiveMonthChange(event.target.value)}
                 className="h-8 rounded-lg border border-white/10 bg-white/[0.04] px-2 text-xs text-zinc-200 outline-none hover:bg-white/[0.07]"
-                aria-label="选择 8D 案卷月份"
+                aria-label="选择 8D 案件月份"
               >
                 {monthOptions.map((month) => (
                   <option key={month} value={month} className="bg-slate-950 text-zinc-100">
@@ -237,15 +237,15 @@ export default function EightDArchiveDrawer({
               <div className="flex h-52 items-center justify-center rounded-2xl border border-dashed border-white/10 bg-white/[0.02]">
                 <div className="flex items-center gap-3 text-sm text-zinc-400">
                   <Loader2 className="h-4 w-4 animate-spin text-cyan-300" />
-                  正在读取 8D 案卷索引...
+                  正在读取 8D 案件索引...
                 </div>
               </div>
             ) : sortedReports.length === 0 ? (
               <div className="flex h-60 flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01))] px-6 text-center">
                 <Archive className="h-10 w-10 text-cyan-400/70" />
-                <p className="mt-4 text-base font-medium text-zinc-200">还没有 8D 案卷</p>
+                <p className="mt-4 text-base font-medium text-zinc-200">还没有 8D 案件</p>
                 <p className="mt-2 max-w-sm text-sm leading-6 text-zinc-500">
-                  当前月份暂无案卷。点击“新建 8D”，系统会生成新编号并把空模板占位写入 OSS。
+                  当前月份暂无案件。点击“新建案件”，系统会生成新编号并把空模板占位写入 OSS。
                 </p>
               </div>
             ) : (
@@ -319,7 +319,7 @@ export default function EightDArchiveDrawer({
       <AlertDialog open={Boolean(loadTarget)} onOpenChange={(nextOpen) => !nextOpen && setLoadTarget(null)}>
         <AlertDialogContent className="border border-amber-500/20 bg-[#08121d] text-zinc-100 shadow-[0_20px_60px_rgba(0,0,0,0.45)]">
           <AlertDialogHeader>
-            <AlertDialogTitle>确认载入 8D 案卷？</AlertDialogTitle>
+            <AlertDialogTitle>确认载入 8D 案件？</AlertDialogTitle>
             <AlertDialogDescription className="text-zinc-400">
               {hasUnsavedChanges
                 ? "当前 8D 有未同步至云端的修改，强行加载将丢失数据，是否继续？"

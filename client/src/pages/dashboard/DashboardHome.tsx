@@ -57,6 +57,7 @@ const Report8DWorkspace = lazy(() => import('./components/Report8DWorkspace'));
 const SipWorkspace = lazy(() => import('./components/SipWorkspace'));
 const ProcessVarianceWorkspace = lazy(() => import('./components/ProcessVarianceWorkspace'));
 const MeasurementIntakeWorkspace = lazy(() => import('./components/MeasurementIntakeWorkspace'));
+const CaqAuditWorkspace = lazy(() => import('./components/CaqAuditWorkspace'));
 const ProductDataDrawerWorkspace = lazy(() => import('./components/ProductDataDrawerWorkspace'));
 const ProgressLogsDrawerWorkspace = lazy(() => import('./components/ProgressLogsDrawerWorkspace'));
 const ParetoQualityDashboard = lazy(() => import('./components/ParetoQualityDashboard'));
@@ -177,6 +178,7 @@ const DASHBOARD_TABS = [
   'boxplot',
   'pareto-analysis',
   'fishbone-diagram',
+  'caq-audit',
   'measurement-intake',
   'mold-reliability',
   'spc-calculator',
@@ -187,6 +189,7 @@ const DASHBOARD_TABS = [
 ] as const;
 
 type DashboardTab = typeof DASHBOARD_TABS[number];
+const CAQ_UNSAVED_FLAG_KEY = "caq-audit:unsaved";
 
 const PUBLIC_DASHBOARD_TAB_LIMIT =
   DASHBOARD_TABS.indexOf('measurement-intake') + 1;
@@ -648,9 +651,19 @@ export default function DashboardHome() {
 
   const handleShowAll = () => handleFilterChange('ALL');
 
+  const confirmLeaveCaq = useCallback(() => {
+    if (typeof window === 'undefined') return true;
+    if (selectedTab !== 'caq-audit') return true;
+    return window.sessionStorage.getItem(CAQ_UNSAVED_FLAG_KEY) !== '1'
+      || window.confirm('CAQ 工作区还有未保存内容，确认离开吗？');
+  }, [selectedTab]);
+
   const handleTabSelect = useCallback((tab: DashboardTab) => {
+    if (tab !== selectedTab && !confirmLeaveCaq()) {
+      return;
+    }
     setActiveTab(tab);
-  }, []);
+  }, [confirmLeaveCaq, selectedTab]);
 
   const handleOpenAdmin = useCallback(() => {
     if (selectedTab === 'product') {
@@ -814,7 +827,13 @@ export default function DashboardHome() {
             <p className="text-sm font-medium text-slate-400">项目状态可视化管理系统</p>
           </div>
           <button
-            onClick={() => { setActiveModule(null); setSearchProjectName(''); setSearchMoldId(''); setFilterStatus('ALL'); }}
+            onClick={() => {
+              if (!confirmLeaveCaq()) return;
+              setActiveModule(null);
+              setSearchProjectName('');
+              setSearchMoldId('');
+              setFilterStatus('ALL');
+            }}
             className="mb-1 flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-800 px-4 py-2.5 text-slate-300 shadow-sm transition-all hover:bg-slate-700 hover:text-white"
           >
             <ArrowLeft className="w-4 h-4" />
@@ -835,6 +854,7 @@ export default function DashboardHome() {
               'pareto-analysis': '柏拉图分析',
               'image-stitcher': '图片拼接',
               'fishbone-diagram': '鱼骨图',
+              'caq-audit': 'CAQ审计台',
               'complaint-insight': '宜胜客诉台账看板',
               'logs': '推进日志',
               'product': '产品模块',
@@ -907,6 +927,12 @@ export default function DashboardHome() {
         {selectedTab === 'fishbone-diagram' && (
           <LazyWorkspace>
             <FishboneDiagramDashboard />
+          </LazyWorkspace>
+        )}
+
+        {selectedTab === 'caq-audit' && (
+          <LazyWorkspace>
+            <CaqAuditWorkspace projectName={activeModule || ''} />
           </LazyWorkspace>
         )}
 

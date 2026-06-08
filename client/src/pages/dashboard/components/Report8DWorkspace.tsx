@@ -1,7 +1,7 @@
 ﻿import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
+  Archive,
   FileDown,
-  FolderOpen,
   Loader2,
   Plus,
   Printer,
@@ -1888,17 +1888,17 @@ export default function Report8DWorkspace({
       const result = await eightDArchive.stageSave(workspaceState);
       setSyncStatusLabel(formatSyncLabel("8D 工作区已保存", result.updatedAt));
       setSyncStatusTone("saved");
-      toast.success("8D 案卷已同步，索引状态已更新");
+      toast.success("8D 案件库已同步，索引状态已更新");
     } catch (error) {
       setSyncStatusLabel("8D 工作区保存失败");
       setSyncStatusTone("error");
-      toast.error(error instanceof Error ? error.message : "8D 案卷同步失败");
+      toast.error(error instanceof Error ? error.message : "8D 案件库同步失败");
     }
   }, [eightDArchive, workspaceState]);
 
   const handleSubmitReport = useCallback(async () => {
     setIsSubmittingReport(true);
-    setSyncStatusLabel("8D 报告提交中");
+    setSyncStatusLabel("8D 报告归档中");
     setSyncStatusTone("saving");
 
     try {
@@ -1908,11 +1908,11 @@ export default function Report8DWorkspace({
       });
       markWorkspaceSaved(workspaceState, result.submittedAt);
       await eightDArchive.refreshArchive();
-      toast.success("8D 报告已提交并保存到数据库");
+      toast.success("8D 报告已归档入库，并写入数据库");
     } catch (error) {
-      setSyncStatusLabel("8D 报告提交失败");
+      setSyncStatusLabel("8D 报告归档失败");
       setSyncStatusTone("error");
-      toast.error(error instanceof Error ? error.message : "8D 报告提交失败");
+      toast.error(error instanceof Error ? error.message : "8D 报告归档失败");
     } finally {
       setIsSubmittingReport(false);
     }
@@ -1958,8 +1958,8 @@ export default function Report8DWorkspace({
                 className="border-cyan-400/20 bg-cyan-400/10 text-cyan-100 hover:bg-cyan-400/15"
                 onClick={() => setIsArchiveDrawerOpen(true)}
               >
-                <FolderOpen className="h-4 w-4" />
-                历史 8D 案卷
+                <Archive className="h-4 w-4" />
+                8D 案件库
               </Button>
               <Button
                 variant="outline"
@@ -2859,9 +2859,9 @@ export default function Report8DWorkspace({
       <div className="rounded-2xl border border-cyan-400/20 bg-[linear-gradient(135deg,rgba(8,145,178,0.14),rgba(2,6,23,0.92))] p-5 shadow-[0_18px_54px_rgba(8,145,178,0.12)]">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <p className="text-sm font-semibold text-cyan-100">提交 8D 报告</p>
+            <p className="text-sm font-semibold text-cyan-100">归档入库</p>
             <p className="mt-1 text-xs leading-5 text-slate-400">
-              提交后会同步 OSS 案卷，并把当前 8D 完整内容保存到系统数据库。
+              归档后会同步 8D 案件库，并把当前报告完整内容写入系统数据库。
             </p>
           </div>
           <Button
@@ -2870,7 +2870,7 @@ export default function Report8DWorkspace({
             onClick={handleSubmitReport}
           >
             <SendHorizontal className={cn("h-4 w-4", isSubmittingReport && "animate-pulse")} />
-            {isSubmittingReport ? "提交中" : "提交 8D 报告"}
+            {isSubmittingReport ? "归档中" : "归档入库"}
           </Button>
         </div>
       </div>

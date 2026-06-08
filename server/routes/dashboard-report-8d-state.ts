@@ -247,8 +247,13 @@ function readWorkspaceKey(source: Request["query"] | Record<string, unknown>): s
   return normalizeText(source.workspaceKey, 120, DEFAULT_REPORT_8D_WORKSPACE_KEY);
 }
 
-function buildStateObjectKey(workspaceKey: string): string {
-  return `${REPORT_8D_STATE_OBJECT_PREFIX}/${normalizeWorkspaceSegment(workspaceKey)}.json`;
+function buildStateObjectKey(workspaceKey: string, reportId?: string): string {
+  const workspaceSegment = normalizeWorkspaceSegment(workspaceKey);
+  if (reportId) {
+    return `${REPORT_8D_STATE_OBJECT_PREFIX}/${workspaceSegment}/drafts/${normalizeWorkspaceSegment(reportId)}.json`;
+  }
+
+  return `${REPORT_8D_STATE_OBJECT_PREFIX}/${workspaceSegment}.json`;
 }
 
 function buildArchiveIndexObjectKey(workspaceKey: string, archiveMonth: string): string {
@@ -799,6 +804,11 @@ async function persistReport8DStateToOss(
       mimeType: "application/json; charset=utf-8",
     }),
     putOssObject({
+      objectKey: buildStateObjectKey(workspaceKey, archiveReport.reportId),
+      body: serializedState,
+      mimeType: "application/json; charset=utf-8",
+    }),
+    putOssObject({
       objectKey: buildArchiveCaseObjectKey(workspaceKey, archiveReport.archiveMonth, archiveReport.reportId),
       body: serializedState,
       mimeType: "application/json; charset=utf-8",
@@ -817,9 +827,31 @@ export async function getDashboardReport8DState(req: Request, res: Response): Pr
   const archiveMonth = readArchiveMonth(req.query);
 
   try {
-    const objectKey = reportId || ossUrl
-      ? resolveArchiveObjectKey(workspaceKey, archiveMonth, reportId, ossUrl)
-      : buildStateObjectKey(workspaceKey);
+    let objectKey = buildStateObjectKey(workspaceKey);
+    if (reportId) {
+      objectKey = buildStateObjectKey(workspaceKey, reportId);
+      try {
+        const draftBuffer = await getOssObjectBuffer(objectKey);
+        const parsedDraft = JSON.parse(draftBuffer.toString("utf8")) as unknown;
+        const storedDraft = sanitizeWorkspaceState(readStoredState(parsedDraft), workspaceKey);
+        res.status(200).json({
+          state: {
+            ...storedDraft,
+            updatedAt: readStoredUpdatedAt(parsedDraft),
+          },
+        });
+        return;
+      } catch (draftError) {
+        if (!isOssNotFoundError(draftError)) {
+          throw draftError;
+        }
+
+        objectKey = resolveArchiveObjectKey(workspaceKey, archiveMonth, reportId, ossUrl);
+      }
+    } else if (ossUrl) {
+      objectKey = resolveArchiveObjectKey(workspaceKey, archiveMonth, reportId, ossUrl);
+    }
+
     const buffer = await getOssObjectBuffer(objectKey);
     const parsed = JSON.parse(buffer.toString("utf8")) as unknown;
     const storedState = sanitizeWorkspaceState(readStoredState(parsed), workspaceKey);
