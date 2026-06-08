@@ -67,6 +67,18 @@ type Report8DVerificationRound = {
   images: string[];
 };
 
+type Report8DCorrectionRound = {
+  id: string;
+  correction: string;
+  images: string[];
+};
+
+type Report8DImplementationRound = {
+  id: string;
+  implementation: string;
+  images: string[];
+};
+
 export type Report8DWorkspaceState = {
   module: "report-8d";
   workspaceKey: string;
@@ -83,9 +95,14 @@ export type Report8DWorkspaceState = {
     rootCauseAnalysis: string;
     verificationRounds: Report8DVerificationRound[];
   };
+  d5: {
+    correctivePlan: string;
+    correctionRounds: Report8DCorrectionRound[];
+  };
   correctiveActions: Report8DCorrectiveAction[];
   d6: {
     summary: string;
+    implementationRounds: Report8DImplementationRound[];
     verificationItems: string[];
     verifiedStatus: string;
     verifiedAt: string;
@@ -445,6 +462,65 @@ function sanitizeVerificationRounds(
   }];
 }
 
+function formatLegacyCorrectivePlan(value: unknown): string {
+  const legacyActions = sanitizeCorrectiveActions(value);
+  if (legacyActions.length === 0) {
+    return "";
+  }
+
+  return legacyActions
+    .map((item, index) => {
+      const parts = [
+        item.action,
+        item.type ? `类型：${item.type}` : "",
+        item.owner ? `责任人：${item.owner}` : "",
+        item.targetDate ? `目标日期：${item.targetDate}` : "",
+      ].filter(Boolean);
+      return `${index + 1}. ${parts.join("；")}`;
+    })
+    .join("\n");
+}
+
+function sanitizeCorrectionRounds(value: unknown): Report8DCorrectionRound[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.slice(0, 20).map((item, index) => {
+    const record = item && typeof item === "object" && !Array.isArray(item)
+      ? (item as Record<string, unknown>)
+      : {};
+
+    return {
+      id: normalizeText(record.id, 120, `correction-round-${index + 1}`),
+      correction: normalizeText(record.correction, 4000),
+      images: sanitizeStringArray(record.images, 10, 2048),
+    };
+  });
+}
+
+function sanitizeImplementationRounds(value: unknown, legacyVerificationItems?: unknown): Report8DImplementationRound[] {
+  if (Array.isArray(value)) {
+    return value.slice(0, 20).map((item, index) => {
+      const record = item && typeof item === "object" && !Array.isArray(item)
+        ? (item as Record<string, unknown>)
+        : {};
+
+      return {
+        id: normalizeText(record.id, 120, `implementation-round-${index + 1}`),
+        implementation: normalizeText(record.implementation, 4000),
+        images: sanitizeStringArray(record.images, 10, 2048),
+      };
+    });
+  }
+
+  return sanitizeStringArray(legacyVerificationItems, 20, 4000).map((item, index) => ({
+    id: `implementation-round-${index + 1}`,
+    implementation: item,
+    images: [],
+  }));
+}
+
 function sanitizeWorkspaceState(value: unknown, workspaceKey: string): Report8DWorkspaceState {
   const record = value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -454,6 +530,9 @@ function sanitizeWorkspaceState(value: unknown, workspaceKey: string): Report8DW
     : {};
   const d4 = record.d4 && typeof record.d4 === "object" && !Array.isArray(record.d4)
     ? (record.d4 as Record<string, unknown>)
+    : {};
+  const d5 = record.d5 && typeof record.d5 === "object" && !Array.isArray(record.d5)
+    ? (record.d5 as Record<string, unknown>)
     : {};
   const d6 = record.d6 && typeof record.d6 === "object" && !Array.isArray(record.d6)
     ? (record.d6 as Record<string, unknown>)
@@ -495,9 +574,14 @@ function sanitizeWorkspaceState(value: unknown, workspaceKey: string): Report8DW
       ),
       verificationRounds: sanitizeVerificationRounds(d4.verificationRounds, d4.rootCauses, d4.escape),
     },
+    d5: {
+      correctivePlan: normalizeText(d5.correctivePlan, 12000, formatLegacyCorrectivePlan(record.correctiveActions)),
+      correctionRounds: sanitizeCorrectionRounds(d5.correctionRounds),
+    },
     correctiveActions: sanitizeCorrectiveActions(record.correctiveActions),
     d6: {
       summary: normalizeText(d6.summary, 4000),
+      implementationRounds: sanitizeImplementationRounds(d6.implementationRounds, d6.verificationItems),
       verificationItems: sanitizeStringArray(d6.verificationItems, 20, 4000),
       verifiedStatus: normalizeText(d6.verifiedStatus, 255),
       verifiedAt: normalizeIsoDate(d6.verifiedAt),

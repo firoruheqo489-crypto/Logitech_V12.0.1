@@ -69,6 +69,18 @@ export type Report8DVerificationRound = {
   images: string[];
 };
 
+export type Report8DCorrectionRound = {
+  id: string;
+  correction: string;
+  images: string[];
+};
+
+export type Report8DImplementationRound = {
+  id: string;
+  implementation: string;
+  images: string[];
+};
+
 export type Report8DWorkspaceState = {
   module: "report-8d";
   workspaceKey: string;
@@ -85,9 +97,14 @@ export type Report8DWorkspaceState = {
     rootCauseAnalysis: string;
     verificationRounds: Report8DVerificationRound[];
   };
+  d5: {
+    correctivePlan: string;
+    correctionRounds: Report8DCorrectionRound[];
+  };
   correctiveActions: Report8DCorrectiveAction[];
   d6: {
     summary: string;
+    implementationRounds: Report8DImplementationRound[];
     verificationItems: string[];
     verifiedStatus: string;
     verifiedAt: string;
