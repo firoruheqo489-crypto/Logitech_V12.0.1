@@ -194,22 +194,6 @@ function getRootSolvedTone(value: string) {
   return "border-slate-700 bg-slate-900/70 text-slate-300";
 }
 
-function wrapCellText(text: string, lineLength: number) {
-  const normalized = (text || "-").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-  const parts = normalized.split("\n").flatMap((segment) => {
-    const trimmed = segment.trim();
-    if (!trimmed) return ["-"];
-
-    const chunks: string[] = [];
-    for (let index = 0; index < trimmed.length; index += lineLength) {
-      chunks.push(trimmed.slice(index, index + lineLength));
-    }
-    return chunks;
-  });
-
-  return parts.join("<br>");
-}
-
 function createEmptyPayloadMap(): SourcePayloadMap {
   return {
     complaint: null,
@@ -254,7 +238,6 @@ export default function ComplaintInsightDashboard() {
     inspection: null,
     outsourcing: null,
   });
-  const trackingTableRef = useRef<HTMLDivElement>(null);
   const [payloads, setPayloads] = useState<SourcePayloadMap>(() => createEmptyPayloadMap());
   const [errors, setErrors] = useState<SourceErrorMap>(() => createEmptyErrorMap());
   const [parsingStates, setParsingStates] = useState<SourceParsingMap>(() => createEmptyParsingMap());
@@ -491,101 +474,6 @@ export default function ComplaintInsightDashboard() {
       cancelled = true;
     };
   }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    let resizeHandler: (() => void) | null = null;
-
-    const renderTrackingTable = async () => {
-      if (!trackingTableRef.current || !activePayload?.rows.length) return;
-
-      const Plotly = (await import("plotly.js-dist-min")).default as any;
-      if (cancelled) return;
-
-      const rows = activePayload.rows;
-      const rowFills = rows.map((_, index) => (index % 2 === 0 ? "#18181B" : "#27272A"));
-      const lineColor = "#3F3F46";
-
-      const values = [
-        rows.map((row) => wrapCellText(formatDate(row.occurredAt), 12)),
-        rows.map((row) => wrapCellText(row.issueDescription || "-", 24)),
-        rows.map((row) => wrapCellText(row.causeAnalysis || "-", 26)),
-        rows.map((row) => wrapCellText(row.temporaryAction || "-", 22)),
-        rows.map((row) => wrapCellText(row.longTermAction || "-", 28)),
-        rows.map((row) => wrapCellText(row.rootSolved || "-", 8)),
-      ];
-
-      await Plotly.newPlot(
-        trackingTableRef.current,
-        [
-          {
-            type: "table",
-            columnwidth: [110, 250, 260, 200, 320, 110],
-            header: {
-              values: ["发生时间", "问题描述", "原因分析", "临时措施", "长期措施", "是否根本解决"],
-              align: "left",
-              fill: { color: "#1E293B" },
-              line: { color: lineColor, width: 1 },
-              font: { color: "#F8FAFC", size: 15, family: "Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" },
-              height: 44,
-            },
-            cells: {
-              values,
-              align: "left",
-              fill: {
-                color: [
-                  rowFills,
-                  rowFills,
-                  rowFills,
-                  rowFills,
-                  rowFills,
-                  rowFills,
-                ],
-              },
-              line: { color: lineColor, width: 1 },
-              font: { color: "#D4D4D8", size: 13, family: "Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" },
-              height: 78,
-            },
-          },
-        ],
-        {
-          margin: { l: 0, r: 0, t: 0, b: 0 },
-          paper_bgcolor: CHART_BG,
-          plot_bgcolor: CHART_BG,
-          font: { color: CHART_TEXT },
-          height: Math.max(420, rows.length * 78 + 70),
-        },
-        {
-          displayModeBar: false,
-          responsive: true,
-        }
-      );
-
-      resizeHandler = () => {
-        if (trackingTableRef.current) {
-          Plotly.Plots.resize(trackingTableRef.current);
-        }
-      };
-      window.addEventListener("resize", resizeHandler);
-    };
-
-    void renderTrackingTable();
-
-    return () => {
-      cancelled = true;
-      if (resizeHandler) {
-        window.removeEventListener("resize", resizeHandler);
-      }
-      if (trackingTableRef.current) {
-        void import("plotly.js-dist-min").then((module) => {
-          const Plotly = module.default as any;
-          if (trackingTableRef.current) {
-            Plotly.purge(trackingTableRef.current);
-          }
-        });
-      }
-    };
-  }, [activePayload]);
 
   const handleFiles = async (sourceKey: SourceKey, incoming?: FileList | File[]) => {
     const files = incoming ? Array.from(incoming) : [];

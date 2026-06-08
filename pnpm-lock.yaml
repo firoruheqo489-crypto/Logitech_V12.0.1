@@ -188,9 +188,6 @@ importers:
       pdfjs-dist:
         specifier: 5.5.207
         version: 5.5.207
-      plotly.js-dist-min:
-        specifier: ^3.6.0
-        version: 3.6.0
       postgres:
         specifier: ^3.4.5
         version: 3.4.8
@@ -3768,9 +3765,6 @@ packages:
     resolution: {integrity: sha512-vA30H8Nvkq/cPBnNw4Q8TWz1EJyqgpuinBcHET0YVJVFldr8JDNiU9LaWAE1KqSkRYazuaBhTpB5ZzShOezQ6A==}
     engines: {node: '>=18'}
     hasBin: true
-
-  plotly.js-dist-min@3.6.0:
-    resolution: {integrity: sha512-VR9jO2YdcEwbzVwtRyPE0eAieXFv1x5q6M9nnIgUS8FggahPrjiID6kzpnTYABwLX0gZkgEc0zxS6gQgVmgHzw==}
 
   pnpm@10.33.2:
     resolution: {integrity: sha512-qQ+vb+6rca1sblf5Tg/hoS9dzCLNdU20CulZPraj4LaxLjVAIYuzeuCDQEsfLObbKkEh6XmCm0r/lLmfSdoc+A==}
@@ -8491,8 +8485,6 @@ snapshots:
       playwright-core: 1.58.2
     optionalDependencies:
       fsevents: 2.3.2
-
-  plotly.js-dist-min@3.6.0: {}
 
   pnpm@10.33.2: {}
 
