@@ -18,6 +18,7 @@ import {
   Loader2,
   Maximize2,
   NotebookPen,
+  Plus,
   RotateCcw,
   Save,
   ShieldCheck,
@@ -27,6 +28,7 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
@@ -156,9 +158,10 @@ const EMPTY_EDITABLE_STATE: EditableState = {
 
 const CAQ_STORAGE_PREFIX = "caq-audit";
 const CAQ_UNSAVED_FLAG_KEY = `${CAQ_STORAGE_PREFIX}:unsaved`;
+const CUSTOM_CATEGORY_TIERS = ["基础篇", "分析篇", "应用篇"] as const;
 
-function categoryMeta(value: string): CategoryOption | undefined {
-  return CATEGORIES.find((item) => item.value === value);
+function categoryMeta(value: string, categories: CategoryOption[]): CategoryOption | undefined {
+  return categories.find((item) => item.value === value);
 }
 
 function rootCauseMeta(value: RootCause) {
@@ -176,7 +179,7 @@ function buildStorageScope(projectName?: string): string {
   return normalized || "default";
 }
 
-function buildStorageKey(scope: string, segment: "records" | "drafts" | "workspace"): string {
+function buildStorageKey(scope: string, segment: "records" | "drafts" | "workspace" | "categories"): string {
   return `${CAQ_STORAGE_PREFIX}:${scope}:${segment}`;
 }
 
@@ -236,6 +239,40 @@ function normalizeWorkspaceState(input: unknown): PersistedWorkspaceState | null
   };
 }
 
+function slugifyCategoryLabel(label: string): string {
+  return label
+    .trim()
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function normalizeCategoryOption(input: unknown): CategoryOption | null {
+  if (!input || typeof input !== "object") return null;
+  const candidate = input as Partial<CategoryOption>;
+  const tier = candidate.tier;
+  if (
+    typeof candidate.value !== "string" ||
+    typeof candidate.label !== "string" ||
+    (tier !== "基础篇" && tier !== "分析篇" && tier !== "应用篇")
+  ) {
+    return null;
+  }
+
+  return {
+    value: candidate.value,
+    label: candidate.label,
+    tier,
+  };
+}
+
+function normalizeCategoryOptions(input: unknown): CategoryOption[] {
+  if (!Array.isArray(input)) return [];
+  return input
+    .map((item) => normalizeCategoryOption(item))
+    .filter((item): item is CategoryOption => item !== null);
+}
+
 export default function CaqAuditWorkspace({ projectName }: { projectName?: string }) {
   const storageScope = useMemo(() => buildStorageScope(projectName), [projectName]);
   const storageKeys = useMemo(
@@ -243,11 +280,13 @@ export default function CaqAuditWorkspace({ projectName }: { projectName?: strin
       records: buildStorageKey(storageScope, "records"),
       drafts: buildStorageKey(storageScope, "drafts"),
       workspace: buildStorageKey(storageScope, "workspace"),
+      categories: buildStorageKey(storageScope, "categories"),
     }),
     [storageScope],
   );
   const [records, setRecords] = useState<AuditRecord[]>([]);
   const [drafts, setDrafts] = useState<DraftRecord[]>([]);
+  const [customCategories, setCustomCategories] = useState<CategoryOption[]>([]);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [imageName, setImageName] = useState<string | null>(null);
   const [textParam, setTextParam] = useState("");
@@ -266,9 +305,12 @@ export default function CaqAuditWorkspace({ projectName }: { projectName?: strin
   const [isDragging, setIsDragging] = useState(false);
   const [isImagePreviewOpen, setIsImagePreviewOpen] = useState(false);
   const [storageReady, setStorageReady] = useState(false);
+  const [customCategoryInput, setCustomCategoryInput] = useState("");
+  const [customCategoryTier, setCustomCategoryTier] = useState<CategoryOption["tier"]>("应用篇");
 
   const inputRef = useRef<HTMLInputElement>(null);
   const storageWarningShownRef = useRef(false);
+  const allCategories = useMemo(() => [...CATEGORIES, ...customCategories], [customCategories]);
 
   const editableState = useMemo<EditableState>(
     () => ({
@@ -317,9 +359,11 @@ export default function CaqAuditWorkspace({ projectName }: { projectName?: strin
       const rawRecords = typeof window !== "undefined" ? window.localStorage.getItem(storageKeys.records) : null;
       const rawDrafts = typeof window !== "undefined" ? window.localStorage.getItem(storageKeys.drafts) : null;
       const rawWorkspace = typeof window !== "undefined" ? window.localStorage.getItem(storageKeys.workspace) : null;
+      const rawCategories = typeof window !== "undefined" ? window.localStorage.getItem(storageKeys.categories) : null;
 
       setRecords(normalizeRecords(rawRecords ? JSON.parse(rawRecords) : []));
       setDrafts(normalizeRecords(rawDrafts ? JSON.parse(rawDrafts) : []));
+      setCustomCategories(normalizeCategoryOptions(rawCategories ? JSON.parse(rawCategories) : []));
 
       const workspace = normalizeWorkspaceState(rawWorkspace ? JSON.parse(rawWorkspace) : null);
       if (workspace) {
@@ -337,6 +381,7 @@ export default function CaqAuditWorkspace({ projectName }: { projectName?: strin
       console.warn("Failed to restore CAQ local state:", error);
       setRecords([]);
       setDrafts([]);
+      setCustomCategories([]);
       setEditableState(EMPTY_EDITABLE_STATE);
       setEditingId(null);
       setEditingSource(null);
@@ -352,6 +397,7 @@ export default function CaqAuditWorkspace({ projectName }: { projectName?: strin
     try {
       window.localStorage.setItem(storageKeys.records, JSON.stringify(records));
       window.localStorage.setItem(storageKeys.drafts, JSON.stringify(drafts));
+      window.localStorage.setItem(storageKeys.categories, JSON.stringify(customCategories));
 
       if (hasWorkspaceContent || editingSource) {
         const workspaceState: PersistedWorkspaceState = {
@@ -373,6 +419,7 @@ export default function CaqAuditWorkspace({ projectName }: { projectName?: strin
     }
   }, [
     baselineSignature,
+    customCategories,
     drafts,
     editableState,
     editingId,
@@ -623,6 +670,41 @@ export default function CaqAuditWorkspace({ projectName }: { projectName?: strin
     resetWorkspace();
   }, [confirmDiscardChanges, resetWorkspace]);
 
+  const handleAddCustomCategory = useCallback(() => {
+    const label = customCategoryInput.trim();
+    if (!label) {
+      toast.warning("先输入题材名称");
+      return;
+    }
+
+    const duplicate = allCategories.find((item) => item.label.trim().toLowerCase() === label.toLowerCase());
+    if (duplicate) {
+      setCategory(duplicate.value);
+      setCustomCategoryInput("");
+      toast.info("已定位到同名题材", { description: "当前选择已切换到现有条目。" });
+      return;
+    }
+
+    const baseSlug = slugifyCategoryLabel(label) || `custom-${Date.now()}`;
+    let value = `custom-${baseSlug}`;
+    let suffix = 2;
+    while (allCategories.some((item) => item.value === value)) {
+      value = `custom-${baseSlug}-${suffix}`;
+      suffix += 1;
+    }
+
+    const nextCategory: CategoryOption = {
+      value,
+      label,
+      tier: customCategoryTier,
+    };
+
+    setCustomCategories((previous) => [...previous, nextCategory]);
+    setCategory(nextCategory.value);
+    setCustomCategoryInput("");
+    toast.success("已新增手动题材", { description: "当前选择已切换到新题材。" });
+  }, [allCategories, customCategoryInput, customCategoryTier]);
+
   return (
     <section className="overflow-hidden rounded-[28px] border border-white/10 bg-[radial-gradient(circle_at_top_left,_rgba(34,211,238,0.12),_transparent_30%),linear-gradient(180deg,rgba(15,23,42,0.96),rgba(2,6,23,0.98))] shadow-[0_30px_120px_rgba(2,6,23,0.55)]">
       <header className="flex flex-wrap items-center justify-between gap-4 border-b border-white/10 px-5 py-4 md:px-6">
@@ -647,7 +729,7 @@ export default function CaqAuditWorkspace({ projectName }: { projectName?: strin
                 </span>
               </Button>
             </SheetTrigger>
-            <DraftDrawer drafts={drafts} onLoad={loadDraft} onDelete={deleteDraft} />
+            <DraftDrawer categories={allCategories} drafts={drafts} onLoad={loadDraft} onDelete={deleteDraft} />
           </Sheet>
 
           <div className="hidden items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-slate-300 md:flex">
@@ -666,7 +748,7 @@ export default function CaqAuditWorkspace({ projectName }: { projectName?: strin
                 </span>
               </Button>
             </SheetTrigger>
-            <HistoryDrawer records={records} onLoad={loadRecord} onDelete={deleteRecord} />
+            <HistoryDrawer categories={allCategories} records={records} onLoad={loadRecord} onDelete={deleteRecord} />
           </Sheet>
         </div>
       </header>
@@ -795,10 +877,10 @@ export default function CaqAuditWorkspace({ projectName }: { projectName?: strin
                   <SelectValue placeholder="选择教材章节 / 专题" />
                 </SelectTrigger>
                 <SelectContent>
-                  {(["基础篇", "分析篇", "应用篇"] as const).map((tier) => (
+                  {CUSTOM_CATEGORY_TIERS.map((tier) => (
                     <SelectGroup key={tier}>
                       <SelectLabel>[{tier}]</SelectLabel>
-                      {CATEGORIES.filter((item) => item.tier === tier).map((item) => (
+                      {allCategories.filter((item) => item.tier === tier).map((item) => (
                         <SelectItem key={item.value} value={item.value}>
                           {item.label}
                         </SelectItem>
@@ -807,6 +889,35 @@ export default function CaqAuditWorkspace({ projectName }: { projectName?: strin
                   ))}
                 </SelectContent>
               </Select>
+              <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_160px_auto]">
+                <Input
+                  value={customCategoryInput}
+                  onChange={(event) => setCustomCategoryInput(event.target.value)}
+                  placeholder="手动新增题材 / 章节"
+                  className="h-11 rounded-2xl border-white/10 bg-white/5 text-white placeholder:text-slate-500"
+                />
+                <Select value={customCategoryTier} onValueChange={(value) => setCustomCategoryTier(value as CategoryOption["tier"])}>
+                  <SelectTrigger className="h-11 w-full rounded-2xl border-white/10 bg-white/5 text-white">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CUSTOM_CATEGORY_TIERS.map((tier) => (
+                      <SelectItem key={tier} value={tier}>
+                        {tier}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleAddCustomCategory}
+                  className="h-11 rounded-2xl border-cyan-400/25 bg-cyan-400/10 text-cyan-100 hover:bg-cyan-400/15"
+                >
+                  <Plus className="size-4" />
+                  手动增加
+                </Button>
+              </div>
             </FieldBlock>
 
             <FieldBlock
@@ -970,10 +1081,12 @@ export default function CaqAuditWorkspace({ projectName }: { projectName?: strin
 }
 
 function HistoryDrawer({
+  categories,
   records,
   onLoad,
   onDelete,
 }: {
+  categories: CategoryOption[];
   records: AuditRecord[];
   onLoad: (record: AuditRecord) => void;
   onDelete: (id: string) => void;
@@ -1014,7 +1127,7 @@ function HistoryDrawer({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">全部战区</SelectItem>
-              {CATEGORIES.map((item) => (
+              {categories.map((item) => (
                 <SelectItem key={item.value} value={item.value}>
                   {item.label}
                 </SelectItem>
@@ -1058,7 +1171,7 @@ function HistoryDrawer({
           </div>
         ) : (
           filtered.map((record) => {
-            const category = categoryMeta(record.category);
+            const category = categoryMeta(record.category, categories);
             const rootCause = rootCauseMeta(record.rootCause);
 
             return (
@@ -1137,10 +1250,12 @@ function HistoryDrawer({
 }
 
 function DraftDrawer({
+  categories,
   drafts,
   onLoad,
   onDelete,
 }: {
+  categories: CategoryOption[];
   drafts: DraftRecord[];
   onLoad: (draft: DraftRecord) => void;
   onDelete: (id: string) => void;
@@ -1165,7 +1280,7 @@ function DraftDrawer({
           </div>
         ) : (
           drafts.map((draft) => {
-            const category = categoryMeta(draft.category);
+            const category = categoryMeta(draft.category, categories);
             const rootCause = rootCauseMeta(draft.rootCause);
 
             return (
