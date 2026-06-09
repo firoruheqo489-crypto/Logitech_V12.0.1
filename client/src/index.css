@@ -96,6 +96,14 @@ body::-webkit-scrollbar-button,
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
+  --color-cyan: var(--cyan);
+  --color-purple: var(--purple);
+  --color-alert: var(--alert);
+  --color-positive: var(--positive);
+  --color-negative: var(--negative);
+  --color-panel: var(--panel);
+  --color-panel-border: var(--panel-border);
+  --color-grid: var(--grid);
   --color-success: var(--success);
   --color-success-foreground: var(--success-foreground);
   --color-warning: var(--warning);
@@ -126,6 +134,7 @@ body::-webkit-scrollbar-button,
   --font-display: 'Plus Jakarta Sans', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
   --font-body: 'Inter', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --font-cn: var(--font-display);
 }
 
 :root {
@@ -162,6 +171,15 @@ body::-webkit-scrollbar-button,
   --sidebar-accent-foreground: oklch(0.18 0.02 264);
   --sidebar-border: oklch(0.92 0.004 264);
   --sidebar-ring: oklch(0.62 0.16 250);
+
+  --cyan: #00f3ff;
+  --purple: #bc13fe;
+  --alert: #ffd60a;
+  --positive: #00ffa3;
+  --negative: #ff2e57;
+  --panel: rgba(10, 14, 21, 0.55);
+  --panel-border: rgba(0, 243, 255, 0.14);
+  --grid: rgba(120, 160, 180, 0.07);
 
   --success: #22c55e;
   --success-foreground: #0b0f14;
