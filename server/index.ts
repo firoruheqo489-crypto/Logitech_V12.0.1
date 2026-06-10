@@ -17,6 +17,16 @@ import { listDashboardProjects, getDashboardProject, batchReplaceDashboardProjec
 import { listDashboardProjectAssets, upsertDashboardProjectAsset, deleteDashboardProjectAsset, ensureDashboardProjectAssetsTable } from "./routes/dashboard-assets.js";
 import { deleteDashboardPartFaiState, ensureDashboardPartFaiTable, getDashboardPartFaiState, upsertDashboardPartFaiState } from "./routes/dashboard-part-fai.js";
 import {
+  createDashboardTimeSeriesArchive,
+  deleteDashboardTimeSeriesArchive,
+  deleteDashboardTimeSeriesState,
+  getDashboardTimeSeriesArchive,
+  getDashboardTimeSeriesState,
+  listDashboardTimeSeriesArchives,
+  renameDashboardTimeSeriesArchive,
+  upsertDashboardTimeSeriesState,
+} from "./routes/dashboard-time-series-state.js";
+import {
   deleteDashboardComplaintInsightState,
   ensureDashboardComplaintInsightStateTable,
   getDashboardComplaintInsightState,
@@ -391,6 +401,14 @@ async function startServer() {
   app.get("/api/dashboard/fai-dimension-state", getDashboardFaiDimensionState);
   app.put("/api/dashboard/fai-dimension-state", upsertDashboardFaiDimensionState);
   app.delete("/api/dashboard/fai-dimension-state", deleteDashboardFaiDimensionState);
+  app.get("/api/dashboard/time-series-state", getDashboardTimeSeriesState);
+  app.put("/api/dashboard/time-series-state", upsertDashboardTimeSeriesState);
+  app.delete("/api/dashboard/time-series-state", deleteDashboardTimeSeriesState);
+  app.get("/api/dashboard/time-series-archives", listDashboardTimeSeriesArchives);
+  app.post("/api/dashboard/time-series-archives", createDashboardTimeSeriesArchive);
+  app.patch("/api/dashboard/time-series-archives", renameDashboardTimeSeriesArchive);
+  app.get("/api/dashboard/time-series-archives/document", getDashboardTimeSeriesArchive);
+  app.delete("/api/dashboard/time-series-archives", deleteDashboardTimeSeriesArchive);
   app.get("/api/dashboard/mold-trial-evidence-state", getDashboardMoldTrialEvidenceState);
   app.put("/api/dashboard/mold-trial-evidence-state", upsertDashboardMoldTrialEvidenceState);
   app.delete("/api/dashboard/mold-trial-evidence-state", deleteDashboardMoldTrialEvidenceState);

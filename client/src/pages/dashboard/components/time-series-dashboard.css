@@ -101,22 +101,33 @@
 }
 
 .time-series-dashboard .grid-scroll::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 9px;
+  height: 16px;
 }
 
 .time-series-dashboard .grid-scroll::-webkit-scrollbar-track {
-  background: rgba(0, 243, 255, 0.04);
+  background: rgba(0, 243, 255, 0.08);
+  border-radius: 999px;
 }
 
 .time-series-dashboard .grid-scroll::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, rgba(0, 243, 255, 0.45), rgba(188, 19, 254, 0.4));
-  border-radius: 4px;
-  box-shadow: 0 0 6px rgba(0, 243, 255, 0.4);
+  background: linear-gradient(90deg, rgba(0, 243, 255, 0.72), rgba(188, 19, 254, 0.58));
+  border-radius: 999px;
+  box-shadow: 0 0 10px rgba(0, 243, 255, 0.45);
+  border: 3px solid transparent;
+  background-clip: padding-box;
 }
 
 .time-series-dashboard .grid-scroll::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(180deg, rgba(0, 243, 255, 0.7), rgba(188, 19, 254, 0.6));
+  background: linear-gradient(90deg, rgba(0, 243, 255, 0.9), rgba(188, 19, 254, 0.74));
+}
+
+.time-series-dashboard .ts-table-scroll-host::-webkit-scrollbar:horizontal {
+  height: 0;
+}
+
+.time-series-dashboard .ts-table-scroll-host {
+  scrollbar-width: thin;
 }
 
 .time-series-dashboard .ts-slider-input::-webkit-slider-thumb {
@@ -142,6 +153,40 @@
 
 .time-series-dashboard .ts-slider-input::-moz-range-track {
   background: transparent;
+}
+
+.time-series-dashboard .ts-bottom-slider::-webkit-slider-runnable-track {
+  height: 12px;
+  border-radius: 999px;
+  background: rgba(0, 243, 255, 0.1);
+  border: 1px solid rgba(0, 243, 255, 0.18);
+}
+
+.time-series-dashboard .ts-bottom-slider::-webkit-slider-thumb {
+  appearance: none;
+  margin-top: -3px;
+  width: 54px;
+  height: 18px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(0, 243, 255, 0.92), rgba(188, 19, 254, 0.7));
+  box-shadow: 0 0 14px rgba(0, 243, 255, 0.35);
+  border: 2px solid rgba(5, 6, 8, 0.85);
+}
+
+.time-series-dashboard .ts-bottom-slider::-moz-range-track {
+  height: 12px;
+  border-radius: 999px;
+  background: rgba(0, 243, 255, 0.1);
+  border: 1px solid rgba(0, 243, 255, 0.18);
+}
+
+.time-series-dashboard .ts-bottom-slider::-moz-range-thumb {
+  width: 54px;
+  height: 18px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(0, 243, 255, 0.92), rgba(188, 19, 254, 0.7));
+  box-shadow: 0 0 14px rgba(0, 243, 255, 0.35);
+  border: 2px solid rgba(5, 6, 8, 0.85);
 }
 
 .time-series-dashboard .ts-scroll::-webkit-scrollbar {

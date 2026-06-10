@@ -11,8 +11,10 @@ import {
   GripVertical,
   Layers,
   Maximize2,
+  Pencil,
   Plus,
   Radio,
+  Search,
   SlidersHorizontal,
   Terminal,
   Trash2,
@@ -34,9 +36,21 @@ import {
 } from "recharts";
 import { toast } from "sonner";
 
+import CyberConfirmDialog from "@/components/ui/CyberConfirmDialog";
+import CyberPromptDialog from "@/components/ui/CyberPromptDialog";
 import { cn } from "@/lib/utils";
 
 import "./time-series-dashboard.css";
+import {
+  createTimeSeriesArchive,
+  deleteTimeSeriesArchive,
+  fetchTimeSeriesArchive,
+  fetchTimeSeriesArchives,
+  fetchTimeSeriesState,
+  renameTimeSeriesArchive,
+  saveTimeSeriesState,
+  type TimeSeriesArchiveRecord,
+} from "../lib/time-series-state-api";
 import {
   RANGES,
   createDefaultDataset,
@@ -1072,19 +1086,116 @@ function BrushTimeline({
 }
 
 function RawFileWorkspace({
+  archives,
   dataset,
+  onArchiveDelete,
+  onArchiveOpen,
+  onArchiveRename,
   onDatasetChange,
+  onArchiveCreated,
   selectedRowId,
   onSelectRow,
 }: {
+  archives: TimeSeriesArchiveRecord[];
   dataset: TimeSeriesDataset;
+  onArchiveDelete: (archive: TimeSeriesArchiveRecord) => void;
+  onArchiveOpen: (archiveId: string) => Promise<void>;
+  onArchiveRename: (archive: TimeSeriesArchiveRecord) => void;
   onDatasetChange: (updater: (current: TimeSeriesDataset) => TimeSeriesDataset) => void;
+  onArchiveCreated: (archive: TimeSeriesArchiveRecord) => void;
   selectedRowId: string | null;
   onSelectRow: (rowId: string) => void;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isParsing, setIsParsing] = useState(false);
+  const [archiveSearch, setArchiveSearch] = useState("");
   const selectedRow = dataset.rows.find((row) => row.id === selectedRowId) ?? dataset.rows[0] ?? null;
+  const tableViewportRef = useRef<HTMLDivElement | null>(null);
+  const tableContentRef = useRef<HTMLDivElement | null>(null);
+  const tableElementRef = useRef<HTMLTableElement | null>(null);
+  const timeColumnWidth = 188;
+  const columnWidths = useMemo(
+    () =>
+      dataset.columns.map((column) => {
+        const labelWidth = column.label.length * 18 + 42;
+        return Math.max(156, Math.min(220, labelWidth));
+      }),
+    [dataset.columns],
+  );
+  const tableWidth = useMemo(
+    () => timeColumnWidth + columnWidths.reduce((sum, width) => sum + width, 0),
+    [columnWidths],
+  );
+  const [scrollOffset, setScrollOffset] = useState(0);
+  const [maxScrollOffset, setMaxScrollOffset] = useState(0);
+  const [measuredContentWidth, setMeasuredContentWidth] = useState(tableWidth);
+  const [measuredViewportWidth, setMeasuredViewportWidth] = useState(0);
+
+  useEffect(() => {
+    const viewportEl = tableViewportRef.current;
+    const contentEl = tableContentRef.current;
+    const tableEl = tableElementRef.current;
+    if (!viewportEl || !contentEl || !tableEl) return;
+
+    const updateBounds = () => {
+      const contentWidth = Math.max(
+        tableWidth,
+        tableEl.scrollWidth,
+        Math.ceil(tableEl.getBoundingClientRect().width),
+        contentEl.scrollWidth,
+        Math.ceil(contentEl.getBoundingClientRect().width),
+      );
+      const viewportWidth = viewportEl.clientWidth;
+      const nextMax = Math.max(0, contentWidth - viewportWidth);
+      setMeasuredContentWidth(contentWidth);
+      setMeasuredViewportWidth(viewportWidth);
+      setMaxScrollOffset(nextMax);
+      setScrollOffset((current) => Math.min(current, nextMax));
+    };
+
+    updateBounds();
+    const frameId = requestAnimationFrame(updateBounds);
+
+    const observer = new ResizeObserver(updateBounds);
+    observer.observe(viewportEl);
+    observer.observe(contentEl);
+    observer.observe(tableEl);
+
+    return () => {
+      cancelAnimationFrame(frameId);
+      observer.disconnect();
+    };
+  }, [tableWidth]);
+
+  const effectiveScrollOffset = useMemo(() => {
+    if (maxScrollOffset <= 0) return 0;
+    if (scrollOffset >= maxScrollOffset - 1) {
+      return Math.max(0, measuredContentWidth - measuredViewportWidth);
+    }
+    return Math.min(scrollOffset, maxScrollOffset);
+  }, [maxScrollOffset, measuredContentWidth, measuredViewportWidth, scrollOffset]);
+
+  const applyScrollOffset = useCallback(
+    (rawOffset: number) => {
+      const clampedOffset = Math.max(0, Math.min(rawOffset, maxScrollOffset));
+      const nextOffset =
+        clampedOffset >= maxScrollOffset - 1
+          ? Math.max(0, measuredContentWidth - measuredViewportWidth)
+          : clampedOffset;
+
+      const contentEl = tableContentRef.current;
+      if (contentEl) {
+        contentEl.style.transform = `translateX(-${nextOffset}px)`;
+      }
+
+      setScrollOffset(nextOffset);
+    },
+    [maxScrollOffset, measuredContentWidth, measuredViewportWidth],
+  );
+
+  useEffect(() => {
+    applyScrollOffset(scrollOffset);
+  }, [applyScrollOffset, scrollOffset]);
 
   const previewPayload = selectedRow
     ? JSON.stringify(
@@ -1097,6 +1208,29 @@ function RawFileWorkspace({
       )
     : "{}";
 
+  const filteredArchives = useMemo(() => {
+    const keyword = archiveSearch.trim().toLowerCase();
+    if (!keyword) {
+      return archives;
+    }
+
+    return archives.filter((archive) => {
+      const haystack = `${archive.title} ${archive.sourceName}`.toLowerCase();
+      return haystack.includes(keyword);
+    });
+  }, [archiveSearch, archives]);
+
+  const groupedArchives = useMemo(() => {
+    const groups = new Map<string, TimeSeriesArchiveRecord[]>();
+    filteredArchives.forEach((archive) => {
+      const groupKey = archive.sourceName || "未命名来源";
+      const current = groups.get(groupKey) ?? [];
+      current.push(archive);
+      groups.set(groupKey, current);
+    });
+    return Array.from(groups.entries());
+  }, [filteredArchives]);
+
   const handleExcelChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -1106,6 +1240,12 @@ function RawFileWorkspace({
       const parsed = await parseTimeSeriesExcelFile(file);
       onDatasetChange(() => parsed);
       onSelectRow(parsed.rows[0]?.id ?? "");
+      const archive = await createTimeSeriesArchive({
+        scope: "dashboard-time-series-workspace",
+        dataset: parsed,
+        selectedRowId: parsed.rows[0]?.id ?? null,
+      }, parsed.sourceName);
+      onArchiveCreated(archive);
       toast.success(`已解析 Excel：${file.name}`);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Excel 解析失败";
@@ -1222,6 +1362,70 @@ function RawFileWorkspace({
           </div>
 
           <div className="space-y-3 rounded-xl border border-border bg-black/30 p-3">
+            <div className="flex items-center gap-2">
+              <Database className="h-4 w-4 text-cyan" strokeWidth={1.5} />
+              <BiLabel zh="解析档案库" en="PARSED ARCHIVES" size="sm" />
+            </div>
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+              <input
+                value={archiveSearch}
+                onChange={(event) => setArchiveSearch(event.target.value)}
+                placeholder="按来源或标题筛选"
+                className="w-full rounded-lg border border-border bg-black/20 py-2 pl-9 pr-3 text-sm text-foreground outline-none transition-all focus:border-cyan/40"
+              />
+            </div>
+            <div className="space-y-2">
+              {groupedArchives.length === 0 ? (
+                <div className="rounded-lg border border-border bg-black/20 px-3 py-2 text-xs text-muted-foreground">
+                  暂无解析档案
+                </div>
+              ) : (
+                groupedArchives.map(([groupName, items]) => (
+                  <div key={groupName} className="space-y-2">
+                    <div className="rounded-lg border border-cyan/15 bg-cyan/5 px-3 py-1.5 text-[11px] text-cyan">
+                      {groupName}
+                    </div>
+                    {items.map((archive) => (
+                      <div
+                        key={archive.id}
+                        className="flex items-center justify-between gap-3 rounded-lg border border-border bg-black/20 px-3 py-2 transition-all hover:border-cyan/40 hover:bg-cyan/5"
+                      >
+                        <button
+                          onClick={() => void onArchiveOpen(archive.id)}
+                          className="min-w-0 flex-1 text-left"
+                        >
+                          <span className="block truncate text-sm text-foreground">{archive.title}</span>
+                          <span className="block text-[11px] text-muted-foreground">
+                            {archive.rowCount} 行 / {archive.columnCount} 列 / {archive.createdAt}
+                          </span>
+                        </button>
+                        <div className="flex items-center gap-2">
+                          <span className="shrink-0 text-xs text-cyan">打开</span>
+                          <button
+                            onClick={() => onArchiveRename(archive)}
+                            className="rounded-md border border-cyan/20 bg-cyan/5 p-1.5 text-cyan transition-all hover:border-cyan/40 hover:bg-cyan/10"
+                            aria-label={`重命名档案 ${archive.title}`}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            onClick={() => onArchiveDelete(archive)}
+                            className="rounded-md border border-red-400/20 bg-red-400/5 p-1.5 text-red-300 transition-all hover:border-red-400/40 hover:bg-red-400/10"
+                            aria-label={`删除档案 ${archive.title}`}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          <div className="space-y-3 rounded-xl border border-border bg-black/30 p-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Database className="h-4 w-4 text-purple" strokeWidth={1.5} />
@@ -1257,7 +1461,7 @@ function RawFileWorkspace({
                   <button
                     onClick={() => removeColumn(column.id)}
                     disabled={dataset.columns.length <= 1}
-                    className="rounded-md border border-border bg-black/30 p-2 text-muted-foreground transition-all hover:border-red-400/40 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-40"
+                    className="hidden"
                     aria-label={`删除第 ${index + 1} 列`}
                   >
                     <Trash2 className="h-4 w-4" />
@@ -1278,36 +1482,49 @@ function RawFileWorkspace({
           </div>
         </div>
 
-        <div className="bg-background/20">
-          <div className="grid-scroll max-h-[560px] overflow-auto">
-            <table className="w-full min-w-max border-collapse font-mono text-xs table-auto">
+        <div className="min-w-0 bg-background/20">
+          <div ref={tableViewportRef} className="min-w-0 w-full max-h-[560px] overflow-hidden overflow-y-auto">
+            <div
+              ref={tableContentRef}
+              style={{
+                minWidth: `${tableWidth}px`,
+                width: `${tableWidth}px`,
+                transform: `translateX(-${effectiveScrollOffset}px)`,
+                willChange: "transform",
+              }}
+            >
+            <table
+              ref={tableElementRef}
+              className="border-collapse font-mono text-xs whitespace-nowrap"
+              style={{ width: `${tableWidth}px`, tableLayout: "fixed" }}
+            >
               <colgroup>
-                <col style={{ width: "220px" }} />
-                {dataset.columns.map((column) => (
-                  <col key={column.id} style={{ width: "180px" }} />
+                <col style={{ width: `${timeColumnWidth}px` }} />
+                {dataset.columns.map((column, index) => (
+                  <col key={column.id} style={{ width: `${columnWidths[index] ?? 156}px` }} />
                 ))}
               </colgroup>
               <thead className="sticky top-0 z-10">
                 <tr className="bg-[#0a0e15] backdrop-blur">
-                  <th className="border-b border-cyan/20 px-3 py-2.5 text-left font-normal">
+                  <th className="border-b border-cyan/20 px-2 py-2 text-center font-normal">
                     <input
                       value={dataset.timeHeader}
                       onChange={(event) => updateTimeHeader(event.target.value)}
-                      className="w-full min-w-[110px] border-none bg-transparent text-sm text-secondary-foreground outline-none"
+                      className="w-full border-none bg-transparent text-center text-sm text-secondary-foreground outline-none"
                     />
                   </th>
                   {dataset.columns.map((column) => (
-                    <th key={column.id} className="border-b border-cyan/20 px-3 py-2.5 text-left font-normal">
-                      <div className="flex items-center gap-2">
+                    <th key={column.id} className="border-b border-cyan/20 px-2 py-2 text-center font-normal">
+                      <div className="flex items-center">
                         <input
                           value={column.label}
                           onChange={(event) => updateColumnLabel(column.id, event.target.value)}
-                          className="w-full min-w-[120px] border-none bg-transparent text-sm text-secondary-foreground outline-none"
+                          className="w-full border-none bg-transparent text-center text-sm text-secondary-foreground outline-none"
                         />
                         <button
                           onClick={() => removeColumn(column.id)}
                           disabled={dataset.columns.length <= 1}
-                          className="text-muted-foreground transition-colors hover:text-red-300 disabled:opacity-30"
+                          className="hidden"
                           aria-label={`删除 ${column.label}`}
                         >
                           <Trash2 className="h-3.5 w-3.5" />
@@ -1333,9 +1550,14 @@ function RawFileWorkspace({
                         active && "bg-cyan/[0.08]",
                       )}
                     >
-                      <td className="whitespace-nowrap px-3 py-2 text-secondary-foreground">{row.timeLabel}</td>
+                      <td className="overflow-hidden text-ellipsis whitespace-nowrap px-2 py-1.5 text-center text-secondary-foreground">
+                        {row.timeLabel}
+                      </td>
                       {dataset.columns.map((column) => (
-                        <td key={column.id} className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-foreground">
+                        <td
+                          key={column.id}
+                          className="overflow-hidden text-ellipsis whitespace-nowrap px-2 py-1.5 text-center tabular-nums text-foreground"
+                        >
                           {formatValue(row.values[column.id] ?? 0)}
                         </td>
                       ))}
@@ -1344,7 +1566,28 @@ function RawFileWorkspace({
                 })}
               </tbody>
             </table>
+            </div>
           </div>
+        </div>
+      </div>
+      <div className="border-t border-border/60 bg-black/20 px-4 py-3">
+        <div className="mb-2 flex items-center justify-end gap-2 text-[11px] text-muted-foreground">
+          <span className="inline-block h-2 w-2 rounded-full bg-cyan shadow-[0_0_8px_rgba(0,243,255,0.8)]" />
+          <span>左右拖动滑块查看完整数据列</span>
+        </div>
+        <div className="rounded-full border border-cyan/20 bg-black/30 px-3 py-3">
+          <input
+            type="range"
+            min={0}
+            max={Math.max(maxScrollOffset, 1)}
+            step={1}
+            value={Math.min(scrollOffset, Math.max(maxScrollOffset, 1))}
+            onInput={(event) => applyScrollOffset(Number((event.target as HTMLInputElement).value))}
+            onChange={(event) => applyScrollOffset(Number((event.target as HTMLInputElement).value))}
+            disabled={maxScrollOffset <= 0}
+            aria-label="raw-file-horizontal-scroll"
+            className="ts-bottom-slider h-5 w-full cursor-ew-resize appearance-none bg-transparent disabled:cursor-default disabled:opacity-40"
+          />
         </div>
       </div>
     </section>
@@ -1398,6 +1641,8 @@ export default function TimeSeriesDashboard() {
   const [brushRange, setBrushRange] = useState<[number, number]>([0, 100]);
   const [clock, setClock] = useState("--:--:--");
   const [dataset, setDataset] = useState<TimeSeriesDataset>(() => createDefaultDataset());
+  const [archives, setArchives] = useState<TimeSeriesArchiveRecord[]>([]);
+  const [isStateHydrated, setIsStateHydrated] = useState(false);
   const [isChartExpanded, setIsChartExpanded] = useState(false);
   const [controls, setControls] = useState<ControlState>(() => {
     const initial = createDefaultDataset();
@@ -1407,9 +1652,107 @@ export default function TimeSeriesDashboard() {
     };
   });
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
+  const [pendingDeleteArchive, setPendingDeleteArchive] = useState<TimeSeriesArchiveRecord | null>(null);
+  const [pendingRenameArchive, setPendingRenameArchive] = useState<TimeSeriesArchiveRecord | null>(null);
+  const lastSavedSnapshotRef = useRef("");
+  const saveTimerRef = useRef<number | null>(null);
 
   const updateDataset = useCallback((updater: (current: TimeSeriesDataset) => TimeSeriesDataset) => {
     setDataset((current) => updater(current));
+  }, []);
+
+  const handleArchiveCreated = useCallback((archive: TimeSeriesArchiveRecord) => {
+    setArchives((current) => [archive, ...current.filter((item) => item.id !== archive.id)]);
+  }, []);
+
+  const handleArchiveOpen = useCallback(async (archiveId: string) => {
+    try {
+      const archiveState = await fetchTimeSeriesArchive(archiveId);
+      if (!archiveState?.dataset) {
+        toast.error("解析档案读取失败");
+        return;
+      }
+
+      setDataset(archiveState.dataset);
+      setSelectedRowId(archiveState.selectedRowId);
+      lastSavedSnapshotRef.current = JSON.stringify({
+        dataset: archiveState.dataset,
+        selectedRowId: archiveState.selectedRowId,
+      });
+      toast.success("已打开解析档案");
+    } catch (error) {
+      console.error("Failed to open time series archive:", error);
+      toast.error("解析档案打开失败");
+    }
+  }, []);
+
+  const handleArchiveDelete = useCallback(async () => {
+    if (!pendingDeleteArchive) return;
+
+    try {
+      await deleteTimeSeriesArchive(pendingDeleteArchive.id);
+      setArchives((current) => current.filter((archive) => archive.id !== pendingDeleteArchive.id));
+      toast.success("解析档案已删除");
+    } catch (error) {
+      console.error("Failed to delete time series archive:", error);
+      toast.error("解析档案删除失败");
+    } finally {
+      setPendingDeleteArchive(null);
+    }
+  }, [pendingDeleteArchive]);
+
+  const handleArchiveRename = useCallback(async (title: string) => {
+    if (!pendingRenameArchive) return;
+
+    try {
+      const archive = await renameTimeSeriesArchive(pendingRenameArchive.id, title);
+      setArchives((current) =>
+        current.map((item) => (item.id === archive.id ? archive : item)),
+      );
+      toast.success("解析档案已重命名");
+    } catch (error) {
+      console.error("Failed to rename time series archive:", error);
+      toast.error("解析档案重命名失败");
+    } finally {
+      setPendingRenameArchive(null);
+    }
+  }, [pendingRenameArchive]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const hydrate = async () => {
+      try {
+        const [remoteState, remoteArchives] = await Promise.all([
+          fetchTimeSeriesState(),
+          fetchTimeSeriesArchives(),
+        ]);
+        if (cancelled) return;
+
+        if (remoteState?.dataset) {
+          setDataset(remoteState.dataset);
+          setSelectedRowId(remoteState.selectedRowId);
+          lastSavedSnapshotRef.current = JSON.stringify({
+            dataset: remoteState.dataset,
+            selectedRowId: remoteState.selectedRowId,
+          });
+        }
+        setArchives(remoteArchives);
+      } catch (error) {
+        console.error("Failed to hydrate time series state:", error);
+        toast.error("时间序列远端数据恢复失败");
+      } finally {
+        if (!cancelled) {
+          setIsStateHydrated(true);
+        }
+      }
+    };
+
+    void hydrate();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -1455,6 +1798,44 @@ export default function TimeSeriesDashboard() {
       setSelectedRowId(dataset.rows[0].id);
     }
   }, [dataset.rows, selectedRowId]);
+
+  useEffect(() => {
+    if (!isStateHydrated) return;
+
+    const snapshot = JSON.stringify({
+      dataset,
+      selectedRowId,
+    });
+
+    if (snapshot === lastSavedSnapshotRef.current) {
+      return;
+    }
+
+    if (saveTimerRef.current) {
+      window.clearTimeout(saveTimerRef.current);
+    }
+
+    saveTimerRef.current = window.setTimeout(() => {
+      void saveTimeSeriesState({
+        scope: "dashboard-time-series-workspace",
+        dataset,
+        selectedRowId,
+      })
+        .then(() => {
+          lastSavedSnapshotRef.current = snapshot;
+        })
+        .catch((error) => {
+          console.error("Failed to persist time series state:", error);
+          toast.error("时间序列数据保存失败");
+        });
+    }, 600);
+
+    return () => {
+      if (saveTimerRef.current) {
+        window.clearTimeout(saveTimerRef.current);
+      }
+    };
+  }, [dataset, isStateHydrated, selectedRowId]);
 
   useEffect(() => {
     setControls((current) => {
@@ -1553,8 +1934,13 @@ export default function TimeSeriesDashboard() {
             </div>
 
             <RawFileWorkspace
+              archives={archives}
               dataset={dataset}
+              onArchiveDelete={setPendingDeleteArchive}
+              onArchiveOpen={handleArchiveOpen}
+              onArchiveRename={setPendingRenameArchive}
               onDatasetChange={updateDataset}
+              onArchiveCreated={handleArchiveCreated}
               selectedRowId={selectedRowId}
               onSelectRow={setSelectedRowId}
             />
@@ -1619,6 +2005,44 @@ export default function TimeSeriesDashboard() {
           </div>
         </div>
       ) : null}
+
+      <CyberConfirmDialog
+        open={Boolean(pendingDeleteArchive)}
+        title="删除解析档案"
+        message={
+          pendingDeleteArchive
+            ? `确定要删除档案 ${pendingDeleteArchive.title} 吗？\n删除后将无法再次从档案库打开，此操作不可撤销。`
+            : ""
+        }
+        confirmText="确认删除"
+        cancelText="取消"
+        onConfirm={handleArchiveDelete}
+        onCancel={() => setPendingDeleteArchive(null)}
+      />
+
+      <CyberPromptDialog
+        open={Boolean(pendingRenameArchive)}
+        title="重命名解析档案"
+        subtitle="档案信息维护"
+        description={pendingRenameArchive ? `来源：${pendingRenameArchive.sourceName}` : ""}
+        fields={[
+          {
+            kind: "text",
+            name: "title",
+            label: "档案名称",
+            defaultValue: pendingRenameArchive?.title ?? "",
+            required: true,
+            maxLength: 255,
+          },
+        ]}
+        confirmText="确认重命名"
+        cancelText="取消"
+        tone="cyan"
+        onConfirm={(values) => {
+          void handleArchiveRename(values.title ?? "");
+        }}
+        onCancel={() => setPendingRenameArchive(null)}
+      />
     </div>
   );
 }
