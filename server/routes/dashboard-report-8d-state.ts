@@ -12,6 +12,7 @@ import {
 type Report8DStatus = "completed" | "in-progress" | "pending";
 type EightDStage = "D0" | "D1" | "D2" | "D3" | "D4" | "D5" | "D6" | "D7" | "D8";
 type EightDCaseStatus = "Open" | "Pending" | "Closed";
+type Report8DOutputCutoff = EightDStage | "SIGNOFF";
 
 type Report8DHeaderFields = {
   reportNo: string;
@@ -82,6 +83,7 @@ type Report8DImplementationRound = {
 export type Report8DWorkspaceState = {
   module: "report-8d";
   workspaceKey: string;
+  outputCutoff: Report8DOutputCutoff;
   headerFields: Report8DHeaderFields;
   d0: {
     severityLabel: string;
@@ -162,6 +164,7 @@ const REPORT_8D_ARCHIVE_MONTH_LIMIT = 500;
 const STATUS_SET = new Set<Report8DStatus>(["completed", "in-progress", "pending"]);
 const EIGHT_D_STAGE_SET = new Set<EightDStage>(["D0", "D1", "D2", "D3", "D4", "D5", "D6", "D7", "D8"]);
 const EIGHT_D_CASE_STATUS_SET = new Set<EightDCaseStatus>(["Open", "Pending", "Closed"]);
+const REPORT_8D_OUTPUT_CUTOFF_SET = new Set<Report8DOutputCutoff>(["D0", "D1", "D2", "D3", "D4", "D5", "D6", "D7", "D8", "SIGNOFF"]);
 export const DEFAULT_REPORT_8D_WORKSPACE_KEY = "dashboard-report-8d-workspace";
 
 let dashboardReport8DSubmissionTableReady: Promise<void> | null = null;
@@ -295,6 +298,11 @@ function sanitizeEightDCaseStatus(value: unknown): EightDCaseStatus {
   return EIGHT_D_CASE_STATUS_SET.has(normalized as EightDCaseStatus)
     ? (normalized as EightDCaseStatus)
     : "Open";
+}
+
+function sanitizeOutputCutoff(value: unknown): Report8DOutputCutoff {
+  const normalized = normalizeText(value, 16, "SIGNOFF").toUpperCase() as Report8DOutputCutoff;
+  return REPORT_8D_OUTPUT_CUTOFF_SET.has(normalized) ? normalized : "SIGNOFF";
 }
 
 function readReportId(source: Request["query"] | Record<string, unknown>): string {
@@ -552,6 +560,7 @@ function sanitizeWorkspaceState(value: unknown, workspaceKey: string): Report8DW
   return {
     module: "report-8d",
     workspaceKey,
+    outputCutoff: sanitizeOutputCutoff(record.outputCutoff),
     headerFields: sanitizeHeaderFields(record.headerFields),
     d0: {
       severityLabel: normalizeText(d0.severityLabel, 120),

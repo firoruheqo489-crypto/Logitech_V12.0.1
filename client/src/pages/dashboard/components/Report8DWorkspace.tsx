@@ -38,6 +38,7 @@ import { cn } from "@/lib/utils";
 import {
   DEFAULT_REPORT_8D_WORKSPACE_KEY,
   fetchReport8DRemoteWorkspaceState,
+  type Report8DOutputCutoff,
   saveReport8DRemoteWorkspaceState,
   submitReport8DWorkspaceState,
   type Report8DContainmentAction,
@@ -72,6 +73,19 @@ type Report8DDocumentOptions = {
   projectName: string;
   moldNumbers: string[];
 };
+
+const REPORT_8D_OUTPUT_CUTOFF_OPTIONS: Array<{ value: Report8DOutputCutoff; label: string }> = [
+  { value: "D0", label: "截断到 D0" },
+  { value: "D1", label: "截断到 D1" },
+  { value: "D2", label: "截断到 D2" },
+  { value: "D3", label: "截断到 D3" },
+  { value: "D4", label: "截断到 D4 根因分析" },
+  { value: "D5", label: "截断到 D5 改善措施" },
+  { value: "D6", label: "截断到 D6 效果验证" },
+  { value: "D7", label: "截断到 D7 防止再发" },
+  { value: "D8", label: "截断到 D8 结案" },
+  { value: "SIGNOFF", label: "完整输出（含签核）" },
+];
 
 type DeleteConfirmState = {
   title: string;
@@ -212,6 +226,7 @@ function buildInitialState(
   return {
     module: "report-8d",
     workspaceKey,
+    outputCutoff: "SIGNOFF",
     headerFields: {
       reportNo: reportId || `8D-${openedDate.replaceAll("-", "").slice(0, 6)}-${moldSuffix}`,
       finishedPartNumber: moldNumbers.join(" / ") || "待填写",
@@ -521,7 +536,7 @@ function buildReport8DPrintCss(): string {
     .report-8d-print-box {
       display: grid;
       grid-template-columns: 31mm minmax(0, 1fr);
-      align-items: start;
+      align-items: stretch;
       column-gap: 2.2mm;
       border: 0.65px solid #cbd5e1;
       border-left: 2.4mm solid #0f766e;
@@ -535,9 +550,13 @@ function buildReport8DPrintCss(): string {
       display: flex;
       flex-direction: column;
       align-items: flex-start;
+      justify-content: center;
+      align-self: stretch;
       gap: 0.9mm;
       min-width: 0;
-      padding-top: 0.15mm;
+      padding-right: 1.6mm;
+      border-right: 0.6px solid #cbd5e1;
+      text-align: left;
     }
 
     .report-8d-print-side h2 {
@@ -576,6 +595,14 @@ function buildReport8DPrintCss(): string {
       white-space: pre-wrap;
       overflow-wrap: anywhere;
       word-break: break-word;
+      break-inside: avoid-page;
+      page-break-inside: avoid;
+      orphans: 3;
+      widows: 3;
+    }
+
+    .report-8d-print-copy-indented {
+      padding-left: 3.1mm;
     }
 
     .report-8d-print-muted {
@@ -586,6 +613,10 @@ function buildReport8DPrintCss(): string {
       white-space: pre-wrap;
       overflow-wrap: anywhere;
       word-break: break-word;
+      break-inside: avoid-page;
+      page-break-inside: avoid;
+      orphans: 3;
+      widows: 3;
     }
 
     .report-8d-print-list {
@@ -593,12 +624,26 @@ function buildReport8DPrintCss(): string {
       padding-left: 3.1mm;
     }
 
+    .report-8d-print-list-spaced {
+      margin-top: 1.8mm;
+      padding-top: 1.4mm;
+      border-top: 0.6px solid #cbd5e1;
+    }
+
     .report-8d-print-list li {
-      margin: 0 0 0.45mm;
+      margin: 0 0 1.35mm;
       padding: 0;
       white-space: pre-wrap;
       overflow-wrap: anywhere;
       word-break: break-word;
+      break-inside: avoid-page;
+      page-break-inside: avoid;
+      orphans: 3;
+      widows: 3;
+    }
+
+    .report-8d-print-list li:last-child {
+      margin-bottom: 0;
     }
 
     .report-8d-print-table {
@@ -677,6 +722,11 @@ function buildPrintBox(code: string, title: string, content: string): string {
   return `<section class="report-8d-print-box"><div class="report-8d-print-side"><span class="report-8d-print-code">${escapeHtml(code)}</span><h2>${escapeHtml(title)}</h2></div><div class="report-8d-print-body">${content}</div></section>`;
 }
 
+function getCutoffIndex(cutoff: Report8DOutputCutoff): number {
+  const ordered: Report8DOutputCutoff[] = ["D0", "D1", "D2", "D3", "D4", "D5", "D6", "D7", "D8", "SIGNOFF"];
+  return Math.max(0, ordered.indexOf(cutoff));
+}
+
 function buildReport8DDocumentMarkup({ state, projectName, moldNumbers }: Report8DDocumentOptions): string {
   const { headerFields } = state;
   const problemRows = state.problemItems.slice(0, 7);
@@ -721,6 +771,66 @@ function buildReport8DDocumentMarkup({ state, projectName, moldNumbers }: Report
     })
     .join("");
 
+  const sections = [
+    buildPrintBox(
+      "D0",
+      "问题准备与紧急响应",
+      `<p class="report-8d-print-copy">严重级别：${escapeHtml(compactPrintText(state.d0.severityLabel, "待评估", 76))}</p>
+       <p class="report-8d-print-copy">${formatPrintMultiline(state.d0.summary, "问题来源、影响范围、风险等级待填写")}</p>`,
+    ),
+    buildPrintBox(
+      "D1",
+      "团队组建",
+      `<p class="report-8d-print-copy">${formatPrintMultiline(formatTeamPreview(state.teamMembers), "待填写")}</p>`,
+    ),
+    buildPrintBox("D2", "问题描述 (5W2H)", `<table class="report-8d-print-table"><tbody>${problemTable}</tbody></table>`),
+    buildPrintBox(
+      "D3",
+      "临时遏制措施",
+      `<p class="report-8d-print-copy report-8d-print-copy-indented">遏制说明：${formatPrintMultiline(state.d0.containment, "待填写")}</p>
+       <ul class="report-8d-print-list">${containmentList}</ul>`,
+    ),
+    buildPrintBox(
+      "D4",
+      "根本原因分析",
+      `<p class="report-8d-print-copy report-8d-print-copy-indented">原因分析：${formatPrintMultiline(rootCauseAnalysis, "待填写")}</p>
+       <ul class="report-8d-print-list report-8d-print-list-spaced">${verificationRoundList}</ul>`,
+    ),
+    buildPrintBox(
+      "D5",
+      "改善措施",
+      `<p class="report-8d-print-copy report-8d-print-copy-indented">措施说明：${formatPrintMultiline(correctivePlan, "待填写")}</p>
+       <ul class="report-8d-print-list">${correctionRoundList}</ul>`,
+    ),
+    buildPrintBox(
+      "D6",
+      "效果验证",
+      `<p class="report-8d-print-copy report-8d-print-copy-indented">验证摘要：${formatPrintMultiline(state.d6.summary, "待填写")}</p>
+       <ul class="report-8d-print-list">${implementationRoundList}</ul>
+       <p class="report-8d-print-muted">状态：${escapeHtml(compactPrintText(state.d6.verifiedStatus, "待验证", 36))}；日期：${escapeHtml(compactPrintText(state.d6.verifiedAt, "待定", 18))}</p>`,
+    ),
+    buildPrintBox(
+      "D7",
+      "防止再发",
+      `<p class="report-8d-print-copy report-8d-print-copy-indented">系统回写：${formatPrintMultiline(systemUpdatePreview, "待填写")}</p>
+       <p class="report-8d-print-copy report-8d-print-copy-indented">横向展开：${formatPrintMultiline(state.d7.rolloutNotes, "待填写")}</p>`,
+    ),
+    buildPrintBox(
+      "D8",
+      "结案与团队认可",
+      `<p class="report-8d-print-copy report-8d-print-copy-indented">结案总结：${formatPrintMultiline(state.d8.closureSummary, "待填写")}</p>
+       <p class="report-8d-print-muted">客户确认：${escapeHtml(compactPrintText(state.d8.customerClosureDate, "待定", 18))}；内部结案：${escapeHtml(compactPrintText(state.d8.internalClosureDate, "待定", 18))}</p>`,
+    ),
+    buildPrintBox(
+      "签核",
+      "审批签核",
+      `<div class="report-8d-print-sign"><div>编制</div><div>质量确认</div><div>责任部门</div><div>批准</div></div>
+       <p class="report-8d-print-copy report-8d-print-copy-indented">团队认可：${formatPrintMultiline(state.d8.recognition, "记录团队贡献、客户反馈和后续复盘安排")}</p>`,
+    ),
+  ];
+
+  const visibleSections = sections.slice(0, getCutoffIndex(state.outputCutoff) + 1).join("");
+
   return `
     <article class="report-8d-a4-page" aria-label="8D 报告 A4 页面">
       <div class="report-8d-print-title">
@@ -738,63 +848,7 @@ function buildReport8DDocumentMarkup({ state, projectName, moldNumbers }: Report
         ${buildPrintField("报告日期", headerFields.reportDate || headerFields.dateOpened)}
       </div>
 
-      <div class="report-8d-d-flow">
-        ${buildPrintBox(
-          "D0",
-          "问题准备与紧急响应",
-          `<p class="report-8d-print-copy">严重级别：${escapeHtml(compactPrintText(state.d0.severityLabel, "待评估", 76))}</p>
-           <p class="report-8d-print-copy">${formatPrintMultiline(state.d0.summary, "问题来源、影响范围、风险等级待填写")}</p>`,
-        )}
-        ${buildPrintBox(
-          "D1",
-          "团队组建",
-          `<p class="report-8d-print-copy">${formatPrintMultiline(formatTeamPreview(state.teamMembers), "待填写")}</p>`,
-        )}
-        ${buildPrintBox("D2", "问题描述 (5W2H)", `<table class="report-8d-print-table"><tbody>${problemTable}</tbody></table>`)}
-        ${buildPrintBox(
-          "D3",
-          "临时遏制措施",
-          `<p class="report-8d-print-copy">遏制说明：${formatPrintMultiline(state.d0.containment, "待填写")}</p>
-           <ul class="report-8d-print-list">${containmentList}</ul>`,
-        )}
-        ${buildPrintBox(
-          "D4",
-          "根本原因分析",
-          `<p class="report-8d-print-copy">原因分析：${formatPrintMultiline(rootCauseAnalysis, "待填写")}</p>
-           <ul class="report-8d-print-list">${verificationRoundList}</ul>`,
-        )}
-        ${buildPrintBox(
-          "D5",
-          "改善措施",
-          `<p class="report-8d-print-copy">措施说明：${formatPrintMultiline(correctivePlan, "待填写")}</p>
-           <ul class="report-8d-print-list">${correctionRoundList}</ul>`,
-        )}
-        ${buildPrintBox(
-          "D6",
-          "效果验证",
-          `<p class="report-8d-print-copy">验证摘要：${formatPrintMultiline(state.d6.summary, "待填写")}</p>
-           <ul class="report-8d-print-list">${implementationRoundList}</ul>
-           <p class="report-8d-print-muted">状态：${escapeHtml(compactPrintText(state.d6.verifiedStatus, "待验证", 36))}；日期：${escapeHtml(compactPrintText(state.d6.verifiedAt, "待定", 18))}</p>`,
-        )}
-        ${buildPrintBox(
-          "D7",
-          "防止再发",
-          `<p class="report-8d-print-copy">系统回写：${formatPrintMultiline(systemUpdatePreview, "待填写")}</p>
-           <p class="report-8d-print-copy">横向展开：${formatPrintMultiline(state.d7.rolloutNotes, "待填写")}</p>`,
-        )}
-        ${buildPrintBox(
-          "D8",
-          "结案与团队认可",
-          `<p class="report-8d-print-copy">结案总结：${formatPrintMultiline(state.d8.closureSummary, "待填写")}</p>
-           <p class="report-8d-print-muted">客户确认：${escapeHtml(compactPrintText(state.d8.customerClosureDate, "待定", 18))}；内部结案：${escapeHtml(compactPrintText(state.d8.internalClosureDate, "待定", 18))}</p>`,
-        )}
-        ${buildPrintBox(
-          "签核",
-          "审批签核",
-          `<div class="report-8d-print-sign"><div>编制</div><div>质量确认</div><div>责任部门</div><div>批准</div></div>
-           <p class="report-8d-print-copy">团队认可：${formatPrintMultiline(state.d8.recognition, "记录团队贡献、客户反馈和后续复盘安排")}</p>`,
-        )}
-      </div>
+      <div class="report-8d-d-flow">${visibleSections}</div>
       <div class="report-8d-print-footer">本页为 8D 报告 A4 打印版，完整证据、记录和附件以系统工作区为准。</div>
     </article>
   `;
@@ -1840,6 +1894,15 @@ export default function Report8DWorkspace({
     }));
   }, []);
 
+  const updateOutputCutoff = useCallback((value: Report8DOutputCutoff) => {
+    const nextState: Report8DWorkspaceState = {
+      ...workspaceStateRef.current,
+      outputCutoff: value,
+    };
+    setWorkspaceState(nextState);
+    void persistWorkspaceStateImmediately(nextState, "8D 输出截断位置保存失败");
+  }, [persistWorkspaceStateImmediately]);
+
   const applyUniversalTemplate = useCallback(() => {
     const confirmed = window.confirm("将用通用 8D 模板覆盖当前页面内容，并自动保存。是否继续？");
     if (!confirmed) {
@@ -1861,6 +1924,7 @@ export default function Report8DWorkspace({
 
   const handleOpenPrintPreview = useCallback(() => {
     try {
+      suppressFocusSyncRef.current = true;
       openReport8DPrintPreview(reportDocumentOptions);
       toast.success("8D 打印预览已打开");
     } catch (error) {
@@ -1871,6 +1935,7 @@ export default function Report8DWorkspace({
   const handleExportPdf = useCallback(async () => {
     setIsExportingPdf(true);
     try {
+      suppressFocusSyncRef.current = true;
       await exportReport8DPdf(reportDocumentOptions);
       toast.success("8D PDF 已导出");
     } catch (error) {
@@ -1996,6 +2061,20 @@ export default function Report8DWorkspace({
                 <FileDown className="h-4 w-4" />
                 {isExportingPdf ? "导出中" : "导出 PDF"}
               </Button>
+              <div className="min-w-[220px] rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2">
+                <div className="mb-1 text-[11px] uppercase tracking-[0.18em] text-slate-500">输出截断</div>
+                <select
+                  value={workspaceState.outputCutoff}
+                  onChange={(event) => updateOutputCutoff(event.target.value as Report8DOutputCutoff)}
+                  className="w-full bg-transparent text-sm text-slate-100 outline-none"
+                >
+                  {REPORT_8D_OUTPUT_CUTOFF_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value} className="bg-slate-950 text-white">
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
           </div>
 

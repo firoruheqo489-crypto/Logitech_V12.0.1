@@ -1,6 +1,7 @@
 import { apiFetch } from "./api";
 
 export type EightDStage = "D0" | "D1" | "D2" | "D3" | "D4" | "D5" | "D6" | "D7" | "D8";
+export type Report8DOutputCutoff = EightDStage | "SIGNOFF";
 
 export type EightDCaseStatus = "Open" | "Pending" | "Closed";
 
@@ -84,6 +85,7 @@ export type Report8DImplementationRound = {
 export type Report8DWorkspaceState = {
   module: "report-8d";
   workspaceKey: string;
+  outputCutoff: Report8DOutputCutoff;
   headerFields: Report8DHeaderFields;
   d0: {
     severityLabel: string;

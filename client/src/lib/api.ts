@@ -1,4 +1,5 @@
 import { toast } from 'sonner';
+import { showCyberPromptDialog } from '@/components/ui/showCyberPromptDialog';
 
 const API_KEY_STORAGE_KEY = 'dashboard_api_key';
 const WRITE_SESSION_ENDPOINT = '/api/auth/write-session';
@@ -67,7 +68,6 @@ async function loginWriteSession(apiKey: string): Promise<boolean> {
 async function requestWriteAuthorization(): Promise<boolean> {
   if (typeof window === 'undefined') return false;
 
-  const { showCyberPromptDialog } = await import('@/components/ui/showCyberPromptDialog');
   const values = await showCyberPromptDialog({
     title: '写入授权',
     subtitle: '管理员安全校验',
