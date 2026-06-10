@@ -1,5 +1,4 @@
 import { toast } from 'sonner';
-import { showCyberPromptDialog } from '@/components/ui/showCyberPromptDialog';
 
 const API_KEY_STORAGE_KEY = 'dashboard_api_key';
 const WRITE_SESSION_ENDPOINT = '/api/auth/write-session';
@@ -7,6 +6,42 @@ const WRITE_SESSION_ENDPOINT = '/api/auth/write-session';
 export const DEFAULT_LOCAL_WRITE_PASSWORD = '476281307';
 
 let pendingWriteAuthorization: Promise<boolean> | null = null;
+
+async function showCyberPromptDialog(options: {
+  title: string;
+  subtitle?: string;
+  description?: string;
+  fields: Array<{
+    kind: 'text' | 'password' | 'number' | 'date' | 'select';
+    name: string;
+    label: string;
+    defaultValue?: string;
+    placeholder?: string;
+    required?: boolean;
+    maxLength?: number;
+    min?: number;
+    max?: number;
+    step?: number;
+    options?: { value: string; label: string }[];
+  }>;
+  confirmText?: string;
+  cancelText?: string;
+  tone?: 'cyan' | 'purple';
+}): Promise<Record<string, string> | null> {
+  try {
+    const promptModule = await import('@/components/ui/showCyberPromptDialog');
+    return promptModule.showCyberPromptDialog(options as any);
+  } catch (error) {
+    console.error('Failed to load cyber prompt dialog:', error);
+    const passwordField = options.fields.find((field) => field.kind === 'password');
+    const fallbackLabel = passwordField?.label || '请输入管理员写入密码';
+    const fallbackValue = window.prompt(fallbackLabel);
+    if (!fallbackValue || !passwordField?.name) {
+      return null;
+    }
+    return { [passwordField.name]: fallbackValue };
+  }
+}
 
 type AuthPromptResult = 'saved' | 'cleared' | 'cancelled';
 
