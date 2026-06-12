@@ -62,6 +62,7 @@ const ProductDataDrawerWorkspace = lazy(() => import('./components/ProductDataDr
 const ProgressLogsDrawerWorkspace = lazy(() => import('./components/ProgressLogsDrawerWorkspace'));
 const ParetoQualityDashboard = lazy(() => import('./components/ParetoQualityDashboard'));
 const FishboneDiagramDashboard = lazy(() => import('./components/FishboneDiagramDashboard'));
+const ReliabilityCalculatorDashboard = lazy(() => import('./components/ReliabilityCalculatorDashboard'));
 const TimeSeriesDashboard = lazy(() => import('./components/TimeSeriesDashboard'));
 const ComplaintInsightDashboard = lazy(() => import('./components/ComplaintInsightDashboard'));
 const ImageStitcherWorkspace = lazy(() => import('./components/ImageStitcherWorkspace'));
@@ -179,6 +180,7 @@ const DASHBOARD_TABS = [
   'boxplot',
   'pareto-analysis',
   'fishbone-diagram',
+  'reliability-calculator',
   'time-series-chart',
   'caq-audit',
   'measurement-intake',
@@ -856,6 +858,7 @@ export default function DashboardHome() {
               'pareto-analysis': '柏拉图分析',
               'image-stitcher': '图片拼接',
               'fishbone-diagram': '鱼骨图',
+              'reliability-calculator': '可靠性寿命测试',
               'time-series-chart': '时间序列图',
               'caq-audit': 'CAQ审计台',
               'complaint-insight': '宜胜客诉台账看板',
@@ -930,6 +933,12 @@ export default function DashboardHome() {
         {selectedTab === 'fishbone-diagram' && (
           <LazyWorkspace>
             <FishboneDiagramDashboard />
+          </LazyWorkspace>
+        )}
+
+        {selectedTab === 'reliability-calculator' && (
+          <LazyWorkspace>
+            <ReliabilityCalculatorDashboard />
           </LazyWorkspace>
         )}
 
