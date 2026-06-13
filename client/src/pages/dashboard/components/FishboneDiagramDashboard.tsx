@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDown,
   ArrowUp,
@@ -17,9 +17,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 import {
-  FISHBONE_STORAGE_KEY,
   FISHBONE_TEMPLATES,
   createFishboneCause,
   getFishboneBranchLabel,
@@ -39,8 +39,14 @@ import {
   FISHBONE_PROBLEM_WRAP,
   wrapFishboneText,
 } from "./fishboneTextLayout";
+import {
+  fetchDashboardFishboneState,
+  normalizeFishboneWorkspaceKey,
+  saveDashboardFishboneState,
+} from "../lib/fishbone-state-api";
 
 const MAX_VISIBLE_CAUSES = 3;
+const SAVE_DEBOUNCE_MS = 900;
 const SVG_WIDTH = 1360;
 const SVG_HEIGHT = 760;
 const SPINE_Y = SVG_HEIGHT / 2;
@@ -122,36 +128,147 @@ function TextLineBlock({
   );
 }
 
-export default function FishboneDiagramDashboard() {
+type FishboneDiagramDashboardProps = {
+  projectName?: string;
+};
+
+export default function FishboneDiagramDashboard({ projectName }: FishboneDiagramDashboardProps) {
+  const workspaceKey = useMemo(() => normalizeFishboneWorkspaceKey(projectName), [projectName]);
   const [diagram, setDiagram] = useState<FishboneDiagramState>(() =>
     materializeFishboneTemplate("manufacturing")
   );
   const [selectedCategoryId, setSelectedCategoryId] = useState("");
-  const [isReady, setIsReady] = useState(false);
+  const [isHydrating, setIsHydrating] = useState(true);
+  const [syncStatus, setSyncStatus] = useState("云端工作区同步中");
+  const isMountedRef = useRef(false);
+  const lastSavedPayloadRef = useRef("");
+  const statePayloadRef = useRef("");
+  const syncInFlightRef = useRef(false);
+  const hasShownSaveFailureRef = useRef(false);
+  const diagramPayload = useMemo(() => JSON.stringify(diagram), [diagram]);
 
   useEffect(() => {
-    let normalized: FishboneDiagramState | null = null;
-
-    try {
-      const saved = window.localStorage.getItem(FISHBONE_STORAGE_KEY);
-      normalized = saved ? normalizeFishboneState(JSON.parse(saved)) : null;
-    } catch {
-      normalized = null;
-    }
-
-    const nextState = normalized ?? materializeFishboneTemplate("manufacturing");
-    setDiagram(nextState);
-    setSelectedCategoryId(nextState.categories[0]?.id ?? "");
-    setIsReady(true);
-  }, []);
+    statePayloadRef.current = diagramPayload;
+  }, [diagramPayload]);
 
   useEffect(() => {
-    if (!isReady) {
+    isMountedRef.current = true;
+    setIsHydrating(true);
+    setSyncStatus("云端工作区同步中");
+
+    void (async () => {
+      try {
+        const remote = await fetchDashboardFishboneState({ workspaceKey });
+        if (!isMountedRef.current) return;
+
+        const nextState = remote.state
+          ? normalizeFishboneState(remote.state) ?? materializeFishboneTemplate("manufacturing")
+          : materializeFishboneTemplate("manufacturing");
+        setDiagram(nextState);
+        setSelectedCategoryId(nextState.categories[0]?.id ?? "");
+        lastSavedPayloadRef.current = JSON.stringify(nextState);
+        hasShownSaveFailureRef.current = false;
+        setSyncStatus(remote.updatedAt ? `云端已同步 ${remote.updatedAt}` : "云端未发现现有鱼骨图，已载入默认模板");
+      } catch (error) {
+        if (!isMountedRef.current) return;
+
+        const nextState = materializeFishboneTemplate("manufacturing");
+        setDiagram(nextState);
+        setSelectedCategoryId(nextState.categories[0]?.id ?? "");
+        lastSavedPayloadRef.current = JSON.stringify(nextState);
+        setSyncStatus("鱼骨图云端加载失败");
+        toast.error(error instanceof Error ? error.message : "鱼骨图云端加载失败");
+      } finally {
+        if (isMountedRef.current) {
+          setIsHydrating(false);
+        }
+      }
+    })();
+
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, [workspaceKey]);
+
+  useEffect(() => {
+    if (!isMountedRef.current || isHydrating) {
       return;
     }
 
-    window.localStorage.setItem(FISHBONE_STORAGE_KEY, JSON.stringify(diagram));
-  }, [diagram, isReady]);
+    if (diagramPayload === lastSavedPayloadRef.current) {
+      return;
+    }
+
+    setSyncStatus("鱼骨图保存中");
+    const timer = window.setTimeout(async () => {
+      try {
+        const result = await saveDashboardFishboneState(diagram, { workspaceKey });
+        if (!isMountedRef.current) return;
+
+        lastSavedPayloadRef.current = diagramPayload;
+        hasShownSaveFailureRef.current = false;
+        setSyncStatus(result.updatedAt ? `鱼骨图已保存 ${result.updatedAt}` : "鱼骨图已保存");
+      } catch (error) {
+        if (!isMountedRef.current) return;
+
+        setSyncStatus("鱼骨图保存失败");
+        if (!hasShownSaveFailureRef.current) {
+          toast.error(error instanceof Error ? error.message : "鱼骨图保存失败");
+          hasShownSaveFailureRef.current = true;
+        }
+      }
+    }, SAVE_DEBOUNCE_MS);
+
+    return () => window.clearTimeout(timer);
+  }, [diagram, diagramPayload, isHydrating, workspaceKey]);
+
+  useEffect(() => {
+    const handleFocus = () => {
+      if (document.visibilityState === "hidden") {
+        return;
+      }
+
+      if (syncInFlightRef.current || statePayloadRef.current !== lastSavedPayloadRef.current) {
+        return;
+      }
+
+      syncInFlightRef.current = true;
+      void fetchDashboardFishboneState({ workspaceKey })
+        .then((remote) => {
+          if (!isMountedRef.current || !remote.state) {
+            return;
+          }
+
+          const nextState = normalizeFishboneState(remote.state);
+          if (!nextState) {
+            return;
+          }
+
+          const nextPayload = JSON.stringify(nextState);
+          if (nextPayload === lastSavedPayloadRef.current) {
+            return;
+          }
+
+          setDiagram(nextState);
+          setSelectedCategoryId(nextState.categories[0]?.id ?? "");
+          lastSavedPayloadRef.current = nextPayload;
+          setSyncStatus(remote.updatedAt ? `云端已同步 ${remote.updatedAt}` : "云端已同步");
+        })
+        .catch(() => {
+          // Keep the current state if background sync fails.
+        })
+        .finally(() => {
+          syncInFlightRef.current = false;
+        });
+    };
+
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", handleFocus);
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleFocus);
+    };
+  }, [workspaceKey]);
 
   useEffect(() => {
     if (!diagram.categories.some((category) => category.id === selectedCategoryId)) {
@@ -355,6 +472,7 @@ export default function FishboneDiagramDashboard() {
                 <p className="text-sm text-slate-500">
                   Fishbone / Ishikawa Diagram for root cause analysis
                 </p>
+                <p className="mt-1 text-xs text-slate-500">{syncStatus}</p>
               </div>
             </div>
             <div className="flex flex-wrap gap-2">

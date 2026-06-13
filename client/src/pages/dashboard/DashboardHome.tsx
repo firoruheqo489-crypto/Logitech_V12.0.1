@@ -932,7 +932,7 @@ export default function DashboardHome() {
 
         {selectedTab === 'fishbone-diagram' && (
           <LazyWorkspace>
-            <FishboneDiagramDashboard />
+            <FishboneDiagramDashboard projectName={activeModule || ''} />
           </LazyWorkspace>
         )}
 

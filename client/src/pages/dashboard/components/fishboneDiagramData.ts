@@ -39,8 +39,6 @@ export interface FishboneTemplateDefinition {
   categories: FishboneTemplateCategory[];
 }
 
-export const FISHBONE_STORAGE_KEY = "dashboard-fishbone-diagram-v2";
-
 export const FISHBONE_TEMPLATES: FishboneTemplateDefinition[] = [
   {
     id: "manufacturing",
