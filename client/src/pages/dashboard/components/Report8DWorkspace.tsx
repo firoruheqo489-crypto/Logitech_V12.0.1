@@ -835,10 +835,9 @@ function buildReport8DSectionMarkupList({ state }: Report8DDocumentOptions): str
 function buildReport8DPageMarkup(
   headerFields: Report8DHeaderFields,
   sectionsMarkup: string,
-  options: { includeHeader: boolean },
 ): string {
-  const headerMarkup = options.includeHeader
-    ? `
+  return `
+    <article class="report-8d-a4-page" aria-label="8D 报告 A4 页面">
       <div class="report-8d-print-title">
         <h1>8D 纠正措施报告</h1>
       </div>
@@ -852,12 +851,8 @@ function buildReport8DPageMarkup(
         ${buildPrintField("报告主题", headerFields.reportSubject)}
         ${buildPrintField("报告编号", headerFields.reportNo)}
         ${buildPrintField("报告日期", headerFields.reportDate || headerFields.dateOpened)}
-      </div>`
-    : "";
+      </div>
 
-  return `
-    <article class="report-8d-a4-page" aria-label="8D 报告 A4 页面">
-      ${headerMarkup}
       <div class="report-8d-d-flow">${sectionsMarkup}</div>
       <div class="report-8d-print-footer">本页为 8D 报告 A4 打印版，完整证据、记录和附件以系统工作区为准。</div>
     </article>
@@ -869,7 +864,7 @@ function buildReport8DDocumentMarkup(options: Report8DDocumentOptions): string {
     .slice(0, getCutoffIndex(options.state.outputCutoff) + 1)
     .join("");
 
-  return buildReport8DPageMarkup(options.state.headerFields, visibleSections, { includeHeader: true });
+  return buildReport8DPageMarkup(options.state.headerFields, visibleSections);
 }
 
 function buildReport8DFileName(state: Report8DWorkspaceState): string {
@@ -1045,65 +1040,6 @@ function openReport8DPrintPreview(options: Report8DDocumentOptions): void {
   previewWindow.focus();
 }
 
-function createReport8DPageNode(
-  host: HTMLElement,
-  headerFields: Report8DHeaderFields,
-  options: { includeHeader: boolean },
-): HTMLElement {
-  const wrapper = document.createElement("div");
-  wrapper.innerHTML = buildReport8DPageMarkup(headerFields, "", options);
-  const pageNode = wrapper.firstElementChild as HTMLElement | null;
-  if (!pageNode) {
-    throw new Error("8D PDF 模板分页骨架生成失败");
-  }
-  host.appendChild(pageNode);
-  return pageNode;
-}
-
-function createReport8DSectionNode(sectionMarkup: string): HTMLElement {
-  const wrapper = document.createElement("div");
-  wrapper.innerHTML = sectionMarkup;
-  const sectionNode = wrapper.firstElementChild as HTMLElement | null;
-  if (!sectionNode) {
-    throw new Error("8D PDF 模板区块生成失败");
-  }
-  return sectionNode;
-}
-
-function paginateReport8DPageNodes(host: HTMLElement, options: Report8DDocumentOptions): HTMLElement[] {
-  const sections = buildReport8DSectionMarkupList(options).slice(0, getCutoffIndex(options.state.outputCutoff) + 1);
-  const pageNodes: HTMLElement[] = [];
-
-  let currentPage = createReport8DPageNode(host, options.state.headerFields, { includeHeader: true });
-  pageNodes.push(currentPage);
-
-  const maxPageHeight = currentPage.offsetHeight;
-  let currentFlow = currentPage.querySelector(".report-8d-d-flow") as HTMLElement | null;
-  if (!currentFlow) {
-    throw new Error("8D PDF 模板内容容器缺失");
-  }
-
-  sections.forEach((sectionMarkup) => {
-    const sectionNode = createReport8DSectionNode(sectionMarkup);
-    currentFlow!.appendChild(sectionNode);
-
-    if (currentPage.offsetHeight <= maxPageHeight || currentFlow!.children.length === 1) {
-      return;
-    }
-
-    currentFlow!.removeChild(sectionNode);
-    currentPage = createReport8DPageNode(host, options.state.headerFields, { includeHeader: false });
-    pageNodes.push(currentPage);
-    currentFlow = currentPage.querySelector(".report-8d-d-flow") as HTMLElement | null;
-    if (!currentFlow) {
-      throw new Error("8D PDF 模板内容容器缺失");
-    }
-    currentFlow.appendChild(sectionNode);
-  });
-
-  return pageNodes;
-}
-
 async function exportReport8DPdf(options: Report8DDocumentOptions): Promise<void> {
   const host = document.createElement("div");
   host.style.position = "fixed";
@@ -1111,7 +1047,7 @@ async function exportReport8DPdf(options: Report8DDocumentOptions): Promise<void
   host.style.top = "0";
   host.style.width = "210mm";
   host.style.background = "#ffffff";
-  host.innerHTML = `<style>${buildReport8DPrintCss()}</style>`;
+  host.innerHTML = `<style>${buildReport8DPrintCss()}</style>${buildReport8DDocumentMarkup(options)}`;
   document.body.appendChild(host);
 
   try {
@@ -1119,8 +1055,8 @@ async function exportReport8DPdf(options: Report8DDocumentOptions): Promise<void
       await document.fonts.ready;
     }
 
-    const pageNodes = paginateReport8DPageNodes(host, options);
-    if (pageNodes.length === 0) {
+    const pageNode = host.querySelector(".report-8d-a4-page") as HTMLElement | null;
+    if (!pageNode) {
       throw new Error("8D PDF 模板生成失败");
     }
 
@@ -1129,33 +1065,39 @@ async function exportReport8DPdf(options: Report8DDocumentOptions): Promise<void
       import("jspdf"),
     ]);
     const jsPDF = jspdfModule.jsPDF || jspdfModule.default;
+    const canvas = await html2canvas(pageNode, {
+      scale: 3,
+      useCORS: true,
+      backgroundColor: "#ffffff",
+      logging: false,
+      width: pageNode.offsetWidth,
+      height: pageNode.offsetHeight,
+      windowWidth: pageNode.offsetWidth,
+      windowHeight: pageNode.offsetHeight,
+      imageTimeout: 0,
+    });
     const pdf = new jsPDF({
       orientation: "portrait",
       unit: "mm",
       format: "a4",
       compress: false,
     });
+    const imageData = canvas.toDataURL("image/png", 1);
+    const pdfWidth = 210;
+    const pdfHeight = 297;
+    const imageHeight = (canvas.height * pdfWidth) / canvas.width;
 
-    for (const [index, pageNode] of pageNodes.entries()) {
-      const canvas = await html2canvas(pageNode, {
-        scale: 3,
-        useCORS: true,
-        backgroundColor: "#ffffff",
-        logging: false,
-        width: pageNode.offsetWidth,
-        height: pageNode.offsetHeight,
-        windowWidth: pageNode.offsetWidth,
-        windowHeight: pageNode.offsetHeight,
-        imageTimeout: 0,
-      });
-      const imageData = canvas.toDataURL("image/png", 1);
-      const pdfWidth = 210;
-      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+    let heightLeft = imageHeight;
+    let position = 0;
 
-      if (index > 0) {
-        pdf.addPage();
-      }
-      pdf.addImage(imageData, "PNG", 0, 0, pdfWidth, pdfHeight, `report-8d-a4-${index + 1}`, "FAST");
+    pdf.addImage(imageData, "PNG", 0, position, pdfWidth, imageHeight, "report-8d-a4", "FAST");
+    heightLeft -= pdfHeight;
+
+    while (heightLeft > 0) {
+      position = heightLeft - imageHeight;
+      pdf.addPage();
+      pdf.addImage(imageData, "PNG", 0, position, pdfWidth, imageHeight, undefined, "FAST");
+      heightLeft -= pdfHeight;
     }
 
     pdf.save(buildReport8DFileName(options.state));
