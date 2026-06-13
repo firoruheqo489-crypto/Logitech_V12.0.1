@@ -20,7 +20,7 @@ pm2 save
 cd /var/www/logitech
 pnpm install --prod
 pnpm build
-pm2 start ecosystem.config.cjs --only mold-gantt-v3 --env production
+PM2_APP_NAME=logitech pm2 start ecosystem.config.cjs --only logitech --env production
 pm2 save
 ```
 
@@ -39,9 +39,11 @@ pm2 save
 ```bash
 cd /var/www/logitech
 pm2 status
-pm2 logs mold-gantt-v3
-pm2 restart ecosystem.config.cjs --only mold-gantt-v3 --update-env
+pm2 logs logitech
+PM2_APP_NAME=logitech pm2 startOrReload ecosystem.config.cjs --only logitech --env production --update-env
 ```
+
+说明：`ecosystem.config.cjs` 现在使用 `cluster` 模式，发布时优先走 `startOrReload`，避免单实例 `fork + restart` 带来的短暂 502。
 
 ## 5) 验证
 

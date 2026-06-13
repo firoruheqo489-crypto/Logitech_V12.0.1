@@ -298,7 +298,18 @@ function Get-RemoteReleaseJson([string]$RepoRootPath, [string]$TargetHost) {
 function Wait-RemoteHealth([string]$RepoRootPath, [string]$TargetHost, [int]$Retries = 15) {
   for ($attempt = 1; $attempt -le $Retries; $attempt += 1) {
     $result = Invoke-Ssh -RepoRootPath $RepoRootPath -TargetHost $TargetHost -RemoteCommand "curl -fsS http://127.0.0.1:3000/api/health 2>/dev/null || echo FAIL"
-    if ($LASTEXITCODE -eq 0 -and $result -match '"ok"\s*:\s*true') {
+    if ($LASTEXITCODE -ne 0 -or -not $result) {
+      Start-Sleep -Seconds 2
+      continue
+    }
+
+    try {
+      $payload = $result | ConvertFrom-Json
+    } catch {
+      $payload = $null
+    }
+
+    if ($payload -and $payload.ok -eq $true -and $payload.api -eq $true -and $payload.dbReady -eq $true) {
       Log "Remote health check passed on attempt $attempt."
       return $true
     }
@@ -325,7 +336,7 @@ function Invoke-RemoteRollbackAndErr([string]$Reason, [string]$RepoRootPath, [st
   $targetRemoteDirLiteral = Format-RemoteShellPath $TargetRemoteDir
   $rollbackCmd = @(
     "if [ -d ${targetRemoteDirLiteral}/dist.prev ]; then rm -rf ${targetRemoteDirLiteral}/dist && mv ${targetRemoteDirLiteral}/dist.prev ${targetRemoteDirLiteral}/dist; fi",
-    "if pm2 describe logitech > /dev/null 2>&1; then pm2 restart logitech --update-env; elif pm2 describe mold-gantt-v3 > /dev/null 2>&1; then pm2 restart mold-gantt-v3 --update-env; fi",
+    "if pm2 describe logitech > /dev/null 2>&1; then PM2_APP_NAME=logitech pm2 startOrReload ecosystem.config.cjs --only logitech --env production --update-env || pm2 restart logitech --update-env; elif pm2 describe mold-gantt-v3 > /dev/null 2>&1; then PM2_APP_NAME=mold-gantt-v3 pm2 startOrReload ecosystem.config.cjs --only mold-gantt-v3 --env production --update-env || pm2 restart mold-gantt-v3 --update-env; fi",
     "pm2 status || true"
   ) -join " && "
   Invoke-Ssh -RepoRootPath $RepoRootPath -TargetHost $TargetHost -RemoteCommand $rollbackCmd | Out-Null
@@ -415,7 +426,7 @@ $remoteDeployScript = @(
   'if [ -d "$EXTRACT_DIR/payload/drizzle" ]; then rm -rf "$REMOTE_DIR/drizzle"; cp -a "$EXTRACT_DIR/payload/drizzle" "$REMOTE_DIR/drizzle"; fi',
   'cd "$REMOTE_DIR"',
   'pnpm install --prod',
-  'if pm2 describe logitech > /dev/null 2>&1; then pm2 restart logitech --update-env; elif pm2 describe mold-gantt-v3 > /dev/null 2>&1; then pm2 restart mold-gantt-v3 --update-env; else pm2 start ecosystem.config.cjs --only mold-gantt-v3 --env production && pm2 save; fi'
+  'if pm2 describe logitech > /dev/null 2>&1; then PM2_APP_NAME=logitech pm2 startOrReload ecosystem.config.cjs --only logitech --env production --update-env; elif pm2 describe mold-gantt-v3 > /dev/null 2>&1; then PM2_APP_NAME=mold-gantt-v3 pm2 startOrReload ecosystem.config.cjs --only mold-gantt-v3 --env production --update-env; else PM2_APP_NAME=logitech pm2 start ecosystem.config.cjs --only logitech --env production && pm2 save; fi'
 ) -join "`n"
 
 Invoke-Step "Deploying artifact on remote host..." {

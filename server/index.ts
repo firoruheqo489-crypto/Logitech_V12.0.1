@@ -108,6 +108,7 @@ const MAX_RETRIES = 5;
 const BASE_DELAY = 1000;
 const MAX_WARMUP_CYCLES = 4;
 const WARMUP_RECOVERY_DELAY_MS = 5000;
+const SHUTDOWN_TIMEOUT_MS = 10000;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -217,6 +218,7 @@ async function runWithWarmupRetry<T>(taskName: string, run: () => Promise<T>): P
 async function startServer() {
   const app = express();
   const server = createServer(app);
+  let isShuttingDown = false;
   const warmupState: DbWarmupState = {
     phase: "pending",
     startedAt: null,
@@ -497,6 +499,47 @@ async function startServer() {
   }
 
   const port = process.env.PORT || (isDevApiOnly ? 3001 : 3000);
+  const shutdown = async (signal: NodeJS.Signals) => {
+    if (isShuttingDown) {
+      return;
+    }
+
+    isShuttingDown = true;
+    console.log(`[shutdown] Received ${signal}, draining HTTP server...`);
+
+    const forceExitTimer = setTimeout(() => {
+      console.error(`[shutdown] Timed out after ${SHUTDOWN_TIMEOUT_MS}ms; forcing exit.`);
+      process.exit(1);
+    }, SHUTDOWN_TIMEOUT_MS);
+    forceExitTimer.unref();
+
+    server.close(async (error) => {
+      clearTimeout(forceExitTimer);
+
+      if (error) {
+        console.error("[shutdown] HTTP server close failed:", error);
+        process.exit(1);
+        return;
+      }
+
+      try {
+        await sql?.end?.({ timeout: 5 });
+      } catch (closeError) {
+        console.error("[shutdown] Database client close failed:", closeError);
+        process.exitCode = 1;
+      }
+
+      process.exit(process.exitCode ?? 0);
+    });
+  };
+
+  process.on("SIGINT", () => {
+    void shutdown("SIGINT");
+  });
+  process.on("SIGTERM", () => {
+    void shutdown("SIGTERM");
+  });
+
   server.listen(port, () => {
     console.log(isDevApiOnly
       ? `API only on http://localhost:${port}/`
