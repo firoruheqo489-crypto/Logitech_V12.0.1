@@ -28,6 +28,11 @@ export default defineConfig({
       "wouter",
       "sonner",
       "lucide-react",
+      "echarts/core",
+      "echarts/charts",
+      "echarts/components",
+      "echarts/renderers",
+      "echarts-for-react/lib/core",
       "recharts",
       "framer-motion",
       "react-day-picker",
@@ -82,6 +87,15 @@ export default defineConfig({
 
           if (id.includes("/pdfjs-dist/")) {
             return "vendor-pdf-viewer";
+          }
+
+          if (
+            id.includes("/echarts/") ||
+            id.includes("/zrender/") ||
+            id.includes("/echarts-for-react/") ||
+            id.includes("/size-sensor/")
+          ) {
+            return "vendor-echarts";
           }
 
           if (

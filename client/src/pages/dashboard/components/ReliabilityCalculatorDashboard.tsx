@@ -9,7 +9,16 @@ import {
   ChevronRight,
   Download,
 } from "lucide-react";
-import ReactECharts from "echarts-for-react";
+import ReactEChartsCore from "echarts-for-react/lib/core";
+import * as echarts from "echarts/core";
+import { LineChart, CustomChart } from "echarts/charts";
+import {
+  GridComponent,
+  TooltipComponent,
+  MarkLineComponent,
+  MarkPointComponent,
+} from "echarts/components";
+import { CanvasRenderer } from "echarts/renderers";
 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -18,6 +27,16 @@ import { cn } from "@/lib/utils";
 import { ARRHENIUS_BOLTZMANN_K, ARRHENIUS_KELVIN_OFFSET, HOURS_PER_YEAR, ROOM_TEMP, useArrheniusStore } from "./useArrheniusStore";
 
 import "./reliability-calculator.css";
+
+echarts.use([
+  LineChart,
+  CustomChart,
+  GridComponent,
+  TooltipComponent,
+  MarkLineComponent,
+  MarkPointComponent,
+  CanvasRenderer,
+]);
 
 type MaterialPreset = {
   id: string;
@@ -738,7 +757,7 @@ function RiskChart() {
       </div>
 
       <div className="lux-grid px-3 py-4">
-        <ReactECharts option={chartOption} notMerge lazyUpdate style={{ height: 360, width: "100%" }} />
+        <ReactEChartsCore echarts={echarts} option={chartOption} notMerge lazyUpdate style={{ height: 360, width: "100%" }} />
       </div>
 
       <p className="border-t border-border/60 px-5 py-3 font-mono text-[10px] text-muted-foreground">
