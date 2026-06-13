@@ -547,14 +547,14 @@ function buildReport8DPrintCss(): string {
     }
 
     .report-8d-print-side {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
+      display: grid;
+      grid-template-rows: min-content min-content;
+      align-content: center;
+      justify-items: center;
       align-self: stretch;
       gap: 0.9mm;
       min-width: 0;
-      padding: 0 1.2mm 0 0.4mm;
+      padding: 0.4mm 1.2mm 0.4mm 0.4mm;
       border-right: 0.6px solid #cbd5e1;
       text-align: center;
     }
@@ -573,17 +573,16 @@ function buildReport8DPrintCss(): string {
       border: 0.6px solid #0f766e;
       border-radius: 1mm;
       color: #0f766e;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
+      display: block;
       font-size: 7.2px;
       font-weight: 800;
       min-width: 8mm;
-      line-height: 1;
-      padding: 0.35mm 1.2mm;
+      height: 4.2mm;
+      line-height: 4.2mm;
+      padding: 0 1.2mm;
       text-align: center;
       white-space: nowrap;
-      align-self: center;
+      margin: 0 auto;
     }
 
     .report-8d-print-body {
