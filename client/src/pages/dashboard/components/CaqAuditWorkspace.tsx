@@ -66,6 +66,11 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  fetchDashboardCaqAuditState,
+  normalizeCaqAuditWorkspaceKey,
+  saveDashboardCaqAuditState,
+} from "../lib/caq-audit-state-api";
 
 type RootCause =
   | "wrong-model"
@@ -158,6 +163,7 @@ const EMPTY_EDITABLE_STATE: EditableState = {
 
 const CAQ_STORAGE_PREFIX = "caq-audit";
 const CAQ_UNSAVED_FLAG_KEY = `${CAQ_STORAGE_PREFIX}:unsaved`;
+const SAVE_DEBOUNCE_MS = 900;
 const CUSTOM_CATEGORY_TIERS = ["基础篇", "分析篇", "应用篇"] as const;
 
 function categoryMeta(value: string, categories: CategoryOption[]): CategoryOption | undefined {
@@ -172,15 +178,6 @@ function formatTime(timestamp: number): string {
   const date = new Date(timestamp);
   const pad = (value: number) => String(value).padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
-
-function buildStorageScope(projectName?: string): string {
-  const normalized = (projectName || "").trim().toLowerCase().replace(/\s+/g, "-");
-  return normalized || "default";
-}
-
-function buildStorageKey(scope: string, segment: "records" | "drafts" | "workspace" | "categories"): string {
-  return `${CAQ_STORAGE_PREFIX}:${scope}:${segment}`;
 }
 
 function serializeEditableState(state: EditableState): string {
@@ -274,16 +271,7 @@ function normalizeCategoryOptions(input: unknown): CategoryOption[] {
 }
 
 export default function CaqAuditWorkspace({ projectName }: { projectName?: string }) {
-  const storageScope = useMemo(() => buildStorageScope(projectName), [projectName]);
-  const storageKeys = useMemo(
-    () => ({
-      records: buildStorageKey(storageScope, "records"),
-      drafts: buildStorageKey(storageScope, "drafts"),
-      workspace: buildStorageKey(storageScope, "workspace"),
-      categories: buildStorageKey(storageScope, "categories"),
-    }),
-    [storageScope],
-  );
+  const workspaceKey = useMemo(() => normalizeCaqAuditWorkspaceKey(projectName), [projectName]);
   const [records, setRecords] = useState<AuditRecord[]>([]);
   const [drafts, setDrafts] = useState<DraftRecord[]>([]);
   const [customCategories, setCustomCategories] = useState<CategoryOption[]>([]);
@@ -304,12 +292,20 @@ export default function CaqAuditWorkspace({ projectName }: { projectName?: strin
   const [baselineSignature, setBaselineSignature] = useState(() => serializeEditableState(EMPTY_EDITABLE_STATE));
   const [isDragging, setIsDragging] = useState(false);
   const [isImagePreviewOpen, setIsImagePreviewOpen] = useState(false);
-  const [storageReady, setStorageReady] = useState(false);
+  const [isHydrating, setIsHydrating] = useState(true);
+  const [syncStatus, setSyncStatus] = useState("CAQ 云端工作区同步中");
   const [customCategoryInput, setCustomCategoryInput] = useState("");
   const [customCategoryTier, setCustomCategoryTier] = useState<CategoryOption["tier"]>("应用篇");
 
   const inputRef = useRef<HTMLInputElement>(null);
+  const isMountedRef = useRef(false);
+  const statePayloadRef = useRef("");
+  const lastSavedPayloadRef = useRef("");
+  const syncInFlightRef = useRef(false);
+  const hasShownSaveFailureRef = useRef(false);
   const storageWarningShownRef = useRef(false);
+  const storageReady = false;
+  const storageKeys = { records: "", drafts: "", workspace: "", categories: "" };
   const allCategories = useMemo(() => [...CATEGORIES, ...customCategories], [customCategories]);
 
   const editableState = useMemo<EditableState>(
@@ -341,6 +337,28 @@ export default function CaqAuditWorkspace({ projectName }: { projectName?: strin
     [action, category, correctAnswer, imageUrl, myLogic, rootCause, textParam],
   );
   const isDirty = currentSignature !== baselineSignature;
+  const remoteWorkspaceState = useMemo<PersistedWorkspaceState | null>(
+    () =>
+      hasWorkspaceContent || editingSource
+        ? {
+            ...editableState,
+            editingId,
+            editingSource,
+            baselineSignature,
+          }
+        : null,
+    [baselineSignature, editableState, editingId, editingSource, hasWorkspaceContent],
+  );
+  const remoteState = useMemo(
+    () => ({
+      records,
+      drafts,
+      customCategories,
+      workspace: remoteWorkspaceState,
+    }),
+    [customCategories, drafts, records, remoteWorkspaceState],
+  );
+  const remotePayload = useMemo(() => JSON.stringify(remoteState), [remoteState]);
 
   const setEditableState = useCallback((state: EditableState) => {
     setImageUrl(state.imageUrl);
@@ -354,62 +372,110 @@ export default function CaqAuditWorkspace({ projectName }: { projectName?: strin
   }, []);
 
   useEffect(() => {
-    setStorageReady(false);
-    try {
-      const rawRecords = typeof window !== "undefined" ? window.localStorage.getItem(storageKeys.records) : null;
-      const rawDrafts = typeof window !== "undefined" ? window.localStorage.getItem(storageKeys.drafts) : null;
-      const rawWorkspace = typeof window !== "undefined" ? window.localStorage.getItem(storageKeys.workspace) : null;
-      const rawCategories = typeof window !== "undefined" ? window.localStorage.getItem(storageKeys.categories) : null;
+    statePayloadRef.current = remotePayload;
+  }, [remotePayload]);
 
-      setRecords(normalizeRecords(rawRecords ? JSON.parse(rawRecords) : []));
-      setDrafts(normalizeRecords(rawDrafts ? JSON.parse(rawDrafts) : []));
-      setCustomCategories(normalizeCategoryOptions(rawCategories ? JSON.parse(rawCategories) : []));
+  useEffect(() => {
+    isMountedRef.current = true;
+    setIsHydrating(true);
+    setSyncStatus("CAQ 云端工作区同步中");
 
-      const workspace = normalizeWorkspaceState(rawWorkspace ? JSON.parse(rawWorkspace) : null);
-      if (workspace) {
-        setEditableState(workspace);
-        setEditingId(workspace.editingId);
-        setEditingSource(workspace.editingSource);
-        setBaselineSignature(workspace.baselineSignature);
-      } else {
+    void (async () => {
+      try {
+        const remote = await fetchDashboardCaqAuditState({ workspaceKey });
+        if (!isMountedRef.current) return;
+
+        const nextRecords = normalizeRecords(remote.state.records);
+        const nextDrafts = normalizeRecords(remote.state.drafts);
+        const nextCustomCategories = normalizeCategoryOptions(remote.state.customCategories);
+        const nextWorkspace = normalizeWorkspaceState(remote.state.workspace);
+
+        setRecords(nextRecords);
+        setDrafts(nextDrafts);
+        setCustomCategories(nextCustomCategories);
+
+        if (nextWorkspace) {
+          setEditableState(nextWorkspace);
+          setEditingId(nextWorkspace.editingId);
+          setEditingSource(nextWorkspace.editingSource);
+          setBaselineSignature(nextWorkspace.baselineSignature);
+        } else {
+          setEditableState(EMPTY_EDITABLE_STATE);
+          setEditingId(null);
+          setEditingSource(null);
+          setBaselineSignature(serializeEditableState(EMPTY_EDITABLE_STATE));
+        }
+
+        lastSavedPayloadRef.current = JSON.stringify({
+          records: nextRecords,
+          drafts: nextDrafts,
+          customCategories: nextCustomCategories,
+          workspace: nextWorkspace,
+        });
+        hasShownSaveFailureRef.current = false;
+        setSyncStatus(remote.updatedAt ? `CAQ 云端已同步 ${remote.updatedAt}` : "CAQ 云端未发现现有工作区，已载入默认状态");
+      } catch (error) {
+        if (!isMountedRef.current) return;
+
+        setRecords([]);
+        setDrafts([]);
+        setCustomCategories([]);
         setEditableState(EMPTY_EDITABLE_STATE);
         setEditingId(null);
         setEditingSource(null);
         setBaselineSignature(serializeEditableState(EMPTY_EDITABLE_STATE));
+        lastSavedPayloadRef.current = JSON.stringify({
+          records: [],
+          drafts: [],
+          customCategories: [],
+          workspace: null,
+        });
+        setSyncStatus("CAQ 云端加载失败");
+        toast.error(error instanceof Error ? error.message : "CAQ 云端加载失败");
+      } finally {
+        if (isMountedRef.current) {
+          setIsHydrating(false);
+        }
       }
-    } catch (error) {
-      console.warn("Failed to restore CAQ local state:", error);
-      setRecords([]);
-      setDrafts([]);
-      setCustomCategories([]);
-      setEditableState(EMPTY_EDITABLE_STATE);
-      setEditingId(null);
-      setEditingSource(null);
-      setBaselineSignature(serializeEditableState(EMPTY_EDITABLE_STATE));
-    } finally {
-      setStorageReady(true);
-    }
-  }, [setEditableState, storageKeys]);
+    })();
+
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, [setEditableState, workspaceKey]);
+
+  useEffect(() => {
+    if (!isMountedRef.current || isHydrating) return;
+    if (remotePayload === lastSavedPayloadRef.current) return;
+
+    setSyncStatus("CAQ 云端保存中");
+    const timer = window.setTimeout(async () => {
+      try {
+        const result = await saveDashboardCaqAuditState(remoteState, { workspaceKey });
+        if (!isMountedRef.current) return;
+
+        lastSavedPayloadRef.current = remotePayload;
+        hasShownSaveFailureRef.current = false;
+        setSyncStatus(result.updatedAt ? `CAQ 云端已保存 ${result.updatedAt}` : "CAQ 云端已保存");
+      } catch (error) {
+        if (!isMountedRef.current) return;
+
+        setSyncStatus("CAQ 云端保存失败");
+        if (!hasShownSaveFailureRef.current) {
+          toast.error(error instanceof Error ? error.message : "CAQ 云端保存失败");
+          hasShownSaveFailureRef.current = true;
+        }
+      }
+    }, SAVE_DEBOUNCE_MS);
+
+    return () => window.clearTimeout(timer);
+  }, [isHydrating, remotePayload, remoteState, workspaceKey]);
 
   useEffect(() => {
     if (!storageReady || typeof window === "undefined") return;
 
     try {
-      window.localStorage.setItem(storageKeys.records, JSON.stringify(records));
-      window.localStorage.setItem(storageKeys.drafts, JSON.stringify(drafts));
-      window.localStorage.setItem(storageKeys.categories, JSON.stringify(customCategories));
-
-      if (hasWorkspaceContent || editingSource) {
-        const workspaceState: PersistedWorkspaceState = {
-          ...editableState,
-          editingId,
-          editingSource,
-          baselineSignature,
-        };
-        window.localStorage.setItem(storageKeys.workspace, JSON.stringify(workspaceState));
-      } else {
-        window.localStorage.removeItem(storageKeys.workspace);
-      }
+      return;
     } catch (error) {
       console.warn("Failed to persist CAQ local state:", error);
       if (!storageWarningShownRef.current) {
@@ -434,6 +500,71 @@ export default function CaqAuditWorkspace({ projectName }: { projectName?: strin
     if (typeof window === "undefined") return;
     window.sessionStorage.setItem(CAQ_UNSAVED_FLAG_KEY, isDirty && hasWorkspaceContent ? "1" : "0");
   }, [hasWorkspaceContent, isDirty]);
+
+  useEffect(() => {
+    const handleFocus = () => {
+      if (document.visibilityState === "hidden") {
+        return;
+      }
+
+      if (syncInFlightRef.current || statePayloadRef.current !== lastSavedPayloadRef.current) {
+        return;
+      }
+
+      syncInFlightRef.current = true;
+      void fetchDashboardCaqAuditState({ workspaceKey })
+        .then((remote) => {
+          if (!isMountedRef.current) {
+            return;
+          }
+
+          const nextRecords = normalizeRecords(remote.state.records);
+          const nextDrafts = normalizeRecords(remote.state.drafts);
+          const nextCustomCategories = normalizeCategoryOptions(remote.state.customCategories);
+          const nextWorkspace = normalizeWorkspaceState(remote.state.workspace);
+          const nextPayload = JSON.stringify({
+            records: nextRecords,
+            drafts: nextDrafts,
+            customCategories: nextCustomCategories,
+            workspace: nextWorkspace,
+          });
+
+          if (nextPayload === lastSavedPayloadRef.current) {
+            return;
+          }
+
+          setRecords(nextRecords);
+          setDrafts(nextDrafts);
+          setCustomCategories(nextCustomCategories);
+          if (nextWorkspace) {
+            setEditableState(nextWorkspace);
+            setEditingId(nextWorkspace.editingId);
+            setEditingSource(nextWorkspace.editingSource);
+            setBaselineSignature(nextWorkspace.baselineSignature);
+          } else {
+            setEditableState(EMPTY_EDITABLE_STATE);
+            setEditingId(null);
+            setEditingSource(null);
+            setBaselineSignature(serializeEditableState(EMPTY_EDITABLE_STATE));
+          }
+          lastSavedPayloadRef.current = nextPayload;
+          setSyncStatus(remote.updatedAt ? `CAQ 云端已同步 ${remote.updatedAt}` : "CAQ 云端已同步");
+        })
+        .catch(() => {
+          // Keep the current state if background sync fails.
+        })
+        .finally(() => {
+          syncInFlightRef.current = false;
+        });
+    };
+
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", handleFocus);
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleFocus);
+    };
+  }, [setEditableState, workspaceKey]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -715,6 +846,7 @@ export default function CaqAuditWorkspace({ projectName }: { projectName?: strin
           <div className="min-w-0">
             <h2 className="truncate text-xl font-bold tracking-tight text-white">CAQ 错题审计台</h2>
             <p className="text-sm text-slate-400">面向《可靠性工程师（第2版）》题库复盘的独立工作区</p>
+            <p className="mt-1 text-xs text-slate-500">{syncStatus}</p>
           </div>
         </div>
 
