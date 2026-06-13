@@ -11,8 +11,6 @@ interface State {
   error: Error | null;
 }
 
-const CHUNK_RELOAD_KEY = "__chunk_reload_once__";
-
 function isDynamicImportFetchError(error: Error | null): boolean {
   if (!error) return false;
   const text = `${error.message || ""}\n${error.stack || ""}`.toLowerCase();
@@ -36,18 +34,11 @@ class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidMount(): void {
-    // Clear the one-shot flag after any successful mount.
-    sessionStorage.removeItem(CHUNK_RELOAD_KEY);
+    // No-op. We keep manual recovery so users can review the state before refreshing.
   }
 
   componentDidCatch(error: Error): void {
     if (!isDynamicImportFetchError(error)) return;
-
-    const alreadyRetried = sessionStorage.getItem(CHUNK_RELOAD_KEY) === "1";
-    if (alreadyRetried) return;
-
-    sessionStorage.setItem(CHUNK_RELOAD_KEY, "1");
-    hardReloadWithCacheBust();
   }
 
   static getDerivedStateFromError(error: Error): State {
@@ -56,6 +47,7 @@ class ErrorBoundary extends Component<Props, State> {
 
   render() {
     if (this.state.hasError) {
+      const chunkLoadFailure = isDynamicImportFetchError(this.state.error);
       return (
         <div className="flex items-center justify-center min-h-screen p-8 bg-background">
           <div className="flex flex-col items-center w-full max-w-2xl p-8">
@@ -64,7 +56,16 @@ class ErrorBoundary extends Component<Props, State> {
               className="text-destructive mb-6 flex-shrink-0"
             />
 
-            <h2 className="text-xl mb-4">An unexpected error occurred.</h2>
+            <h2 className="text-xl mb-4">
+              {chunkLoadFailure ? "A newer version of this page is available." : "An unexpected error occurred."}
+            </h2>
+
+            {chunkLoadFailure ? (
+              <p className="mb-6 text-center text-sm text-muted-foreground">
+                This tab is still using an older module bundle. Refresh to load the latest version before switching
+                workspaces again.
+              </p>
+            ) : null}
 
             <div className="p-4 w-full rounded bg-muted overflow-auto mb-6">
               <pre className="text-sm text-muted-foreground whitespace-break-spaces">
@@ -81,7 +82,7 @@ class ErrorBoundary extends Component<Props, State> {
               )}
             >
               <RotateCcw size={16} />
-              Reload Page
+              {chunkLoadFailure ? "Refresh To Update" : "Reload Page"}
             </button>
           </div>
         </div>

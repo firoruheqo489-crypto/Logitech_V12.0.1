@@ -412,6 +412,8 @@ $remoteDeployScript = @(
   '[ -d "$EXTRACT_DIR/payload/dist" ]',
   'rm -rf "$REMOTE_DIR/dist.new"',
   'cp -a "$EXTRACT_DIR/payload/dist" "$REMOTE_DIR/dist.new"',
+  'mkdir -p "$REMOTE_DIR/dist.new/public/assets"',
+  'if [ -d "$REMOTE_DIR/dist/public/assets" ]; then cp -an "$REMOTE_DIR/dist/public/assets/." "$REMOTE_DIR/dist.new/public/assets/" || true; fi',
   'rm -rf "$REMOTE_DIR/dist.prev"',
   'if [ -d "$REMOTE_DIR/dist" ]; then mv "$REMOTE_DIR/dist" "$REMOTE_DIR/dist.prev"; fi',
   'mv "$REMOTE_DIR/dist.new" "$REMOTE_DIR/dist"',
