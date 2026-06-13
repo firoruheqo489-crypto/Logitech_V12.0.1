@@ -3,6 +3,7 @@
 // DATABASE_URL 在 db.ts 初始化之前已经就绪。
 import './env.js';
 
+import { existsSync, readdirSync } from "node:fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import express from "express";
@@ -112,6 +113,23 @@ const SHUTDOWN_TIMEOUT_MS = 10000;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function resolveLegacyAssetPaths(staticPath: string): string[] {
+  const legacyAssetsRoot = path.resolve(staticPath, "..", "..", "assets-legacy", "releases");
+  if (!existsSync(legacyAssetsRoot)) {
+    return [];
+  }
+
+  try {
+    return readdirSync(legacyAssetsRoot, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .sort((left, right) => right.localeCompare(left))
+      .map((entryName) => path.join(legacyAssetsRoot, entryName));
+  } catch {
+    return [];
+  }
 }
 
 function getWarmupErrorSignature(error: unknown): string {
@@ -471,13 +489,16 @@ async function startServer() {
       sendFreshSpaHtml(res, staticPath);
     });
 
-    // /assets/ 下带 hash 的 JS/CSS → 一年强缓存 + immutable
-    app.use('/assets', express.static(path.join(staticPath, 'assets'), {
-      maxAge: '1y',
-      immutable: true,
-      etag: false,
-      lastModified: false,
-    }));
+    // /assets/ 下带 hash 的 JS/CSS → 当前版本优先，其次回退到最近保留的历史快照
+    const assetStaticRoots = [path.join(staticPath, 'assets'), ...resolveLegacyAssetPaths(staticPath)];
+    assetStaticRoots.forEach((assetRoot) => {
+      app.use('/assets', express.static(assetRoot, {
+        maxAge: '1y',
+        immutable: true,
+        etag: false,
+        lastModified: false,
+      }));
+    });
 
     // 其余静态文件（favicon 等）→ 短缓存
     app.use(express.static(staticPath, {

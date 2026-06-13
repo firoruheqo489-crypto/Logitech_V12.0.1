@@ -385,6 +385,9 @@ $remoteIncomingArtifact = "$remoteIncomingDir/$artifactName"
 $remoteIncomingChecksum = if ($checksumAbsolutePath) { "$remoteIncomingArtifact.sha256" } else { "" }
 $remoteExtractDir = "$remoteReleaseRoot/$releaseId"
 $remoteExtractDirLiteral = Format-RemoteShellPath $remoteExtractDir
+$assetArchiveRoot = "$resolvedRemoteDir/assets-legacy/releases"
+$assetArchiveRootLiteral = Format-RemoteShellPath $assetArchiveRoot
+$assetArchiveKeep = 3
 
 Invoke-Step "Preparing remote release directories..." {
   Invoke-Ssh -RepoRootPath $repoRoot -TargetHost $resolvedHostAlias -RemoteCommand "mkdir -p $remoteIncomingDirLiteral"
@@ -405,6 +408,9 @@ $remoteDeployScript = @(
   "INCOMING_ARTIFACT=$remoteIncomingArtifact",
   "INCOMING_CHECKSUM=$remoteIncomingChecksum",
   "EXTRACT_DIR=$remoteExtractDirLiteral",
+  "ASSET_ARCHIVE_ROOT=$assetArchiveRootLiteral",
+  "ASSET_ARCHIVE_KEEP=$assetArchiveKeep",
+  "RELEASE_ID=$releaseId",
   'trap ''rm -rf "$EXTRACT_DIR"'' EXIT',
   'mkdir -p "$EXTRACT_DIR"',
   'if [ -n "$INCOMING_CHECKSUM" ] && [ -f "$INCOMING_CHECKSUM" ]; then CHECKSUM_NAME="${INCOMING_CHECKSUM##*/}"; (cd "$RELEASE_ROOT/incoming" && sha256sum -c "$CHECKSUM_NAME"); fi',
@@ -412,8 +418,11 @@ $remoteDeployScript = @(
   '[ -d "$EXTRACT_DIR/payload/dist" ]',
   'rm -rf "$REMOTE_DIR/dist.new"',
   'cp -a "$EXTRACT_DIR/payload/dist" "$REMOTE_DIR/dist.new"',
-  'mkdir -p "$REMOTE_DIR/dist.new/public/assets"',
-  'if [ -d "$REMOTE_DIR/dist/public/assets" ]; then cp -an "$REMOTE_DIR/dist/public/assets/." "$REMOTE_DIR/dist.new/public/assets/" || true; fi',
+  'mkdir -p "$ASSET_ARCHIVE_ROOT/$RELEASE_ID"',
+  'rm -rf "$ASSET_ARCHIVE_ROOT/$RELEASE_ID"',
+  'mkdir -p "$ASSET_ARCHIVE_ROOT/$RELEASE_ID"',
+  'cp -a "$REMOTE_DIR/dist.new/public/assets/." "$ASSET_ARCHIVE_ROOT/$RELEASE_ID/"',
+  'prune_index=0; for snapshot in $(find "$ASSET_ARCHIVE_ROOT" -mindepth 1 -maxdepth 1 -type d | sort -r); do prune_index=$((prune_index + 1)); if [ "$prune_index" -gt "$ASSET_ARCHIVE_KEEP" ]; then rm -rf "$snapshot"; fi; done',
   'rm -rf "$REMOTE_DIR/dist.prev"',
   'if [ -d "$REMOTE_DIR/dist" ]; then mv "$REMOTE_DIR/dist" "$REMOTE_DIR/dist.prev"; fi',
   'mv "$REMOTE_DIR/dist.new" "$REMOTE_DIR/dist"',

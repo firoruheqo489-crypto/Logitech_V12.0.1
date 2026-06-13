@@ -59,13 +59,38 @@ function readOptionalEnvBoolean(name) {
   return null;
 }
 
+function shouldIgnoreDirtyPath(filePath) {
+  const normalized = filePath.replace(/\\/g, "/").replace(/^\.?\//, "");
+  return (
+    normalized === "client/src/generated/releaseMeta.ts" ||
+    normalized.startsWith("dist/") ||
+    normalized.startsWith("artifacts/releases/")
+  );
+}
+
+function filterStatusOutput(rawStatusOutput) {
+  if (!rawStatusOutput) {
+    return "";
+  }
+
+  return rawStatusOutput
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .filter((line) => {
+      const filePath = line.length > 3 ? line.slice(3).trim() : "";
+      return filePath ? !shouldIgnoreDirtyPath(filePath) : true;
+    })
+    .join("\n");
+}
+
 const packageJson = readJson(packageJsonPath);
 const commit = readOptionalEnvString("RELEASE_COMMIT_OVERRIDE") || tryRunGit(["rev-parse", "HEAD"]) || null;
 const commitShort =
   readOptionalEnvString("RELEASE_COMMIT_SHORT_OVERRIDE") ||
   tryRunGit(["rev-parse", "--short", "HEAD"]) ||
   (commit ? commit.slice(0, 7) : null);
-const statusOutput = commit ? tryRunGit(["status", "--porcelain=v1", "--untracked-files=all"]) : "";
+const rawStatusOutput = commit ? tryRunGit(["status", "--porcelain=v1", "--untracked-files=all"]) : "";
+const statusOutput = filterStatusOutput(rawStatusOutput);
 const packageVersion = typeof packageJson.version === "string" ? packageJson.version : "0.0.0";
 const overrideVersionRaw = process.env.RELEASE_VERSION_OVERRIDE ?? "";
 const overrideVersion = normalizeSemVer(overrideVersionRaw);
@@ -83,7 +108,7 @@ const releaseManifest = {
   commit,
   commitShort,
   builtAt: new Date().toISOString(),
-  dirty: commit ? statusOutput.length > 0 : null,
+  dirty: sourceWorkspaceDirty ?? (commit ? statusOutput.length > 0 : null),
   buildSource,
   sourceWorkspaceDirty,
 };

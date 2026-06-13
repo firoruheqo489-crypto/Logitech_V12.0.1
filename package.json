@@ -15,7 +15,7 @@
     "dev:dashboard:status:strict": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/report-local-dashboard-state.ps1 -NoAutoStart",
     "dev:only": "vite --host --configLoader native",
     "dev:api": "cross-env DEV_API=1 PORT=3001 node --import ./scripts/register-ts-path-loader.mjs --experimental-strip-types server/index.ts",
-    "build": "node scripts/write-client-release-meta.mjs && vite build --configLoader native && esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist && node scripts/write-release-manifest.mjs",
+    "build": "vite build --configLoader native && esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist && node scripts/write-release-manifest.mjs",
     "build:release": "node scripts/write-release-manifest.mjs",
     "start": "NODE_ENV=production node dist/index.js",
     "pm2:start": "cross-env PM2_APP_NAME=logitech pm2 start ecosystem.config.cjs --only logitech --env production",

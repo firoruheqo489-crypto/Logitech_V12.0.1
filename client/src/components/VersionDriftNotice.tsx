@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { RefreshCw } from "lucide-react";
-import { CLIENT_RELEASE_META } from "@/generated/releaseMeta";
+import { CLIENT_RELEASE_META } from "@/releaseMeta";
 
 type ReleaseInfo = {
   commit?: string | null;

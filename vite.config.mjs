@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { createRequire } from "node:module";
@@ -17,7 +18,41 @@ function loadOptionalJsxLocPlugin() {
   }
 }
 
+function tryRunGit(args) {
+  try {
+    return execFileSync("git", args, {
+      cwd: import.meta.dirname,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch {
+    return "";
+  }
+}
+
+function readOptionalEnvString(name) {
+  const value = process.env[name];
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalized = value.trim();
+  return normalized || null;
+}
+
+const clientReleaseMeta = {
+  commit: readOptionalEnvString("RELEASE_COMMIT_OVERRIDE") || tryRunGit(["rev-parse", "HEAD"]) || null,
+  commitShort:
+    readOptionalEnvString("RELEASE_COMMIT_SHORT_OVERRIDE") ||
+    tryRunGit(["rev-parse", "--short", "HEAD"]) ||
+    null,
+  builtAt: new Date().toISOString(),
+};
+
 export default defineConfig({
+  define: {
+    __CLIENT_RELEASE_META__: JSON.stringify(clientReleaseMeta),
+  },
   plugins: [react(), tailwindcss(), loadOptionalJsxLocPlugin()].filter(Boolean),
   esbuild: false,
   optimizeDeps: {
