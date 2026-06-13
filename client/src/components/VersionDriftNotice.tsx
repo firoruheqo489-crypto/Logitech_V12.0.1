@@ -4,6 +4,7 @@ import { CLIENT_RELEASE_META } from "@/generated/releaseMeta";
 
 type ReleaseInfo = {
   commit?: string | null;
+  commitShort?: string | null;
   builtAt?: string | null;
 };
 
@@ -12,15 +13,19 @@ function hasRemoteReleaseDrift(remote: ReleaseInfo | null): boolean {
     return false;
   }
 
-  if (CLIENT_RELEASE_META.commit && remote.commit && CLIENT_RELEASE_META.commit !== remote.commit) {
-    return true;
+  if (CLIENT_RELEASE_META.commit || remote.commit) {
+    return Boolean(CLIENT_RELEASE_META.commit && remote.commit && CLIENT_RELEASE_META.commit !== remote.commit);
   }
 
-  if (CLIENT_RELEASE_META.builtAt && remote.builtAt && CLIENT_RELEASE_META.builtAt !== remote.builtAt) {
-    return true;
+  if (CLIENT_RELEASE_META.commitShort || remote.commitShort) {
+    return Boolean(
+      CLIENT_RELEASE_META.commitShort &&
+      remote.commitShort &&
+      CLIENT_RELEASE_META.commitShort !== remote.commitShort,
+    );
   }
 
-  return false;
+  return Boolean(CLIENT_RELEASE_META.builtAt && remote.builtAt && CLIENT_RELEASE_META.builtAt !== remote.builtAt);
 }
 
 function hardReloadWithCacheBust() {
@@ -58,9 +63,7 @@ export default function VersionDriftNotice() {
         }
 
         const payload = (await response.json()) as ReleaseInfo;
-        if (hasRemoteReleaseDrift(payload)) {
-          setHasDrift(true);
-        }
+        setHasDrift(hasRemoteReleaseDrift(payload));
       } catch {
         // Keep the current UI if the release check fails.
       } finally {
