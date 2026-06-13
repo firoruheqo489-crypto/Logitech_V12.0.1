@@ -835,9 +835,10 @@ function buildReport8DSectionMarkupList({ state }: Report8DDocumentOptions): str
 function buildReport8DPageMarkup(
   headerFields: Report8DHeaderFields,
   sectionsMarkup: string,
+  options: { includeHeader: boolean },
 ): string {
-  return `
-    <article class="report-8d-a4-page" aria-label="8D 报告 A4 页面">
+  const headerMarkup = options.includeHeader
+    ? `
       <div class="report-8d-print-title">
         <h1>8D 纠正措施报告</h1>
       </div>
@@ -851,8 +852,12 @@ function buildReport8DPageMarkup(
         ${buildPrintField("报告主题", headerFields.reportSubject)}
         ${buildPrintField("报告编号", headerFields.reportNo)}
         ${buildPrintField("报告日期", headerFields.reportDate || headerFields.dateOpened)}
-      </div>
+      </div>`
+    : "";
 
+  return `
+    <article class="report-8d-a4-page" aria-label="8D 报告 A4 页面">
+      ${headerMarkup}
       <div class="report-8d-d-flow">${sectionsMarkup}</div>
       <div class="report-8d-print-footer">本页为 8D 报告 A4 打印版，完整证据、记录和附件以系统工作区为准。</div>
     </article>
@@ -864,7 +869,7 @@ function buildReport8DDocumentMarkup(options: Report8DDocumentOptions): string {
     .slice(0, getCutoffIndex(options.state.outputCutoff) + 1)
     .join("");
 
-  return buildReport8DPageMarkup(options.state.headerFields, visibleSections);
+  return buildReport8DPageMarkup(options.state.headerFields, visibleSections, { includeHeader: true });
 }
 
 function buildReport8DFileName(state: Report8DWorkspaceState): string {
@@ -1040,9 +1045,13 @@ function openReport8DPrintPreview(options: Report8DDocumentOptions): void {
   previewWindow.focus();
 }
 
-function createReport8DPageNode(host: HTMLElement, headerFields: Report8DHeaderFields): HTMLElement {
+function createReport8DPageNode(
+  host: HTMLElement,
+  headerFields: Report8DHeaderFields,
+  options: { includeHeader: boolean },
+): HTMLElement {
   const wrapper = document.createElement("div");
-  wrapper.innerHTML = buildReport8DPageMarkup(headerFields, "");
+  wrapper.innerHTML = buildReport8DPageMarkup(headerFields, "", options);
   const pageNode = wrapper.firstElementChild as HTMLElement | null;
   if (!pageNode) {
     throw new Error("8D PDF 模板分页骨架生成失败");
@@ -1065,7 +1074,7 @@ function paginateReport8DPageNodes(host: HTMLElement, options: Report8DDocumentO
   const sections = buildReport8DSectionMarkupList(options).slice(0, getCutoffIndex(options.state.outputCutoff) + 1);
   const pageNodes: HTMLElement[] = [];
 
-  let currentPage = createReport8DPageNode(host, options.state.headerFields);
+  let currentPage = createReport8DPageNode(host, options.state.headerFields, { includeHeader: true });
   pageNodes.push(currentPage);
 
   const maxPageHeight = currentPage.offsetHeight;
@@ -1083,7 +1092,7 @@ function paginateReport8DPageNodes(host: HTMLElement, options: Report8DDocumentO
     }
 
     currentFlow!.removeChild(sectionNode);
-    currentPage = createReport8DPageNode(host, options.state.headerFields);
+    currentPage = createReport8DPageNode(host, options.state.headerFields, { includeHeader: false });
     pageNodes.push(currentPage);
     currentFlow = currentPage.querySelector(".report-8d-d-flow") as HTMLElement | null;
     if (!currentFlow) {
