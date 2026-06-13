@@ -549,14 +549,14 @@ function buildReport8DPrintCss(): string {
     .report-8d-print-side {
       display: flex;
       flex-direction: column;
-      align-items: flex-start;
+      align-items: center;
       justify-content: center;
       align-self: stretch;
       gap: 0.9mm;
       min-width: 0;
-      padding-right: 1.6mm;
+      padding: 0 1.2mm 0 0.4mm;
       border-right: 0.6px solid #cbd5e1;
-      text-align: left;
+      text-align: center;
     }
 
     .report-8d-print-side h2 {
@@ -565,6 +565,8 @@ function buildReport8DPrintCss(): string {
       font-size: 8.5px;
       font-weight: 800;
       line-height: 1.22;
+      width: 100%;
+      text-align: center;
     }
 
     .report-8d-print-code {
@@ -581,6 +583,7 @@ function buildReport8DPrintCss(): string {
       padding: 0.35mm 1.2mm;
       text-align: center;
       white-space: nowrap;
+      align-self: center;
     }
 
     .report-8d-print-body {
