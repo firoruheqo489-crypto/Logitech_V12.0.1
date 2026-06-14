@@ -650,6 +650,39 @@ function buildReport8DPrintCss(): string {
       margin-bottom: 0;
     }
 
+    .report-8d-print-round-images {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 1.1mm;
+      margin-top: 1.2mm;
+    }
+
+    .report-8d-print-round-image {
+      border: 0.45px solid #cbd5e1;
+      border-radius: 0.9mm;
+      overflow: hidden;
+      background: #f8fafc;
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
+
+    .report-8d-print-round-image img {
+      display: block;
+      width: 100%;
+      height: 22mm;
+      object-fit: cover;
+      background: #e2e8f0;
+    }
+
+    .report-8d-print-round-image span {
+      display: block;
+      padding: 0.75mm 0.9mm;
+      color: #475569;
+      font-size: 6.6px;
+      line-height: 1.25;
+      text-align: center;
+    }
+
     .report-8d-print-table {
       border-collapse: collapse;
       table-layout: fixed;
@@ -726,6 +759,26 @@ function buildPrintBox(code: string, title: string, content: string): string {
   return `<section class="report-8d-print-box"><div class="report-8d-print-side"><span class="report-8d-print-code">${escapeHtml(code)}</span><h2>${escapeHtml(title)}</h2></div><div class="report-8d-print-body">${content}</div></section>`;
 }
 
+function buildPrintImageGallery(imageUrls: string[], labelPrefix: string): string {
+  if (!imageUrls.length) {
+    return "";
+  }
+
+  const figures = imageUrls
+    .map((imageUrl, index) => {
+      const label = `${labelPrefix}图片 ${index + 1}`;
+      return `
+        <figure class="report-8d-print-round-image">
+          <img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(label)}" />
+          <span>${escapeHtml(label)}</span>
+        </figure>
+      `;
+    })
+    .join("");
+
+  return `<div class="report-8d-print-round-images">${figures}</div>`;
+}
+
 function getCutoffIndex(cutoff: Report8DOutputCutoff): number {
   const ordered: Report8DOutputCutoff[] = ["D0", "D1", "D2", "D3", "D4", "D5", "D6", "D7", "D8", "SIGNOFF"];
   return Math.max(0, ordered.indexOf(cutoff));
@@ -754,24 +807,21 @@ function buildReport8DSectionMarkupList({ state }: Report8DDocumentOptions): str
   const verificationRoundList = (verificationRounds.length ? verificationRounds : [buildVerificationRound()])
     .map((item, index) => {
       const verificationLabel = `验证${formatRoundIndexLabel(index)}`;
-      const imageSummary = item.images.length > 0 ? `；验证图片 ${item.images.length} 张` : "";
-      return `<li class="report-8d-print-clamp-1"><strong>${escapeHtml(verificationLabel)}：</strong>${formatPrintMultiline(item.verification, "待填写")}${escapeHtml(imageSummary)}</li>`;
+      return `<li class="report-8d-print-clamp-1"><strong>${escapeHtml(verificationLabel)}：</strong>${formatPrintMultiline(item.verification, "待填写")}${buildPrintImageGallery(item.images, verificationLabel)}</li>`;
     })
     .join("");
   const correctivePlan = state.d5?.correctivePlan || formatLegacyCorrectivePlan(state.correctiveActions);
   const correctionRoundList = (correctionRounds.length ? correctionRounds : [buildCorrectionRound()])
     .map((item, index) => {
       const correctionLabel = `措施${formatRoundIndexLabel(index)}`;
-      const imageSummary = item.images.length > 0 ? `；措施图片 ${item.images.length} 张` : "";
-      return `<li class="report-8d-print-clamp-1"><strong>${escapeHtml(correctionLabel)}：</strong>${formatPrintMultiline(item.correction, "待填写")}${escapeHtml(imageSummary)}</li>`;
+      return `<li class="report-8d-print-clamp-1"><strong>${escapeHtml(correctionLabel)}：</strong>${formatPrintMultiline(item.correction, "待填写")}${buildPrintImageGallery(item.images, correctionLabel)}</li>`;
     })
     .join("");
   const legacyImplementationRounds = state.d6.verificationItems.map((item) => buildImplementationRound(item));
   const implementationRoundList = (implementationRounds.length ? implementationRounds : legacyImplementationRounds.length ? legacyImplementationRounds : [buildImplementationRound()])
     .map((item, index) => {
       const implementationLabel = `验证${formatRoundIndexLabel(index)}`;
-      const imageSummary = item.images.length > 0 ? `；验证图片 ${item.images.length} 张` : "";
-      return `<li class="report-8d-print-clamp-1"><strong>${escapeHtml(implementationLabel)}：</strong>${formatPrintMultiline(item.implementation, "待填写")}${escapeHtml(imageSummary)}</li>`;
+      return `<li class="report-8d-print-clamp-1"><strong>${escapeHtml(implementationLabel)}：</strong>${formatPrintMultiline(item.implementation, "待填写")}${buildPrintImageGallery(item.images, implementationLabel)}</li>`;
     })
     .join("");
 
