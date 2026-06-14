@@ -173,6 +173,7 @@
     },
     "ignoredBuiltDependencies": [
       "@tailwindcss/oxide",
+      "canvas",
       "esbuild"
     ]
   }
