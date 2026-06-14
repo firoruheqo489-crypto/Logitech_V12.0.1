@@ -759,6 +759,10 @@ function buildPrintBox(code: string, title: string, content: string): string {
   return `<section class="report-8d-print-box"><div class="report-8d-print-side"><span class="report-8d-print-code">${escapeHtml(code)}</span><h2>${escapeHtml(title)}</h2></div><div class="report-8d-print-body">${content}</div></section>`;
 }
 
+function buildAssetProxyUrl(assetUrl: string): string {
+  return `/api/uploads/object?key=${encodeURIComponent(assetUrl)}`;
+}
+
 function buildPrintImageGallery(imageUrls: string[], labelPrefix: string): string {
   if (!imageUrls.length) {
     return "";
@@ -767,9 +771,10 @@ function buildPrintImageGallery(imageUrls: string[], labelPrefix: string): strin
   const figures = imageUrls
     .map((imageUrl, index) => {
       const label = `${labelPrefix}图片 ${index + 1}`;
+      const proxiedUrl = buildAssetProxyUrl(imageUrl);
       return `
         <figure class="report-8d-print-round-image">
-          <img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(label)}" />
+          <img src="${escapeHtml(proxiedUrl)}" alt="${escapeHtml(label)}" />
           <span>${escapeHtml(label)}</span>
         </figure>
       `;
@@ -1111,6 +1116,24 @@ async function exportReport8DPdf(options: Report8DDocumentOptions): Promise<void
     if (!pageNode) {
       throw new Error("8D PDF 模板生成失败");
     }
+
+    const images = Array.from(pageNode.querySelectorAll("img"));
+    await Promise.all(
+      images.map(
+        (image) =>
+          new Promise<void>((resolve) => {
+            const img = image as HTMLImageElement;
+            if (img.complete) {
+              resolve();
+              return;
+            }
+
+            const finalize = () => resolve();
+            img.addEventListener("load", finalize, { once: true });
+            img.addEventListener("error", finalize, { once: true });
+          }),
+      ),
+    );
 
     const [{ default: html2canvas }, jspdfModule] = await Promise.all([
       import("html2canvas"),
