@@ -179,7 +179,7 @@ function Start-LocalArtifactFromMetadata {
     Push-Location $payloadRoot
     try {
       Log "Installing runtime dependencies for local preview artifact..."
-      & pnpm install --prod | Out-Host
+      & pnpm install --prod --reporter append-only --loglevel error | Out-Host
     } finally {
       Pop-Location
     }
