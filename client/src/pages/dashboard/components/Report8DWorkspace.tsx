@@ -534,10 +534,9 @@ function buildReport8DPrintCss(): string {
     }
 
     .report-8d-print-box {
-      display: grid;
-      grid-template-columns: 31mm minmax(0, 1fr);
+      display: flex;
       align-items: stretch;
-      column-gap: 2.2mm;
+      gap: 2.2mm;
       border: 0.65px solid #cbd5e1;
       border-left: 2.4mm solid #0f766e;
       border-radius: 1.2mm;
@@ -551,13 +550,13 @@ function buildReport8DPrintCss(): string {
       flex-direction: column;
       align-items: flex-start;
       justify-content: center;
-      align-self: stretch;
+      flex: 0 0 31mm;
       gap: 0.9mm;
       min-width: 0;
+      min-height: 100%;
       padding: 0 1.2mm 0 0.4mm;
       border-right: 0.6px solid #cbd5e1;
       text-align: left;
-      min-height: 100%;
     }
 
     .report-8d-print-side h2 {
@@ -588,6 +587,7 @@ function buildReport8DPrintCss(): string {
     }
 
     .report-8d-print-body {
+      flex: 1 1 auto;
       min-width: 0;
     }
 
