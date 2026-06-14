@@ -653,8 +653,8 @@ function buildReport8DPrintCss(): string {
     .report-8d-print-round-images {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 1.1mm;
-      margin-top: 1.2mm;
+      gap: 0.9mm;
+      margin-top: 0.8mm;
     }
 
     .report-8d-print-round-image {
@@ -669,18 +669,11 @@ function buildReport8DPrintCss(): string {
     .report-8d-print-round-image img {
       display: block;
       width: 100%;
-      height: 22mm;
-      object-fit: cover;
+      height: auto;
+      min-height: 22mm;
+      max-height: 42mm;
+      object-fit: contain;
       background: #e2e8f0;
-    }
-
-    .report-8d-print-round-image span {
-      display: block;
-      padding: 0.75mm 0.9mm;
-      color: #475569;
-      font-size: 6.6px;
-      line-height: 1.25;
-      text-align: center;
     }
 
     .report-8d-print-table {
@@ -869,12 +862,10 @@ function buildPrintImageGallery(imageUrls: string[], labelPrefix: string): strin
 
   const figures = imageUrls
     .map((imageUrl, index) => {
-      const label = `${labelPrefix}图片 ${index + 1}`;
       const imageSrc = resolvePdfImageSrc(imageUrl);
       return `
         <figure class="report-8d-print-round-image">
-          <img src="${escapeHtml(imageSrc)}" alt="${escapeHtml(label)}" />
-          <span>${escapeHtml(label)}</span>
+          <img src="${escapeHtml(imageSrc)}" alt="${escapeHtml(`${labelPrefix}图片 ${index + 1}`)}" />
         </figure>
       `;
     })
