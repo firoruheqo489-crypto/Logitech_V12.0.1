@@ -637,6 +637,7 @@ function buildReport8DPrintCss(): string {
     .report-8d-print-list li {
       margin: 0 0 1.35mm;
       padding: 0;
+      line-height: 1.45;
       white-space: pre-wrap;
       overflow-wrap: anywhere;
       word-break: break-word;
@@ -654,7 +655,10 @@ function buildReport8DPrintCss(): string {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 0.9mm;
-      margin-top: 0.8mm;
+      clear: both;
+      width: 100%;
+      margin-top: 2.6mm;
+      padding-top: 1.2mm;
     }
 
     .report-8d-print-round-image {
