@@ -763,6 +763,88 @@ function buildAssetProxyUrl(assetUrl: string): string {
   return `/api/uploads/object?key=${encodeURIComponent(assetUrl)}`;
 }
 
+async function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        resolve(reader.result);
+        return;
+      }
+      reject(new Error("图片转换失败"));
+    };
+    reader.onerror = () => reject(reader.error ?? new Error("图片转换失败"));
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function resolveImageUrlsForPdf(imageUrls: string[]): Promise<string[]> {
+  const resolved = await Promise.all(
+    imageUrls.map(async (imageUrl) => {
+      try {
+        const response = await fetch(buildAssetProxyUrl(imageUrl), {
+          cache: "no-store",
+          credentials: "same-origin",
+        });
+        if (!response.ok) {
+          return imageUrl;
+        }
+        const blob = await response.blob();
+        return await blobToDataUrl(blob);
+      } catch {
+        return imageUrl;
+      }
+    }),
+  );
+
+  return resolved.filter(Boolean);
+}
+
+async function buildPdfDocumentOptions(options: Report8DDocumentOptions): Promise<Report8DDocumentOptions> {
+  const state = options.state;
+  const verificationRounds = ensureVerificationRounds(state.d4?.verificationRounds);
+  const correctionRounds = ensureCorrectionRounds(state.d5?.correctionRounds);
+  const implementationRounds = ensureImplementationRounds(state.d6?.implementationRounds);
+
+  const nextVerificationRounds = await Promise.all(
+    verificationRounds.map(async (round) => ({
+      ...round,
+      images: await resolveImageUrlsForPdf(round.images),
+    })),
+  );
+  const nextCorrectionRounds = await Promise.all(
+    correctionRounds.map(async (round) => ({
+      ...round,
+      images: await resolveImageUrlsForPdf(round.images),
+    })),
+  );
+  const nextImplementationRounds = await Promise.all(
+    implementationRounds.map(async (round) => ({
+      ...round,
+      images: await resolveImageUrlsForPdf(round.images),
+    })),
+  );
+
+  return {
+    ...options,
+    state: {
+      ...state,
+      d4: {
+        ...state.d4,
+        verificationRounds: nextVerificationRounds,
+      },
+      d5: {
+        ...state.d5,
+        correctionRounds: nextCorrectionRounds,
+      },
+      d6: {
+        ...state.d6,
+        implementationRounds: nextImplementationRounds,
+      },
+    },
+  };
+}
+
 function buildPrintImageGallery(imageUrls: string[], labelPrefix: string): string {
   if (!imageUrls.length) {
     return "";
@@ -1098,13 +1180,14 @@ function openReport8DPrintPreview(options: Report8DDocumentOptions): void {
 }
 
 async function exportReport8DPdf(options: Report8DDocumentOptions): Promise<void> {
+  const pdfOptions = await buildPdfDocumentOptions(options);
   const host = document.createElement("div");
   host.style.position = "fixed";
   host.style.left = "-10000px";
   host.style.top = "0";
   host.style.width = "210mm";
   host.style.background = "#ffffff";
-  host.innerHTML = `<style>${buildReport8DPrintCss()}</style>${buildReport8DDocumentMarkup(options)}`;
+  host.innerHTML = `<style>${buildReport8DPrintCss()}</style>${buildReport8DDocumentMarkup(pdfOptions)}`;
   document.body.appendChild(host);
 
   try {
@@ -1175,7 +1258,7 @@ async function exportReport8DPdf(options: Report8DDocumentOptions): Promise<void
       heightLeft -= pdfHeight;
     }
 
-    pdf.save(buildReport8DFileName(options.state));
+    pdf.save(buildReport8DFileName(pdfOptions.state));
   } finally {
     host.remove();
   }
