@@ -37,9 +37,15 @@ function hardReloadWithCacheBust() {
 export default function VersionDriftNotice() {
   const [hasDrift, setHasDrift] = useState(false);
   const inFlightRef = useRef(false);
+  const versionDriftEnabled = import.meta.env.PROD;
 
   useEffect(() => {
     if (typeof window === "undefined") {
+      return;
+    }
+
+    if (!versionDriftEnabled) {
+      setHasDrift(false);
       return;
     }
 
@@ -89,7 +95,7 @@ export default function VersionDriftNotice() {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.clearInterval(intervalId);
     };
-  }, []);
+  }, [versionDriftEnabled]);
 
   if (!hasDrift) {
     return null;
