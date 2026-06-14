@@ -763,6 +763,23 @@ function buildAssetProxyUrl(assetUrl: string): string {
   return `/api/uploads/object?key=${encodeURIComponent(assetUrl)}`;
 }
 
+function resolvePdfImageSrc(imageUrl: string): string {
+  const normalized = imageUrl.trim();
+  if (!normalized) {
+    return normalized;
+  }
+
+  if (
+    normalized.startsWith("data:") ||
+    normalized.startsWith("blob:") ||
+    normalized.startsWith("/api/uploads/object?")
+  ) {
+    return normalized;
+  }
+
+  return buildAssetProxyUrl(normalized);
+}
+
 async function blobToDataUrl(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -853,10 +870,10 @@ function buildPrintImageGallery(imageUrls: string[], labelPrefix: string): strin
   const figures = imageUrls
     .map((imageUrl, index) => {
       const label = `${labelPrefix}图片 ${index + 1}`;
-      const proxiedUrl = buildAssetProxyUrl(imageUrl);
+      const imageSrc = resolvePdfImageSrc(imageUrl);
       return `
         <figure class="report-8d-print-round-image">
-          <img src="${escapeHtml(proxiedUrl)}" alt="${escapeHtml(label)}" />
+          <img src="${escapeHtml(imageSrc)}" alt="${escapeHtml(label)}" />
           <span>${escapeHtml(label)}</span>
         </figure>
       `;
