@@ -1656,10 +1656,6 @@ export default function Report8DWorkspace({
   const persistReportTitle = useCallback((value: string) => {
     const normalizedValue = value.trim();
     const nextTitle = normalizedValue || DEFAULT_REPORT_8D_TITLE;
-    if (nextTitle === workspaceStateRef.current.headerFields.reportTitle) {
-      return;
-    }
-
     const nextState: Report8DWorkspaceState = {
       ...workspaceStateRef.current,
       headerFields: {
@@ -1667,6 +1663,11 @@ export default function Report8DWorkspace({
         reportTitle: nextTitle,
       },
     };
+
+    if (JSON.stringify(nextState) === lastSavedPayloadRef.current) {
+      return;
+    }
+
     setWorkspaceState(nextState);
     void persistWorkspaceStateImmediately(nextState, "报告标题保存失败");
   }, [persistWorkspaceStateImmediately]);
