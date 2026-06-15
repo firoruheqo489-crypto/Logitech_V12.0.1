@@ -1653,12 +1653,21 @@ export default function Report8DWorkspace({
     }));
   }, []);
 
-  const persistReportTitleIfNeeded = useCallback(() => {
-    const nextState = workspaceStateRef.current;
-    if (JSON.stringify(nextState) === lastSavedPayloadRef.current) {
+  const persistReportTitle = useCallback((value: string) => {
+    const normalizedValue = value.trim();
+    const nextTitle = normalizedValue || DEFAULT_REPORT_8D_TITLE;
+    if (nextTitle === workspaceStateRef.current.headerFields.reportTitle) {
       return;
     }
 
+    const nextState: Report8DWorkspaceState = {
+      ...workspaceStateRef.current,
+      headerFields: {
+        ...workspaceStateRef.current.headerFields,
+        reportTitle: nextTitle,
+      },
+    };
+    setWorkspaceState(nextState);
     void persistWorkspaceStateImmediately(nextState, "报告标题保存失败");
   }, [persistWorkspaceStateImmediately]);
 
@@ -2306,7 +2315,7 @@ export default function Report8DWorkspace({
               label="报告标题"
               value={workspaceState.headerFields.reportTitle}
               onChange={(value) => updateHeaderField("reportTitle", value)}
-              onBlur={persistReportTitleIfNeeded}
+              onBlur={persistReportTitle}
             />
             <SummaryInput
               label="料件编号"
@@ -3251,7 +3260,7 @@ function SummaryInput({
   label: string;
   value: string;
   onChange?: (value: string) => void;
-  onBlur?: () => void;
+  onBlur?: (value: string) => void;
   mono?: boolean;
   danger?: boolean;
   readOnly?: boolean;
@@ -3264,7 +3273,7 @@ function SummaryInput({
         value={value}
         readOnly={readOnly}
         onChange={onChange ? (event) => onChange(event.target.value) : undefined}
-        onBlur={onBlur}
+        onBlur={onBlur ? (event) => onBlur(event.target.value) : undefined}
         className={cn(
           "mt-2 border-white/10 bg-white/[0.04] text-slate-100",
           mono && "font-mono",
