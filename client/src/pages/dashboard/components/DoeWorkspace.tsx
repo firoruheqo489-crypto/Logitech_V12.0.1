@@ -1,21 +1,18 @@
-import { useCallback, useEffect, useMemo, useState, type ElementType } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   Activity,
   Check,
+  ChevronUp,
   Gauge,
   Grid3X3,
-  Layers,
   Play,
   RotateCcw,
   Sparkles,
   Terminal,
-  Thermometer,
-  Timer,
   TrendingUp,
   Upload,
   Zap,
-  ChevronUp,
 } from 'lucide-react';
 import {
   Bar,
@@ -40,88 +37,112 @@ import {
   buildActiveFactors,
   generateTaguchiMatrix,
   selectTaguchiArrayName,
+  TAGUCHI_FACTOR_KEYS,
   type HydratedExperimentRow,
   type TaguchiActiveFactor,
   type TaguchiArrayName,
+  type TaguchiFactorDefinition,
+  type TaguchiFactorDefinitions,
   type TaguchiFactorKey,
-  type TaguchiFactorLevels,
-  type TaguchiFactorToggles,
 } from './doe/taguchiEngine';
 
-const initialFactorValues: TaguchiFactorLevels = {
-  frontTemp: ['75', '80', '85'],
-  backTemp: ['70', '75', '80'],
-  sliderTemp: ['65', '70', '75'],
-  p1: ['55', '60', '65'],
-  t1: ['2.0', '2.5', '3.0'],
-  p2: ['45', '50', '55'],
-  t2: ['2.5', '3.0', '3.5'],
-  p3: ['35', '40', '45'],
-  t3: ['1.5', '2.0', '2.5'],
-};
-
-const initialFactorToggles: TaguchiFactorToggles = {
-  stage1Hold: true,
-  sliderTemp: false,
-  stage2Hold: false,
-  stage3Hold: false,
-};
-
 type DoeTrialHeaderFields = {
-  moldNumber: string;
-  trialDate: string;
-  machineStartTime: string;
-  currentTrialCount: string;
-  technician: string;
-  machine: string;
+  experimentName: string;
+  batchId: string;
+  experimentDate: string;
+  owner: string;
+  equipment: string;
+  notes: string;
 };
 
-const initialTrialHeaderFields: DoeTrialHeaderFields = {
-  moldNumber: '',
-  trialDate: '',
-  machineStartTime: '',
-  currentTrialCount: '',
-  technician: '',
-  machine: '',
-};
-
-const FACTOR_KEYS: readonly TaguchiFactorKey[] = [
-  'frontTemp',
-  'backTemp',
-  'sliderTemp',
-  'p1',
-  't1',
-  'p2',
-  't2',
-  'p3',
-  't3',
+const TRIAL_HEADER_ITEMS: Array<{
+  key: keyof DoeTrialHeaderFields;
+  label: string;
+  type?: 'text' | 'date';
+  placeholder?: string;
+}> = [
+  { key: 'experimentName', label: '\u5b9e\u9a8c\u540d\u79f0', placeholder: '\u8f93\u5165\u5b9e\u9a8c\u540d\u79f0' },
+  { key: 'batchId', label: '\u6279\u6b21 / \u6837\u672c', placeholder: '\u8f93\u5165\u6279\u6b21\u53f7\u6216\u6837\u672c\u7f16\u53f7' },
+  { key: 'experimentDate', label: '\u5b9e\u9a8c\u65e5\u671f', type: 'date' },
+  { key: 'owner', label: '\u8d1f\u8d23\u4eba', placeholder: '\u8f93\u5165\u8d1f\u8d23\u4eba' },
+  { key: 'equipment', label: '\u8bbe\u5907 / \u5de5\u4f4d', placeholder: '\u8f93\u5165\u8bbe\u5907\u540d\u79f0\u6216\u5de5\u4f4d' },
+  { key: 'notes', label: '\u5907\u6ce8', placeholder: '\u8f93\u5165\u53ef\u9009\u8bf4\u660e' },
 ];
 
-const TOGGLE_KEYS: readonly (keyof TaguchiFactorToggles)[] = ['stage1Hold', 'sliderTemp', 'stage2Hold', 'stage3Hold'];
-const TRIAL_HEADER_KEYS: readonly (keyof DoeTrialHeaderFields)[] = [
-  'moldNumber',
-  'trialDate',
-  'machineStartTime',
-  'currentTrialCount',
-  'technician',
-  'machine',
+const initialTrialHeaderFields: DoeTrialHeaderFields = {
+  experimentName: '',
+  batchId: '',
+  experimentDate: '',
+  owner: '',
+  equipment: '',
+  notes: '',
+};
+
+const FACTOR_DEFAULTS: Array<{
+  key: TaguchiFactorKey;
+  enabled: boolean;
+  unit: string;
+  levels: [string, string, string];
+}> = [
+  { key: 'factor1', enabled: true, unit: '', levels: ['1', '2', '3'] },
+  { key: 'factor2', enabled: true, unit: '', levels: ['10', '20', '30'] },
+  { key: 'factor3', enabled: true, unit: '', levels: ['100', '200', '300'] },
+  { key: 'factor4', enabled: true, unit: '', levels: ['0.5', '1.0', '1.5'] },
+  { key: 'factor5', enabled: false, unit: '', levels: ['5', '10', '15'] },
+  { key: 'factor6', enabled: false, unit: '', levels: ['50', '60', '70'] },
+  { key: 'factor7', enabled: false, unit: '', levels: ['0.1', '0.2', '0.3'] },
+  { key: 'factor8', enabled: false, unit: '', levels: ['400', '500', '600'] },
+  { key: 'factor9', enabled: false, unit: '', levels: ['1000', '1200', '1400'] },
 ];
 
 const CHART_COLORS = ['#00E5FF', '#6366f1', '#10b981', '#f59e0b', '#fb7185', '#a855f7', '#14b8a6', '#f97316', '#84cc16'];
 
-function cloneInitialFactorValues(): TaguchiFactorLevels {
-  return FACTOR_KEYS.reduce((next, key) => {
-    next[key] = [...initialFactorValues[key]] as [string, string, string];
+function createInitialFactorDefinitions(): TaguchiFactorDefinitions {
+  return FACTOR_DEFAULTS.reduce((next, item, index) => {
+    next[item.key] = {
+      enabled: item.enabled,
+      label: `\u56e0\u5b50 ${index + 1}`,
+      shortLabel: `F${index + 1}`,
+      unit: item.unit,
+      levels: [...item.levels] as [string, string, string],
+    };
+
     return next;
-  }, {} as TaguchiFactorLevels);
+  }, {} as TaguchiFactorDefinitions);
 }
 
-function cloneInitialFactorToggles(): TaguchiFactorToggles {
-  return { ...initialFactorToggles };
+function cloneFactorDefinitions(source: TaguchiFactorDefinitions): TaguchiFactorDefinitions {
+  return TAGUCHI_FACTOR_KEYS.reduce((next, key) => {
+    next[key] = {
+      ...source[key],
+      levels: [...source[key].levels] as [string, string, string],
+    };
+    return next;
+  }, {} as TaguchiFactorDefinitions);
 }
 
 function cloneInitialTrialHeaderFields(): DoeTrialHeaderFields {
   return { ...initialTrialHeaderFields };
+}
+
+function formatEngineeringValue(value: unknown): string {
+  if (value === undefined || value === null || value === '') return '-';
+  return String(value);
+}
+
+function formatInvalidReason(reason: 'empty' | 'non_numeric' | 'negative'): string {
+  const labels = {
+    empty: '\u4e3a\u7a7a',
+    non_numeric: '\u975e\u6570\u5b57',
+    negative: '\u8d1f\u6570',
+  };
+
+  return labels[reason];
+}
+
+function formatOptimalValue(value: unknown, unit: string): string {
+  if (value === undefined || value === null || value === '') return '-';
+  return unit ? `${String(value)} ${unit}` : String(value);
 }
 
 function DoeHeader() {
@@ -141,13 +162,10 @@ function DoeHeader() {
               </div>
             </div>
             <div>
-              <h2 className="text-base font-bold tracking-tight text-white">精密注塑田口 DOE 系统</h2>
-              <p className="text-[10px] uppercase tracking-wider text-white/40">
-                Precision Injection Molding · Taguchi DOE Module v3.0
-              </p>
+              <h2 className="text-base font-bold tracking-tight text-white">{'\u901a\u7528 DOE \u5de5\u4f5c\u53f0'}</h2>
+              <p className="text-[10px] tracking-wider text-white/40">{'\u901a\u7528 Taguchi DOE \u5de5\u4f5c\u53f0 v3.0'}</p>
             </div>
           </div>
-
         </div>
       </div>
     </header>
@@ -161,90 +179,21 @@ function TrialHeaderPanel({
   fields: DoeTrialHeaderFields;
   onChange: (field: keyof DoeTrialHeaderFields, value: string) => void;
 }) {
-  return <TrialHeaderPanelContentV2 fields={fields} onChange={onChange} />;
-
-  /*
-  const items: Array<{
-    key: keyof DoeTrialHeaderFields;
-    label: string;
-    type?: 'text' | 'date' | 'time' | 'number';
-    placeholder?: string;
-  }> = [
-    { key: 'moldNumber', label: '模具编号', placeholder: '输入模具编号' },
-    { key: 'trialDate', label: '试模日期', type: 'date' },
-    { key: 'machineStartTime', label: '上机时间', type: 'time' },
-    { key: 'currentTrialCount', label: '当前试模次数', type: 'number', placeholder: '输入次数' },
-    { key: 'technician', label: '技术员', placeholder: '输入技术员' },
-    { key: 'machine', label: '机台', placeholder: '输入机台编号' },
-  ];
-
   return (
     <section className="space-y-4">
       <div>
-        <div className="section-label mb-2">Header</div>
-        <h2 className="text-xl font-semibold tracking-tight text-white">试模表头信息</h2>
-        <p className="mt-1 text-sm text-white/40">DOE trial context header</p>
+        <div className="section-label mb-2">{'\u8868\u5934'}</div>
+        <h2 className="text-xl font-semibold tracking-tight text-white">{'\u5b9e\u9a8c\u4fe1\u606f'}</h2>
+        <p className="mt-1 text-sm text-white/40">{'\u8bb0\u5f55\u672c\u6b21 DOE \u7684\u901a\u7528\u4e0a\u4e0b\u6587\u4fe1\u606f'}</p>
       </div>
 
       <div className="glass-card-elevated rounded-2xl p-5 md:p-6">
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {items.map((item) => (
+          {TRIAL_HEADER_ITEMS.map((item) => (
             <label key={item.key} className="space-y-2">
               <span className="block text-sm font-medium text-white/85">{item.label}</span>
               <input
                 type={item.type || 'text'}
-                min={item.type === 'number' ? '0' : undefined}
-                value={fields[item.key]}
-                onChange={(event) => onChange(item.key, event.target.value)}
-                placeholder={item.placeholder}
-                className="premium-input h-11 w-full rounded-xl px-3 text-sm text-white/90 placeholder:text-white/20 focus:outline-none"
-              />
-            </label>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-  */
-}
-
-function TrialHeaderPanelContent({
-  fields,
-  onChange,
-}: {
-  fields: DoeTrialHeaderFields;
-  onChange: (field: keyof DoeTrialHeaderFields, value: string) => void;
-}) {
-  const items: Array<{
-    key: keyof DoeTrialHeaderFields;
-    label: string;
-    type?: 'text' | 'date' | 'time' | 'number';
-    placeholder?: string;
-  }> = [
-    { key: 'moldNumber', label: '模具编号', placeholder: '输入模具编号' },
-    { key: 'trialDate', label: '试模日期', type: 'date' },
-    { key: 'machineStartTime', label: '上机时间', type: 'time' },
-    { key: 'currentTrialCount', label: '当前试模次数', type: 'number', placeholder: '输入次数' },
-    { key: 'technician', label: '技术员', placeholder: '输入技术员' },
-    { key: 'machine', label: '机台', placeholder: '输入机台编号' },
-  ];
-
-  return (
-    <section className="space-y-4">
-      <div>
-        <div className="section-label mb-2">Header</div>
-        <h2 className="text-xl font-semibold tracking-tight text-white">试模表头信息</h2>
-        <p className="mt-1 text-sm text-white/40">记录本次 DOE 试模的基础上下文信息</p>
-      </div>
-
-      <div className="glass-card-elevated rounded-2xl p-5 md:p-6">
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {items.map((item) => (
-            <label key={item.key} className="space-y-2">
-              <span className="block text-sm font-medium text-white/85">{item.label}</span>
-              <input
-                type={item.type || 'text'}
-                min={item.type === 'number' ? '0' : undefined}
                 value={fields[item.key]}
                 onChange={(event) => onChange(item.key, event.target.value)}
                 placeholder={item.placeholder}
@@ -258,200 +207,146 @@ function TrialHeaderPanelContent({
   );
 }
 
-function TrialHeaderPanelContentV2({
-  fields,
-  onChange,
-}: {
-  fields: DoeTrialHeaderFields;
-  onChange: (field: keyof DoeTrialHeaderFields, value: string) => void;
-}) {
-  const items: Array<{
-    key: keyof DoeTrialHeaderFields;
-    label: string;
-    type?: 'text' | 'date' | 'time' | 'number';
-    placeholder?: string;
-  }> = [
-    { key: 'moldNumber', label: '\u6A21\u5177\u7F16\u53F7', placeholder: '\u8F93\u5165\u6A21\u5177\u7F16\u53F7' },
-    { key: 'trialDate', label: '\u8BD5\u6A21\u65E5\u671F', type: 'date' },
-    { key: 'machineStartTime', label: '\u4E0A\u673A\u65F6\u95F4', type: 'time' },
-    { key: 'currentTrialCount', label: '\u5F53\u524D\u8BD5\u6A21\u6B21\u6570', type: 'number', placeholder: '\u8F93\u5165\u6B21\u6570' },
-    { key: 'technician', label: '\u6280\u672F\u5458', placeholder: '\u8F93\u5165\u6280\u672F\u5458' },
-    { key: 'machine', label: '\u673A\u53F0', placeholder: '\u8F93\u5165\u673A\u53F0\u7F16\u53F7' },
-  ];
-
-  return (
-    <section className="space-y-4">
-      <div>
-        <div className="section-label mb-2">Header</div>
-        <h2 className="text-xl font-semibold tracking-tight text-white">{'\u8BD5\u6A21\u8868\u5934\u4FE1\u606F'}</h2>
-        <p className="mt-1 text-sm text-white/40">{'\u8BB0\u5F55\u672C\u6B21 DOE \u8BD5\u6A21\u7684\u57FA\u7840\u4E0A\u4E0B\u6587\u4FE1\u606F'}</p>
-      </div>
-
-      <div className="glass-card-elevated rounded-2xl p-5 md:p-6">
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {items.map((item) => (
-            <label key={item.key} className="space-y-2">
-              <span className="block text-sm font-medium text-white/85">{item.label}</span>
-              <input
-                type={item.type || 'text'}
-                min={item.type === 'number' ? '0' : undefined}
-                value={fields[item.key]}
-                onChange={(event) => onChange(item.key, event.target.value)}
-                placeholder={item.placeholder}
-                className="premium-input h-11 w-full rounded-xl px-3 text-sm text-white/90 placeholder:text-white/20 focus:outline-none"
-              />
-            </label>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function LevelInputs({
+function LevelChip({
   label,
-  labelCn,
-  icon: Icon,
-  unit,
-  values,
+  value,
   onChange,
-  accentColor = 'teal',
-  disabled = false,
+  disabled,
 }: {
   label: string;
-  labelCn: string;
-  icon: ElementType;
-  unit: string;
-  values: readonly [string, string, string];
-  onChange: (level: number, value: string) => void;
-  accentColor?: 'teal' | 'indigo';
+  value: string;
+  onChange: (value: string) => void;
   disabled?: boolean;
 }) {
-  const iconBg =
-    accentColor === 'teal'
-      ? 'bg-[#00E5FF]/10 border-[#00E5FF]/25'
-      : 'bg-indigo-500/10 border-indigo-500/25';
-  const iconColor = accentColor === 'teal' ? 'text-[#00E5FF]' : 'text-indigo-400';
-
   return (
-    <motion.div
-      className={`space-y-3 transition-all duration-300 ${disabled ? 'factor-disabled' : ''}`}
-      animate={{ opacity: disabled ? 0.3 : 1 }}
-    >
-      <div className="flex items-center gap-2.5">
-        <div className={`rounded-lg border p-2 ${iconBg}`}>
-          <Icon className={`h-4 w-4 ${iconColor}`} />
-        </div>
-        <div>
-          <span className="text-sm font-medium text-white/90">{label}</span>
-          <span className="ml-2 text-xs text-white/40">{labelCn}</span>
-        </div>
-      </div>
-      <div className="grid grid-cols-3 gap-3">
-        {[1, 2, 3].map((level, index) => (
-          <div key={level} className="group relative">
-            <span
-              className={`absolute -top-2 left-3 z-10 rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${
-                level === 1
-                  ? 'bg-emerald-500/20 text-emerald-400'
-                  : level === 2
-                    ? 'bg-amber-500/20 text-amber-400'
-                    : 'bg-rose-500/20 text-rose-400'
-              }`}
-            >
-              L{level}
-            </span>
-            <input
-              type="text"
-              value={values[index]}
-              onChange={(event) => onChange(index, event.target.value)}
-              placeholder="-"
-              disabled={disabled}
-              className="premium-input h-12 w-full rounded-xl px-3 pt-1 text-center font-mono text-sm text-white/90 placeholder:text-white/20 focus:outline-none disabled:cursor-not-allowed"
-            />
-            <span className="absolute bottom-3 right-3 font-mono text-[10px] text-white/30">{unit}</span>
-          </div>
-        ))}
-      </div>
-    </motion.div>
+    <label className={`glass-inner space-y-2 rounded-xl p-3 transition-all ${disabled ? 'opacity-45' : ''}`}>
+      <span className="inline-flex rounded-md border border-[#00E5FF]/20 bg-[#00E5FF]/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-[#00E5FF]/85">
+        {label}
+      </span>
+      <input
+        type="text"
+        value={value}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={'\u8f93\u5165\u6c34\u5e73\u503c'}
+        className="premium-input h-10 w-full rounded-xl px-3 text-sm text-white/90 placeholder:text-white/20 focus:outline-none disabled:cursor-not-allowed"
+      />
+    </label>
   );
 }
 
-function PremiumToggle({
-  enabled,
+function FactorCard({
+  factorKey,
+  factor,
   onToggle,
-  label,
-  labelCn,
+  onFieldChange,
+  onLevelChange,
 }: {
-  enabled: boolean;
-  onToggle: () => void;
-  label: string;
-  labelCn: string;
+  factorKey: TaguchiFactorKey;
+  factor: TaguchiFactorDefinition;
+  onToggle: (factor: TaguchiFactorKey) => void;
+  onFieldChange: (factor: TaguchiFactorKey, field: 'label' | 'unit', value: string) => void;
+  onLevelChange: (factor: TaguchiFactorKey, level: number, value: string) => void;
 }) {
+  const index = TAGUCHI_FACTOR_KEYS.indexOf(factorKey) + 1;
+
   return (
-    <button
-      type="button"
-      onClick={onToggle}
-      className={`group flex w-full items-center gap-4 rounded-xl p-4 transition-all duration-300 ${
-        enabled ? 'glass-card glow-teal' : 'glass-inner hover:bg-white/[0.03]'
+    <div
+      className={`glass-card-elevated space-y-4 rounded-2xl p-5 transition-all ${
+        factor.enabled ? 'shadow-[0_0_30px_rgba(0,229,255,0.08)]' : 'opacity-75'
       }`}
     >
-      <div
-        className={`relative h-8 w-16 rounded-full transition-all duration-300 ${
-          enabled
-            ? 'toggle-glow bg-gradient-to-r from-[#00E5FF] to-[#00B8D4]'
-            : 'border border-white/[0.10] bg-white/[0.06]'
-        }`}
-      >
-        {!enabled && <div className="absolute inset-0 rounded-full shadow-[inset_0_2px_4px_rgba(0,0,0,0.4)]" />}
-        <motion.div
-          className={`absolute top-1 h-6 w-6 rounded-full shadow-lg ${enabled ? 'bg-white' : 'bg-white/80'}`}
-          style={{
-            boxShadow: enabled
-              ? '0 2px 8px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.2)'
-              : '0 2px 4px rgba(0,0,0,0.4)',
-          }}
-          animate={{ x: enabled ? 32 : 4 }}
-          transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-        />
+      <div className="flex items-start gap-3">
+        <div className="rounded-xl border border-[#00E5FF]/20 bg-[#00E5FF]/10 p-2.5">
+          <Gauge className="h-5 w-5 text-[#00E5FF]" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <h3 className="text-base font-semibold text-white">{factor.label || `\u56e0\u5b50 ${index}`}</h3>
+            <span className="rounded-md border border-white/10 bg-white/[0.04] px-2 py-0.5 font-mono text-[10px] text-white/45">
+              {factor.shortLabel}
+            </span>
+          </div>
+          <p className="mt-1 text-xs text-white/40">{'\u4e09\u6c34\u5e73\u56e0\u5b50\u914d\u7f6e'}</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => onToggle(factorKey)}
+          className={`relative inline-flex h-9 w-[78px] items-center rounded-full border transition-all ${
+            factor.enabled
+              ? 'border-[#00E5FF]/30 bg-[#00E5FF]/15 shadow-[0_0_25px_rgba(0,229,255,0.16)]'
+              : 'border-white/10 bg-white/[0.04]'
+          }`}
+          aria-pressed={factor.enabled}
+        >
+          <motion.span
+            layout
+            transition={{ type: 'spring', stiffness: 400, damping: 28 }}
+            className={`absolute top-1 h-7 w-7 rounded-full ${
+              factor.enabled ? 'left-[42px] bg-[#7EE7FF]' : 'left-1 bg-white/80'
+            }`}
+          />
+          <span className={`pl-3 text-[10px] font-semibold uppercase tracking-wider ${factor.enabled ? 'text-[#7EE7FF]' : 'text-white/40'}`}>
+            {factor.enabled ? 'ON' : 'OFF'}
+          </span>
+        </button>
       </div>
 
-      <div className="flex min-w-0 flex-col items-start text-left">
-        <span className={`text-sm font-medium transition-colors duration-300 ${enabled ? 'text-[#00E5FF]' : 'text-white/60'}`}>
-          {label}
-        </span>
-        <span className={`text-xs transition-colors duration-300 ${enabled ? 'text-white/50' : 'text-white/30'}`}>
-          {labelCn}
-        </span>
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_140px]">
+        <label className="space-y-2">
+          <span className="block text-xs font-medium tracking-wider text-white/45">{'\u56e0\u5b50\u540d\u79f0'}</span>
+          <input
+            type="text"
+            value={factor.label}
+            onChange={(event) => onFieldChange(factorKey, 'label', event.target.value)}
+            placeholder={`\u56e0\u5b50 ${index}`}
+            className="premium-input h-10 w-full rounded-xl px-3 text-sm text-white/90 placeholder:text-white/20 focus:outline-none"
+          />
+        </label>
+        <label className="space-y-2">
+          <span className="block text-xs font-medium tracking-wider text-white/45">{'\u5355\u4f4d'}</span>
+          <input
+            type="text"
+            value={factor.unit}
+            onChange={(event) => onFieldChange(factorKey, 'unit', event.target.value)}
+            placeholder={'\u53ef\u9009'}
+            className="premium-input h-10 w-full rounded-xl px-3 text-sm text-white/90 placeholder:text-white/20 focus:outline-none"
+          />
+        </label>
       </div>
 
-      <div className="ml-auto flex items-center gap-2">
-        <span className={`text-[10px] font-medium uppercase tracking-wider transition-colors ${enabled ? 'text-[#00E5FF]/80' : 'text-white/30'}`}>
-          {enabled ? 'Active' : 'Inactive'}
-        </span>
-        <div className={`relative h-2.5 w-2.5 rounded-full transition-all duration-300 ${enabled ? 'status-dot bg-[#00E5FF]' : 'bg-white/20'}`} />
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+        {factor.levels.map((levelValue, levelIndex) => (
+          <LevelChip
+            key={`${factorKey}-level-${levelIndex + 1}`}
+            label={`L${levelIndex + 1}`}
+            value={levelValue}
+            disabled={!factor.enabled}
+            onChange={(value) => onLevelChange(factorKey, levelIndex, value)}
+          />
+        ))}
       </div>
-    </button>
+    </div>
   );
 }
 
 function FactorBuilder({
-  factors,
+  factorDefinitions,
   activeFactorCount,
   arrayType,
   canReset,
   onFactorToggle,
-  factorValues,
-  onValueChange,
+  onFactorFieldChange,
+  onLevelChange,
   onReset,
 }: {
-  factors: TaguchiFactorToggles;
+  factorDefinitions: TaguchiFactorDefinitions;
   activeFactorCount: number;
-  arrayType: TaguchiArrayName;
+  arrayType: TaguchiArrayName | null;
   canReset: boolean;
-  onFactorToggle: (factor: keyof TaguchiFactorToggles) => void;
-  factorValues: TaguchiFactorLevels;
-  onValueChange: (factor: TaguchiFactorKey, level: number, value: string) => void;
+  onFactorToggle: (factor: TaguchiFactorKey) => void;
+  onFactorFieldChange: (factor: TaguchiFactorKey, field: 'label' | 'unit', value: string) => void;
+  onLevelChange: (factor: TaguchiFactorKey, level: number, value: string) => void;
   onReset: () => void;
 }) {
   return (
@@ -459,8 +354,8 @@ function FactorBuilder({
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
           <div className="section-label mb-2">Section A</div>
-          <h2 className="text-xl font-semibold tracking-tight text-white">因子配置构建器</h2>
-          <p className="mt-1 text-sm text-white/40">Factor Configuration Builder - 按需配置乐高模式</p>
+          <h2 className="text-xl font-semibold tracking-tight text-white">{'\u56e0\u5b50\u914d\u7f6e'}</h2>
+          <p className="mt-1 text-sm text-white/40">{'\u914d\u7f6e\u6700\u591a 9 \u4e2a\u4e09\u6c34\u5e73 DOE \u56e0\u5b50'}</p>
         </div>
         <div className="flex w-full flex-col gap-3 md:w-auto md:flex-row md:items-center">
           <button
@@ -474,235 +369,33 @@ function FactorBuilder({
             }`}
           >
             <RotateCcw className="h-4 w-4" />
-            <span>清除 DOE 数据</span>
+            <span>{'\u91cd\u7f6e DOE \u6570\u636e'}</span>
           </button>
           <div className="glass-card-elevated flex w-full items-center justify-around gap-4 rounded-2xl px-5 py-3 md:w-auto md:justify-start">
-          <div className="flex flex-col items-center">
-            <span className="text-[10px] uppercase tracking-wider text-white/40">激活因子</span>
-            <span className="font-mono text-2xl font-bold text-[#00E5FF]">{activeFactorCount}</span>
-          </div>
-          <div className="h-10 w-px bg-white/10" />
-          <div className="flex flex-col items-center">
-            <span className="text-[10px] uppercase tracking-wider text-white/40">正交阵列</span>
-            <span className="font-mono text-2xl font-bold text-[#00E5FF]">{arrayType}</span>
-          </div>
+            <div className="flex flex-col items-center">
+              <span className="text-[10px] tracking-wider text-white/40">{'\u542f\u7528\u56e0\u5b50'}</span>
+              <span className="font-mono text-2xl font-bold text-[#00E5FF]">{activeFactorCount}</span>
+            </div>
+            <div className="h-10 w-px bg-white/10" />
+            <div className="flex flex-col items-center">
+              <span className="text-[10px] tracking-wider text-white/40">{'\u6b63\u4ea4\u9635\u5217'}</span>
+              <span className="font-mono text-2xl font-bold text-[#00E5FF]">{arrayType ?? '--'}</span>
+            </div>
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <div className="glass-card-elevated radial-glow space-y-6 overflow-hidden rounded-2xl p-5 md:p-6">
-          <div className="flex items-center gap-3 border-b border-white/[0.08] pb-4">
-            <div className="rounded-xl border border-[#00E5FF]/25 bg-[#00E5FF]/10 p-2.5">
-              <Thermometer className="h-5 w-5 text-[#00E5FF]" />
-            </div>
-            <div>
-              <h3 className="text-base font-semibold text-white">模温系统</h3>
-              <p className="text-xs text-white/40">Mold Temperature System</p>
-            </div>
-            <div className="ml-auto flex items-center gap-2">
-              <Layers className="h-4 w-4 text-white/30" />
-              <span className="font-mono text-xs text-white/40">{factors.sliderTemp ? 3 : 2} vars</span>
-            </div>
-          </div>
-
-          <LevelInputs
-            label="前模温度"
-            labelCn="Front Mold Temp"
-            icon={Thermometer}
-            unit="degC"
-            values={factorValues.frontTemp}
-            onChange={(level, value) => onValueChange('frontTemp', level, value)}
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
+        {TAGUCHI_FACTOR_KEYS.map((factorKey) => (
+          <FactorCard
+            key={factorKey}
+            factorKey={factorKey}
+            factor={factorDefinitions[factorKey]}
+            onToggle={onFactorToggle}
+            onFieldChange={onFactorFieldChange}
+            onLevelChange={onLevelChange}
           />
-          <LevelInputs
-            label="后模温度"
-            labelCn="Back Mold Temp"
-            icon={Thermometer}
-            unit="degC"
-            values={factorValues.backTemp}
-            onChange={(level, value) => onValueChange('backTemp', level, value)}
-          />
-
-          <PremiumToggle
-            enabled={factors.sliderTemp}
-            onToggle={() => onFactorToggle('sliderTemp')}
-            label="启用滑块模温机"
-            labelCn="Enable Slider Temperature"
-          />
-
-          <AnimatePresence>
-            {factors.sliderTemp && (
-              <motion.div
-                initial={{ height: 0, opacity: 0, marginTop: 0 }}
-                animate={{ height: 'auto', opacity: 1, marginTop: 16 }}
-                exit={{ height: 0, opacity: 0, marginTop: 0 }}
-                transition={{ duration: 0.35, ease: [0.4, 0, 0.2, 1] }}
-                className="overflow-hidden"
-              >
-                <LevelInputs
-                  label="滑块模温"
-                  labelCn="Slider Mold Temp"
-                  icon={Thermometer}
-                  unit="degC"
-                  values={factorValues.sliderTemp}
-                  onChange={(level, value) => onValueChange('sliderTemp', level, value)}
-                />
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
-
-        <div className="glass-card-elevated radial-glow-indigo space-y-6 overflow-hidden rounded-2xl p-5 md:p-6">
-          <div className="flex items-center gap-3 border-b border-white/[0.08] pb-4">
-            <div className="rounded-xl border border-indigo-500/25 bg-indigo-500/10 p-2.5">
-              <Gauge className="h-5 w-5 text-indigo-400" />
-            </div>
-            <div>
-              <h3 className="text-base font-semibold text-white">保压系统</h3>
-              <p className="text-xs text-white/40">Holding Pressure System</p>
-            </div>
-            <div className="ml-auto flex items-center gap-2">
-              <Layers className="h-4 w-4 text-white/30" />
-              <span className="font-mono text-xs text-white/40">
-                {(factors.stage1Hold ? 2 : 0) + (factors.stage2Hold ? 2 : 0) + (factors.stage3Hold ? 2 : 0)} vars
-              </span>
-            </div>
-          </div>
-
-          <PremiumToggle
-            enabled={factors.stage1Hold}
-            onToggle={() => onFactorToggle('stage1Hold')}
-            label="启用第一段保压"
-            labelCn="Enable Stage 1 Hold"
-          />
-
-          <div className="space-y-4">
-            <div className="flex items-center gap-2">
-              <div className="h-6 w-1.5 rounded-full bg-indigo-500/50" />
-              <span className="text-xs font-semibold uppercase tracking-wider text-indigo-400/90">
-                第一段保压 / Stage 1
-              </span>
-            </div>
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <LevelInputs
-                label="压力"
-                labelCn="Pressure"
-                icon={Gauge}
-                unit="MPa"
-                values={factorValues.p1}
-                onChange={(level, value) => onValueChange('p1', level, value)}
-                accentColor="indigo"
-                disabled={!factors.stage1Hold}
-              />
-              <LevelInputs
-                label="时间"
-                labelCn="Time"
-                icon={Timer}
-                unit="s"
-                values={factorValues.t1}
-                onChange={(level, value) => onValueChange('t1', level, value)}
-                accentColor="indigo"
-                disabled={!factors.stage1Hold}
-              />
-            </div>
-          </div>
-
-          <PremiumToggle
-            enabled={factors.stage2Hold}
-            onToggle={() => onFactorToggle('stage2Hold')}
-            label="启用第二段保压"
-            labelCn="Enable Stage 2 Hold"
-          />
-
-          <AnimatePresence>
-            {factors.stage2Hold && (
-              <motion.div
-                initial={{ height: 0, opacity: 0, marginTop: 0 }}
-                animate={{ height: 'auto', opacity: 1, marginTop: 16 }}
-                exit={{ height: 0, opacity: 0, marginTop: 0 }}
-                transition={{ duration: 0.35, ease: [0.4, 0, 0.2, 1] }}
-                className="overflow-hidden"
-              >
-                <div className="space-y-4">
-                  <div className="flex items-center gap-2">
-                    <div className="h-6 w-1.5 rounded-full bg-indigo-500/40" />
-                    <span className="text-xs font-semibold uppercase tracking-wider text-indigo-400/70">
-                      第二段保压 / Stage 2
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                    <LevelInputs
-                      label="压力"
-                      labelCn="Pressure"
-                      icon={Gauge}
-                      unit="MPa"
-                      values={factorValues.p2}
-                      onChange={(level, value) => onValueChange('p2', level, value)}
-                      accentColor="indigo"
-                    />
-                    <LevelInputs
-                      label="时间"
-                      labelCn="Time"
-                      icon={Timer}
-                      unit="s"
-                      values={factorValues.t2}
-                      onChange={(level, value) => onValueChange('t2', level, value)}
-                      accentColor="indigo"
-                    />
-                  </div>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          <PremiumToggle
-            enabled={factors.stage3Hold}
-            onToggle={() => onFactorToggle('stage3Hold')}
-            label="启用第三段保压"
-            labelCn="Enable Stage 3 Hold"
-          />
-
-          <AnimatePresence>
-            {factors.stage3Hold && (
-              <motion.div
-                initial={{ height: 0, opacity: 0, marginTop: 0 }}
-                animate={{ height: 'auto', opacity: 1, marginTop: 16 }}
-                exit={{ height: 0, opacity: 0, marginTop: 0 }}
-                transition={{ duration: 0.35, ease: [0.4, 0, 0.2, 1] }}
-                className="overflow-hidden"
-              >
-                <div className="space-y-4">
-                  <div className="flex items-center gap-2">
-                    <div className="h-6 w-1.5 rounded-full bg-indigo-500/30" />
-                    <span className="text-xs font-semibold uppercase tracking-wider text-indigo-400/50">
-                      第三段保压 / Stage 3
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                    <LevelInputs
-                      label="压力"
-                      labelCn="Pressure"
-                      icon={Gauge}
-                      unit="MPa"
-                      values={factorValues.p3}
-                      onChange={(level, value) => onValueChange('p3', level, value)}
-                      accentColor="indigo"
-                    />
-                    <LevelInputs
-                      label="时间"
-                      labelCn="Time"
-                      icon={Timer}
-                      unit="s"
-                      values={factorValues.t3}
-                      onChange={(level, value) => onValueChange('t3', level, value)}
-                      accentColor="indigo"
-                    />
-                  </div>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
+        ))}
       </div>
     </section>
   );
@@ -717,7 +410,7 @@ function TaguchiMatrix({
   onDeviationChange,
   onScanUpload,
 }: {
-  arrayType: TaguchiArrayName;
+  arrayType: TaguchiArrayName | null;
   activeFactors: TaguchiActiveFactor[];
   generated: boolean;
   onGenerate: () => void;
@@ -727,9 +420,12 @@ function TaguchiMatrix({
 }) {
   const [expanded, setExpanded] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
-  const rowCount = Number.parseInt(arrayType.slice(1), 10);
+  const rowCount = arrayType ? Number.parseInt(arrayType.slice(1), 10) : 0;
+  const canGenerate = activeFactors.length > 0;
 
   const handleGenerate = async () => {
+    if (!canGenerate) return;
+
     setIsGenerating(true);
     await new Promise((resolve) => setTimeout(resolve, 500));
     onGenerate();
@@ -742,14 +438,14 @@ function TaguchiMatrix({
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
           <div className="section-label mb-2">Section B</div>
-          <h2 className="text-xl font-semibold tracking-tight text-white">田口正交阵列矩阵</h2>
-          <p className="mt-1 text-sm text-white/40">Taguchi Orthogonal Array Matrix & 3D Scan Upload</p>
+          <h2 className="text-xl font-semibold tracking-tight text-white">{'\u6b63\u4ea4\u8bd5\u9a8c\u77e9\u9635'}</h2>
+          <p className="mt-1 text-sm text-white/40">{'\u751f\u6210\u8bd5\u9a8c\u8fd0\u884c\u8868\u5e76\u8bb0\u5f55\u54cd\u5e94\u503c'}</p>
         </div>
         <div className="glass-card flex w-fit items-center gap-3 rounded-xl px-4 py-2.5">
           <Grid3X3 className="h-4 w-4 text-[#00E5FF]/70" />
-          <span className="font-mono text-lg font-bold text-[#00E5FF]">{arrayType}</span>
+          <span className="font-mono text-lg font-bold text-[#00E5FF]">{arrayType ?? '--'}</span>
           <div className="h-5 w-px bg-white/10" />
-          <span className="text-xs text-white/50">{rowCount} 组实验</span>
+          <span className="text-xs text-white/50">{rowCount || 0} {'\u7ec4'}</span>
         </div>
       </div>
 
@@ -757,12 +453,16 @@ function TaguchiMatrix({
         <motion.button
           type="button"
           onClick={handleGenerate}
-          disabled={isGenerating}
+          disabled={isGenerating || !canGenerate}
           className={`flex w-full items-center justify-center gap-4 rounded-2xl py-5 text-base font-semibold transition-all ${
-            isGenerating ? 'glass-card-elevated' : 'btn-premium-solid btn-pulse'
+            isGenerating
+              ? 'glass-card-elevated'
+              : canGenerate
+                ? 'btn-premium-solid btn-pulse'
+                : 'glass-card-elevated cursor-not-allowed text-white/35'
           }`}
-          whileHover={!isGenerating ? { scale: 1.01, y: -2 } : {}}
-          whileTap={!isGenerating ? { scale: 0.99 } : {}}
+          whileHover={!isGenerating && canGenerate ? { scale: 1.01, y: -2 } : {}}
+          whileTap={!isGenerating && canGenerate ? { scale: 0.99 } : {}}
         >
           {isGenerating ? (
             <>
@@ -771,13 +471,12 @@ function TaguchiMatrix({
                 animate={{ rotate: 360 }}
                 transition={{ duration: 0.8, repeat: Infinity, ease: 'linear' }}
               />
-              <span className="text-white/70">正在生成矩阵...</span>
+              <span className="text-white/70">{'\u6b63\u5728\u751f\u6210\u77e9\u9635...'}</span>
             </>
           ) : (
             <>
               <Sparkles className="h-5 w-5" />
-              <span>生成正交矩阵</span>
-              <span className="font-normal text-black/50">Generate Matrix</span>
+              <span>{canGenerate ? '\u751f\u6210\u6b63\u4ea4\u77e9\u9635' : '\u81f3\u5c11\u542f\u7528 1 \u4e2a\u56e0\u5b50\u540e\u518d\u751f\u6210\u77e9\u9635'}</span>
             </>
           )}
         </motion.button>
@@ -803,12 +502,12 @@ function TaguchiMatrix({
                     <Grid3X3 className="h-4 w-4 text-[#00E5FF]" />
                   </div>
                   <div className="text-left">
-                    <span className="text-sm font-medium text-white">实验运行数据</span>
-                    <span className="ml-3 hidden text-xs text-white/40 md:inline">Experimental Runs</span>
+                    <span className="text-sm font-medium text-white">{'\u5b9e\u9a8c\u8fd0\u884c\u6570\u636e'}</span>
+                    <span className="ml-3 hidden text-xs text-white/40 md:inline">{'\u8fd0\u884c\u660e\u7ec6'}</span>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
-                  <span className="font-mono text-xs text-[#00E5FF]/70">{rowCount} runs</span>
+                  <span className="font-mono text-xs text-[#00E5FF]/70">{rowCount} {'\u7ec4'}</span>
                   <motion.div animate={{ rotate: expanded ? 0 : 180 }} transition={{ duration: 0.2 }}>
                     <ChevronUp className="h-4 w-4 text-white/40" />
                   </motion.div>
@@ -828,25 +527,25 @@ function TaguchiMatrix({
                       <table className="w-full min-w-[760px]">
                         <thead className="sticky-header">
                           <tr className="border-b border-white/[0.08]">
-                            <th className="w-16 px-4 py-4 text-left text-[10px] font-bold uppercase tracking-wider text-white/50">
-                              Run
+                            <th className="w-16 px-4 py-4 text-left text-[10px] font-bold tracking-wider text-white/50">
+                              RUN
                             </th>
                             {activeFactors.map((factor) => (
                               <th
                                 key={factor.key}
-                                className="px-3 py-4 text-center text-[10px] font-bold uppercase tracking-wider text-white/50"
+                                className="px-3 py-4 text-center text-[10px] font-bold tracking-wider text-white/50"
                               >
                                 <span className="block">{factor.shortLabel}</span>
-                                <span className="mt-1 block font-normal normal-case tracking-normal text-white/25">
-                                  {factor.unit}
+                                <span className="mt-1 block font-normal tracking-normal text-white/25">
+                                  {factor.unit || '\u6570\u503c'}
                                 </span>
                               </th>
                             ))}
-                            <th className="w-32 px-4 py-4 text-center text-[10px] font-bold uppercase tracking-wider text-[#00E5FF]/80">
-                              最大偏差
+                            <th className="w-32 px-4 py-4 text-center text-[10px] font-bold tracking-wider text-[#00E5FF]/80">
+                              {'\u54cd\u5e94\u503c'}
                             </th>
-                            <th className="w-44 px-4 py-4 text-center text-[10px] font-bold uppercase tracking-wider text-[#00E5FF]/80">
-                              3D扫描热力图
+                            <th className="w-44 px-4 py-4 text-center text-[10px] font-bold tracking-wider text-[#00E5FF]/80">
+                              {'\u5b9e\u9a8c\u8bb0\u5f55'}
                             </th>
                           </tr>
                         </thead>
@@ -868,20 +567,21 @@ function TaguchiMatrix({
                               </td>
                               {activeFactors.map((factor) => {
                                 const level = row.levelCodes[factor.key];
+
                                 return (
-                                <td key={`${row.run}-${factor.key}`} className="px-3 py-4 text-center">
-                                  <div className="flex flex-col items-center gap-1">
-                                    <span className="font-mono text-sm font-semibold text-white/85">
-                                      {formatEngineeringValue(row[factor.key])}
-                                    </span>
-                                  <span
-                                    className={`level-${level} inline-flex h-8 w-8 items-center justify-center rounded-lg font-mono text-xs font-semibold`}
-                                  >
-                                    {level}
-                                  </span>
-                                  </div>
-                                </td>
-                              );
+                                  <td key={`${row.run}-${factor.key}`} className="px-3 py-4 text-center">
+                                    <div className="flex flex-col items-center gap-1">
+                                      <span className="font-mono text-sm font-semibold text-white/85">
+                                        {formatEngineeringValue(row[factor.key])}
+                                      </span>
+                                      <span
+                                        className={`level-${level} inline-flex h-8 w-8 items-center justify-center rounded-lg font-mono text-xs font-semibold`}
+                                      >
+                                        {level}
+                                      </span>
+                                    </div>
+                                  </td>
+                                );
                               })}
                               <td className="px-4 py-4">
                                 <input
@@ -905,12 +605,12 @@ function TaguchiMatrix({
                                   {row.scanImage ? (
                                     <>
                                       <Check className="h-3.5 w-3.5" />
-                                      <span>已上传</span>
+                                      <span>{'\u5df2\u6807\u8bb0'}</span>
                                     </>
                                   ) : (
                                     <>
                                       <Upload className="h-3.5 w-3.5 text-white/40" />
-                                      <span className="text-white/40">上传3D扫描</span>
+                                      <span className="text-white/40">{'\u4e0a\u4f20\u9644\u4ef6'}</span>
                                     </>
                                   )}
                                 </button>
@@ -928,13 +628,13 @@ function TaguchiMatrix({
                 <div className="flex flex-col gap-4 text-xs md:flex-row md:items-center md:justify-between">
                   <div className="flex flex-wrap items-center gap-4 md:gap-6">
                     <div className="flex items-center gap-2">
-                      <span className="text-white/40">已完成:</span>
+                      <span className="text-white/40">{'\u5df2\u5f55\u5165\u54cd\u5e94:'}</span>
                       <span className="font-mono text-[#00E5FF]">
                         {matrixData.filter((row) => row.maxDeviation !== null).length}/{rowCount}
                       </span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="text-white/40">扫描上传:</span>
+                      <span className="text-white/40">{'\u5df2\u6807\u8bb0\u8bb0\u5f55:'}</span>
                       <span className="font-mono text-emerald-400">
                         {matrixData.filter((row) => row.scanImage !== null).length}/{rowCount}
                       </span>
@@ -942,11 +642,11 @@ function TaguchiMatrix({
                   </div>
                   <div className="flex items-center gap-4">
                     <span className="level-1 flex h-3 w-3 items-center justify-center rounded text-[8px]">1</span>
-                    <span className="text-white/30">Low</span>
+                    <span className="text-white/30">{'\u4f4e'}</span>
                     <span className="level-2 flex h-3 w-3 items-center justify-center rounded text-[8px]">2</span>
-                    <span className="text-white/30">Mid</span>
+                    <span className="text-white/30">{'\u4e2d'}</span>
                     <span className="level-3 flex h-3 w-3 items-center justify-center rounded text-[8px]">3</span>
-                    <span className="text-white/30">High</span>
+                    <span className="text-white/30">{'\u9ad8'}</span>
                   </div>
                 </div>
               </div>
@@ -956,25 +656,6 @@ function TaguchiMatrix({
       </AnimatePresence>
     </section>
   );
-}
-
-function formatEngineeringValue(value: unknown): string {
-  if (value === undefined || value === null || value === '') return '-';
-  return String(value);
-}
-
-function formatInvalidReason(reason: 'empty' | 'non_numeric' | 'negative'): string {
-  const labels = {
-    empty: '空值',
-    non_numeric: '非数字',
-    negative: '负数',
-  };
-  return labels[reason];
-}
-
-function formatOptimalValue(value: unknown, unit: string): string {
-  if (value === undefined || value === null || value === '') return '-';
-  return `${String(value)} ${unit}`;
 }
 
 function CustomTooltip({
@@ -987,9 +668,10 @@ function CustomTooltip({
   label?: string;
 }) {
   if (!active || !payload?.length) return null;
+
   return (
     <div className="glass-card-elevated rounded-xl border border-white/15 px-4 py-3">
-      <p className="mb-2 text-[10px] uppercase tracking-wider text-white/50">{label}</p>
+      <p className="mb-2 text-[10px] tracking-wider text-white/50">{label}</p>
       {payload.map((entry, index) => (
         <p
           key={`${entry.name || 'metric'}-${index}`}
@@ -1024,7 +706,7 @@ function AnalyticsPanel({
 
   const handleAnalyze = async () => {
     if (matrixData.length === 0) {
-      toast.error('请先生成正交矩阵，再录入最大偏差。');
+      toast.error('\u8bf7\u5148\u751f\u6210\u6b63\u4ea4\u77e9\u9635\u5e76\u5f55\u5165\u54cd\u5e94\u503c\u3002');
       return;
     }
 
@@ -1034,9 +716,9 @@ function AnalyticsPanel({
       const previewRuns = invalidRows
         .slice(0, 8)
         .map((row) => `Run ${row.run}(${formatInvalidReason(row.reason)})`)
-        .join('、');
-      const suffix = invalidRows.length > 8 ? ` 等 ${invalidRows.length} 行` : '';
-      toast.error(`最大偏差录入无效：${previewRuns}${suffix}`);
+        .join('\u3001');
+      const suffix = invalidRows.length > 8 ? ` \u7b49 ${invalidRows.length} \u884c` : '';
+      toast.error(`\u54cd\u5e94\u503c\u5f55\u5165\u65e0\u6548: ${previewRuns}${suffix}`);
       return;
     }
 
@@ -1054,8 +736,8 @@ function AnalyticsPanel({
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
           <div className="section-label mb-2">Section C</div>
-          <h2 className="text-xl font-semibold tracking-tight text-white">分析与优化看板</h2>
-          <p className="mt-1 text-sm text-white/40">Smaller-the-better S/N Ratio Analytics</p>
+          <h2 className="text-xl font-semibold tracking-tight text-white">{'\u5206\u6790\u4e0e\u4f18\u5316'}</h2>
+          <p className="mt-1 text-sm text-white/40">{'\u57fa\u4e8e Smaller-the-better \u7684 S/N \u6bd4\u5206\u6790'}</p>
         </div>
         <motion.button
           type="button"
@@ -1078,13 +760,12 @@ function AnalyticsPanel({
                 animate={{ rotate: 360 }}
                 transition={{ duration: 0.8, repeat: Infinity, ease: 'linear' }}
               />
-              <span className="text-white/70">分析中...</span>
+              <span className="text-white/70">{'\u5206\u6790\u4e2d...'}</span>
             </>
           ) : (
             <>
               <Play className="h-4 w-4" />
-              <span>{hasAnalysis ? '重新运行信噪比分析' : '运行田口信噪比分析'}</span>
-              <span className="text-xs font-normal text-black/50">Execute S/N Analytics</span>
+              <span>{hasAnalysis ? '\u91cd\u65b0\u8fd0\u884c\u5206\u6790' : '\u8fd0\u884c DOE \u5206\u6790'}</span>
             </>
           )}
         </motion.button>
@@ -1097,8 +778,8 @@ function AnalyticsPanel({
               <TrendingUp className="h-5 w-5 text-[#00E5FF]" />
             </div>
             <div>
-              <h3 className="text-base font-semibold text-white">主效应分析图</h3>
-              <p className="text-xs text-white/40">Main Effects Plot</p>
+              <h3 className="text-base font-semibold text-white">{'\u4e3b\u6548\u5e94\u56fe'}</h3>
+              <p className="text-xs text-white/40">{'\u4e0d\u540c\u6c34\u5e73\u5bf9 S/N \u7684\u53d8\u5316\u8d8b\u52bf'}</p>
             </div>
           </div>
 
@@ -1141,8 +822,7 @@ function AnalyticsPanel({
                   <div className="glass-inner mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-2xl">
                     <TrendingUp className="h-10 w-10 text-white/15" />
                   </div>
-                  <p className="text-sm text-white/30">运行分析以查看图表</p>
-                  <p className="mt-1 text-xs text-white/20">Run analysis to view chart</p>
+                  <p className="text-sm text-white/30">{'\u8fd0\u884c\u5206\u6790\u540e\u67e5\u770b\u4e3b\u6548\u5e94\u53d8\u5316'}</p>
                 </div>
               </div>
             )}
@@ -1155,8 +835,8 @@ function AnalyticsPanel({
               <Zap className="h-5 w-5 text-indigo-400" />
             </div>
             <div>
-              <h3 className="text-base font-semibold text-white">关键因子 Delta 排序</h3>
-              <p className="text-xs text-white/40">Factor influence ranking</p>
+              <h3 className="text-base font-semibold text-white">{'\u56e0\u5b50\u5f71\u54cd\u6392\u5e8f'}</h3>
+              <p className="text-xs text-white/40">{'\u6309 Delta \u503c\u5bf9\u56e0\u5b50\u5f71\u54cd\u529b\u6392\u5e8f'}</p>
             </div>
           </div>
 
@@ -1188,7 +868,7 @@ function AnalyticsPanel({
                   <div className="glass-inner mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-2xl">
                     <Zap className="h-10 w-10 text-white/15" />
                   </div>
-                  <p className="text-sm text-white/30">分析后显示关键因子排序</p>
+                  <p className="text-sm text-white/30">{'\u5206\u6790\u540e\u663e\u793a\u56e0\u5b50\u5f71\u54cd\u5f3a\u5f31'}</p>
                   <p className="mt-1 text-xs text-white/20">Delta = max(S/N mean) - min(S/N mean)</p>
                 </div>
               </div>
@@ -1211,12 +891,12 @@ function AnalyticsPanel({
                 <Zap className="h-5 w-5 text-[#00E5FF]" />
               </div>
               <div>
-                <h3 className="text-base font-semibold text-white">最优参数推荐</h3>
-                <p className="text-xs text-white/40">Optimal Parameter Recommendation</p>
+                <h3 className="text-base font-semibold text-white">{'\u63a8\u8350\u53c2\u6570\u7ec4\u5408'}</h3>
+                <p className="text-xs text-white/40">{'\u6839\u636e S/N \u5206\u6790\u7ed9\u51fa\u7406\u8bba\u6700\u4f18\u89e3'}</p>
               </div>
               <div className="flex items-center gap-2 md:ml-auto">
                 <div className="status-dot h-2 w-2 rounded-full bg-emerald-500" />
-                <span className="text-xs font-medium text-emerald-400">Analysis Complete</span>
+                <span className="text-xs font-medium text-emerald-400">{'\u5206\u6790\u5b8c\u6210'}</span>
               </div>
             </div>
 
@@ -1229,7 +909,7 @@ function AnalyticsPanel({
 
               <div className="mb-4 grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div className="space-y-2 md:col-span-2">
-                  <p className="mb-2 text-xs uppercase tracking-wider text-white/50">建议最优工艺参数组合</p>
+                  <p className="mb-2 text-xs tracking-wider text-white/50">{'\u5efa\u8bae\u53c2\u6570\u7ec4\u5408'}</p>
                   <div className="grid grid-cols-1 gap-x-6 gap-y-2 md:grid-cols-2">
                     {analysisResult.optimalSet.map((item, index) => (
                       <p key={item.factorKey} className="text-white/60">
@@ -1250,20 +930,18 @@ function AnalyticsPanel({
 
               <div className="space-y-1 border-t border-white/[0.06] pt-4 text-white/50">
                 <p>
-                  <span className="text-white/30">关键因子:</span>{' '}
-                  <span className="font-bold text-emerald-400">
-                    {analysisResult.deltaChartData[0]?.factor || '-'}
-                  </span>{' '}
+                  <span className="text-white/30">{'\u5173\u952e\u56e0\u5b50:'}</span>{' '}
+                  <span className="font-bold text-emerald-400">{analysisResult.deltaChartData[0]?.factor || '-'}</span>{' '}
                   <span className="text-white/30">
                     Delta={analysisResult.deltaChartData[0]?.delta.toFixed(3) || '-'} dB
                   </span>
                 </p>
                 <p>
-                  <span className="text-white/30">分析样本:</span>{' '}
-                  <span className="font-bold text-[#00E5FF]">{analysisResult.rowSnRatios.length} runs</span>
+                  <span className="text-white/30">{'\u5206\u6790\u6837\u672c:'}</span>{' '}
+                  <span className="font-bold text-[#00E5FF]">{analysisResult.rowSnRatios.length} {'\u7ec4'}</span>
                 </p>
                 <p>
-                  <span className="text-white/30">目标函数:</span>{' '}
+                  <span className="text-white/30">{'\u76ee\u6807\u51fd\u6570:'}</span>{' '}
                   <span className="font-bold text-[#00E5FF]">Smaller-the-better S/N</span>
                 </p>
               </div>
@@ -1276,91 +954,130 @@ function AnalyticsPanel({
 }
 
 export default function DoeWorkspace() {
-  const [factors, setFactors] = useState<TaguchiFactorToggles>(() => cloneInitialFactorToggles());
-  const [factorValues, setFactorValues] = useState<TaguchiFactorLevels>(() => cloneInitialFactorValues());
+  const [factorDefinitions, setFactorDefinitions] = useState<TaguchiFactorDefinitions>(() =>
+    createInitialFactorDefinitions(),
+  );
   const [trialHeaderFields, setTrialHeaderFields] = useState<DoeTrialHeaderFields>(() => cloneInitialTrialHeaderFields());
   const [matrixData, setMatrixData] = useState<HydratedExperimentRow[]>([]);
   const [matrixGenerated, setMatrixGenerated] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
 
-  const activeFactors = useMemo(
-    () => buildActiveFactors(factors, factorValues),
-    [factorValues, factors],
-  );
-  const arrayType = useMemo(
-    () => selectTaguchiArrayName(activeFactors.length),
-    [activeFactors.length],
-  );
+  const activeFactors = useMemo(() => buildActiveFactors(factorDefinitions), [factorDefinitions]);
+  const arrayType = useMemo<TaguchiArrayName | null>(() => {
+    if (activeFactors.length === 0) return null;
+    return selectTaguchiArrayName(activeFactors.length);
+  }, [activeFactors.length]);
+
   const canReset = useMemo(() => {
-    const togglesChanged = TOGGLE_KEYS.some((key) => factors[key] !== initialFactorToggles[key]);
-    const levelsChanged = FACTOR_KEYS.some((key) =>
-      factorValues[key].some((value, index) => value !== initialFactorValues[key][index]),
-    );
-    const headerChanged = TRIAL_HEADER_KEYS.some((key) => trialHeaderFields[key] !== initialTrialHeaderFields[key]);
+    const initialFactorDefinitions = createInitialFactorDefinitions();
+    const factorsChanged = TAGUCHI_FACTOR_KEYS.some((key) => {
+      const current = factorDefinitions[key];
+      const initial = initialFactorDefinitions[key];
 
-    return togglesChanged || levelsChanged || headerChanged || matrixGenerated || matrixData.length > 0;
-  }, [factorValues, factors, matrixData.length, matrixGenerated, trialHeaderFields]);
+      return (
+        current.enabled !== initial.enabled ||
+        current.label !== initial.label ||
+        current.shortLabel !== initial.shortLabel ||
+        current.unit !== initial.unit ||
+        current.levels.some((value, index) => value !== initial.levels[index])
+      );
+    });
 
-  const handleTrialHeaderChange = useCallback((field: keyof DoeTrialHeaderFields, value: string) => {
+    const headerChanged = TRIAL_HEADER_ITEMS.some((item) => trialHeaderFields[item.key] !== initialTrialHeaderFields[item.key]);
+
+    return factorsChanged || headerChanged || matrixGenerated || matrixData.length > 0;
+  }, [factorDefinitions, matrixData.length, matrixGenerated, trialHeaderFields]);
+
+  const handleTrialHeaderChange = (field: keyof DoeTrialHeaderFields, value: string) => {
     setTrialHeaderFields((current) => ({ ...current, [field]: value }));
-  }, []);
+  };
 
-  const handleFactorToggle = useCallback((factor: keyof TaguchiFactorToggles) => {
-    setFactors((current) => ({ ...current, [factor]: !current[factor] }));
+  const handleFactorToggle = (factor: TaguchiFactorKey) => {
+    setFactorDefinitions((current) => ({
+      ...current,
+      [factor]: {
+        ...current[factor],
+        enabled: !current[factor].enabled,
+      },
+    }));
     setMatrixGenerated(false);
     setMatrixData([]);
-  }, []);
+  };
 
-  const handleValueChange = useCallback((factor: TaguchiFactorKey, level: number, value: string) => {
-    setFactorValues((current) => {
-      const updated = [...current[factor]] as [string, string, string];
-      updated[level] = value;
-      return { ...current, [factor]: updated };
+  const handleFactorFieldChange = (factor: TaguchiFactorKey, field: 'label' | 'unit', value: string) => {
+    setFactorDefinitions((current) => ({
+      ...current,
+      [factor]: {
+        ...current[factor],
+        [field]: value,
+      },
+    }));
+    setMatrixGenerated(false);
+    setMatrixData([]);
+  };
+
+  const handleLevelChange = (factor: TaguchiFactorKey, level: number, value: string) => {
+    setFactorDefinitions((current) => {
+      const updatedLevels = [...current[factor].levels] as [string, string, string];
+      updatedLevels[level] = value;
+
+      return {
+        ...current,
+        [factor]: {
+          ...current[factor],
+          levels: updatedLevels,
+        },
+      };
     });
     setMatrixGenerated(false);
     setMatrixData([]);
-  }, []);
+  };
 
-  const handleGenerateMatrix = useCallback(() => {
+  const handleGenerateMatrix = () => {
+    if (activeFactors.length === 0) {
+      toast.error('\u8bf7\u81f3\u5c11\u542f\u7528\u4e00\u4e2a DOE \u56e0\u5b50\u3002');
+      return;
+    }
+
     try {
       setMatrixData(generateTaguchiMatrix(activeFactors));
       setMatrixGenerated(true);
     } catch (error) {
       setMatrixData([]);
       setMatrixGenerated(false);
-      toast.error(error instanceof Error ? error.message : '生成正交矩阵失败。');
+      toast.error(error instanceof Error ? error.message : '\u751f\u6210\u6b63\u4ea4\u77e9\u9635\u5931\u8d25\u3002');
     }
-  }, [activeFactors]);
+  };
 
-  const handleDeviationChange = useCallback((run: number, value: string) => {
+  const handleDeviationChange = (run: number, value: string) => {
     setMatrixData((current) =>
       current.map((row) => (row.run === run ? { ...row, maxDeviation: value.trim() ? value : null } : row)),
     );
-  }, []);
+  };
 
-  const handleScanUpload = useCallback((run: number) => {
+  const handleScanUpload = (run: number) => {
     setMatrixData((current) =>
-      current.map((row) => (row.run === run ? { ...row, scanImage: `scan-run-${run}` } : row)),
+      current.map((row) => (row.run === run ? { ...row, scanImage: `attachment-run-${run}` } : row)),
     );
-  }, []);
+  };
 
-  const handleResetWorkspace = useCallback(() => {
+  const handleResetWorkspace = () => {
     if (!canReset) {
-      toast.message('DOE 数据已经是初始状态。');
+      toast.message('DOE \u6570\u636e\u5df2\u7ecf\u662f\u521d\u59cb\u72b6\u6001\u3002');
       return;
     }
-    setShowResetConfirm(true);
-  }, [canReset]);
 
-  const handleConfirmResetWorkspace = useCallback(() => {
-    setFactors(cloneInitialFactorToggles());
-    setFactorValues(cloneInitialFactorValues());
+    setShowResetConfirm(true);
+  };
+
+  const handleConfirmResetWorkspace = () => {
+    setFactorDefinitions(cloneFactorDefinitions(createInitialFactorDefinitions()));
     setTrialHeaderFields(cloneInitialTrialHeaderFields());
     setMatrixData([]);
     setMatrixGenerated(false);
     setShowResetConfirm(false);
-    toast.success('DOE 数据已清除。');
-  }, []);
+    toast.success('DOE \u6570\u636e\u5df2\u91cd\u7f6e\u3002');
+  };
 
   const hasData = matrixGenerated || matrixData.some((row) => row.maxDeviation !== null || row.scanImage !== null);
 
@@ -1368,18 +1085,15 @@ export default function DoeWorkspace() {
     <div className="doe-workspace min-h-[70vh] overflow-hidden rounded-2xl bg-black text-white">
       <DoeHeader />
       <main className="relative mx-auto max-w-[1400px] space-y-12 px-4 py-8 md:px-8 md:py-10 lg:space-y-14">
-        <TrialHeaderPanel
-          fields={trialHeaderFields}
-          onChange={handleTrialHeaderChange}
-        />
+        <TrialHeaderPanel fields={trialHeaderFields} onChange={handleTrialHeaderChange} />
         <FactorBuilder
-          factors={factors}
+          factorDefinitions={factorDefinitions}
           activeFactorCount={activeFactors.length}
           arrayType={arrayType}
           canReset={canReset}
           onFactorToggle={handleFactorToggle}
-          factorValues={factorValues}
-          onValueChange={handleValueChange}
+          onFactorFieldChange={handleFactorFieldChange}
+          onLevelChange={handleLevelChange}
           onReset={handleResetWorkspace}
         />
         <TaguchiMatrix
@@ -1391,32 +1105,28 @@ export default function DoeWorkspace() {
           onDeviationChange={handleDeviationChange}
           onScanUpload={handleScanUpload}
         />
-        <AnalyticsPanel
-          hasData={hasData}
-          matrixData={matrixData}
-          activeFactors={activeFactors}
-        />
+        <AnalyticsPanel hasData={hasData} matrixData={matrixData} activeFactors={activeFactors} />
       </main>
       <footer className="relative mx-auto max-w-[1400px] px-4 py-8 md:px-8">
-        <div className="flex flex-col gap-3 border-t border-white/[0.06] pt-6 text-[10px] uppercase tracking-wider text-white/20 md:flex-row md:items-center md:justify-between">
+        <div className="flex flex-col gap-3 border-t border-white/[0.06] pt-6 text-[10px] tracking-wider text-white/20 md:flex-row md:items-center md:justify-between">
           <div className="flex flex-wrap items-center gap-4 md:gap-6">
-            <span>Precision Injection Molding Systems</span>
+            <span>{'\u901a\u7528\u5b9e\u9a8c\u8bbe\u8ba1'}</span>
             <span className="h-1 w-1 rounded-full bg-white/20" />
-            <span>Logitech Engineering</span>
+            <span>{'Taguchi \u6b63\u4ea4\u9635\u5217'}</span>
           </div>
           <div className="font-mono text-white/30">
-            Taguchi DOE Module <span className="text-[#00E5FF]/50">v3.0.0</span>
+            {'DOE \u5de5\u4f5c\u53f0 '}<span className="text-[#00E5FF]/50">v3.0.0</span>
           </div>
         </div>
       </footer>
       <CyberConfirmDialog
         open={showResetConfirm}
-        title="确认清除 DOE 数据"
-        message={'这会恢复默认因子配置，并清空当前正交矩阵、偏差录入和分析结果。\n此操作不可撤销，是否继续？'}
+        title={'\u786e\u8ba4\u91cd\u7f6e DOE \u6570\u636e'}
+        message={'\u8fd9\u4f1a\u6062\u590d\u9ed8\u8ba4\u56e0\u5b50\u914d\u7f6e\uff0c\u5e76\u6e05\u7a7a\u5f53\u524d\u77e9\u9635\u3001\u54cd\u5e94\u503c\u548c\u5206\u6790\u7ed3\u679c\u3002\u6b64\u64cd\u4f5c\u4e0d\u53ef\u64a4\u9500\uff0c\u662f\u5426\u7ee7\u7eed\uff1f'}
         onCancel={() => setShowResetConfirm(false)}
         onConfirm={handleConfirmResetWorkspace}
-        confirmText="确认清除"
-        cancelText="取消"
+        confirmText={'\u786e\u8ba4\u91cd\u7f6e'}
+        cancelText={'\u53d6\u6d88'}
       />
     </div>
   );

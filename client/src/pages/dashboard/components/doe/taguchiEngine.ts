@@ -2,25 +2,39 @@ export type TaguchiArrayName = 'L9' | 'L27';
 export type TaguchiLevel = 1 | 2 | 3;
 
 export type TaguchiFactorKey =
-  | 'frontTemp'
-  | 'backTemp'
-  | 'sliderTemp'
-  | 'p1'
-  | 't1'
-  | 'p2'
-  | 't2'
-  | 'p3'
-  | 't3';
+  | 'factor1'
+  | 'factor2'
+  | 'factor3'
+  | 'factor4'
+  | 'factor5'
+  | 'factor6'
+  | 'factor7'
+  | 'factor8'
+  | 'factor9';
+
+export const TAGUCHI_FACTOR_KEYS: readonly TaguchiFactorKey[] = [
+  'factor1',
+  'factor2',
+  'factor3',
+  'factor4',
+  'factor5',
+  'factor6',
+  'factor7',
+  'factor8',
+  'factor9',
+];
 
 export type TaguchiLevelValues = readonly [string, string, string];
-export type TaguchiFactorLevels = Record<TaguchiFactorKey, TaguchiLevelValues>;
 
-export type TaguchiFactorToggles = {
-  stage1Hold: boolean;
-  sliderTemp: boolean;
-  stage2Hold: boolean;
-  stage3Hold: boolean;
+export type TaguchiFactorDefinition = {
+  enabled: boolean;
+  label: string;
+  shortLabel: string;
+  unit: string;
+  levels: TaguchiLevelValues;
 };
+
+export type TaguchiFactorDefinitions = Record<TaguchiFactorKey, TaguchiFactorDefinition>;
 
 export type TaguchiActiveFactor = {
   key: TaguchiFactorKey;
@@ -87,62 +101,34 @@ const TAGUCHI_ARRAYS: Record<TaguchiArrayName, readonly (readonly TaguchiLevel[]
 };
 
 const TAGUCHI_LEVEL_VALIDATION_ERROR =
-  '校验失败：被激活的因子必须提供 3 个有效的、互不相同的水平值。若某参数为全局固定值，请关闭其启用开关。';
-
-const FACTOR_META: Record<
-  TaguchiFactorKey,
-  Omit<TaguchiActiveFactor, 'key' | 'levels'>
-> = {
-  frontTemp: { label: '前模温度', shortLabel: '前模', unit: 'degC' },
-  backTemp: { label: '后模温度', shortLabel: '后模', unit: 'degC' },
-  sliderTemp: { label: '滑块模温', shortLabel: '滑块', unit: 'degC' },
-  p1: { label: '第一段压力', shortLabel: 'P1', unit: 'MPa' },
-  t1: { label: '第一段时间', shortLabel: 'T1', unit: 's' },
-  p2: { label: '第二段压力', shortLabel: 'P2', unit: 'MPa' },
-  t2: { label: '第二段时间', shortLabel: 'T2', unit: 's' },
-  p3: { label: '第三段压力', shortLabel: 'P3', unit: 'MPa' },
-  t3: { label: '第三段时间', shortLabel: 'T3', unit: 's' },
-};
+  '\u751f\u6210\u77e9\u9635\u524d\uff0c\u6bcf\u4e2a\u542f\u7528\u7684 DOE \u56e0\u5b50\u90fd\u5fc5\u987b\u63d0\u4f9b 3 \u4e2a\u4e92\u4e0d\u91cd\u590d\u4e14\u975e 0 \u7684\u6c34\u5e73\u503c\u3002';
 
 export function selectTaguchiArrayName(factorCount: number): TaguchiArrayName {
+  if (factorCount < 1) {
+    throw new Error('\u8bf7\u81f3\u5c11\u542f\u7528 1 \u4e2a\u56e0\u5b50\u540e\u518d\u751f\u6210 Taguchi \u77e9\u9635\u3002');
+  }
+
   if (factorCount <= 4) return 'L9';
   if (factorCount <= 9) return 'L27';
-  throw new Error(`Taguchi DOE supports at most 9 active 3-level factors. Received ${factorCount}.`);
+
+  throw new Error(`Taguchi DOE \u6700\u591a\u652f\u6301 9 \u4e2a\u542f\u7528\u7684 3 \u6c34\u5e73\u56e0\u5b50\uff0c\u5f53\u524d\u4e3a ${factorCount} \u4e2a\u3002`);
 }
 
-export function buildActiveFactors(
-  toggles: TaguchiFactorToggles,
-  factorLevels: TaguchiFactorLevels,
-): TaguchiActiveFactor[] {
-  const orderedKeys: TaguchiFactorKey[] = ['frontTemp', 'backTemp'];
-
-  if (toggles.sliderTemp) {
-    orderedKeys.push('sliderTemp');
-  }
-
-  if (toggles.stage1Hold) {
-    orderedKeys.push('p1', 't1');
-  }
-
-  if (toggles.stage2Hold) {
-    orderedKeys.push('p2', 't2');
-  }
-
-  if (toggles.stage3Hold) {
-    orderedKeys.push('p3', 't3');
-  }
-
-  return orderedKeys.map((key) => ({
-    key,
-    levels: factorLevels[key],
-    ...FACTOR_META[key],
-  }));
+export function buildActiveFactors(definitions: TaguchiFactorDefinitions): TaguchiActiveFactor[] {
+  return TAGUCHI_FACTOR_KEYS
+    .filter((key) => definitions[key].enabled)
+    .map((key) => ({
+      key,
+      label: definitions[key].label.trim() || definitions[key].shortLabel,
+      shortLabel: definitions[key].shortLabel.trim() || definitions[key].label.trim() || key.toUpperCase(),
+      unit: definitions[key].unit.trim(),
+      levels: definitions[key].levels,
+    }));
 }
 
-export function generateTaguchiMatrix(
-  activeFactors: readonly TaguchiActiveFactor[],
-): HydratedExperimentRow[] {
+export function generateTaguchiMatrix(activeFactors: readonly TaguchiActiveFactor[]): HydratedExperimentRow[] {
   validateActiveFactors(activeFactors);
+
   const arrayName = selectTaguchiArrayName(activeFactors.length);
   const selectedArray = TAGUCHI_ARRAYS[arrayName];
 
