@@ -125,6 +125,7 @@ export type Report8DWorkspaceState = {
 
 export type EightDReport = {
   reportId: string;
+  reportTitle: string;
   issueSubject: string;
   currentStage: EightDStage;
   status: EightDCaseStatus;
@@ -686,6 +687,7 @@ function sanitizeArchiveReport(value: unknown): EightDReport | null {
 
   return {
     reportId,
+    reportTitle: normalizeText(record.reportTitle, 200, normalizeText(record.issueSubject, 400, reportId)),
     issueSubject: normalizeText(record.issueSubject, 400, reportId),
     currentStage: sanitizeEightDStage(record.currentStage),
     status: sanitizeEightDCaseStatus(record.status),
@@ -707,6 +709,11 @@ function buildArchiveReportFromState(
 
   return {
     reportId,
+    reportTitle: normalizeText(
+      state.headerFields.reportTitle,
+      200,
+      normalizeText(state.headerFields.reportSubject || state.headerFields.defectIssue, 400, reportId),
+    ),
     issueSubject: normalizeText(state.headerFields.reportSubject || state.headerFields.defectIssue, 400, reportId),
     currentStage: extractStageFromState(state),
     status: extractCaseStatusFromState(state),

@@ -275,7 +275,10 @@ export default function EightDArchiveDrawer({
                             </span>
                           </div>
 
-                          <p className="mt-3 line-clamp-2 text-sm font-medium leading-6 text-zinc-200">
+                          <p className="mt-3 line-clamp-2 text-sm font-semibold leading-6 text-zinc-100">
+                            {report.reportTitle || report.issueSubject || "未填写报告标题"}
+                          </p>
+                          <p className="mt-1 line-clamp-2 text-xs leading-5 text-zinc-400">
                             {report.issueSubject || "未填写异常主题"}
                           </p>
 

@@ -427,7 +427,6 @@ function TaguchiMatrix({
     if (!canGenerate) return;
 
     setIsGenerating(true);
-    await new Promise((resolve) => setTimeout(resolve, 500));
     onGenerate();
     setIsGenerating(false);
     setExpanded(true);
@@ -723,7 +722,6 @@ function AnalyticsPanel({
     }
 
     setIsAnalyzing(true);
-    await new Promise((resolve) => setTimeout(resolve, 900));
     setAnalysisResult(analyzeTaguchiMatrix(matrixData, activeFactors));
     setIsAnalyzing(false);
     setShowResults(true);

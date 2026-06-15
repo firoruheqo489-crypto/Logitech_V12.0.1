@@ -7,6 +7,7 @@ export type EightDCaseStatus = "Open" | "Pending" | "Closed";
 
 export type EightDReport = {
   reportId: string;
+  reportTitle: string;
   issueSubject: string;
   currentStage: EightDStage;
   status: EightDCaseStatus;
