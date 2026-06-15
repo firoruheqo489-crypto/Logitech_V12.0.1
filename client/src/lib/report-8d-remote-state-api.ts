@@ -17,6 +17,7 @@ export type EightDReport = {
 };
 
 export type Report8DHeaderFields = {
+  reportTitle: string;
   reportNo: string;
   finishedPartNumber: string;
   finishedPartName: string;

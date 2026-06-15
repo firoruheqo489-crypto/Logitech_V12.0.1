@@ -15,6 +15,7 @@ type EightDCaseStatus = "Open" | "Pending" | "Closed";
 type Report8DOutputCutoff = EightDStage | "SIGNOFF";
 
 type Report8DHeaderFields = {
+  reportTitle: string;
   reportNo: string;
   finishedPartNumber: string;
   finishedPartName: string;
@@ -334,6 +335,7 @@ function sanitizeHeaderFields(value: unknown): Report8DHeaderFields {
     : {};
 
   return {
+    reportTitle: normalizeText(record.reportTitle, 120, "8D 纠正措施报告"),
     reportNo: normalizeText(record.reportNo, 120),
     finishedPartNumber: normalizeText(record.finishedPartNumber, 255, normalizeText(record.moldNumber, 255)),
     finishedPartName: normalizeText(record.finishedPartName, 255, normalizeText(record.product, 255)),

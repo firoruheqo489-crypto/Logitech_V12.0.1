@@ -98,7 +98,9 @@ const EMPTY_MOLD_NUMBERS: string[] = [];
 const FIXED_ROW_TEXTAREA_CLASS =
   "h-28 min-h-28 max-h-28 resize-none overflow-x-hidden overflow-y-auto whitespace-pre-wrap break-all [field-sizing:fixed]";
 const ROUND_INDEX_LABELS = ["一", "二", "三", "四", "五", "六", "七", "八", "九", "十"];
-const REPORT_8D_IMAGE_MAX_SIZE_BYTES = 500 * 1024;
+const DEFAULT_REPORT_8D_TITLE = "8D 纠正措施报告";
+const REPORT_8D_IMAGE_MAX_SIZE_BYTES = 1024 * 1024;
+const REPORT_8D_IMAGE_TARGET_SIZE_MB = 0.98;
 
 const STATUS_OPTIONS: Array<Report8DContainmentAction["status"]> = [
   "completed",
@@ -170,14 +172,33 @@ async function compressReport8DImage(file: File): Promise<File> {
     return file;
   }
 
-  return imageCompression(file, {
-    maxSizeMB: 0.48,
+  const compressed = await imageCompression(file, {
+    maxSizeMB: REPORT_8D_IMAGE_TARGET_SIZE_MB,
     maxWidthOrHeight: 1600,
     useWebWorker: true,
     fileType: "image/webp",
     initialQuality: 0.82,
     maxIteration: 10,
   });
+
+  if (compressed.size <= REPORT_8D_IMAGE_MAX_SIZE_BYTES) {
+    return compressed;
+  }
+
+  const fallbackCompressed = await imageCompression(compressed, {
+    maxSizeMB: 0.9,
+    maxWidthOrHeight: 1400,
+    useWebWorker: true,
+    fileType: "image/webp",
+    initialQuality: 0.72,
+    maxIteration: 10,
+  });
+
+  if (fallbackCompressed.size <= REPORT_8D_IMAGE_MAX_SIZE_BYTES) {
+    return fallbackCompressed;
+  }
+
+  throw new Error("图片压缩后仍超过 1MB，请换一张更小的图片或先手工压缩后再上传");
 }
 
 function normalizeWorkspaceKey(projectName: string): string {
@@ -228,6 +249,7 @@ function buildInitialState(
     workspaceKey,
     outputCutoff: "SIGNOFF",
     headerFields: {
+      reportTitle: DEFAULT_REPORT_8D_TITLE,
       reportNo: reportId || `8D-${openedDate.replaceAll("-", "").slice(0, 6)}-${moldSuffix}`,
       finishedPartNumber: moldNumbers.join(" / ") || "待填写",
       finishedPartName: productName || `${projectName || "项目"} / 待填写`,
@@ -501,6 +523,9 @@ function buildReport8DPrintCss(): string {
     }
 
     .report-8d-print-field {
+      display: flex;
+      align-items: baseline;
+      gap: 0.9mm;
       border: 0.55px solid #cbd5e1;
       border-radius: 1.1mm;
       padding: 1mm 1.2mm;
@@ -508,15 +533,19 @@ function buildReport8DPrintCss(): string {
     }
 
     .report-8d-print-field strong {
+      flex: 0 0 auto;
       display: block;
-      margin: 0 0 0.45mm;
+      margin: 0;
       color: #64748b;
       font-size: 6.6px;
       font-weight: 700;
+      white-space: nowrap;
     }
 
     .report-8d-print-field span {
+      flex: 1 1 auto;
       display: block;
+      min-width: 0;
       color: #0f172a;
       font-size: 7.7px;
       font-weight: 600;
@@ -910,7 +939,8 @@ function buildReport8DSectionMarkupList({ state }: Report8DDocumentOptions): str
     })
     .join("");
   const correctivePlan = state.d5?.correctivePlan || formatLegacyCorrectivePlan(state.correctiveActions);
-  const correctionRoundList = (correctionRounds.length ? correctionRounds : [buildCorrectionRound()])
+  const printableCorrectionRounds = correctionRounds.filter((item) => item.correction.trim() || item.images.length > 0);
+  const correctionRoundList = printableCorrectionRounds
     .map((item, index) => {
       const correctionLabel = `措施${formatRoundIndexLabel(index)}`;
       return `<li class="report-8d-print-clamp-1"><strong>${escapeHtml(correctionLabel)}：</strong>${formatPrintMultiline(item.correction, "待填写")}${buildPrintImageGallery(item.images, correctionLabel)}</li>`;
@@ -952,8 +982,8 @@ function buildReport8DSectionMarkupList({ state }: Report8DDocumentOptions): str
     buildPrintBox(
       "D5",
       "改善措施",
-      `<p class="report-8d-print-copy report-8d-print-copy-indented">措施说明：${formatPrintMultiline(correctivePlan, "待填写")}</p>
-       <ul class="report-8d-print-list">${correctionRoundList}</ul>`,
+      `<p class="report-8d-print-copy report-8d-print-copy-indented">${formatPrintMultiline(correctivePlan, "待填写")}</p>
+       ${correctionRoundList ? `<ul class="report-8d-print-list">${correctionRoundList}</ul>` : ""}`,
     ),
     buildPrintBox(
       "D6",
@@ -990,11 +1020,11 @@ function buildReport8DPageMarkup(
   return `
     <article class="report-8d-a4-page" aria-label="8D 报告 A4 页面">
       <div class="report-8d-print-title">
-        <h1>8D 纠正措施报告</h1>
+        <h1>${escapeHtml(compactPrintText(headerFields.reportTitle, DEFAULT_REPORT_8D_TITLE, 80))}</h1>
       </div>
 
       <div class="report-8d-print-grid report-8d-print-header">
-        ${buildPrintField("成品料号", headerFields.finishedPartNumber)}
+        ${buildPrintField("料件编号", headerFields.finishedPartNumber)}
         ${buildPrintField("成品名称", headerFields.finishedPartName)}
         ${buildPrintField("成品规格", headerFields.finishedPartSpec)}
         ${buildPrintField("异常部件", headerFields.abnormalPart)}
@@ -1005,7 +1035,6 @@ function buildReport8DPageMarkup(
       </div>
 
       <div class="report-8d-d-flow">${sectionsMarkup}</div>
-      <div class="report-8d-print-footer">本页为 8D 报告 A4 打印版，完整证据、记录和附件以系统工作区为准。</div>
     </article>
   `;
 }
@@ -1074,7 +1103,8 @@ function mergeWorkspaceStateWithBaseline(
 }
 
 function buildReport8DPreviewHtml(options: Report8DDocumentOptions): string {
-  const title = `8D 打印预览 - ${compactPrintText(options.state.headerFields.reportNo, "未编号", 40)}`;
+  const reportTitle = compactPrintText(options.state.headerFields.reportTitle, DEFAULT_REPORT_8D_TITLE, 60);
+  const title = `${reportTitle} - ${compactPrintText(options.state.headerFields.reportNo, "未编号", 40)}`;
   return `<!doctype html>
     <html lang="zh-CN">
       <head>
@@ -1154,7 +1184,7 @@ function buildReport8DPreviewHtml(options: Report8DDocumentOptions): string {
       <body>
         <div class="report-8d-preview-toolbar">
           <div>
-            <div class="report-8d-preview-title">8D 报告打印预览</div>
+            <div class="report-8d-preview-title">${escapeHtml(reportTitle)} 打印预览</div>
             <div class="report-8d-preview-meta">A4 打印版，支持较长正文内容换行显示</div>
           </div>
           <div class="report-8d-preview-actions">
@@ -1623,6 +1653,15 @@ export default function Report8DWorkspace({
     }));
   }, []);
 
+  const persistReportTitleIfNeeded = useCallback(() => {
+    const nextState = workspaceStateRef.current;
+    if (JSON.stringify(nextState) === lastSavedPayloadRef.current) {
+      return;
+    }
+
+    void persistWorkspaceStateImmediately(nextState, "报告标题保存失败");
+  }, [persistWorkspaceStateImmediately]);
+
   const updateTeamMember = useCallback((id: string, field: keyof Report8DTeamMember, value: string) => {
     setWorkspaceState((current) => ({
       ...current,
@@ -1799,7 +1838,7 @@ export default function Report8DWorkspace({
       },
     };
     setWorkspaceState(nextState);
-    void persistWorkspaceStateImmediately(nextState, "新增纠正措施轮次保存失败");
+    void persistWorkspaceStateImmediately(nextState, "新增改善措施轮次保存失败");
   }, [persistWorkspaceStateImmediately]);
 
   const removeCorrectionRound = useCallback(async (id: string) => {
@@ -1816,7 +1855,7 @@ export default function Report8DWorkspace({
       },
     };
     setWorkspaceState(nextState);
-    void persistWorkspaceStateImmediately(nextState, "删除纠正措施轮次保存失败");
+    void persistWorkspaceStateImmediately(nextState, "删除改善措施轮次保存失败");
   }, [correctionRounds, persistWorkspaceStateImmediately]);
 
   const handleCorrectionImageUpload = useCallback(async (roundId: string, event: React.ChangeEvent<HTMLInputElement>) => {
@@ -1859,9 +1898,9 @@ export default function Report8DWorkspace({
         },
       };
       setWorkspaceState(nextState);
-      await persistWorkspaceStateImmediately(nextState, "纠正措施图片上传后保存失败");
+      await persistWorkspaceStateImmediately(nextState, "改善措施图片上传后保存失败");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "纠正措施图片上传失败");
+      toast.error(error instanceof Error ? error.message : "改善措施图片上传失败");
     } finally {
       setUploadingCorrectionRoundId(null);
     }
@@ -1879,7 +1918,7 @@ export default function Report8DWorkspace({
       },
     };
     setWorkspaceState(nextState);
-    void persistWorkspaceStateImmediately(nextState, "删除纠正措施图片保存失败");
+    void persistWorkspaceStateImmediately(nextState, "删除改善措施图片保存失败");
   }, [persistWorkspaceStateImmediately]);
 
   const updateImplementationSummary = useCallback((value: string) => {
@@ -2196,7 +2235,9 @@ export default function Report8DWorkspace({
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="space-y-3">
               <div>
-                <h2 className="text-2xl font-bold tracking-tight text-white md:text-3xl">8D 纠正措施报告</h2>
+                <h2 className="text-2xl font-bold tracking-tight text-white md:text-3xl">
+                  {workspaceState.headerFields.reportTitle || DEFAULT_REPORT_8D_TITLE}
+                </h2>
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -2262,7 +2303,13 @@ export default function Report8DWorkspace({
 
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <SummaryInput
-              label="成品料号"
+              label="报告标题"
+              value={workspaceState.headerFields.reportTitle}
+              onChange={(value) => updateHeaderField("reportTitle", value)}
+              onBlur={persistReportTitleIfNeeded}
+            />
+            <SummaryInput
+              label="料件编号"
               value={workspaceState.headerFields.finishedPartNumber}
               onChange={(value) => updateHeaderField("finishedPartNumber", value)}
             />
@@ -2698,7 +2745,7 @@ export default function Report8DWorkspace({
           <div className="rounded-2xl border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.045),rgba(255,255,255,0.02))] p-5 shadow-[0_12px_30px_rgba(0,0,0,0.18)]">
             <div className="mb-4 flex items-center justify-between gap-3">
               <div>
-                <p className="text-sm font-semibold text-emerald-300">纠正措施</p>
+                <p className="text-sm font-semibold text-emerald-300">改善措施</p>
                 <p className="mt-1 text-xs text-slate-500">在这里沉淀永久措施、对象范围、责任边界、实施条件和固化要求。</p>
               </div>
               <div className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-200">
@@ -2756,7 +2803,7 @@ export default function Report8DWorkspace({
                       value={item.correction}
                       onChange={(event) => updateCorrectionRound(item.id, event.target.value)}
                       className="min-h-[260px] flex-1 border-white/10 bg-white/[0.04] text-white"
-                      placeholder="填写该轮纠正措施的实施动作、对象范围、完成证据、判定结果与结论。"
+                      placeholder="填写该轮改善措施的实施动作、对象范围、完成证据、判定结果与结论。"
                     />
                   </section>
 
@@ -2843,7 +2890,7 @@ export default function Report8DWorkspace({
           })}
           {correctionRounds.length === 0 ? (
             <div className="rounded-xl border border-dashed border-white/10 bg-white/[0.02] px-4 py-5 text-sm text-slate-400">
-              暂无纠正措施轮次，点击右上角“新增轮次”继续添加。
+              暂无改善措施轮次，点击右上角“新增轮次”继续添加。
             </div>
           ) : null}
         </div>
@@ -3195,6 +3242,7 @@ function SummaryInput({
   label,
   value,
   onChange,
+  onBlur,
   mono = false,
   danger = false,
   readOnly = false,
@@ -3203,6 +3251,7 @@ function SummaryInput({
   label: string;
   value: string;
   onChange?: (value: string) => void;
+  onBlur?: () => void;
   mono?: boolean;
   danger?: boolean;
   readOnly?: boolean;
@@ -3215,6 +3264,7 @@ function SummaryInput({
         value={value}
         readOnly={readOnly}
         onChange={onChange ? (event) => onChange(event.target.value) : undefined}
+        onBlur={onBlur}
         className={cn(
           "mt-2 border-white/10 bg-white/[0.04] text-slate-100",
           mono && "font-mono",
