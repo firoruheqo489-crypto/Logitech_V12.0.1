@@ -1019,8 +1019,65 @@ export async function submitDashboardReport8DState(req: Request, res: Response):
 
 export async function deleteDashboardReport8DState(req: Request, res: Response): Promise<void> {
   const workspaceKey = readWorkspaceKey(req.query);
+  const reportId = readReportId(req.query);
+  const ossUrl = readOssUrl(req.query);
+  const archiveMonth = readArchiveMonth(req.query);
 
   try {
+    if (reportId) {
+      const archiveObjectKey = resolveArchiveObjectKey(workspaceKey, archiveMonth, reportId, ossUrl);
+
+      await deleteOssObject(buildStateObjectKey(workspaceKey, reportId)).catch((error) => {
+        if (isOssNotFoundError(error)) {
+          return;
+        }
+
+        throw error;
+      });
+
+      await deleteOssObject(archiveObjectKey).catch((error) => {
+        if (isOssNotFoundError(error)) {
+          return;
+        }
+
+        throw error;
+      });
+
+      const reports = await readArchiveIndex(workspaceKey, archiveMonth);
+      const nextReports = reports.filter((item) => item.reportId !== reportId);
+      await writeArchiveIndex(workspaceKey, archiveMonth, nextReports);
+
+      try {
+        const currentBuffer = await getOssObjectBuffer(buildStateObjectKey(workspaceKey));
+        const parsedCurrent = JSON.parse(currentBuffer.toString("utf8")) as unknown;
+        const currentState = sanitizeWorkspaceState(readStoredState(parsedCurrent), workspaceKey);
+        if (normalizeText(currentState.headerFields.reportNo, 120) === reportId) {
+          await deleteOssObject(buildStateObjectKey(workspaceKey)).catch((error) => {
+            if (isOssNotFoundError(error)) {
+              return;
+            }
+
+            throw error;
+          });
+        }
+      } catch (error) {
+        if (!isOssNotFoundError(error)) {
+          throw error;
+        }
+      }
+
+      if (dbSql) {
+        await ensureDashboardReport8DSubmissionTable();
+        await dbSql.unsafe(
+          `DELETE FROM ${REPORT_8D_SUBMISSION_TABLE} WHERE workspace_key = $1 AND report_id = $2`,
+          [workspaceKey, reportId],
+        );
+      }
+
+      res.status(200).json({ ok: true });
+      return;
+    }
+
     await deleteOssObject(buildStateObjectKey(workspaceKey));
     res.status(200).json({ ok: true });
   } catch (error) {

@@ -36,11 +36,13 @@ import { useEightDCaseArchive } from "@/hooks/use-eight-d-case-archive";
 import { deleteAssetViaServer, uploadAssetViaServer } from "@/lib/ossUpload";
 import { cn } from "@/lib/utils";
 import {
+  deleteReport8DArchiveReport,
   DEFAULT_REPORT_8D_WORKSPACE_KEY,
   fetchReport8DRemoteWorkspaceState,
   type Report8DOutputCutoff,
   saveReport8DRemoteWorkspaceState,
   submitReport8DWorkspaceState,
+  type EightDReport,
   type Report8DContainmentAction,
   type Report8DCorrectiveAction,
   type Report8DCorrectionRound,
@@ -2214,6 +2216,25 @@ export default function Report8DWorkspace({
     }
   }, [eightDArchive, markWorkspaceSaved, projectName, workspaceState]);
 
+  const handleDeleteArchivedCase = useCallback(async (report: EightDReport) => {
+    await deleteReport8DArchiveReport({
+      workspaceKey,
+      reportId: report.reportId,
+      archiveMonth: report.archiveMonth,
+      ossUrl: report.ossUrl,
+    });
+
+    await eightDArchive.refreshArchive();
+
+    if (workspaceStateRef.current.headerFields.reportNo === report.reportId) {
+      const nextState = buildInitialState(workspaceKey, projectName, productName?.trim() || "", stableMoldNumbers);
+      setWorkspaceState(nextState);
+      lastSavedPayloadRef.current = JSON.stringify(nextState);
+      setSyncStatusLabel("当前 8D 案件已删除，已恢复默认模板");
+      setSyncStatusTone("neutral");
+    }
+  }, [eightDArchive, productName, projectName, stableMoldNumbers, workspaceKey]);
+
   if (isHydrating) {
     return (
       <SyncStateView
@@ -3207,6 +3228,7 @@ export default function Report8DWorkspace({
         onArchiveMonthChange={eightDArchive.setArchiveMonth}
         onCreateCase={eightDArchive.createCase}
         onLoadCase={eightDArchive.loadCase}
+        onDeleteCase={handleDeleteArchivedCase}
       />
       {deleteConfirm ? (
         <CyberConfirmDialog

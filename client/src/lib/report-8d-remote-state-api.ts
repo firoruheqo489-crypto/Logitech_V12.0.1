@@ -234,6 +234,24 @@ export async function fetchReport8DArchiveReports(
   };
 }
 
+export async function deleteReport8DArchiveReport(identity: {
+  workspaceKey: string;
+  reportId: string;
+  archiveMonth?: string;
+  ossUrl?: string;
+}): Promise<void> {
+  const response = await apiFetch(buildReport8DStateUrl(identity), {
+    method: "DELETE",
+  });
+  const payload = (await response.json().catch(() => null)) as
+    | { error?: string }
+    | null;
+
+  if (!response.ok) {
+    throw new Error(readErrorMessage(payload, "Failed to delete 8D archive report"));
+  }
+}
+
 export async function submitReport8DWorkspaceState({
   state,
   projectName,

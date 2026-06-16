@@ -6,22 +6,14 @@ import {
   FolderPlus,
   Loader2,
   RefreshCw,
+  Trash2,
   UserRound,
 } from "lucide-react";
 import { toast } from "sonner";
 
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import CyberConfirmDialog from "@/components/ui/CyberConfirmDialog";
 import {
   Drawer,
   DrawerContent,
@@ -47,6 +39,7 @@ type EightDArchiveDrawerProps = {
   onArchiveMonthChange: (archiveMonth: string) => void;
   onCreateCase: () => Promise<unknown>;
   onLoadCase: (report: EightDReport) => Promise<unknown>;
+  onDeleteCase: (report: EightDReport) => Promise<unknown>;
 };
 
 const STAGE_LABELS: Record<EightDStage, string> = {
@@ -54,8 +47,8 @@ const STAGE_LABELS: Record<EightDStage, string> = {
   D1: "D1 团队",
   D2: "D2 描述",
   D3: "D3 遏制",
-  D4: "D4 根本原因",
-  D5: "D5 纠正措施",
+  D4: "D4 根因",
+  D5: "D5 改善",
   D6: "D6 验证",
   D7: "D7 防再发",
   D8: "D8 结案",
@@ -113,8 +106,10 @@ export default function EightDArchiveDrawer({
   onArchiveMonthChange,
   onCreateCase,
   onLoadCase,
+  onDeleteCase,
 }: EightDArchiveDrawerProps) {
   const [loadTarget, setLoadTarget] = useState<EightDReport | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<EightDReport | null>(null);
 
   const sortedReports = useMemo(() => [...reports], [reports]);
   const monthOptions = useMemo(() => {
@@ -122,8 +117,7 @@ export default function EightDArchiveDrawer({
     const seed = Number.isNaN(current.getTime()) ? new Date() : current;
     return Array.from({ length: 12 }, (_, index) => {
       const date = new Date(seed.getFullYear(), seed.getMonth() - index, 1);
-      const month = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-      return month;
+      return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
     });
   }, [archiveMonth]);
 
@@ -149,6 +143,20 @@ export default function EightDArchiveDrawer({
       onOpenChange(false);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "8D 案件加载失败");
+    }
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget) {
+      return;
+    }
+
+    try {
+      await onDeleteCase(deleteTarget);
+      toast.success(`已删除 ${deleteTarget.reportId}`);
+      setDeleteTarget(null);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "8D 案件删除失败");
     }
   };
 
@@ -303,12 +311,26 @@ export default function EightDArchiveDrawer({
                           </div>
                         </div>
 
-                        {isLoadingCurrent ? (
-                          <div className="inline-flex items-center gap-2 rounded-full border border-cyan-500/20 bg-cyan-500/10 px-3 py-1 text-[11px] text-cyan-200">
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            加载中
-                          </div>
-                        ) : null}
+                        <div className="flex items-center gap-2">
+                          {isLoadingCurrent ? (
+                            <div className="inline-flex items-center gap-2 rounded-full border border-cyan-500/20 bg-cyan-500/10 px-3 py-1 text-[11px] text-cyan-200">
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              加载中
+                            </div>
+                          ) : null}
+                          <button
+                            type="button"
+                            aria-label={`删除 ${report.reportId}`}
+                            title={`删除 ${report.reportId}`}
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-red-500/20 bg-red-500/10 text-red-200 opacity-0 transition-all hover:bg-red-500/20 group-hover:opacity-100"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setDeleteTarget(report);
+                            }}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
                       </div>
                     </button>
                   );
@@ -319,29 +341,38 @@ export default function EightDArchiveDrawer({
         </DrawerContent>
       </Drawer>
 
-      <AlertDialog open={Boolean(loadTarget)} onOpenChange={(nextOpen) => !nextOpen && setLoadTarget(null)}>
-        <AlertDialogContent className="border border-amber-500/20 bg-[#08121d] text-zinc-100 shadow-[0_20px_60px_rgba(0,0,0,0.45)]">
-          <AlertDialogHeader>
-            <AlertDialogTitle>确认载入 8D 案件？</AlertDialogTitle>
-            <AlertDialogDescription className="text-zinc-400">
-              {hasUnsavedChanges
-                ? "当前 8D 有未同步至云端的修改，强行加载将丢失数据，是否继续？"
-                : "将从 OSS 拉取该 8D JSON 并覆盖当前工作区。"}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel className="border-white/10 bg-transparent text-zinc-200 hover:bg-white/5 hover:text-white">
-              取消
-            </AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => void handleConfirmLoad()}
-              className="bg-amber-500 text-slate-950 hover:bg-amber-400"
-            >
-              确认加载
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <CyberConfirmDialog
+        open={Boolean(loadTarget)}
+        title="确认载入 8D 案件"
+        message={
+          hasUnsavedChanges
+            ? "当前 8D 有未同步至云端的修改，强行加载将丢失数据，是否继续？"
+            : "将从 OSS 拉取该 8D JSON 并覆盖当前工作区。"
+        }
+        confirmText="确认载入"
+        cancelText="取消"
+        onCancel={() => setLoadTarget(null)}
+        onConfirm={() => {
+          void handleConfirmLoad();
+        }}
+      />
+
+      <CyberConfirmDialog
+        open={Boolean(deleteTarget)}
+        title="确认删除 8D 案件"
+        message={
+          deleteTarget
+            ? `删除后将同时移除该案件的归档 JSON、案件库索引和数据库记录，且无法恢复。\n\n报告编号：${deleteTarget.reportId}\n报告标题：${deleteTarget.reportTitle || deleteTarget.issueSubject || "未填写"}`
+            : ""
+        }
+        confirmText="确认删除"
+        cancelText="取消"
+        allowEnterConfirm={false}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={() => {
+          void handleConfirmDelete();
+        }}
+      />
     </>
   );
 }

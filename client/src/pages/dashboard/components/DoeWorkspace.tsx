@@ -95,6 +95,8 @@ const FACTOR_DEFAULTS: Array<{
   { key: 'factor9', enabled: false, unit: '', levels: ['1000', '1200', '1400'] },
 ];
 
+const DISPLAY_FACTOR_KEYS = TAGUCHI_FACTOR_KEYS.slice(0, 6);
+
 const CHART_COLORS = ['#00E5FF', '#6366f1', '#10b981', '#f59e0b', '#fb7185', '#a855f7', '#14b8a6', '#f97316', '#84cc16'];
 
 function createInitialFactorDefinitions(): TaguchiFactorDefinitions {
@@ -147,7 +149,7 @@ function formatOptimalValue(value: unknown, unit: string): string {
 
 function DoeHeader() {
   return (
-    <header className="doe-header">
+    <header className="hidden">
       <div className="mx-auto max-w-[1400px] px-4 md:px-8">
         <div className="flex min-h-16 flex-col gap-4 py-4 md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-4">
@@ -219,8 +221,14 @@ function LevelChip({
   disabled?: boolean;
 }) {
   return (
-    <label className={`glass-inner space-y-2 rounded-xl p-3 transition-all ${disabled ? 'opacity-45' : ''}`}>
-      <span className="inline-flex rounded-md border border-[#00E5FF]/20 bg-[#00E5FF]/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-[#00E5FF]/85">
+    <label className={`relative space-y-2 ${disabled ? 'factor-disabled' : ''}`}>
+      <span className={`absolute -top-2 left-3 z-10 rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${
+        label === 'L1'
+          ? 'bg-emerald-500/20 text-emerald-400'
+          : label === 'L2'
+            ? 'bg-amber-500/20 text-amber-400'
+            : 'bg-rose-500/20 text-rose-400'
+      }`}>
         {label}
       </span>
       <input
@@ -229,7 +237,7 @@ function LevelChip({
         disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
         placeholder={'\u8f93\u5165\u6c34\u5e73\u503c'}
-        className="premium-input h-10 w-full rounded-xl px-3 text-sm text-white/90 placeholder:text-white/20 focus:outline-none disabled:cursor-not-allowed"
+        className="premium-input h-12 w-full rounded-xl px-3 pt-1 text-center font-mono text-sm text-white/90 placeholder:text-white/20 focus:outline-none disabled:cursor-not-allowed"
       />
     </label>
   );
@@ -252,18 +260,18 @@ function FactorCard({
 
   return (
     <div
-      className={`glass-card-elevated space-y-4 rounded-2xl p-5 transition-all ${
-        factor.enabled ? 'shadow-[0_0_30px_rgba(0,229,255,0.08)]' : 'opacity-75'
+      className={`glass-card-elevated radial-glow space-y-6 overflow-hidden rounded-2xl p-6 ${
+        factor.enabled ? '' : 'opacity-75'
       }`}
     >
-      <div className="flex items-start gap-3">
-        <div className="rounded-xl border border-[#00E5FF]/20 bg-[#00E5FF]/10 p-2.5">
+      <div className="flex items-center gap-3 border-b border-white/[0.08] pb-4">
+        <div className="rounded-xl border border-[#00E5FF]/25 bg-[#00E5FF]/10 p-2.5">
           <Gauge className="h-5 w-5 text-[#00E5FF]" />
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <h3 className="text-base font-semibold text-white">{factor.label || `\u56e0\u5b50 ${index}`}</h3>
-            <span className="rounded-md border border-white/10 bg-white/[0.04] px-2 py-0.5 font-mono text-[10px] text-white/45">
+            <span className="rounded-md border border-[#00E5FF]/20 bg-[#00E5FF]/10 px-2 py-0.5 font-mono text-[10px] text-[#00E5FF]/80">
               {factor.shortLabel}
             </span>
           </div>
@@ -272,45 +280,63 @@ function FactorCard({
         <button
           type="button"
           onClick={() => onToggle(factorKey)}
-          className={`relative inline-flex h-9 w-[78px] items-center rounded-full border transition-all ${
+          className={`group flex w-[180px] items-center gap-4 rounded-xl p-4 transition-all duration-300 ${
             factor.enabled
-              ? 'border-[#00E5FF]/30 bg-[#00E5FF]/15 shadow-[0_0_25px_rgba(0,229,255,0.16)]'
-              : 'border-white/10 bg-white/[0.04]'
+              ? 'glass-card'
+              : 'glass-inner hover:bg-white/[0.03]'
           }`}
           aria-pressed={factor.enabled}
         >
-          <motion.span
-            layout
-            transition={{ type: 'spring', stiffness: 400, damping: 28 }}
-            className={`absolute top-1 h-7 w-7 rounded-full ${
-              factor.enabled ? 'left-[42px] bg-[#7EE7FF]' : 'left-1 bg-white/80'
+          <div
+            className={`relative h-8 w-16 rounded-full transition-all duration-300 ${
+              factor.enabled
+                ? 'bg-gradient-to-r from-[#6fd0ea] to-[#54b8d4] shadow-[0_0_14px_rgba(0,229,255,0.22)]'
+                : 'border border-white/[0.10] bg-white/[0.06]'
             }`}
-          />
-          <span className={`pl-3 text-[10px] font-semibold uppercase tracking-wider ${factor.enabled ? 'text-[#7EE7FF]' : 'text-white/40'}`}>
-            {factor.enabled ? 'ON' : 'OFF'}
-          </span>
+          >
+            {!factor.enabled && (
+              <div className="absolute inset-0 rounded-full shadow-[inset_0_2px_4px_rgba(0,0,0,0.4)]" />
+            )}
+            <motion.div
+              layout
+              transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+              className={`${factor.enabled ? 'bg-slate-100' : 'bg-white/80'} absolute top-1 h-6 w-6 rounded-full shadow-lg`}
+              animate={{ x: factor.enabled ? 32 : 4 }}
+              style={{
+                boxShadow: factor.enabled
+                  ? '0 2px 8px rgba(0,0,0,0.28), 0 0 0 1px rgba(255,255,255,0.08)'
+                  : '0 2px 4px rgba(0,0,0,0.4)',
+              }}
+            />
+          </div>
+          <div className="ml-auto flex items-center gap-2">
+            <span className={`text-[10px] font-medium uppercase tracking-wider ${factor.enabled ? 'text-[#8ed8ea]/75' : 'text-white/30'}`}>
+              {factor.enabled ? 'Active' : 'Inactive'}
+            </span>
+            <div className={`relative h-2.5 w-2.5 rounded-full ${factor.enabled ? 'bg-[#8ed8ea]' : 'bg-white/20'}`} />
+          </div>
         </button>
       </div>
 
       <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_140px]">
         <label className="space-y-2">
-          <span className="block text-xs font-medium tracking-wider text-white/45">{'\u56e0\u5b50\u540d\u79f0'}</span>
+          <span className="block text-sm font-medium text-white/85">{'\u56e0\u5b50\u540d\u79f0'}</span>
           <input
             type="text"
             value={factor.label}
             onChange={(event) => onFieldChange(factorKey, 'label', event.target.value)}
             placeholder={`\u56e0\u5b50 ${index}`}
-            className="premium-input h-10 w-full rounded-xl px-3 text-sm text-white/90 placeholder:text-white/20 focus:outline-none"
+            className="premium-input h-11 w-full rounded-xl px-3 text-sm text-white/90 placeholder:text-white/20 focus:outline-none"
           />
         </label>
         <label className="space-y-2">
-          <span className="block text-xs font-medium tracking-wider text-white/45">{'\u5355\u4f4d'}</span>
+          <span className="block text-sm font-medium text-white/85">{'\u5355\u4f4d'}</span>
           <input
             type="text"
             value={factor.unit}
             onChange={(event) => onFieldChange(factorKey, 'unit', event.target.value)}
             placeholder={'\u53ef\u9009'}
-            className="premium-input h-10 w-full rounded-xl px-3 text-sm text-white/90 placeholder:text-white/20 focus:outline-none"
+            className="premium-input h-11 w-full rounded-xl px-3 text-sm text-white/90 placeholder:text-white/20 focus:outline-none"
           />
         </label>
       </div>
@@ -355,7 +381,7 @@ function FactorBuilder({
         <div>
           <div className="section-label mb-2">Section A</div>
           <h2 className="text-xl font-semibold tracking-tight text-white">{'\u56e0\u5b50\u914d\u7f6e'}</h2>
-          <p className="mt-1 text-sm text-white/40">{'\u914d\u7f6e\u6700\u591a 9 \u4e2a\u4e09\u6c34\u5e73 DOE \u56e0\u5b50'}</p>
+          <p className="mt-1 text-sm text-white/40">{'\u914d\u7f6e\u6700\u591a 6 \u4e2a\u4e09\u6c34\u5e73 DOE \u56e0\u5b50'}</p>
         </div>
         <div className="flex w-full flex-col gap-3 md:w-auto md:flex-row md:items-center">
           <button
@@ -364,8 +390,8 @@ function FactorBuilder({
             disabled={!canReset}
             className={`inline-flex w-full items-center justify-center gap-2 rounded-xl border px-4 py-3 text-sm font-semibold transition-all md:w-auto ${
               canReset
-                ? 'border-white/15 bg-white/[0.05] text-white/80 hover:bg-white/[0.08] hover:text-white'
-                : 'border-white/10 bg-white/[0.03] text-white/30'
+                ? 'glass-card text-white/80 hover:bg-white/[0.06] hover:text-white'
+                : 'glass-inner text-white/30'
             }`}
           >
             <RotateCcw className="h-4 w-4" />
@@ -373,20 +399,20 @@ function FactorBuilder({
           </button>
           <div className="glass-card-elevated flex w-full items-center justify-around gap-4 rounded-2xl px-5 py-3 md:w-auto md:justify-start">
             <div className="flex flex-col items-center">
-              <span className="text-[10px] tracking-wider text-white/40">{'\u542f\u7528\u56e0\u5b50'}</span>
+              <span className="text-[10px] uppercase tracking-wider text-white/40">{'\u542f\u7528\u56e0\u5b50'}</span>
               <span className="font-mono text-2xl font-bold text-[#00E5FF]">{activeFactorCount}</span>
             </div>
             <div className="h-10 w-px bg-white/10" />
             <div className="flex flex-col items-center">
-              <span className="text-[10px] tracking-wider text-white/40">{'\u6b63\u4ea4\u9635\u5217'}</span>
+              <span className="text-[10px] uppercase tracking-wider text-white/40">{'\u6b63\u4ea4\u9635\u5217'}</span>
               <span className="font-mono text-2xl font-bold text-[#00E5FF]">{arrayType ?? '--'}</span>
             </div>
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
-        {TAGUCHI_FACTOR_KEYS.map((factorKey) => (
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-2">
+        {DISPLAY_FACTOR_KEYS.map((factorKey) => (
           <FactorCard
             key={factorKey}
             factorKey={factorKey}
@@ -444,7 +470,7 @@ function TaguchiMatrix({
           <Grid3X3 className="h-4 w-4 text-[#00E5FF]/70" />
           <span className="font-mono text-lg font-bold text-[#00E5FF]">{arrayType ?? '--'}</span>
           <div className="h-5 w-px bg-white/10" />
-          <span className="text-xs text-white/50">{rowCount || 0} {'\u7ec4'}</span>
+          <span className="text-xs text-white/50">{rowCount || 0} {'\u7ec4\u5b9e\u9a8c'}</span>
         </div>
       </div>
 
@@ -458,7 +484,7 @@ function TaguchiMatrix({
               ? 'glass-card-elevated'
               : canGenerate
                 ? 'btn-premium-solid btn-pulse'
-                : 'glass-card-elevated cursor-not-allowed text-white/35'
+                : 'glass-inner cursor-not-allowed text-white/30'
           }`}
           whileHover={!isGenerating && canGenerate ? { scale: 1.01, y: -2 } : {}}
           whileTap={!isGenerating && canGenerate ? { scale: 0.99 } : {}}
@@ -497,8 +523,8 @@ function TaguchiMatrix({
                 onClick={() => setExpanded((current) => !current)}
               >
                 <div className="flex items-center gap-4">
-                  <div className="rounded-lg border border-[#00E5FF]/20 bg-[#00E5FF]/10 p-2">
-                    <Grid3X3 className="h-4 w-4 text-[#00E5FF]" />
+                  <div className="rounded-lg border border-cyan-400/20 bg-cyan-500/10 p-2">
+                    <Grid3X3 className="h-4 w-4 text-cyan-300" />
                   </div>
                   <div className="text-left">
                     <span className="text-sm font-medium text-white">{'\u5b9e\u9a8c\u8fd0\u884c\u6570\u636e'}</span>
@@ -506,7 +532,7 @@ function TaguchiMatrix({
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
-                  <span className="font-mono text-xs text-[#00E5FF]/70">{rowCount} {'\u7ec4'}</span>
+                  <span className="font-mono text-xs text-cyan-300/80">{rowCount} {'\u7ec4'}</span>
                   <motion.div animate={{ rotate: expanded ? 0 : 180 }} transition={{ duration: 0.2 }}>
                     <ChevronUp className="h-4 w-4 text-white/40" />
                   </motion.div>
@@ -524,26 +550,26 @@ function TaguchiMatrix({
                   >
                     <div className="max-h-[500px] overflow-auto scrollbar-soft">
                       <table className="w-full min-w-[760px]">
-                        <thead className="sticky-header">
-                          <tr className="border-b border-white/[0.08]">
+                        <thead className="sticky top-0 z-10 bg-slate-950/95 backdrop-blur-xl">
+                          <tr className="border-b border-cyan-500/10">
                             <th className="w-16 px-4 py-4 text-left text-[10px] font-bold tracking-wider text-white/50">
                               RUN
                             </th>
                             {activeFactors.map((factor) => (
                               <th
                                 key={factor.key}
-                                className="px-3 py-4 text-center text-[10px] font-bold tracking-wider text-white/50"
+                                className="px-3 py-4 text-center text-[10px] font-bold tracking-wider text-slate-400"
                               >
                                 <span className="block">{factor.shortLabel}</span>
-                                <span className="mt-1 block font-normal tracking-normal text-white/25">
+                                <span className="mt-1 block font-normal tracking-normal text-slate-500">
                                   {factor.unit || '\u6570\u503c'}
                                 </span>
                               </th>
                             ))}
-                            <th className="w-32 px-4 py-4 text-center text-[10px] font-bold tracking-wider text-[#00E5FF]/80">
+                            <th className="w-32 px-4 py-4 text-center text-[10px] font-bold tracking-wider text-cyan-300/80">
                               {'\u54cd\u5e94\u503c'}
                             </th>
-                            <th className="w-44 px-4 py-4 text-center text-[10px] font-bold tracking-wider text-[#00E5FF]/80">
+                            <th className="w-44 px-4 py-4 text-center text-[10px] font-bold tracking-wider text-cyan-300/80">
                               {'\u5b9e\u9a8c\u8bb0\u5f55'}
                             </th>
                           </tr>
@@ -558,8 +584,8 @@ function TaguchiMatrix({
                               transition={{ delay: rowIndex * 0.02 }}
                             >
                               <td className="px-4 py-4">
-                                <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#00E5FF]/20 bg-[#00E5FF]/10">
-                                  <span className="font-mono text-sm font-bold text-[#00E5FF]">
+                                <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-cyan-400/20 bg-cyan-500/10 shadow-[0_0_16px_rgba(34,211,238,0.12)]">
+                                  <span className="font-mono text-sm font-bold text-cyan-300">
                                     {String(row.run).padStart(2, '0')}
                                   </span>
                                 </div>
@@ -588,17 +614,17 @@ function TaguchiMatrix({
                                   value={row.maxDeviation ?? ''}
                                   onChange={(event) => onDeviationChange(row.run, event.target.value)}
                                   placeholder="0.000"
-                                  className="premium-input h-9 w-full rounded-lg px-3 text-center font-mono text-xs text-white/90 placeholder:text-white/20 focus:outline-none"
+                                  className="h-9 w-full rounded-lg border border-slate-800 bg-black/50 px-3 text-center font-mono text-xs text-gray-200 placeholder:text-slate-500 focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/50 focus:outline-none"
                                 />
                               </td>
                               <td className="px-4 py-4">
                                 <button
                                   type="button"
                                   onClick={() => onScanUpload(row.run)}
-                                  className={`flex h-9 w-full items-center justify-center gap-2 rounded-lg text-[11px] font-medium transition-all ${
+                                  className={`flex h-9 w-full items-center justify-center gap-2 rounded-lg border text-[11px] font-medium transition-all ${
                                     row.scanImage
-                                      ? 'border border-emerald-500/30 bg-emerald-500/15 text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.15)]'
-                                      : 'dropzone'
+                                      ? 'border-emerald-500/30 bg-emerald-500/15 text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.15)]'
+                                      : 'border-slate-800 bg-black/40 text-slate-400 hover:border-cyan-500/30 hover:text-cyan-200'
                                   }`}
                                 >
                                   {row.scanImage ? (
@@ -623,7 +649,7 @@ function TaguchiMatrix({
                 )}
               </AnimatePresence>
 
-              <div className="border-t border-white/[0.06] bg-black/20 px-4 py-4 md:px-6">
+              <div className="border-t border-cyan-500/10 bg-black/20 px-4 py-4 md:px-6">
                 <div className="flex flex-col gap-4 text-xs md:flex-row md:items-center md:justify-between">
                   <div className="flex flex-wrap items-center gap-4 md:gap-6">
                     <div className="flex items-center gap-2">
@@ -669,7 +695,7 @@ function CustomTooltip({
   if (!active || !payload?.length) return null;
 
   return (
-    <div className="glass-card-elevated rounded-xl border border-white/15 px-4 py-3">
+    <div className="rounded-xl border border-cyan-500/10 bg-slate-900/80 px-4 py-3 backdrop-blur-xl shadow-[0_18px_60px_rgba(2,12,27,0.45)]">
       <p className="mb-2 text-[10px] tracking-wider text-white/50">{label}</p>
       {payload.map((entry, index) => (
         <p
@@ -772,8 +798,8 @@ function AnalyticsPanel({
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <div className="glass-card-elevated radial-glow overflow-hidden rounded-2xl p-5 md:p-6">
           <div className="mb-6 flex items-center gap-3">
-            <div className="rounded-xl border border-[#00E5FF]/25 bg-[#00E5FF]/10 p-2.5">
-              <TrendingUp className="h-5 w-5 text-[#00E5FF]" />
+            <div className="rounded-xl border border-cyan-400/20 bg-cyan-500/10 p-2.5">
+              <TrendingUp className="h-5 w-5 text-cyan-300" />
             </div>
             <div>
               <h3 className="text-base font-semibold text-white">{'\u4e3b\u6548\u5e94\u56fe'}</h3>
@@ -817,7 +843,7 @@ function AnalyticsPanel({
             ) : (
               <div className="flex h-full items-center justify-center">
                 <div className="text-center">
-                  <div className="glass-inner mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-2xl">
+                  <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-2xl border border-slate-800 bg-black/40">
                     <TrendingUp className="h-10 w-10 text-white/15" />
                   </div>
                   <p className="text-sm text-white/30">{'\u8fd0\u884c\u5206\u6790\u540e\u67e5\u770b\u4e3b\u6548\u5e94\u53d8\u5316'}</p>
@@ -829,8 +855,8 @@ function AnalyticsPanel({
 
         <div className="glass-card-elevated radial-glow-indigo overflow-hidden rounded-2xl p-5 md:p-6">
           <div className="mb-6 flex items-center gap-3">
-            <div className="rounded-xl border border-indigo-500/25 bg-indigo-500/10 p-2.5">
-              <Zap className="h-5 w-5 text-indigo-400" />
+            <div className="rounded-xl border border-cyan-400/20 bg-cyan-500/10 p-2.5">
+              <Zap className="h-5 w-5 text-cyan-300" />
             </div>
             <div>
               <h3 className="text-base font-semibold text-white">{'\u56e0\u5b50\u5f71\u54cd\u6392\u5e8f'}</h3>
@@ -863,7 +889,7 @@ function AnalyticsPanel({
             ) : (
               <div className="flex h-full items-center justify-center">
                 <div className="text-center">
-                  <div className="glass-inner mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-2xl">
+                  <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-2xl border border-slate-800 bg-black/40">
                     <Zap className="h-10 w-10 text-white/15" />
                   </div>
                   <p className="text-sm text-white/30">{'\u5206\u6790\u540e\u663e\u793a\u56e0\u5b50\u5f71\u54cd\u5f3a\u5f31'}</p>
@@ -885,8 +911,8 @@ function AnalyticsPanel({
             className="glass-card-elevated glow-teal-intense border-pulse rounded-2xl p-5 md:p-6"
           >
             <div className="mb-5 flex flex-col gap-4 md:flex-row md:items-center">
-              <div className="rounded-xl border border-[#00E5FF]/25 bg-[#00E5FF]/10 p-2.5">
-                <Zap className="h-5 w-5 text-[#00E5FF]" />
+              <div className="rounded-xl border border-cyan-400/20 bg-cyan-500/10 p-2.5">
+                <Zap className="h-5 w-5 text-cyan-300" />
               </div>
               <div>
                 <h3 className="text-base font-semibold text-white">{'\u63a8\u8350\u53c2\u6570\u7ec4\u5408'}</h3>
@@ -1082,7 +1108,7 @@ export default function DoeWorkspace() {
   return (
     <div className="doe-workspace min-h-[70vh] overflow-hidden rounded-2xl bg-black text-white">
       <DoeHeader />
-      <main className="relative mx-auto max-w-[1400px] space-y-12 px-4 py-8 md:px-8 md:py-10 lg:space-y-14">
+      <main className="relative mx-auto max-w-[1400px] space-y-14 px-8 py-10">
         <TrialHeaderPanel fields={trialHeaderFields} onChange={handleTrialHeaderChange} />
         <FactorBuilder
           factorDefinitions={factorDefinitions}
@@ -1105,7 +1131,7 @@ export default function DoeWorkspace() {
         />
         <AnalyticsPanel hasData={hasData} matrixData={matrixData} activeFactors={activeFactors} />
       </main>
-      <footer className="relative mx-auto max-w-[1400px] px-4 py-8 md:px-8">
+      <footer className="relative mx-auto max-w-[1400px] px-8 py-8">
         <div className="flex flex-col gap-3 border-t border-white/[0.06] pt-6 text-[10px] tracking-wider text-white/20 md:flex-row md:items-center md:justify-between">
           <div className="flex flex-wrap items-center gap-4 md:gap-6">
             <span>{'\u901a\u7528\u5b9e\u9a8c\u8bbe\u8ba1'}</span>

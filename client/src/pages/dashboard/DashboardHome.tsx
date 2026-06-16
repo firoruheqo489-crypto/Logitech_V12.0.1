@@ -869,7 +869,7 @@ export default function DashboardHome() {
               'docx-converter': '问题解析',
               'trial-documents': '每日试验档',
               'project-gantt': '项目甘特图',
-              'doe': 'DOE实验设计',
+              'doe': 'DOE试验设计',
               'fmea-analysis': 'DFMEA',
               'pfmea': 'PFMEA',
               'report-8d': '8D报告',
