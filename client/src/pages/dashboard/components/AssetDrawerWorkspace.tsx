@@ -58,7 +58,9 @@ export default function AssetDrawerWorkspace({
       return;
     }
 
-    const hasCurrent = normalizedPanels.some((panel) => buildAssetPanelKey(panel) === selectedPanelKey);
+    const hasCurrent = normalizedPanels.some(
+      (panel) => buildAssetPanelKey(panel) === selectedPanelKey,
+    );
     if (!hasCurrent) {
       setSelectedPanelKey(buildAssetPanelKey(normalizedPanels[0]));
     }
@@ -154,14 +156,20 @@ export default function AssetDrawerWorkspace({
                   }`}
                 >
                   <div className="min-w-0">
-                    <div className={`text-base font-bold tracking-wide ${isActive ? 'text-cyan-300' : 'text-slate-100'}`}>
+                    <div
+                      className={`text-base font-bold tracking-wide ${
+                        isActive ? 'text-cyan-300' : 'text-slate-100'
+                      }`}
+                    >
                       {panel.moldId}
                     </div>
                     <div className="mt-1 text-[11px] font-mono tracking-[0.22em] text-slate-500">
                       {panel.moldNo}
                     </div>
                   </div>
-                  <ChevronRight className={`h-4 w-4 ${isActive ? 'text-cyan-400' : 'text-slate-600'}`} />
+                  <ChevronRight
+                    className={`h-4 w-4 ${isActive ? 'text-cyan-400' : 'text-slate-600'}`}
+                  />
                 </button>
               );
             })}

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ElementType } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   Activity,
@@ -6,10 +6,12 @@ import {
   ChevronUp,
   Gauge,
   Grid3X3,
+  Layers,
   Play,
   RotateCcw,
   Sparkles,
   Terminal,
+  Thermometer,
   TrendingUp,
   Upload,
   Zap,
@@ -96,6 +98,7 @@ const FACTOR_DEFAULTS: Array<{
 ];
 
 const DISPLAY_FACTOR_KEYS = TAGUCHI_FACTOR_KEYS.slice(0, 6);
+const DISPLAY_FACTOR_GROUPS = [DISPLAY_FACTOR_KEYS.slice(0, 3), DISPLAY_FACTOR_KEYS.slice(3, 6)] as const;
 
 const CHART_COLORS = ['#00E5FF', '#6366f1', '#10b981', '#f59e0b', '#fb7185', '#a855f7', '#14b8a6', '#f97316', '#84cc16'];
 
@@ -212,16 +215,18 @@ function TrialHeaderPanel({
 function LevelChip({
   label,
   value,
+  unit,
   onChange,
   disabled,
 }: {
   label: string;
   value: string;
+  unit: string;
   onChange: (value: string) => void;
   disabled?: boolean;
 }) {
   return (
-    <label className={`relative space-y-2 ${disabled ? 'factor-disabled' : ''}`}>
+    <label className={`relative block ${disabled ? 'factor-disabled' : ''}`}>
       <span className={`absolute -top-2 left-3 z-10 rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${
         label === 'L1'
           ? 'bg-emerald-500/20 text-emerald-400'
@@ -239,50 +244,75 @@ function LevelChip({
         placeholder={'\u8f93\u5165\u6c34\u5e73\u503c'}
         className="premium-input h-12 w-full rounded-xl px-3 pt-1 text-center font-mono text-sm text-white/90 placeholder:text-white/20 focus:outline-none disabled:cursor-not-allowed"
       />
+      {unit ? (
+        <span className="absolute bottom-3 right-3 text-[10px] font-mono text-white/30">
+          {unit}
+        </span>
+      ) : null}
     </label>
   );
 }
 
-function FactorCard({
+function FactorRow({
   factorKey,
   factor,
+  accent,
   onToggle,
   onFieldChange,
   onLevelChange,
 }: {
   factorKey: TaguchiFactorKey;
   factor: TaguchiFactorDefinition;
+  accent: 'teal' | 'indigo';
   onToggle: (factor: TaguchiFactorKey) => void;
   onFieldChange: (factor: TaguchiFactorKey, field: 'label' | 'unit', value: string) => void;
   onLevelChange: (factor: TaguchiFactorKey, level: number, value: string) => void;
 }) {
   const index = TAGUCHI_FACTOR_KEYS.indexOf(factorKey) + 1;
+  const RowIcon = accent === 'teal' ? Thermometer : Gauge;
+  const iconWrapClass =
+    accent === 'teal'
+      ? 'bg-[#00E5FF]/10 border-[#00E5FF]/25'
+      : 'bg-indigo-500/10 border-indigo-500/25';
+  const iconClass = accent === 'teal' ? 'text-[#00E5FF]' : 'text-indigo-400';
+  const badgeClass =
+    accent === 'teal'
+      ? 'bg-[#00E5FF]/10 border-[#00E5FF]/20 text-[#00E5FF]/80'
+      : 'bg-indigo-500/10 border-indigo-500/20 text-indigo-300/80';
+  const toggleOnClass =
+    accent === 'teal'
+      ? 'bg-gradient-to-r from-[#6fd0ea] to-[#54b8d4] shadow-[0_0_14px_rgba(0,229,255,0.22)]'
+      : 'bg-gradient-to-r from-indigo-400 to-indigo-500 shadow-[0_0_14px_rgba(99,102,241,0.22)]';
+  const statusTextClass = accent === 'teal' ? 'text-[#8ed8ea]/75' : 'text-indigo-300/70';
+  const statusDotClass = accent === 'teal' ? 'bg-[#8ed8ea]' : 'bg-indigo-300';
+  const accentLabelClass = accent === 'teal' ? 'text-[#00E5FF]' : 'text-indigo-400';
 
   return (
-    <div
-      className={`glass-card-elevated radial-glow space-y-6 overflow-hidden rounded-2xl p-6 ${
-        factor.enabled ? '' : 'opacity-75'
-      }`}
-    >
-      <div className="flex items-center gap-3 border-b border-white/[0.08] pb-4">
-        <div className="rounded-xl border border-[#00E5FF]/25 bg-[#00E5FF]/10 p-2.5">
-          <Gauge className="h-5 w-5 text-[#00E5FF]" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <h3 className="text-base font-semibold text-white">{factor.label || `\u56e0\u5b50 ${index}`}</h3>
-            <span className="rounded-md border border-[#00E5FF]/20 bg-[#00E5FF]/10 px-2 py-0.5 font-mono text-[10px] text-[#00E5FF]/80">
-              {factor.shortLabel}
-            </span>
+    <div className={`space-y-3 ${factor.enabled ? '' : 'opacity-70'}`}>
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+        <div className="flex items-center gap-3">
+          <div className={`rounded-xl border p-2.5 ${iconWrapClass}`}>
+            <RowIcon className={`h-5 w-5 ${iconClass}`} />
           </div>
-          <p className="mt-1 text-xs text-white/40">{'\u4e09\u6c34\u5e73\u56e0\u5b50\u914d\u7f6e'}</p>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <h3 className="text-base font-semibold text-white">{factor.label || `\u56e0\u5b50 ${index}`}</h3>
+              <span className={`rounded-md border px-2 py-0.5 font-mono text-[10px] ${badgeClass}`}>
+                {factor.shortLabel}
+              </span>
+            </div>
+            <p className="mt-1 text-xs text-white/40">{'\u4e09\u6c34\u5e73\u56e0\u5b50\u914d\u7f6e'}</p>
+          </div>
         </div>
+
         <button
           type="button"
           onClick={() => onToggle(factorKey)}
-          className={`group flex w-[180px] items-center gap-4 rounded-xl p-4 transition-all duration-300 ${
+          className={`group glass-card ml-auto flex w-full max-w-[200px] items-center gap-3 rounded-xl px-3.5 py-3 transition-all duration-300 ${
             factor.enabled
-              ? 'glass-card'
+              ? accent === 'teal'
+                ? 'shadow-[0_0_18px_rgba(0,229,255,0.10)]'
+                : ''
               : 'glass-inner hover:bg-white/[0.03]'
           }`}
           aria-pressed={factor.enabled}
@@ -290,7 +320,9 @@ function FactorCard({
           <div
             className={`relative h-8 w-16 rounded-full transition-all duration-300 ${
               factor.enabled
-                ? 'bg-gradient-to-r from-[#6fd0ea] to-[#54b8d4] shadow-[0_0_14px_rgba(0,229,255,0.22)]'
+                ? accent === 'teal'
+                  ? 'bg-gradient-to-r from-[#00D7F0] to-[#00B4CF]'
+                  : toggleOnClass
                 : 'border border-white/[0.10] bg-white/[0.06]'
             }`}
           >
@@ -310,10 +342,10 @@ function FactorCard({
             />
           </div>
           <div className="ml-auto flex items-center gap-2">
-            <span className={`text-[10px] font-medium uppercase tracking-wider ${factor.enabled ? 'text-[#8ed8ea]/75' : 'text-white/30'}`}>
+            <span className={`text-[9px] font-medium uppercase tracking-wider ${factor.enabled ? statusTextClass : 'text-white/30'}`}>
               {factor.enabled ? 'Active' : 'Inactive'}
             </span>
-            <div className={`relative h-2.5 w-2.5 rounded-full ${factor.enabled ? 'bg-[#8ed8ea]' : 'bg-white/20'}`} />
+            <div className={`relative h-2.5 w-2.5 rounded-full ${factor.enabled ? `status-dot ${statusDotClass}` : 'bg-white/20'}`} />
           </div>
         </button>
       </div>
@@ -341,15 +373,95 @@ function FactorCard({
         </label>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+      <div className="space-y-2.5">
+        <div className="flex items-center gap-2">
+          <div className={`h-6 w-1.5 rounded-full ${accent === 'teal' ? 'bg-[#00E5FF]/40' : 'bg-indigo-500/40'}`} />
+          <span className={`text-xs font-semibold uppercase tracking-wider ${accentLabelClass}`}>
+            {factor.shortLabel} / Levels
+          </span>
+        </div>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
         {factor.levels.map((levelValue, levelIndex) => (
           <LevelChip
             key={`${factorKey}-level-${levelIndex + 1}`}
             label={`L${levelIndex + 1}`}
             value={levelValue}
+            unit={factor.unit}
             disabled={!factor.enabled}
             onChange={(value) => onLevelChange(factorKey, levelIndex, value)}
           />
+        ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FactorGroupPanel({
+  title,
+  subtitle,
+  icon: Icon,
+  accent,
+  factorKeys,
+  factorDefinitions,
+  onFactorToggle,
+  onFactorFieldChange,
+  onLevelChange,
+}: {
+  title: string;
+  subtitle: string;
+  icon: ElementType;
+  accent: 'teal' | 'indigo';
+  factorKeys: readonly TaguchiFactorKey[];
+  factorDefinitions: TaguchiFactorDefinitions;
+  onFactorToggle: (factor: TaguchiFactorKey) => void;
+  onFactorFieldChange: (factor: TaguchiFactorKey, field: 'label' | 'unit', value: string) => void;
+  onLevelChange: (factor: TaguchiFactorKey, level: number, value: string) => void;
+}) {
+  const panelClass = accent === 'teal' ? 'radial-glow' : 'radial-glow-indigo';
+  const iconWrapClass =
+    accent === 'teal'
+      ? 'bg-[#00E5FF]/10 border-[#00E5FF]/25'
+      : 'bg-indigo-500/10 border-indigo-500/25';
+  const iconClass = accent === 'teal' ? 'text-[#00E5FF]' : 'text-indigo-400';
+  const activeCount = factorKeys.filter((key) => factorDefinitions[key].enabled).length;
+  const accentTextClass = accent === 'teal' ? 'text-[#00E5FF]/75' : 'text-indigo-300/75';
+  const headerGlow = accent === 'teal' ? 'bg-[#00E5FF]/6' : 'bg-indigo-500/6';
+
+  return (
+    <div className={`glass-card-elevated ${panelClass} space-y-6 overflow-hidden rounded-2xl p-6`}>
+      <div className={`-mx-6 -mt-6 flex items-center gap-3 border-b border-white/[0.08] px-6 pb-4 pt-6 ${headerGlow}`}>
+        <div className={`rounded-xl border p-2.5 ${iconWrapClass}`}>
+          <Icon className={`h-5 w-5 ${iconClass}`} />
+        </div>
+        <div>
+          <h3 className="text-base font-semibold text-white">{title}</h3>
+          <p className="text-xs text-white/40">{subtitle}</p>
+        </div>
+        <div className="ml-auto flex items-center gap-2">
+          <Layers className="h-4 w-4 text-white/30" />
+          <span className="font-mono text-xs text-white/40">{activeCount} vars</span>
+        </div>
+      </div>
+      <div className="flex items-center justify-between">
+        <div className={`text-[10px] font-mono uppercase tracking-[0.22em] ${accentTextClass}`}>
+          {accent === 'teal' ? 'MODULE_A' : 'MODULE_B'}
+        </div>
+        <div className="h-px flex-1 bg-white/[0.04] ml-4" />
+      </div>
+
+      <div className="space-y-6">
+        {factorKeys.map((factorKey, idx) => (
+          <div key={factorKey} className={idx === factorKeys.length - 1 ? '' : 'border-b border-white/[0.05] pb-6'}>
+            <FactorRow
+              factorKey={factorKey}
+              factor={factorDefinitions[factorKey]}
+              accent={accent}
+              onToggle={onFactorToggle}
+              onFieldChange={onFactorFieldChange}
+              onLevelChange={onLevelChange}
+            />
+          </div>
         ))}
       </div>
     </div>
@@ -411,17 +523,29 @@ function FactorBuilder({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-2">
-        {DISPLAY_FACTOR_KEYS.map((factorKey) => (
-          <FactorCard
-            key={factorKey}
-            factorKey={factorKey}
-            factor={factorDefinitions[factorKey]}
-            onToggle={onFactorToggle}
-            onFieldChange={onFactorFieldChange}
-            onLevelChange={onLevelChange}
-          />
-        ))}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <FactorGroupPanel
+          title={'\u5b9e\u9a8c\u56e0\u5b50\u7cfb\u7edf A'}
+          subtitle={'Experimental Factor Cluster A'}
+          icon={Thermometer}
+          accent="teal"
+          factorKeys={DISPLAY_FACTOR_GROUPS[0]}
+          factorDefinitions={factorDefinitions}
+          onFactorToggle={onFactorToggle}
+          onFactorFieldChange={onFactorFieldChange}
+          onLevelChange={onLevelChange}
+        />
+        <FactorGroupPanel
+          title={'\u5b9e\u9a8c\u56e0\u5b50\u7cfb\u7edf B'}
+          subtitle={'Experimental Factor Cluster B'}
+          icon={Gauge}
+          accent="indigo"
+          factorKeys={DISPLAY_FACTOR_GROUPS[1]}
+          factorDefinitions={factorDefinitions}
+          onFactorToggle={onFactorToggle}
+          onFactorFieldChange={onFactorFieldChange}
+          onLevelChange={onLevelChange}
+        />
       </div>
     </section>
   );
@@ -502,6 +626,7 @@ function TaguchiMatrix({
             <>
               <Sparkles className="h-5 w-5" />
               <span>{canGenerate ? '\u751f\u6210\u6b63\u4ea4\u77e9\u9635' : '\u81f3\u5c11\u542f\u7528 1 \u4e2a\u56e0\u5b50\u540e\u518d\u751f\u6210\u77e9\u9635'}</span>
+              {canGenerate && <span className="font-normal text-black/50">Generate Matrix</span>}
             </>
           )}
         </motion.button>
@@ -523,8 +648,8 @@ function TaguchiMatrix({
                 onClick={() => setExpanded((current) => !current)}
               >
                 <div className="flex items-center gap-4">
-                  <div className="rounded-lg border border-cyan-400/20 bg-cyan-500/10 p-2">
-                    <Grid3X3 className="h-4 w-4 text-cyan-300" />
+                  <div className="rounded-lg border border-[#00E5FF]/20 bg-[#00E5FF]/10 p-2">
+                    <Grid3X3 className="h-4 w-4 text-[#00E5FF]" />
                   </div>
                   <div className="text-left">
                     <span className="text-sm font-medium text-white">{'\u5b9e\u9a8c\u8fd0\u884c\u6570\u636e'}</span>
@@ -532,7 +657,7 @@ function TaguchiMatrix({
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
-                  <span className="font-mono text-xs text-cyan-300/80">{rowCount} {'\u7ec4'}</span>
+                    <span className="font-mono text-xs text-[#00E5FF]/70">{rowCount} runs</span>
                   <motion.div animate={{ rotate: expanded ? 0 : 180 }} transition={{ duration: 0.2 }}>
                     <ChevronUp className="h-4 w-4 text-white/40" />
                   </motion.div>
@@ -550,26 +675,26 @@ function TaguchiMatrix({
                   >
                     <div className="max-h-[500px] overflow-auto scrollbar-soft">
                       <table className="w-full min-w-[760px]">
-                        <thead className="sticky top-0 z-10 bg-slate-950/95 backdrop-blur-xl">
-                          <tr className="border-b border-cyan-500/10">
-                            <th className="w-16 px-4 py-4 text-left text-[10px] font-bold tracking-wider text-white/50">
+                        <thead className="sticky-header">
+                          <tr className="border-b border-white/[0.08]">
+                            <th className="w-16 px-4 py-4 text-left text-[10px] font-bold uppercase tracking-wider text-white/50">
                               RUN
                             </th>
                             {activeFactors.map((factor) => (
                               <th
                                 key={factor.key}
-                                className="px-3 py-4 text-center text-[10px] font-bold tracking-wider text-slate-400"
+                                className="px-3 py-4 text-center text-[10px] font-bold uppercase tracking-wider text-white/50"
                               >
                                 <span className="block">{factor.shortLabel}</span>
-                                <span className="mt-1 block font-normal tracking-normal text-slate-500">
+                                <span className="mt-1 block font-normal normal-case tracking-normal text-white/25">
                                   {factor.unit || '\u6570\u503c'}
                                 </span>
                               </th>
                             ))}
-                            <th className="w-32 px-4 py-4 text-center text-[10px] font-bold tracking-wider text-cyan-300/80">
+                            <th className="w-32 px-4 py-4 text-center text-[10px] font-bold uppercase tracking-wider text-[#00E5FF]/80">
                               {'\u54cd\u5e94\u503c'}
                             </th>
-                            <th className="w-44 px-4 py-4 text-center text-[10px] font-bold tracking-wider text-cyan-300/80">
+                            <th className="w-44 px-4 py-4 text-center text-[10px] font-bold uppercase tracking-wider text-[#00E5FF]/80">
                               {'\u5b9e\u9a8c\u8bb0\u5f55'}
                             </th>
                           </tr>
@@ -584,8 +709,8 @@ function TaguchiMatrix({
                               transition={{ delay: rowIndex * 0.02 }}
                             >
                               <td className="px-4 py-4">
-                                <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-cyan-400/20 bg-cyan-500/10 shadow-[0_0_16px_rgba(34,211,238,0.12)]">
-                                  <span className="font-mono text-sm font-bold text-cyan-300">
+                                <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#00E5FF]/20 bg-[#00E5FF]/10">
+                                  <span className="font-mono text-sm font-bold text-[#00E5FF]">
                                     {String(row.run).padStart(2, '0')}
                                   </span>
                                 </div>
@@ -614,17 +739,17 @@ function TaguchiMatrix({
                                   value={row.maxDeviation ?? ''}
                                   onChange={(event) => onDeviationChange(row.run, event.target.value)}
                                   placeholder="0.000"
-                                  className="h-9 w-full rounded-lg border border-slate-800 bg-black/50 px-3 text-center font-mono text-xs text-gray-200 placeholder:text-slate-500 focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/50 focus:outline-none"
+                                  className="premium-input h-9 w-full rounded-lg px-3 text-center font-mono text-xs text-white/90 placeholder:text-white/20 focus:outline-none"
                                 />
                               </td>
                               <td className="px-4 py-4">
                                 <button
                                   type="button"
                                   onClick={() => onScanUpload(row.run)}
-                                  className={`flex h-9 w-full items-center justify-center gap-2 rounded-lg border text-[11px] font-medium transition-all ${
+                                  className={`flex h-9 w-full items-center justify-center gap-2 rounded-lg text-[11px] font-medium transition-all ${
                                     row.scanImage
                                       ? 'border-emerald-500/30 bg-emerald-500/15 text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.15)]'
-                                      : 'border-slate-800 bg-black/40 text-slate-400 hover:border-cyan-500/30 hover:text-cyan-200'
+                                      : 'dropzone'
                                   }`}
                                 >
                                   {row.scanImage ? (
@@ -666,12 +791,18 @@ function TaguchiMatrix({
                     </div>
                   </div>
                   <div className="flex items-center gap-4">
-                    <span className="level-1 flex h-3 w-3 items-center justify-center rounded text-[8px]">1</span>
-                    <span className="text-white/30">{'\u4f4e'}</span>
-                    <span className="level-2 flex h-3 w-3 items-center justify-center rounded text-[8px]">2</span>
-                    <span className="text-white/30">{'\u4e2d'}</span>
-                    <span className="level-3 flex h-3 w-3 items-center justify-center rounded text-[8px]">3</span>
-                    <span className="text-white/30">{'\u9ad8'}</span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="level-1 flex h-3 w-3 items-center justify-center rounded text-[8px]">1</span>
+                      <span className="text-white/30">Low</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="level-2 flex h-3 w-3 items-center justify-center rounded text-[8px]">2</span>
+                      <span className="text-white/30">Mid</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="level-3 flex h-3 w-3 items-center justify-center rounded text-[8px]">3</span>
+                      <span className="text-white/30">High</span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -695,7 +826,7 @@ function CustomTooltip({
   if (!active || !payload?.length) return null;
 
   return (
-    <div className="rounded-xl border border-cyan-500/10 bg-slate-900/80 px-4 py-3 backdrop-blur-xl shadow-[0_18px_60px_rgba(2,12,27,0.45)]">
+    <div className="glass-card-elevated rounded-xl border border-white/15 px-4 py-3">
       <p className="mb-2 text-[10px] tracking-wider text-white/50">{label}</p>
       {payload.map((entry, index) => (
         <p
@@ -790,6 +921,7 @@ function AnalyticsPanel({
             <>
               <Play className="h-4 w-4" />
               <span>{hasAnalysis ? '\u91cd\u65b0\u8fd0\u884c\u5206\u6790' : '\u8fd0\u884c DOE \u5206\u6790'}</span>
+              {hasData && !isAnalyzing && <span className="text-xs font-normal text-black/50">Execute S/N Analytics</span>}
             </>
           )}
         </motion.button>
@@ -843,10 +975,11 @@ function AnalyticsPanel({
             ) : (
               <div className="flex h-full items-center justify-center">
                 <div className="text-center">
-                  <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-2xl border border-slate-800 bg-black/40">
+                  <div className="glass-inner mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-2xl">
                     <TrendingUp className="h-10 w-10 text-white/15" />
                   </div>
                   <p className="text-sm text-white/30">{'\u8fd0\u884c\u5206\u6790\u540e\u67e5\u770b\u4e3b\u6548\u5e94\u53d8\u5316'}</p>
+                  <p className="mt-1 text-xs text-white/20">Run analysis to view chart</p>
                 </div>
               </div>
             )}
@@ -889,7 +1022,7 @@ function AnalyticsPanel({
             ) : (
               <div className="flex h-full items-center justify-center">
                 <div className="text-center">
-                  <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-2xl border border-slate-800 bg-black/40">
+                  <div className="glass-inner mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-2xl">
                     <Zap className="h-10 w-10 text-white/15" />
                   </div>
                   <p className="text-sm text-white/30">{'\u5206\u6790\u540e\u663e\u793a\u56e0\u5b50\u5f71\u54cd\u5f3a\u5f31'}</p>
@@ -933,7 +1066,7 @@ function AnalyticsPanel({
 
               <div className="mb-4 grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div className="space-y-2 md:col-span-2">
-                  <p className="mb-2 text-xs tracking-wider text-white/50">{'\u5efa\u8bae\u53c2\u6570\u7ec4\u5408'}</p>
+                  <p className="mb-2 text-xs uppercase tracking-wider text-white/50">{'\u5efa\u8bae\u53c2\u6570\u7ec4\u5408'}</p>
                   <div className="grid grid-cols-1 gap-x-6 gap-y-2 md:grid-cols-2">
                     {analysisResult.optimalSet.map((item, index) => (
                       <p key={item.factorKey} className="text-white/60">

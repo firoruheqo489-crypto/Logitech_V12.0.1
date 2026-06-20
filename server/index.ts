@@ -46,6 +46,12 @@ import {
   upsertDashboardFishboneState,
 } from "./routes/dashboard-fishbone-state.js";
 import {
+  deleteDashboardGrrState,
+  ensureDashboardGrrStateTable,
+  getDashboardGrrState,
+  upsertDashboardGrrState,
+} from "./routes/dashboard-grr-state.js";
+import {
   deleteDashboardFaiDimensionState,
   ensureDashboardFaiDimensionTable,
   getDashboardFaiDimensionState,
@@ -263,6 +269,7 @@ async function startServer() {
     { name: "dashboard_complaint_insight", run: ensureDashboardComplaintInsightStateTable },
     { name: "dashboard_caq_audit", run: ensureDashboardCaqAuditStateTable },
     { name: "dashboard_fishbone", run: ensureDashboardFishboneStateTable },
+    { name: "dashboard_grr", run: ensureDashboardGrrStateTable },
     { name: "dashboard_fai_dimension", run: ensureDashboardFaiDimensionTable },
     { name: "dashboard_mold_trial_evidence", run: ensureDashboardMoldTrialEvidenceTable },
     { name: "dashboard_docx_converter", run: ensureDashboardDocxConverterTable },
@@ -432,6 +439,9 @@ async function startServer() {
   app.get("/api/dashboard/fishbone-state", getDashboardFishboneState);
   app.put("/api/dashboard/fishbone-state", upsertDashboardFishboneState);
   app.delete("/api/dashboard/fishbone-state", deleteDashboardFishboneState);
+  app.get("/api/dashboard/grr-state", getDashboardGrrState);
+  app.put("/api/dashboard/grr-state", upsertDashboardGrrState);
+  app.delete("/api/dashboard/grr-state", deleteDashboardGrrState);
   app.get("/api/dashboard/tooling-fai-state", getDashboardToolingFaiState);
   app.put("/api/dashboard/tooling-fai-state", upsertDashboardToolingFaiState);
   app.delete("/api/dashboard/tooling-fai-state", deleteDashboardToolingFaiState);

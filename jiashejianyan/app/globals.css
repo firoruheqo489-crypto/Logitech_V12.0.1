@@ -1,0 +1,463 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import 'shadcn/tailwind.css';
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --font-heading: var(--font-sans);
+  --font-sans: var(--font-geist-sans), 'Geist Fallback';
+  --font-mono: var(--font-geist-mono), 'JetBrains Mono Fallback';
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  /* bespoke lab tokens */
+  --color-cyan: var(--cyan);
+  --color-rose-gold: var(--rose-gold);
+  --color-platinum: var(--platinum);
+  --color-warning: var(--warning);
+  --color-panel: var(--panel);
+
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+}
+
+:root,
+.dark {
+  color-scheme: dark;
+
+  /* obsidian marble base */
+  --background: oklch(0.16 0.012 250);
+  --foreground: oklch(0.94 0.008 240);
+
+  --card: oklch(0.21 0.014 250);
+  --card-foreground: oklch(0.94 0.008 240);
+  --popover: oklch(0.19 0.014 250);
+  --popover-foreground: oklch(0.94 0.008 240);
+
+  /* neon cyan as primary accent */
+  --primary: oklch(0.82 0.13 200);
+  --primary-foreground: oklch(0.16 0.012 250);
+
+  --secondary: oklch(0.26 0.014 250);
+  --secondary-foreground: oklch(0.92 0.008 240);
+
+  --muted: oklch(0.26 0.012 250);
+  --muted-foreground: oklch(0.66 0.012 240);
+
+  --accent: oklch(0.28 0.016 250);
+  --accent-foreground: oklch(0.94 0.008 240);
+
+  --destructive: oklch(0.63 0.22 22);
+
+  --border: oklch(0.42 0.02 240 / 35%);
+  --input: oklch(0.5 0.02 240 / 25%);
+  --ring: oklch(0.82 0.13 200);
+
+  /* lab accents */
+  --cyan: oklch(0.82 0.14 200);
+  --rose-gold: oklch(0.78 0.08 45);
+  --platinum: oklch(0.86 0.006 240);
+  --warning: oklch(0.64 0.23 22);
+  --panel: oklch(0.19 0.014 250);
+
+  --radius: 0.625rem;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    background-image:
+      radial-gradient(
+        ellipse 120% 80% at 50% -10%,
+        oklch(0.26 0.03 210 / 0.5),
+        transparent 60%
+      ),
+      radial-gradient(
+        ellipse 90% 70% at 100% 110%,
+        oklch(0.24 0.04 45 / 0.28),
+        transparent 55%
+      ),
+      repeating-linear-gradient(
+        115deg,
+        oklch(0.17 0.012 250) 0px,
+        oklch(0.17 0.012 250) 2px,
+        oklch(0.155 0.012 250) 2px,
+        oklch(0.155 0.012 250) 5px
+      );
+    background-attachment: fixed;
+  }
+  html {
+    @apply font-sans;
+  }
+}
+
+@layer utilities {
+  .font-num {
+    font-family: var(--font-geist-mono), 'JetBrains Mono Fallback', monospace;
+    font-feature-settings: 'tnum' 1;
+    letter-spacing: -0.01em;
+  }
+
+  /* brushed dark metal panel */
+  .metal-panel {
+    background:
+      linear-gradient(
+        160deg,
+        oklch(0.24 0.015 250 / 0.9),
+        oklch(0.18 0.013 250 / 0.92)
+      );
+    box-shadow:
+      inset 0 1px 0 oklch(0.65 0.02 240 / 0.18),
+      inset 0 0 0 1px oklch(0.45 0.02 240 / 0.12),
+      0 24px 60px -20px oklch(0 0 0 / 0.75);
+    backdrop-filter: blur(14px);
+  }
+
+  /* recessed control well */
+  .recessed {
+    background: linear-gradient(
+      180deg,
+      oklch(0.13 0.012 250 / 0.95),
+      oklch(0.17 0.012 250 / 0.9)
+    );
+    box-shadow:
+      inset 0 2px 6px oklch(0 0 0 / 0.6),
+      inset 0 0 0 1px oklch(0.4 0.02 240 / 0.14),
+      0 1px 0 oklch(0.6 0.02 240 / 0.08);
+  }
+
+  .glass {
+    background: linear-gradient(
+      150deg,
+      oklch(0.28 0.018 250 / 0.55),
+      oklch(0.2 0.014 250 / 0.4)
+    );
+    backdrop-filter: blur(18px) saturate(140%);
+    box-shadow:
+      inset 0 1px 0 oklch(0.7 0.02 240 / 0.16),
+      0 20px 50px -24px oklch(0 0 0 / 0.8);
+  }
+
+  .glow-cyan {
+    box-shadow:
+      0 0 0 1px oklch(0.82 0.14 200 / 0.5),
+      0 0 22px oklch(0.82 0.14 200 / 0.35),
+      inset 0 0 18px oklch(0.82 0.14 200 / 0.12);
+  }
+  .text-glow-cyan {
+    text-shadow: 0 0 18px oklch(0.82 0.14 200 / 0.65);
+  }
+  .text-glow-warning {
+    text-shadow:
+      0 0 22px oklch(0.7 0.24 25 / 0.75),
+      0 0 44px oklch(0.78 0.12 55 / 0.4);
+  }
+  .text-glow-rose {
+    text-shadow: 0 0 16px oklch(0.78 0.1 45 / 0.55);
+  }
+
+  @keyframes pulse-line {
+    0%,
+    100% {
+      opacity: 0.9;
+    }
+    50% {
+      opacity: 0.45;
+    }
+  }
+  .animate-pulse-line {
+    animation: pulse-line 2.4s ease-in-out infinite;
+  }
+
+  @keyframes orb-pulse {
+    0%,
+    100% {
+      transform: scale(1);
+      opacity: 0.4;
+    }
+    50% {
+      transform: scale(2.1);
+      opacity: 0;
+    }
+  }
+  .animate-orb-pulse {
+    animation: orb-pulse 1.6s ease-out infinite;
+  }
+
+  @keyframes scan {
+    0% {
+      transform: translateY(-100%);
+    }
+    100% {
+      transform: translateY(calc(100vh + 100%));
+    }
+  }
+
+  /* ===== CYBER-LUXURY HUD CHROME ===== */
+
+  /* Physical-screen overlay: fine CRT scanlines + slow sweeping beam */
+  .hud-screen::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    pointer-events: none;
+    background-image: repeating-linear-gradient(
+      0deg,
+      oklch(0 0 0 / 0.22) 0px,
+      oklch(0 0 0 / 0.22) 1px,
+      transparent 1px,
+      transparent 3px
+    );
+    mix-blend-mode: multiply;
+    opacity: 0.5;
+  }
+  .hud-screen::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 51;
+    pointer-events: none;
+    background: linear-gradient(
+      to bottom,
+      transparent 0%,
+      oklch(0.82 0.14 200 / 0.06) 45%,
+      oklch(0.82 0.14 200 / 0.1) 50%,
+      oklch(0.82 0.14 200 / 0.06) 55%,
+      transparent 100%
+    );
+    height: 38%;
+    inset-block-end: auto;
+    animation: scan 7s linear infinite;
+  }
+
+  /* Dark hexagonal telemetry grid (very low opacity) */
+  .hud-hex {
+    position: relative;
+  }
+  .hud-hex::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='100' viewBox='0 0 56 100'%3E%3Cpath d='M28 0L56 16v33L28 66 0 49V16z M28 66l28 16v18M28 66L0 82v18' fill='none' stroke='%2300f3ff' stroke-width='1'/%3E%3C/svg%3E");
+    background-size: 56px 100px;
+    opacity: 0.03;
+  }
+
+  /* Custom thin neon webkit scrollbars */
+  .neon-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+    transition: scrollbar-color 0.4s ease;
+  }
+  .neon-scroll:hover,
+  .neon-scroll:focus {
+    scrollbar-color: oklch(0.82 0.14 200 / 0.4) transparent;
+  }
+  .neon-scroll::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+  .neon-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  /* fade out when idle — only paint the thumb on hover / active scroll */
+  .neon-scroll::-webkit-scrollbar-thumb {
+    background: transparent;
+    border-radius: 9999px;
+    transition: background 0.4s ease;
+  }
+  .neon-scroll:hover::-webkit-scrollbar-thumb,
+  .neon-scroll:focus::-webkit-scrollbar-thumb {
+    background: oklch(0.82 0.14 200 / 0.45);
+  }
+  .neon-scroll:hover::-webkit-scrollbar-thumb:hover {
+    background: oklch(0.82 0.14 200 / 0.7);
+  }
+
+  /* sharp cyan glow for interactive micro-buttons on hover */
+  .glow-cyan-hover {
+    transition:
+      box-shadow 0.2s ease,
+      color 0.2s ease;
+  }
+  .glow-cyan-hover:hover {
+    box-shadow:
+      0 0 0 1px oklch(0.82 0.14 200 / 0.7),
+      0 0 16px oklch(0.82 0.14 200 / 0.55),
+      inset 0 0 10px oklch(0.82 0.14 200 / 0.18);
+  }
+
+  /* Awaiting-telemetry empty state — faint pulsing */
+  @keyframes telemetry-breathe {
+    0%,
+    100% {
+      opacity: 0.25;
+    }
+    50% {
+      opacity: 0.6;
+    }
+  }
+  .animate-telemetry-breathe {
+    animation: telemetry-breathe 2.8s ease-in-out infinite;
+  }
+  @keyframes flatline-sweep {
+    0% {
+      stroke-dashoffset: 240;
+    }
+    100% {
+      stroke-dashoffset: 0;
+    }
+  }
+  .animate-flatline {
+    stroke-dasharray: 240;
+    animation: flatline-sweep 3.5s linear infinite;
+  }
+
+  /* Deep recessed CRT well for data inputs */
+  .crt-well {
+    box-shadow:
+      inset 0 4px 20px oklch(0 0 0 / 0.8),
+      inset 0 0 0 1px oklch(0.82 0.14 200 / 0.12);
+  }
+
+  /* Mech corner-targeting brackets for critical panels */
+  .mech-frame {
+    position: relative;
+  }
+  .mech-frame::before,
+  .mech-frame::after {
+    content: "";
+    position: absolute;
+    width: 18px;
+    height: 18px;
+    pointer-events: none;
+    z-index: 2;
+  }
+  .mech-frame::before {
+    top: 8px;
+    left: 8px;
+    border-top: 2px solid var(--bracket, oklch(0.82 0.14 200 / 0.7));
+    border-left: 2px solid var(--bracket, oklch(0.82 0.14 200 / 0.7));
+  }
+  .mech-frame::after {
+    bottom: 8px;
+    right: 8px;
+    border-bottom: 2px solid var(--bracket, oklch(0.82 0.14 200 / 0.7));
+    border-right: 2px solid var(--bracket, oklch(0.82 0.14 200 / 0.7));
+  }
+  /* second pair of corners via inner helper */
+  .mech-corners::before,
+  .mech-corners::after {
+    content: "";
+    position: absolute;
+    width: 18px;
+    height: 18px;
+    pointer-events: none;
+    z-index: 2;
+  }
+  .mech-corners::before {
+    top: 8px;
+    right: 8px;
+    border-top: 2px solid var(--bracket, oklch(0.82 0.14 200 / 0.7));
+    border-right: 2px solid var(--bracket, oklch(0.82 0.14 200 / 0.7));
+  }
+  .mech-corners::after {
+    bottom: 8px;
+    left: 8px;
+    border-bottom: 2px solid var(--bracket, oklch(0.82 0.14 200 / 0.7));
+    border-left: 2px solid var(--bracket, oklch(0.82 0.14 200 / 0.7));
+  }
+
+  /* Nixie-tube / high-output LED readout glow */
+  .text-nixie-cyan {
+    text-shadow:
+      0 0 10px oklch(1 0 0 / 0.8),
+      0 0 20px oklch(0.82 0.14 200 / 0.85),
+      0 0 42px oklch(0.82 0.14 200 / 0.5);
+  }
+  .text-nixie-warning {
+    text-shadow:
+      0 0 10px oklch(1 0 0 / 0.85),
+      0 0 20px oklch(0.7 0.24 25 / 0.85),
+      0 0 44px oklch(0.7 0.24 25 / 0.6);
+  }
+
+  @keyframes orb-throb {
+    0%,
+    100% {
+      r: 6;
+      opacity: 1;
+    }
+    50% {
+      r: 9;
+      opacity: 0.85;
+    }
+  }
+
+  /* Ultra-premium glass slab for the evidence matrix */
+  .evidence-slab {
+    background: oklch(0.16 0.012 240 / 0.4);
+    backdrop-filter: blur(40px);
+    -webkit-backdrop-filter: blur(40px);
+    border: 1px solid oklch(1 0 0 / 0.05);
+    box-shadow:
+      inset 0 1px 0 oklch(1 0 0 / 0.04),
+      inset 0 0 40px oklch(0 0 0 / 0.5),
+      0 30px 80px -30px oklch(0 0 0 / 0.9);
+    transition:
+      border-color 0.3s ease,
+      box-shadow 0.3s ease;
+  }
+  .evidence-slab:hover {
+    border-color: oklch(1 0 0 / 0.2);
+    box-shadow:
+      inset 0 1px 0 oklch(1 0 0 / 0.06),
+      inset 0 0 40px oklch(0 0 0 / 0.5),
+      0 30px 80px -30px oklch(0 0 0 / 0.9),
+      0 0 24px -10px oklch(0.82 0.14 200 / 0.3);
+  }
+
+  /* Animated PCB data-pipeline traces */
+  .pcb-trace {
+    stroke: oklch(0.82 0.14 200 / 0.25);
+    stroke-width: 1.25;
+    fill: none;
+    stroke-dasharray: 5 7;
+    animation: pcb-flow 2.4s linear infinite;
+  }
+  @keyframes pcb-flow {
+    to {
+      stroke-dashoffset: -24;
+    }
+  }
+  .pcb-node {
+    fill: oklch(0.86 0.14 200 / 0.7);
+  }
+}

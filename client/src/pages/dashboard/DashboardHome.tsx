@@ -62,6 +62,8 @@ const ProductDataDrawerWorkspace = lazy(() => import('./components/ProductDataDr
 const ProgressLogsDrawerWorkspace = lazy(() => import('./components/ProgressLogsDrawerWorkspace'));
 const ParetoQualityDashboard = lazy(() => import('./components/ParetoQualityDashboard'));
 const FishboneDiagramDashboard = lazy(() => import('./components/FishboneDiagramDashboard'));
+const GrrWorkspace = lazy(() => import('./components/GrrWorkspace'));
+const HypothesisTestingDashboard = lazy(() => import('./components/HypothesisTestingDashboard'));
 const ReliabilityCalculatorDashboard = lazy(() => import('./components/ReliabilityCalculatorDashboard'));
 const TimeSeriesDashboard = lazy(() => import('./components/TimeSeriesDashboard'));
 const ComplaintInsightDashboard = lazy(() => import('./components/ComplaintInsightDashboard'));
@@ -180,6 +182,8 @@ const DASHBOARD_TABS = [
   'boxplot',
   'pareto-analysis',
   'fishbone-diagram',
+  'grr-analysis',
+  'hypothesis-testing',
   'reliability-calculator',
   'time-series-chart',
   'caq-audit',
@@ -197,11 +201,17 @@ const CAQ_UNSAVED_FLAG_KEY = "caq-audit:unsaved";
 
 const PUBLIC_DASHBOARD_TAB_LIMIT =
   DASHBOARD_TABS.indexOf('measurement-intake') + 1;
+const EXTRA_PUBLIC_DASHBOARD_TABS: DashboardTab[] = [
+  'spc-calculator',
+  'mass-production-monitoring',
+];
 const PUBLIC_DASHBOARD_TABS: DashboardTab[] = [
-  ...DASHBOARD_TABS.slice(0, PUBLIC_DASHBOARD_TAB_LIMIT),
+  ...DASHBOARD_TABS.filter((tab, index) => (
+    index < PUBLIC_DASHBOARD_TAB_LIMIT || EXTRA_PUBLIC_DASHBOARD_TABS.includes(tab)
+  )),
 ];
 const ADMIN_ONLY_DASHBOARD_TABS: DashboardTab[] = [
-  ...DASHBOARD_TABS.slice(PUBLIC_DASHBOARD_TAB_LIMIT),
+  ...DASHBOARD_TABS.filter((tab) => !PUBLIC_DASHBOARD_TABS.includes(tab)),
 ];
 
 async function fetchProgressEntriesForMold(mold: string): Promise<{ mold: string; entries: ProgressEntry[] }> {
@@ -858,6 +868,8 @@ export default function DashboardHome() {
               'pareto-analysis': '柏拉图分析',
               'image-stitcher': '图片拼接',
               'fishbone-diagram': '鱼骨图',
+              'grr-analysis': 'GRR量测分析',
+              'hypothesis-testing': '假设检验',
               'reliability-calculator': '可靠性寿命测试',
               'time-series-chart': '时间序列图',
               'caq-audit': 'CAQ审计台',
@@ -879,7 +891,7 @@ export default function DashboardHome() {
               'spc-calculator': 'SPC计算器',
               'defect-library': 'VDI 3400 对照库',
               'injection-clinic': '注塑诊所',
-              'mass-production-monitoring': '量产监控',
+              'mass-production-monitoring': 'SPC量产监控',
               'macro-stage-gate': '宏观流程视图',
             };
             const isActive = selectedTab === tab;
@@ -933,6 +945,18 @@ export default function DashboardHome() {
         {selectedTab === 'fishbone-diagram' && (
           <LazyWorkspace>
             <FishboneDiagramDashboard projectName={activeModule || ''} />
+          </LazyWorkspace>
+        )}
+
+        {selectedTab === 'grr-analysis' && (
+          <LazyWorkspace>
+            <GrrWorkspace projectName={activeModule || ''} />
+          </LazyWorkspace>
+        )}
+
+        {selectedTab === 'hypothesis-testing' && (
+          <LazyWorkspace>
+            <HypothesisTestingDashboard projectName={activeModule || ''} />
           </LazyWorkspace>
         )}
 
@@ -1124,7 +1148,7 @@ export default function DashboardHome() {
           </LazyWorkspace>
         )}
 
-        {isAdminMode && selectedTab === 'mass-production-monitoring' && (
+        {selectedTab === 'mass-production-monitoring' && (
           <LazyWorkspace>
             <SpcRadarDrawerWorkspace panels={currentModuleTrialPanels} />
           </LazyWorkspace>
