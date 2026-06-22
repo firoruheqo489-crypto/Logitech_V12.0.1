@@ -149,7 +149,7 @@ const GrrPageContent = forwardRef<HTMLElement, GrrPageContentProps>(function Grr
                   </span>
                 </div>
                 <p className="mt-0.5 text-[11px] uppercase tracking-widest text-zinc-400">
-                  Measurement System Analysis · 测量系统分析指挥中心
+                  Measurement System Analysis · 测量系统分析
                 </p>
               </div>
             </div>
@@ -206,7 +206,6 @@ const GrrPageContent = forwardRef<HTMLElement, GrrPageContentProps>(function Grr
               <PanelHeader
                 title="Measurement System Verdict"
                 zh="量测系统判定"
-                subtitle="基于 AIAG MSA-4 的量测系统结论与关键指标总览"
                 right={
                   <span className={`rounded-full border px-3 py-1 text-[11px] font-semibold tracking-[0.18em] ${verdictToneClass}`}>
                     {verdictCopy}
@@ -231,7 +230,7 @@ const GrrPageContent = forwardRef<HTMLElement, GrrPageContentProps>(function Grr
               </div>
             </GlassPanel>
           </div>
-          <ZoneLabel index={2} title="Diagnostic Visualizations" zh="诊断视图" />
+          <ZoneLabel index={2} title="Data Views" zh="数据视图" />
           <div className="space-y-4">
             <RunChart results={results} cfg={cfg} />
             <InteractionPlot results={results} cfg={cfg} />
