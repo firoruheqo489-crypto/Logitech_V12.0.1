@@ -39,24 +39,29 @@ function buildChineseConclusion(results: ReturnType<typeof computeGrr>) {
   const ev = results.components.find((item) => item.key === 'EV')
   const av = results.components.find((item) => item.key === 'AV')
   const pv = results.components.find((item) => item.key === 'PV')
+  const dominant = [
+    { key: 'EV', label: '设备变差', value: ev?.pctStudyVar ?? 0 },
+    { key: 'AV', label: '评价人变差', value: av?.pctStudyVar ?? 0 },
+    { key: 'PV', label: '零件变差', value: pv?.pctStudyVar ?? 0 },
+  ].sort((left, right) => right.value - left.value)[0]
 
   if (results.diagnosis.code === 'OPTIMAL') {
     return {
       headline: '测量系统合格，可用于生产数据采集',
-      detail: `当前量测系统总变差占比为 ${results.pctGrrStudyVar.toFixed(1)}%，NDC 为 ${results.ndc}，零件差异信号占主导。说明系统分辨能力充足，当前无需追加纠正措施，可继续用于现场量测与过程监控。`,
+      detail: `当前测量系统可直接用于现场量测与过程监控，GRR 总变差为 ${results.pctGrrStudyVar.toFixed(1)}%，公差占比为 ${results.pctGrrTolerance.toFixed(1)}%，NDC 为 ${results.ndc}，且${dominant.label}占主导，说明系统分辨能力充足。`,
     }
   }
 
   if (results.diagnosis.code === 'AV_DOMINANT') {
     return {
-      headline: '测量系统中评价人变差主导，建议统一测量标准并补充培训',
-      detail: `当前 Gage R&R 为 ${results.pctGrrStudyVar.toFixed(1)}%，再现性（AV）影响更明显${av ? `，参考占比约 ${av.pctContribution.toFixed(1)}%` : ''}。建议优先检查评价人之间的操作一致性、夹治具定位方式、判读标准和培训执行情况，再重新评估。`,
+      headline: '测量系统暂不建议直接放行使用',
+      detail: `当前测量系统需先整改后再复评，GRR 总变差为 ${results.pctGrrStudyVar.toFixed(1)}%，公差占比为 ${results.pctGrrTolerance.toFixed(1)}%，NDC 为 ${results.ndc}，其中评价人变差占比约 ${(av?.pctStudyVar ?? 0).toFixed(1)}%，说明不同评价人之间一致性不足。`,
     }
   }
 
   return {
-    headline: '测量系统中设备变差主导，建议检查或校准量具',
-    detail: `当前 Gage R&R 为 ${results.pctGrrStudyVar.toFixed(1)}%，重复性（EV）影响更明显${ev ? `，参考占比约 ${ev.pctContribution.toFixed(1)}%` : ''}${pv ? `，零件变差占比约 ${pv.pctStudyVar.toFixed(1)}%` : ''}。建议优先检查量具分辨率、磨损、校准状态及测量稳定性，再重新开展试验。`,
+    headline: '测量系统暂不建议直接放行使用',
+    detail: `当前测量系统需先整改后再复评，GRR 总变差为 ${results.pctGrrStudyVar.toFixed(1)}%，公差占比为 ${results.pctGrrTolerance.toFixed(1)}%，NDC 为 ${results.ndc}，其中设备变差占比约 ${(ev?.pctStudyVar ?? 0).toFixed(1)}%，说明重复性不足，应优先检查量具与测量稳定性。`,
   }
 }
 
