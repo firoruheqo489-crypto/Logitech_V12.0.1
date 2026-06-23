@@ -1974,3 +1974,84 @@ body::-webkit-scrollbar-button,
     rgba(127,29,29,0.5) 8px
   );
 }
+
+/* Fishbone Diagram 2 */
+.fishbone-2-scope {
+  color-scheme: dark;
+  --background: #030508;
+  --foreground: oklch(0.96 0.01 220);
+  --card: oklch(0.18 0.02 230 / 40%);
+  --card-foreground: oklch(0.96 0.01 220);
+  --muted: oklch(0.3 0.02 230);
+  --muted-foreground: oklch(0.62 0.02 225);
+  --border: oklch(1 0 0 / 6%);
+  --ring: oklch(0.72 0.15 200);
+  --primary: oklch(0.82 0.13 200);
+  --primary-foreground: oklch(0.12 0.02 230);
+  --cyan: oklch(0.82 0.13 200);
+  --risk-high: oklch(0.66 0.2 22);
+  --risk-med: oklch(0.78 0.14 75);
+  --risk-low: oklch(0.78 0.12 165);
+  --font-sans: Inter, "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+}
+
+.fishbone-2-scope,
+.fishbone-2-scope button,
+.fishbone-2-scope input {
+  font-family: var(--font-sans);
+}
+
+.fishbone-2-scope .font-mono {
+  font-family: var(--font-mono);
+}
+
+@keyframes flow-dash {
+  to {
+    stroke-dashoffset: -40;
+  }
+}
+
+@keyframes pulse-node {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.55;
+    transform: scale(0.82);
+  }
+}
+
+@keyframes reticle-scan {
+  0% {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+  10%,
+  90% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+}
+
+@keyframes spin-slow {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.fishbone-2-scope .holo-grid {
+  background-image: linear-gradient(
+      to right,
+      oklch(0.7 0.1 200 / 4%) 1px,
+      transparent 1px
+    ),
+    linear-gradient(to bottom, oklch(0.7 0.1 200 / 4%) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(ellipse 80% 70% at 50% 50%, #000 30%, transparent 80%);
+}

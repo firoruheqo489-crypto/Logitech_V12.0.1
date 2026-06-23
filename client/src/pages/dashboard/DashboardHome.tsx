@@ -62,6 +62,7 @@ const ProductDataDrawerWorkspace = lazy(() => import('./components/ProductDataDr
 const ProgressLogsDrawerWorkspace = lazy(() => import('./components/ProgressLogsDrawerWorkspace'));
 const ParetoQualityDashboard = lazy(() => import('./components/ParetoQualityDashboard'));
 const FishboneDiagramDashboard = lazy(() => import('./components/FishboneDiagramDashboard'));
+const FishboneDiagramDashboard2 = lazy(() => import('./components/FishboneDiagramDashboard2'));
 const GrrWorkspace = lazy(() => import('./components/GrrWorkspace'));
 const HypothesisTestingDashboard = lazy(() => import('./components/HypothesisTestingDashboard'));
 const ReliabilityCalculatorDashboard = lazy(() => import('./components/ReliabilityCalculatorDashboard'));
@@ -182,6 +183,7 @@ const DASHBOARD_TABS = [
   'boxplot',
   'pareto-analysis',
   'fishbone-diagram',
+  'fishbone-diagram-2',
   'grr-analysis',
   'hypothesis-testing',
   'reliability-calculator',
@@ -868,6 +870,7 @@ export default function DashboardHome() {
               'pareto-analysis': '柏拉图分析',
               'image-stitcher': '图片拼接',
               'fishbone-diagram': '鱼骨图',
+              'fishbone-diagram-2': '鱼骨图2',
               'grr-analysis': 'GRR量测分析',
               'hypothesis-testing': '假设检验',
               'reliability-calculator': '可靠性寿命测试',
@@ -945,6 +948,12 @@ export default function DashboardHome() {
         {selectedTab === 'fishbone-diagram' && (
           <LazyWorkspace>
             <FishboneDiagramDashboard projectName={activeModule || ''} />
+          </LazyWorkspace>
+        )}
+
+        {selectedTab === 'fishbone-diagram-2' && (
+          <LazyWorkspace>
+            <FishboneDiagramDashboard2 />
           </LazyWorkspace>
         )}
 

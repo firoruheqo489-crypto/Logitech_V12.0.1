@@ -1,5 +1,5 @@
 import { jStat } from "jstat";
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 type TwoWayAnovaDesignRow = {
   id: string;
@@ -82,6 +82,13 @@ type MatrixSummary = {
   balanced: boolean;
   balanceError: string | null;
   missingCells: Array<{ factorA: string; factorB: string }>;
+};
+
+type EditableMatrixRow = {
+  id: string;
+  factorA: string;
+  factorB: string;
+  response: string;
 };
 
 function summarizeMatrix(rows: TwoWayAnovaDesignRow[]): MatrixSummary {
@@ -175,6 +182,31 @@ function statsVariance(values: number[]) {
 
 function formatPValue(value: number) {
   return value < 0.0001 ? "< 0.0001" : value.toFixed(4);
+}
+
+function serializeTwoWayRows(rows: EditableMatrixRow[]) {
+  return rows
+    .map((row) => `${row.factorA}\t${row.factorB}\t${row.response}`)
+    .join("\n");
+}
+
+async function readClipboardText() {
+  try {
+    return await navigator.clipboard.readText();
+  } catch {
+    return "";
+  }
+}
+
+function factorLabelZh(name: string, fallback: string) {
+  const normalized = name.trim().toLowerCase();
+  if (!normalized) return fallback;
+  if (normalized.includes("supplier")) return "供应商";
+  if (normalized.includes("temperature")) return "温度";
+  if (normalized.includes("response")) return "响应值";
+  if (normalized.includes("factor a")) return "因子 1";
+  if (normalized.includes("factor b")) return "因子 2";
+  return name.trim();
 }
 
 function TriVerdictCard({
@@ -605,6 +637,21 @@ export function TwoWayAnovaWorkbench({
   onResponseNameChange,
 }: TwoWayAnovaWorkbenchProps) {
   const summary = summarizeMatrix(rows);
+  const [editableRows, setEditableRows] = useState<EditableMatrixRow[]>([]);
+
+  useEffect(() => {
+    setEditableRows(
+      rows.map((row) => ({
+        id: row.id,
+        factorA: row.factorA,
+        factorB: row.factorB,
+        response: row.response.toFixed(4),
+      })),
+    );
+  }, [rows]);
+  const factorAZh = factorLabelZh(factorAName, "因子 1");
+  const factorBZh = factorLabelZh(factorBName, "因子 2");
+  const responseZh = factorLabelZh(responseName, "响应值");
   const sortedConclusions = analysis
     ? [
         {
@@ -643,6 +690,25 @@ export function TwoWayAnovaWorkbench({
         rSquaredAdj: analysis.rSquaredAdj,
       }
     : null;
+  const hasMatrixRows = rows.length > 0;
+
+  function handleMatrixPaste(event: React.ClipboardEvent<HTMLDivElement>) {
+    event.preventDefault();
+    const pasted = event.clipboardData.getData("text");
+    if (pasted.trim()) {
+      onMatrixChange(pasted);
+    }
+  }
+
+  function handleGridCellChange(id: string, field: "factorA" | "factorB" | "response", value: string) {
+    setEditableRows((current) =>
+      current.map((row) => (row.id === id ? { ...row, [field]: value } : row)),
+    );
+  }
+
+  function handleGridCommit() {
+    onMatrixChange(serializeTwoWayRows(editableRows));
+  }
 
   return (
     <div className="grid grid-cols-12 gap-5 max-h-full overflow-hidden">
@@ -725,61 +791,179 @@ export function TwoWayAnovaWorkbench({
             </div>
           </div>
           <div className="mb-4 grid gap-3 xl:grid-cols-3">
-            <div className="recessed rounded-lg border border-white/5 p-4 min-h-[104px] flex flex-col justify-between">
-              <div className="mb-3 leading-tight">
-                <div className="text-[11px] font-medium tracking-wide text-foreground/88">因子 1 名称</div>
-                <div className="font-num text-[9px] uppercase tracking-[0.18em] text-muted-foreground">Factor A Name</div>
-              </div>
+            <div className="rounded-lg border border-white/6 bg-white/[0.02] px-4 py-2.5">
+              <div className="text-[10px] font-medium tracking-wide text-foreground/82">因子 1 名称</div>
+              <div className="font-num text-[9px] uppercase tracking-[0.18em] text-muted-foreground">Factor A Name</div>
               <input
                 type="text"
                 value={factorAName}
                 onChange={(event) => onFactorANameChange(event.target.value)}
-                className="font-num w-full bg-transparent text-2xl font-bold tracking-tight text-foreground outline-none"
+                className="font-num mt-1.5 w-full bg-transparent text-sm font-semibold tracking-tight text-foreground outline-none"
                 placeholder="Supplier"
               />
             </div>
-            <div className="recessed rounded-lg border border-white/5 p-4 min-h-[104px] flex flex-col justify-between">
-              <div className="mb-3 leading-tight">
-                <div className="text-[11px] font-medium tracking-wide text-foreground/88">因子 2 名称</div>
-                <div className="font-num text-[9px] uppercase tracking-[0.18em] text-muted-foreground">Factor B Name</div>
-              </div>
+            <div className="rounded-lg border border-white/6 bg-white/[0.02] px-4 py-2.5">
+              <div className="text-[10px] font-medium tracking-wide text-foreground/82">因子 2 名称</div>
+              <div className="font-num text-[9px] uppercase tracking-[0.18em] text-muted-foreground">Factor B Name</div>
               <input
                 type="text"
                 value={factorBName}
                 onChange={(event) => onFactorBNameChange(event.target.value)}
-                className="font-num w-full bg-transparent text-2xl font-bold tracking-tight text-foreground outline-none"
+                className="font-num mt-1.5 w-full bg-transparent text-sm font-semibold tracking-tight text-foreground outline-none"
                 placeholder="Temperature"
               />
             </div>
-            <div className="recessed rounded-lg border border-white/5 p-4 min-h-[104px] flex flex-col justify-between">
-              <div className="mb-3 leading-tight">
-                <div className="text-[11px] font-medium tracking-wide text-foreground/88">响应值名称</div>
-                <div className="font-num text-[9px] uppercase tracking-[0.18em] text-muted-foreground">Response Name</div>
-              </div>
+            <div className="rounded-lg border border-white/6 bg-white/[0.02] px-4 py-2.5">
+              <div className="text-[10px] font-medium tracking-wide text-foreground/82">响应值名称</div>
+              <div className="font-num text-[9px] uppercase tracking-[0.18em] text-muted-foreground">Response Name</div>
               <input
                 type="text"
                 value={responseName}
                 onChange={(event) => onResponseNameChange(event.target.value)}
-                className="font-num w-full bg-transparent text-2xl font-bold tracking-tight text-foreground outline-none"
+                className="font-num mt-1.5 w-full bg-transparent text-sm font-semibold tracking-tight text-foreground outline-none"
                 placeholder="Response"
               />
             </div>
           </div>
           <div className="mb-3 flex items-center justify-between gap-3">
-            <div className="font-num text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
-              Excel paste prefers Tab. CSV uses comma. Plain text fallback requires 2+ spaces between columns.
+            <div className="flex flex-col gap-1">
+              <div className="text-[11px] font-medium tracking-wide text-foreground/88">
+                第1列填写{factorAZh}，第2列填写{factorBZh}，第3列填写{responseZh}
+              </div>
+              <div className="font-num text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
+                Excel paste prefers Tab. CSV uses comma. Plain text fallback requires 2+ spaces between columns.
+              </div>
             </div>
-            <div className="font-num text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-              Valid Rows: {validCount}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={async () => {
+                  const pasted = await readClipboardText();
+                  if (pasted.trim()) onMatrixChange(pasted);
+                }}
+                className="font-num rounded-md border border-cyan-400/30 bg-cyan-500/10 px-3 py-2 text-[10px] font-bold uppercase tracking-[0.18em] text-cyan-200 transition-colors hover:bg-cyan-500/16"
+              >
+                Paste
+              </button>
+              <button
+                type="button"
+                onClick={() => onMatrixChange("")}
+                className="font-num rounded-md border border-white/10 bg-black/20 px-3 py-2 text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground transition-colors hover:border-white/20 hover:text-foreground"
+              >
+                Clear
+              </button>
+              <div className="font-num text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                Valid Rows: {validCount}
+              </div>
             </div>
           </div>
-          <textarea
-            rows={14}
-            value={matrixInput}
-            onChange={(event) => onMatrixChange(event.target.value)}
-            className="font-num min-h-[300px] w-full resize-y rounded-lg border border-white/5 bg-black/20 p-4 text-xs leading-6 text-foreground outline-none placeholder:text-muted-foreground/40"
-            placeholder="Paste 3 columns from Excel: [Factor 1 Level] [Factor 2 Level] [Response Value]"
-          />
+          <div
+            className="overflow-hidden rounded-lg border border-white/5 bg-black/20"
+            onPaste={handleMatrixPaste}
+          >
+            <div className="grid grid-cols-[.45fr_1.2fr_1.2fr_1fr_.55fr] items-center border-b border-white/5 bg-white/[0.02] px-3 py-2">
+              <div className="select-none cursor-default text-center leading-tight">
+                <div className="text-[11px] font-medium tracking-wide text-foreground/88">序号</div>
+                <div className="font-num text-[9px] uppercase tracking-[0.18em] text-cyan-200/75">Row</div>
+              </div>
+              <div className="px-2 text-center leading-tight">
+                <input
+                  type="text"
+                  value={factorAName}
+                  onChange={(event) => onFactorANameChange(event.target.value)}
+                  className="font-num w-full bg-transparent text-center text-[11px] font-medium tracking-wide text-foreground/88 outline-none"
+                  aria-label="Factor A header"
+                />
+                <div className="font-num text-[9px] uppercase tracking-[0.18em] text-cyan-200/75">Column 1</div>
+              </div>
+              <div className="px-2 text-center leading-tight">
+                <input
+                  type="text"
+                  value={factorBName}
+                  onChange={(event) => onFactorBNameChange(event.target.value)}
+                  className="font-num w-full bg-transparent text-center text-[11px] font-medium tracking-wide text-foreground/88 outline-none"
+                  aria-label="Factor B header"
+                />
+                <div className="font-num text-[9px] uppercase tracking-[0.18em] text-cyan-200/75">Column 2</div>
+              </div>
+              <div className="px-2 text-center leading-tight">
+                <input
+                  type="text"
+                  value={responseName}
+                  onChange={(event) => onResponseNameChange(event.target.value)}
+                  className="font-num w-full bg-transparent text-center text-[11px] font-medium tracking-wide text-foreground/88 outline-none"
+                  aria-label="Response header"
+                />
+                <div className="font-num text-[9px] uppercase tracking-[0.18em] text-cyan-200/75">Column 3</div>
+              </div>
+              <div className="select-none cursor-default text-center leading-tight">
+                <div className="text-[11px] font-medium tracking-wide text-foreground/88">操作</div>
+                <div className="font-num text-[9px] uppercase tracking-[0.18em] text-cyan-200/75">Del</div>
+              </div>
+            </div>
+            {!hasMatrixRows ? (
+              <div className="flex min-h-[300px] flex-col items-center justify-center border border-dashed border-white/10 bg-gray-950/35 text-center" onPaste={handleMatrixPaste}>
+                <div className="font-num mb-2 text-[18px] font-bold tracking-[0.22em] text-cyan-300">CTRL + V</div>
+                <div className="text-sm font-semibold text-foreground">[ AWAITING TELEMETRY INGESTION ]</div>
+                <div className="mt-2 text-xs text-muted-foreground">
+                  点击此区域后按 Ctrl+V，粘贴 3 列 Excel 数据
+                </div>
+              </div>
+            ) : (
+              <div className="max-h-[400px] overflow-y-auto no-scrollbar w-full">
+                {editableRows.map((row) => (
+                  <div
+                    key={row.id}
+                    className="grid grid-cols-[.45fr_1.2fr_1.2fr_1fr_.55fr] items-center border-b border-gray-800/50 text-[11px] font-mono text-gray-300 hover:bg-gray-900/50"
+                  >
+                    <div className="border-r border-gray-800/50 px-3 py-1.5 text-center text-muted-foreground">
+                      {editableRows.indexOf(row) + 1}
+                    </div>
+                    <div className="border-r border-gray-800/50 px-3 py-1.5">
+                      <input
+                        type="text"
+                        value={row.factorA}
+                        onChange={(event) => handleGridCellChange(row.id, "factorA", event.target.value)}
+                        onBlur={handleGridCommit}
+                        className="font-num w-full bg-transparent text-center text-[11px] text-gray-300 outline-none"
+                      />
+                    </div>
+                    <div className="border-r border-gray-800/50 px-3 py-1.5">
+                      <input
+                        type="text"
+                        value={row.factorB}
+                        onChange={(event) => handleGridCellChange(row.id, "factorB", event.target.value)}
+                        onBlur={handleGridCommit}
+                        className="font-num w-full bg-transparent text-center text-[11px] text-gray-300 outline-none"
+                      />
+                    </div>
+                    <div className="px-3 py-1.5">
+                      <input
+                        type="text"
+                        value={row.response}
+                        onChange={(event) => handleGridCellChange(row.id, "response", event.target.value)}
+                        onBlur={handleGridCommit}
+                        className="font-num w-full bg-transparent text-center text-[11px] text-cyan-400 outline-none"
+                      />
+                    </div>
+                    <div className="px-2 py-1.5 text-center">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const nextRows = editableRows.filter((item) => item.id !== row.id);
+                          setEditableRows(nextRows);
+                          onMatrixChange(serializeTwoWayRows(nextRows));
+                        }}
+                        className="font-num rounded-md border border-white/10 bg-black/20 px-2 py-1 text-[10px] uppercase tracking-[0.14em] text-muted-foreground transition-colors hover:border-white/20 hover:text-foreground"
+                      >
+                        Del
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </Panel>
       </div>
 
