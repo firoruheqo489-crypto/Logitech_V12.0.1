@@ -13,7 +13,6 @@ function Field({
   label,
   value,
   onChange,
-  onStep,
   step = 1,
   min,
   max,
@@ -22,52 +21,24 @@ function Field({
   label: string
   value: number
   onChange: (v: number) => void
-  onStep?: (direction: -1 | 1) => void
   step?: number
   min?: number
   max?: number
   hint?: string
 }) {
-  const canDecrement = typeof min !== 'number' || value > min
-  const canIncrement = typeof max !== 'number' || value < max
-
   return (
     <label className="flex flex-col gap-1.5 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2.5">
       <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">{label}</span>
-      <div className="flex items-center gap-2">
-        <input
-          type="number"
-          step={step}
-          min={min}
-          max={max}
-          value={value}
-          onChange={(e) => onChange(Number.parseFloat(e.target.value) || 0)}
-          className="w-full bg-transparent font-mono text-lg font-semibold text-zinc-50 tabular-nums outline-none"
-          aria-label={label}
-        />
-        {onStep ? (
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => onStep(-1)}
-              disabled={!canDecrement}
-              className="flex h-7 w-7 items-center justify-center rounded-md border border-white/[0.08] bg-white/[0.03] text-sm font-bold text-zinc-300 transition-colors hover:border-sky-400/40 hover:text-sky-300 disabled:cursor-not-allowed disabled:opacity-35"
-              aria-label={`${label} decrease`}
-            >
-              -
-            </button>
-            <button
-              type="button"
-              onClick={() => onStep(1)}
-              disabled={!canIncrement}
-              className="flex h-7 w-7 items-center justify-center rounded-md border border-white/[0.08] bg-white/[0.03] text-sm font-bold text-zinc-300 transition-colors hover:border-sky-400/40 hover:text-sky-300 disabled:cursor-not-allowed disabled:opacity-35"
-              aria-label={`${label} increase`}
-            >
-              +
-            </button>
-          </div>
-        ) : null}
-      </div>
+      <input
+        type="number"
+        step={step}
+        min={min}
+        max={max}
+        value={value}
+        onChange={(e) => onChange(Number.parseFloat(e.target.value) || 0)}
+        className="w-full bg-transparent font-mono text-lg font-semibold text-zinc-50 tabular-nums outline-none"
+        aria-label={label}
+      />
       {hint ? <span className="font-mono text-[10px] text-zinc-400">{hint}</span> : null}
     </label>
   )
@@ -91,7 +62,6 @@ export function ControlPanel({ cfg, onDims, onSpec }: Props) {
           min={2}
           max={20}
           onChange={(v) => onDims({ parts: v })}
-          onStep={(direction) => onDims({ parts: cfg.parts + direction })}
           hint="2–20"
         />
         <Field
@@ -100,7 +70,6 @@ export function ControlPanel({ cfg, onDims, onSpec }: Props) {
           min={2}
           max={8}
           onChange={(v) => onDims({ operators: v })}
-          onStep={(direction) => onDims({ operators: cfg.operators + direction })}
           hint="2–8"
         />
         <Field
@@ -109,7 +78,6 @@ export function ControlPanel({ cfg, onDims, onSpec }: Props) {
           min={2}
           max={7}
           onChange={(v) => onDims({ trials: v })}
-          onStep={(direction) => onDims({ trials: cfg.trials + direction })}
           hint="2–7"
         />
         <Field

@@ -224,12 +224,16 @@ export default function GrrWorkspace({ projectName }: { projectName?: string }) 
   )
 
   const handlePrintReport = async () => {
+    const source = reportRef.current
+    if (!source) {
+      toast.error('GRR 页面尚未渲染完成，请稍后重试')
+      return
+    }
+
     setIsPrintingReport(true)
     try {
       await printGrrReport({
-        meta,
-        cfg,
-        results,
+        source,
         fileBaseName,
       })
       toast.success('GRR 打印预览已打开，请在预览页中点击打印')
@@ -241,15 +245,19 @@ export default function GrrWorkspace({ projectName }: { projectName?: string }) 
   }
 
   const handleExportPdf = async () => {
+    const source = reportRef.current
+    if (!source) {
+      toast.error('GRR 页面尚未渲染完成，请稍后重试')
+      return
+    }
+
     setIsExportingPdf(true)
     try {
       await exportGrrPdf({
-        meta,
-        cfg,
-        results,
+        source,
         fileBaseName,
       })
-      toast.success('GRR PDF 已导出')
+      toast.success('GRR PDF 导出预览已打开，请使用浏览器另存为 PDF')
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'GRR PDF 导出失败')
     } finally {

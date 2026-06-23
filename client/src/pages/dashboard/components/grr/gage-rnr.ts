@@ -338,6 +338,159 @@ export function computeGrr(cfg: StudyConfig): GrrResults {
     return mean(vals)
   })
 
+  if (operators === 1) {
+    const p = parts
+    const n = trials
+    const N = p * n
+
+    let ssTotal = 0
+    for (let pi = 0; pi < p; pi++) {
+      for (let t = 0; t < n; t++) {
+        ssTotal += Math.pow(measurements[0][pi][t] - grandMean, 2)
+      }
+    }
+
+    let ssPart = 0
+    for (let pi = 0; pi < p; pi++) ssPart += Math.pow(partAverages[pi] - grandMean, 2)
+    ssPart *= n
+
+    const ssError = Math.max(0, ssTotal - ssPart)
+    const dfPart = p - 1
+    const dfError = p * (n - 1)
+    const dfTotal = N - 1
+
+    const msPart = dfPart > 0 ? ssPart / dfPart : 0
+    const msError = dfError > 0 ? ssError / dfError : 0
+    const fPart = msError > 0 ? msPart / msError : 0
+    const pPart = fPValue(fPart, dfPart, dfError)
+
+    const varEquip = msError
+    const varPartAnova = Math.max(0, (msPart - msError) / Math.max(1, n))
+    const evSd = Math.sqrt(varEquip)
+    const avSd = 0
+    const grrSd = evSd
+
+    const histSigma = cfg.historicalSigma && cfg.historicalSigma > 0 ? cfg.historicalSigma : 0
+    const usingHistoricalSigma = histSigma > 0
+    const tvSd = usingHistoricalSigma ? histSigma : Math.sqrt(grrSd * grrSd + varPartAnova)
+    const pvSd = usingHistoricalSigma ? Math.sqrt(Math.max(0, tvSd * tvSd - grrSd * grrSd)) : Math.sqrt(varPartAnova)
+
+    const anova: AnovaTable = {
+      pooled: true,
+      alpha: cfg.alpha ?? 0.05,
+      interactionP: 1,
+      rows: [
+        { key: 'PART', label: 'Part // 零件', df: dfPart, ss: ssPart, ms: msPart, f: fPart, p: pPart },
+        { key: 'REPEAT', label: 'Repeatability // 重复性', df: dfError, ss: ssError, ms: msError, f: null, p: null },
+        { key: 'TOTAL', label: 'Total // 总计', df: dfTotal, ss: ssTotal, ms: null, f: null, p: null },
+      ],
+    }
+
+    const interactionSeries: InteractionSeries[] = [
+      {
+        operator: 0,
+        points: Array.from({ length: p }, (_, pi) => ({ part: pi, avg: cellMean[0][pi] })),
+      },
+    ]
+
+    const mk = (key: string, label: string, sd: number): VariationComponent => ({
+      key,
+      label,
+      stdDev: sd,
+      studyVar: SIGMA * sd,
+      pctStudyVar: tvSd ? (sd / tvSd) * 100 : 0,
+      pctContribution: tvSd ? (Math.pow(sd, 2) / Math.pow(tvSd, 2)) * 100 : 0,
+      pctTolerance: tolerance ? ((SIGMA * sd) / tolerance) * 100 : 0,
+    })
+
+    const ev = mk('EV', 'Repeatability (EV) // 设备变差（重复性）', evSd)
+    const av = mk('AV', 'Reproducibility (AV) // 评价人变差（再现性）', avSd)
+    const pv = mk('PV', 'Part Variation (PV) // 零件变差', pvSd)
+    const grr = mk('GRR', 'Gage R&R // 测量系统总变差', grrSd)
+
+    const ndc = Math.max(1, Math.floor(1.41 * (pvSd / Math.max(grrSd, 1e-9))))
+    const pctGrrStudyVar = grr.pctStudyVar
+    const pctGrrTolerance = grr.pctTolerance
+
+    let verdict: Verdict = 'acceptable'
+    if (pctGrrStudyVar > 30) verdict = 'unacceptable'
+    else if (pctGrrStudyVar >= 10) verdict = 'marginal'
+
+    let diagnosis: Diagnosis
+    if (verdict === 'acceptable') {
+      diagnosis = {
+        code: 'SINGLE_EV_OK',
+        title: 'SINGLE APPRAISER REPEATABILITY OK // 单人重复性合格',
+        detail: `Repeatability for the selected appraiser is controlled. EV consumes ${pctGrrStudyVar.toFixed(1)}% of study variation with NDC ${ndc}. // 当前选定评价人的重复性处于可控区间，EV 占研究变差 ${pctGrrStudyVar.toFixed(1)}%，NDC 为 ${ndc}。`,
+        tone: 'good',
+      }
+    } else {
+      diagnosis = {
+        code: 'SINGLE_EV_HIGH',
+        title: 'SINGLE APPRAISER REPEATABILITY HIGH // 单人重复性偏高',
+        detail: `Repeatability for the selected appraiser is too high. EV consumes ${pctGrrStudyVar.toFixed(1)}% of study variation. Focus on equipment, fixturing, and repeat-reading stability. // 当前选定评价人的重复性偏高，EV 占研究变差 ${pctGrrStudyVar.toFixed(1)}%，应优先检查量具、夹治具以及重复读数稳定性。`,
+        tone: verdict === 'marginal' ? 'warn' : 'fail',
+      }
+    }
+
+    const runPoints: RunPoint[] = []
+    for (let pi = 0; pi < parts; pi++) {
+      for (let t = 0; t < trials; t++) {
+        runPoints.push({ operator: 0, part: pi, trial: t, value: measurements[0][pi][t] })
+      }
+    }
+
+    const all = measurements[0].flat()
+    const mn = Math.min(...all)
+    const mx = Math.max(...all)
+    const appraiserStats: AppraiserStat[] = [
+      { operator: 0, min: mn, max: mx, avg: mean(all), spread: mx - mn },
+    ]
+
+    const a2 = A2[trials] ?? A2[7]
+    const d4 = D4[trials] ?? D4[7]
+    const d3 = D3[trials] ?? D3[7]
+    const xUcl = grandMean + a2 * rDoubleBar
+    const xLcl = grandMean - a2 * rDoubleBar
+    const rUcl = d4 * rDoubleBar
+    const rLcl = d3 * rDoubleBar
+
+    const xPoints: ControlPoint[] = []
+    const rPoints: ControlPoint[] = []
+    const operatorStarts: number[] = [0]
+    let idx = 0
+    for (let pi = 0; pi < parts; pi++) {
+      const xv = cellMean[0][pi]
+      const rv = cellRange[0][pi]
+      xPoints.push({ index: idx, operator: 0, part: pi, value: xv, outOfControl: xv > xUcl || xv < xLcl })
+      rPoints.push({ index: idx, operator: 0, part: pi, value: rv, outOfControl: rv > rUcl || rv < rLcl })
+      idx++
+    }
+
+    return {
+      components: [ev, av, pv],
+      grr,
+      totalVariation: SIGMA * tvSd,
+      ndc,
+      tolerance,
+      pctGrrStudyVar,
+      pctGrrTolerance,
+      verdict,
+      diagnosis,
+      anova,
+      interactionSeries,
+      usingHistoricalSigma,
+      runPoints,
+      appraiserStats,
+      grandMean,
+      operatorAverages,
+      operatorRanges,
+      partAverages,
+      xbarChart: { points: xPoints, centerLine: grandMean, ucl: xUcl, lcl: xLcl, operatorStarts },
+      rChart: { points: rPoints, centerLine: rDoubleBar, ucl: rUcl, lcl: rLcl, operatorStarts },
+    }
+  }
+
   // =========================================================================
   // TWO-WAY ANOVA WITH INTERACTION  (Part × Appraiser, replicated)
   // The gold-standard AIAG MSA-4 decomposition of measurement variation.

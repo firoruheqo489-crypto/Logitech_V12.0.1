@@ -1,8 +1,10 @@
 'use client'
 
-import { forwardRef, useMemo } from 'react'
+import { forwardRef, useMemo, useState } from 'react'
 import { Activity, RotateCcw, Crosshair, Printer, Download } from 'lucide-react'
+import { toast } from 'sonner'
 import { computeGrr, resizeStudy, type StudyConfig } from './gage-rnr'
+import { parseGrrExcelFile } from './grr-excel-parser'
 import { GlassPanel, PanelHeader } from './glass-panel'
 import { MetadataHeader, type StudyMeta } from './metadata-header'
 import { ControlPanel } from './control-panel'
@@ -44,6 +46,20 @@ function buildChineseConclusion(results: ReturnType<typeof computeGrr>) {
     { key: 'AV', label: '评价人变差', value: av?.pctStudyVar ?? 0 },
     { key: 'PV', label: '零件变差', value: pv?.pctStudyVar ?? 0 },
   ].sort((left, right) => right.value - left.value)[0]
+
+  if (results.diagnosis.code === 'SINGLE_EV_OK') {
+    return {
+      headline: '单评价人重复性合格，可继续使用当前量具',
+      detail: `当前仅针对单个评价人的重复测量进行分析，重复性（EV）占比为 ${(ev?.pctStudyVar ?? 0).toFixed(1)}%，说明同一人对同一零件重复测量的波动处于可接受范围，可继续使用当前量具开展重复性验证。`,
+    }
+  }
+
+  if (results.diagnosis.code === 'SINGLE_EV_HIGH') {
+    return {
+      headline: '单评价人重复性偏高，建议先检查量具与操作稳定性',
+      detail: `当前仅针对单个评价人的重复测量进行分析，重复性（EV）占比为 ${(ev?.pctStudyVar ?? 0).toFixed(1)}%，说明同一人重复测量波动偏大。建议优先检查量具状态、夹治具稳定性及同一人重复读数的一致性。`,
+    }
+  }
 
   if (results.diagnosis.code === 'OPTIMAL') {
     return {
@@ -94,7 +110,27 @@ const GrrPageContent = forwardRef<HTMLElement, GrrPageContentProps>(function Grr
   isPrinting = false,
   isExportingPdf = false,
 }, ref) {
-  const results = useMemo(() => computeGrr(cfg), [cfg])
+  const [selectedOperator, setSelectedOperator] = useState<number | null>(null)
+  const [comparePair, setComparePair] = useState<string | null>(null)
+  const visibleOperators = useMemo(
+    () =>
+      comparePair
+        ? comparePair.split('-').map((value) => Number.parseInt(value, 10)).filter(Number.isFinite)
+        : selectedOperator !== null
+          ? [selectedOperator]
+        : cfg.operatorNames.map((_, index) => index),
+    [comparePair, selectedOperator, cfg.operatorNames],
+  )
+  const analysisCfg = useMemo<StudyConfig>(
+    () => ({
+      ...cfg,
+      operators: visibleOperators.length,
+      operatorNames: visibleOperators.map((index) => cfg.operatorNames[index]),
+      measurements: visibleOperators.map((index) => cfg.measurements[index]),
+    }),
+    [cfg, visibleOperators],
+  )
+  const results = useMemo(() => computeGrr(analysisCfg), [analysisCfg])
 
   const updateCell = (operator: number, part: number, trial: number, value: number) => {
     onCfgChange((prev) => {
@@ -105,6 +141,26 @@ const GrrPageContent = forwardRef<HTMLElement, GrrPageContentProps>(function Grr
       )
       return { ...prev, measurements }
     })
+  }
+
+  const clearAllMeasurements = () => {
+    onCfgChange((prev) => ({
+      ...prev,
+      measurements: prev.measurements.map((operatorRows) =>
+        operatorRows.map((trialRows) => trialRows.map(() => 0)),
+      ),
+    }))
+  }
+
+  const clearSelectedOperatorMeasurements = (operator: number) => {
+    onCfgChange((prev) => ({
+      ...prev,
+      measurements: prev.measurements.map((operatorRows, operatorIndex) =>
+        operatorIndex === operator
+          ? operatorRows.map((trialRows) => trialRows.map(() => 0))
+          : operatorRows,
+      ),
+    }))
   }
 
   const setDims = (dims: { operators?: number; parts?: number; trials?: number }) =>
@@ -122,6 +178,21 @@ const GrrPageContent = forwardRef<HTMLElement, GrrPageContentProps>(function Grr
       : results.verdict === 'marginal'
         ? 'border-amber-400/25 bg-amber-400/[0.08] text-amber-300'
         : 'border-rose-400/25 bg-rose-400/[0.08] text-rose-300'
+  const [isImportingExcel, setIsImportingExcel] = useState(false)
+
+  const handleImportExcel = async (file: File) => {
+    setIsImportingExcel(true)
+    try {
+      const parsed = await parseGrrExcelFile(file, cfg)
+      onCfgChange(() => parsed.cfg)
+      onMetaChange(parsed.meta)
+      toast.success(`Excel 解析完成：${parsed.summary.appraisers} 位评价人 / ${parsed.summary.parts} 个零件 / ${parsed.summary.trials} 次重复`)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Excel 解析失败')
+    } finally {
+      setIsImportingExcel(false)
+    }
+  }
 
   return (
     <main
@@ -232,15 +303,15 @@ const GrrPageContent = forwardRef<HTMLElement, GrrPageContentProps>(function Grr
           </div>
           <ZoneLabel index={2} title="Data Views" zh="数据视图" />
           <div className="space-y-4">
-            <RunChart results={results} cfg={cfg} />
-            <InteractionPlot results={results} cfg={cfg} />
+            <RunChart results={results} cfg={analysisCfg} />
+            <InteractionPlot results={results} cfg={analysisCfg} />
             <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
               <ControlChartView
                 title="X̄ Chart"
                 zh="零件均值图 (X-bar)"
                 subtitle="Subgroup means by appraiser · points beyond limits = good resolution"
                 chart={results.xbarChart}
-                operatorNames={cfg.operatorNames}
+                operatorNames={analysisCfg.operatorNames}
                 accent="#38bdf8"
               />
               <ControlChartView
@@ -248,17 +319,28 @@ const GrrPageContent = forwardRef<HTMLElement, GrrPageContentProps>(function Grr
                 zh="极差控制图 (Range)"
                 subtitle="Within-trial ranges · all points should stay in control"
                 chart={results.rChart}
-                operatorNames={cfg.operatorNames}
+                operatorNames={analysisCfg.operatorNames}
                 accent="#fbbf24"
               />
             </div>
-            <AppraiserSpread results={results} cfg={cfg} />
+            <AppraiserSpread results={results} cfg={analysisCfg} />
           </div>
         </section>
 
         <section className="no-print">
           <ZoneLabel index={3} title="Data Acquisition Matrix" zh="数据采集矩阵" />
-          <DataMatrix cfg={cfg} onChange={updateCell} />
+          <DataMatrix
+            cfg={cfg}
+            onChange={updateCell}
+            onClearSelectedOperator={clearSelectedOperatorMeasurements}
+            onImportExcel={handleImportExcel}
+            isImportingExcel={isImportingExcel}
+            comparePair={comparePair}
+            onComparePairChange={setComparePair}
+            selectedOperator={selectedOperator}
+            onSelectedOperatorChange={setSelectedOperator}
+            visibleOperators={cfg.operatorNames.map((_, index) => index)}
+          />
         </section>
 
         <footer className="mt-8 flex items-center justify-center gap-2 text-[10px] uppercase tracking-widest text-zinc-400">

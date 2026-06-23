@@ -118,6 +118,7 @@ export function KpiDeck({ results }: { results: GrrResults }) {
   const ev = results.components.find((item) => item.key === 'EV')
   const av = results.components.find((item) => item.key === 'AV')
   const pv = results.components.find((item) => item.key === 'PV')
+  const isSingleAppraiser = results.interactionSeries.length === 1
   const ndcTone: Tone = results.ndc >= 5 ? 'good' : results.ndc >= 2 ? 'warn' : 'fail'
   const grrTone: Tone =
     results.pctGrrStudyVar > 30 ? 'fail' : results.pctGrrStudyVar >= 10 ? 'warn' : 'good'
@@ -151,11 +152,11 @@ export function KpiDeck({ results }: { results: GrrResults }) {
         code="AV"
         label="Reproducibility (AV)"
         labelZh="评价人变差（再现性）"
-        value={(av?.pctStudyVar ?? 0).toFixed(2)}
-        unit="%"
-        tone={avTone}
-        sub={buildComponentConclusion('AV', av?.pctStudyVar ?? 0)}
-        basis="再现性反映不同评价人之间的一致性差异，越低越好"
+        value={isSingleAppraiser ? '--' : (av?.pctStudyVar ?? 0).toFixed(2)}
+        unit={isSingleAppraiser ? undefined : '%'}
+        tone={isSingleAppraiser ? 'neutral' : avTone}
+        sub={isSingleAppraiser ? '单评价人模式下不计算再现性' : buildComponentConclusion('AV', av?.pctStudyVar ?? 0)}
+        basis={isSingleAppraiser ? '当前仅分析单个评价人的重复性，不比较不同评价人之间的一致性差异' : '再现性反映不同评价人之间的一致性差异，越低越好'}
       />
       <KpiCard
         code="PV"
@@ -173,8 +174,8 @@ export function KpiDeck({ results }: { results: GrrResults }) {
         labelZh="可区分的类别数"
         value={String(results.ndc)}
         tone={ndcTone}
-        sub={results.ndc >= 5 ? '分辨力充足' : results.ndc >= 2 ? '分辨力偏弱' : '分辨力不足'}
-        basis="NDC ≥ 5 通常认为量测系统具备足够的分类分辨能力"
+        sub={isSingleAppraiser ? '单人模式下仅作参考' : results.ndc >= 5 ? '分辨力充足' : results.ndc >= 2 ? '分辨力偏弱' : '分辨力不足'}
+        basis={isSingleAppraiser ? '当前以单评价人重复性分析为主，NDC 仅作为辅助参考，不作为再现性判断依据' : 'NDC ≥ 5 通常认为量测系统具备足够的分类分辨能力'}
       />
     </div>
   )

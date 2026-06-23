@@ -32,6 +32,12 @@ export function RunChart({ results, cfg }: { results: GrrResults; cfg: StudyConf
   const y = (v: number) => PAD.top + innerH - ((v - yMin) / (yMax - yMin)) * innerH
 
   const ticks = Array.from({ length: 5 }, (_, i) => yMin + (i / 4) * (yMax - yMin))
+  const partRanges = Array.from({ length: cfg.parts }, (_, partIndex) => {
+    const bucket = results.runPoints
+      .filter((point) => point.part === partIndex)
+      .map((point) => point.value)
+    return Math.max(...bucket) - Math.min(...bucket)
+  })
 
   return (
     <GlassPanel>
@@ -78,6 +84,15 @@ export function RunChart({ results, cfg }: { results: GrrResults; cfg: StudyConf
                   fontSize="8.5"
                 >
                   {cfg.partNames[p]}
+                </text>
+                <text
+                  x={PAD.left + colWidth * (p + 0.5)}
+                  y={H - 2}
+                  textAnchor="middle"
+                  className="fill-amber-300 font-mono"
+                  fontSize="8"
+                >
+                  {`R=${partRanges[p].toFixed(3)}`}
                 </text>
               </g>
             )
