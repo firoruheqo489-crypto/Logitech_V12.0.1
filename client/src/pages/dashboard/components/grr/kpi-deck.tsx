@@ -101,11 +101,11 @@ function KpiCard({
         <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-200">{label}</span>
       </div>
       <p className="mt-0.5 text-[11px] font-medium text-zinc-400">{labelZh}</p>
-      <div className="mt-2.5 flex items-baseline gap-1.5">
-        <span className={cn('font-mono text-[48px] font-semibold leading-none tabular-nums', toneText[tone])}>{value}</span>
-        {unit ? <span className="font-mono text-sm text-zinc-400">{unit}</span> : null}
+      <div className="mt-3 flex min-h-[3.75rem] items-start gap-2">
+        <span className={cn('font-mono text-[48px] font-semibold leading-[0.9] tabular-nums', toneText[tone])}>{value}</span>
+        {unit ? <span className="pt-1 font-mono text-sm leading-none text-zinc-400">{unit}</span> : null}
       </div>
-      {sub ? <p className="mt-1 text-[11px] leading-5 text-zinc-300">{sub}</p> : null}
+      {sub ? <p className="mt-2 text-[11px] leading-5 text-zinc-300">{sub}</p> : null}
       <div className="mt-3 border-t border-white/[0.06] pt-2.5">
         <div className="text-[10px] font-semibold tracking-[0.12em] text-zinc-500">判定依据</div>
         <p className="mt-1 text-[10px] leading-5 text-zinc-400">{basis}</p>

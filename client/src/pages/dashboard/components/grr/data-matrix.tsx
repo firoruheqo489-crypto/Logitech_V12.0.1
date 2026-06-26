@@ -20,6 +20,25 @@ interface Props {
   visibleOperators: number[]
 }
 
+function buildOperatorMatrixStats(cfg: StudyConfig, operatorIndex: number) {
+  const rows = cfg.measurements[operatorIndex]
+  const trialMeans = Array.from({ length: cfg.trials }, (_, trialIndex) =>
+    mean(rows.map((trialRows) => trialRows[trialIndex] ?? 0)),
+  )
+  const trialStddevs = Array.from({ length: cfg.trials }, (_, trialIndex) =>
+    stddev(rows.map((trialRows) => trialRows[trialIndex] ?? 0)),
+  )
+  return {
+    rows,
+    trialMeans,
+    trialStddevs,
+    xbarMean: mean(rows.map((trialRows) => mean(trialRows))),
+    rangeMean: mean(rows.map((trialRows) => range(trialRows))),
+    xbarStddev: stddev(rows.map((trialRows) => mean(trialRows))),
+    rangeStddev: stddev(rows.map((trialRows) => range(trialRows))),
+  }
+}
+
 const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length
 const range = (xs: number[]) => Math.max(...xs) - Math.min(...xs)
 const stddev = (xs: number[]) => {
@@ -27,6 +46,111 @@ const stddev = (xs: number[]) => {
   const avg = mean(xs)
   const variance = xs.reduce((sum, value) => sum + Math.pow(value - avg, 2), 0) / (xs.length - 1)
   return Math.sqrt(variance)
+}
+
+function DataMatrixExportTable({ cfg, operatorIndex }: { cfg: StudyConfig; operatorIndex: number }) {
+  const { rows, trialMeans, trialStddevs, xbarMean, rangeMean, xbarStddev, rangeStddev } = buildOperatorMatrixStats(
+    cfg,
+    operatorIndex,
+  )
+  const operatorLabel = cfg.operatorNames[operatorIndex].replace('APPRAISER ', 'OP ')
+
+  return (
+    <GlassPanel className="overflow-hidden border-white/[0.12] bg-white/[0.04]">
+      <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+        <div className="text-sm font-semibold uppercase tracking-[0.18em] text-zinc-100">{operatorLabel}</div>
+        <div className="text-[10px] font-medium tracking-wide text-zinc-400">
+          {cfg.parts} parts · {cfg.trials} trials
+        </div>
+      </div>
+
+      <div className="overflow-x-auto px-2 py-2">
+        <table className="w-full border-collapse">
+          <thead>
+            <tr className="border-b border-white/12 text-[10px] uppercase tracking-widest text-zinc-400">
+              <th className="px-3 py-2 text-center font-semibold">Part</th>
+              {Array.from({ length: cfg.trials }, (_, trialIndex) => (
+                <th key={trialIndex} className="px-2 py-2 text-center font-semibold">
+                  Trial {trialIndex + 1}
+                </th>
+              ))}
+              <th className="px-3 py-2 text-center font-semibold text-emerald-400/80">X-bar</th>
+              <th className="px-3 py-2 text-center font-semibold text-amber-400/80">R</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((trials, partIndex) => {
+              const xbar = mean(trials)
+              const r = range(trials)
+              return (
+                <tr key={partIndex} className="border-t border-white/[0.06]">
+                  <td className="px-3 py-1.5 text-center font-mono text-xs text-zinc-300">{cfg.partNames[partIndex]}</td>
+                  {trials.map((value, trialIndex) => (
+                    <td key={trialIndex} className="px-1 py-1">
+                      <div className="rounded-md border border-white/[0.12] bg-white/[0.04] px-2 py-1.5 text-center font-mono text-xs text-zinc-50 tabular-nums">
+                        {value.toFixed(3)}
+                      </div>
+                    </td>
+                  ))}
+                  <td className="px-3 py-1.5 text-center font-mono text-xs font-semibold text-emerald-400 tabular-nums">
+                    {xbar.toFixed(3)}
+                  </td>
+                  <td className="px-3 py-1.5 text-center font-mono text-xs font-semibold text-amber-400 tabular-nums">
+                    {r.toFixed(3)}
+                  </td>
+                </tr>
+              )
+            })}
+            <tr className="border-t-2 border-emerald-400/20 bg-emerald-400/[0.04]">
+              <td className="px-3 py-2 text-center font-semibold text-emerald-300">均值</td>
+              {trialMeans.map((value, index) => (
+                <td key={index} className="px-3 py-2 text-center font-mono text-xs font-semibold text-emerald-300 tabular-nums">
+                  {value.toFixed(3)}
+                </td>
+              ))}
+              <td className="px-3 py-2 text-center font-mono text-xs font-semibold text-emerald-300 tabular-nums">
+                {xbarMean.toFixed(3)}
+              </td>
+              <td className="px-3 py-2 text-center font-mono text-xs font-semibold text-amber-300 tabular-nums">
+                {rangeMean.toFixed(3)}
+              </td>
+            </tr>
+            <tr className="border-t border-cyan-400/15 bg-cyan-400/[0.04]">
+              <td className="px-3 py-2 text-center font-semibold text-cyan-300">标准差</td>
+              {trialStddevs.map((value, index) => (
+                <td key={index} className="px-3 py-2 text-center font-mono text-xs font-semibold text-cyan-300 tabular-nums">
+                  {value.toFixed(3)}
+                </td>
+              ))}
+              <td className="px-3 py-2 text-center font-mono text-xs font-semibold text-cyan-300 tabular-nums">
+                {xbarStddev.toFixed(3)}
+              </td>
+              <td className="px-3 py-2 text-center font-mono text-xs font-semibold text-cyan-300 tabular-nums">
+                {rangeStddev.toFixed(3)}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </GlassPanel>
+  )
+}
+
+export function DataMatrixExport({ cfg }: { cfg: StudyConfig }) {
+  return (
+    <div className="space-y-4">
+      <PanelHeader
+        title="Data Acquisition Matrix"
+        zh="数据采集矩阵"
+        subtitle={`${cfg.operators} appraisers · ${cfg.parts} parts · ${cfg.trials} trials · raw measurements`}
+      />
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        {cfg.operatorNames.map((_, operatorIndex) => (
+          <DataMatrixExportTable key={cfg.operatorNames[operatorIndex] || operatorIndex} cfg={cfg} operatorIndex={operatorIndex} />
+        ))}
+      </div>
+    </div>
+  )
 }
 
 export function DataMatrix({

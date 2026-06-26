@@ -257,7 +257,7 @@ export default function GrrWorkspace({ projectName }: { projectName?: string }) 
         source,
         fileBaseName,
       })
-      toast.success('GRR PDF 导出预览已打开，请使用浏览器另存为 PDF')
+      toast.success('GRR PDF 已开始下载')
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'GRR PDF 导出失败')
     } finally {

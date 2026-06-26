@@ -16,7 +16,7 @@ import { RunChart } from './run-chart'
 import { InteractionPlot } from './interaction-plot'
 import { ControlChartView } from './control-chart'
 import { AppraiserSpread } from './appraiser-spread'
-import { DataMatrix } from './data-matrix'
+import { DataMatrix, DataMatrixExport } from './data-matrix'
 
 const verdictPill: Record<string, { text: string; cls: string }> = {
   acceptable: { text: 'OPERATIONAL', cls: 'text-emerald-400 bg-emerald-400/10 border-emerald-400/20' },
@@ -32,7 +32,7 @@ function ZoneLabel({ index, title, zh }: { index: number; title: string; zh: str
       </span>
       <h2 className="text-[11px] font-semibold uppercase tracking-[0.2em] text-zinc-100">{title}</h2>
       <span className="text-[11px] font-medium tracking-wide text-zinc-400">{zh}</span>
-      <span className="h-px flex-1 bg-gradient-to-r from-white/10 to-transparent" />
+      <span className="mt-0.5 block h-[2px] min-w-[96px] flex-1 rounded-full bg-white" />
     </div>
   )
 }
@@ -283,12 +283,12 @@ const GrrPageContent = forwardRef<HTMLElement, GrrPageContentProps>(function Grr
                   </span>
                 }
               />
-              <div className="grid gap-4 px-5 py-4 lg:h-[520px] lg:grid-rows-[35fr_65fr]">
-                <div className="min-h-0 flex items-stretch">
+              <div className="grid gap-4 px-5 py-4 lg:grid-rows-[auto_minmax(0,1fr)]">
+                <div className="min-h-0">
                   <KpiDeck results={results} />
                 </div>
-                <div className="min-h-0 pt-20">
-                  <GlassPanel className="flex h-full flex-col border-emerald-400/15 bg-emerald-400/[0.04] px-5 py-5">
+                <div className="min-h-0 pt-2">
+                  <GlassPanel className="flex h-full min-h-[220px] flex-col border-emerald-400/15 bg-emerald-400/[0.04] px-5 py-5">
                     <div className="text-[11px] font-semibold tracking-[0.16em] text-zinc-200">系统结论</div>
                     <div className="mt-4 text-[22px] font-bold leading-tight text-emerald-300">
                       {conclusion.headline}
@@ -341,6 +341,11 @@ const GrrPageContent = forwardRef<HTMLElement, GrrPageContentProps>(function Grr
             onSelectedOperatorChange={setSelectedOperator}
             visibleOperators={cfg.operatorNames.map((_, index) => index)}
           />
+        </section>
+
+        <section data-grr-export-only="pdf" className="hidden">
+          <ZoneLabel index={3} title="Data Acquisition Matrix" zh="鏁版嵁閲囬泦鐭╅樀" />
+          <DataMatrixExport cfg={cfg} />
         </section>
 
         <footer className="mt-8 flex items-center justify-center gap-2 text-[10px] uppercase tracking-widest text-zinc-400">
