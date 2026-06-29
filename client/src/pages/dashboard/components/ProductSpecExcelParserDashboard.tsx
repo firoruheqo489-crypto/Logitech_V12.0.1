@@ -136,12 +136,49 @@ const navItems: Array<{
 
 const EVIDENCE_SLOT_COUNT = 4;
 const MAX_EVIDENCE_SIZE_BYTES = 500 * 1024;
+const HEADER_BUSINESS_META_LABELS = [
+  '产品来源',
+  '开发类型',
+  '产品组',
+  '客户编号',
+  '产品经理',
+  '结构工程师',
+  '电子工程师',
+] as const;
+const PACKAGING_EXTRA_LABELS = ['产品净重', '产品尺寸', '产品配件'] as const;
 
 function createEmptyEvidenceSlots(): EvidenceSlot[] {
   return Array.from({ length: EVIDENCE_SLOT_COUNT }, (_, index) => ({
     id: `engineering-spec-evidence-${index + 1}`,
     label: `证据 ${index + 1}`,
   }));
+}
+
+function appendMissingBusinessMetaFields(fields: BoundField[], prefix: string): BoundField[] {
+  const existingLabels = new Set(fields.map((field) => field.label.trim()));
+  const extras = HEADER_BUSINESS_META_LABELS.filter((label) => !existingLabels.has(label)).map((label, index) => ({
+    label,
+    cellId: `${prefix}-${index + 1}`,
+    value: '',
+  }));
+  return [...fields, ...extras];
+}
+
+function appendMissingPackagingFields(packaging: PackagingMetric[], prefix: string): PackagingMetric[] {
+  const existingLabels = new Set(packaging.map((item) => item.label.trim()));
+  const extras = PACKAGING_EXTRA_LABELS.filter((label) => !existingLabels.has(label)).map((label, index) => ({
+    label,
+    field: {
+      label,
+      cellId: `${prefix}-${index + 1}`,
+      value: '',
+    },
+  }));
+  return [...packaging, ...extras];
+}
+
+function findMetaField(fields: BoundField[], label: string): BoundField | null {
+  return fields.find((field) => field.label.trim() === label) || null;
 }
 
 async function compressEvidenceImage(file: File): Promise<File> {
@@ -412,17 +449,6 @@ export default function ProductSpecExcelParserDashboard({
     } finally {
       setIsParsing(false);
     }
-  }
-
-  function updateRowStatus(cellId: string, status: RowStatus) {
-    if (workspaceOrigin.mode === 'archive') {
-      setWorkspaceOrigin((current) => ({
-        mode: 'draft',
-        label: '当前草稿',
-        detail: current.detail || '基于归档快照修改中',
-      }));
-    }
-    setWorkspaceModel((current) => (current ? updateSpecDocModelRowStatus(current, cellId, status) : current));
   }
 
   async function handleCopySummary() {
@@ -764,7 +790,6 @@ export default function ProductSpecExcelParserDashboard({
             ) : docModel ? (
               <ElectronicSpecDocument
                 model={docModel}
-                onStatusChange={updateRowStatus}
                 quickFacts={quickFacts}
                 onCopySummary={handleCopySummary}
                 stats={stats}
@@ -875,7 +900,6 @@ export default function ProductSpecExcelParserDashboard({
 
 function ElectronicSpecDocument({
   model,
-  onStatusChange,
   quickFacts,
   onCopySummary,
   stats,
@@ -892,7 +916,6 @@ function ElectronicSpecDocument({
   onEvidenceDrop,
 }: {
   model: SpecDocModel;
-  onStatusChange: (cellId: string, status: RowStatus) => void;
   quickFacts: Array<{ label: string; value: string }>;
   onCopySummary: () => void;
   stats: StatItem[];
@@ -916,10 +939,9 @@ function ElectronicSpecDocument({
         onCopySummary={onCopySummary}
         stats={stats}
       />
-      <MetaGridCard packaging={model.packaging} businessMeta={model.businessMeta} />
       <div className="space-y-4">
         {model.sections.map((section) => (
-          <SpecSectionCard key={section.label} section={section} onStatusChange={onStatusChange} />
+          <SpecSectionCard key={section.label} section={section} />
         ))}
       </div>
       <EvidenceGridCard
@@ -949,6 +971,17 @@ function HeaderCard({
   onCopySummary: () => void;
   stats: StatItem[];
 }) {
+  void stats;
+  const hsCodeField = findMetaField(model.businessMeta, '海关编码');
+  const customsNameField = findMetaField(model.businessMeta, '报关中文品名');
+  const customerIdField = findMetaField(model.businessMeta, '客户编号');
+  const businessSummaryFields = ['产品来源', '开发类型', '产品组']
+    .map((label) => findMetaField(model.businessMeta, label))
+    .filter((field): field is BoundField => Boolean(field));
+  const roleFields = ['产品经理', '结构工程师', '电子工程师']
+    .map((label) => findMetaField(model.businessMeta, label))
+    .filter((field): field is BoundField => Boolean(field));
+
   return (
     <section className={`rounded-[18px] px-4 py-4 ${glassPanelClass}`}>
       <div className="mb-3 flex items-center justify-between gap-3">
@@ -968,57 +1001,63 @@ function HeaderCard({
         ) : null}
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[220px_minmax(0,1fr)]">
-        <div className="overflow-hidden rounded-xl border border-white/[0.06] bg-black/20">
-          {model.imageSrc ? (
-            <div className="relative aspect-[4/4.2] bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.05),transparent_68%)]">
-              <img src={model.imageSrc} alt="产品图片" className="h-full w-full object-contain p-5" />
-            </div>
-          ) : (
-            <div className="flex aspect-[4/4.2] items-center justify-center text-[13px] text-[#94A3B8]">
-              暂无产品图片
-            </div>
-          )}
+      <div className="grid items-start gap-4 xl:grid-cols-[220px_minmax(0,1fr)]">
+        <div className="space-y-4">
+          <div className="overflow-hidden rounded-xl border border-white/[0.06] bg-black/20">
+            {model.imageSrc ? (
+              <div className="relative aspect-[4/4.2] bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.05),transparent_68%)]">
+                <img src={model.imageSrc} alt="产品图片" className="h-full w-full object-contain p-5" />
+              </div>
+            ) : (
+              <div className="flex aspect-[4/4.2] items-center justify-center text-[13px] text-[#94A3B8]">
+                暂无产品图片
+              </div>
+            )}
+          </div>
+          <div className="pt-1">
+            <p className="text-sm font-medium text-[#E2E8F0]">产品包装信息</p>
+          </div>
         </div>
 
-        <div className="space-y-3">
-          <div className="grid gap-x-3 gap-y-2 md:grid-cols-2 xl:grid-cols-4">
+        <div className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             <CompactField field={model.header.sku} />
             <CompactField field={model.header.spu} />
-            <CompactField field={model.header.productType} className="xl:col-span-2" multiline />
-            <CompactField field={model.header.description} className="md:col-span-2 xl:col-span-4" multiline />
+            <CompactField field={model.header.productType} multiline />
+            {hsCodeField ? <CompactField field={hsCodeField} /> : null}
+            {customsNameField ? (
+              <CompactField field={{ ...customsNameField, label: '报关中文名' }} multiline />
+            ) : null}
+            {customerIdField ? <CompactField field={customerIdField} /> : null}
+            <CompactField field={model.header.description} className="md:col-span-2 xl:col-span-3" multiline />
           </div>
 
-          {quickFacts.length > 0 || stats.length > 0 ? (
-            <div className="grid gap-3 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
-              <div className="border border-white/[0.05] bg-black/15 px-3 py-2.5">
-                <div className="mb-2">
-                  <p className="text-sm font-medium text-[#E2E8F0]">摘要字段</p>
-                  <p className="text-[11px] text-[#94A3B8]">关键字段快速核对</p>
-                </div>
-                <div className="grid gap-x-4 gap-y-2 md:grid-cols-2">
-                  {quickFacts.map((fact) => (
-                    <div key={fact.label} className="border-b border-white/[0.05] py-1 last:border-b-0">
-                      <p className="text-[11px] text-[#94A3B8]">{fact.label}</p>
-                      <p className="mt-0.5 break-all text-[13px] leading-5 text-[#E2E8F0]">{fact.value}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="border border-white/[0.05] bg-black/15 px-3 py-2.5">
-                <div className="mb-2">
-                  <p className="text-sm font-medium text-[#E2E8F0]">结构统计</p>
-                  <p className="text-[11px] text-[#94A3B8]">模板解析结果</p>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  {stats.map((stat) => (
-                    <MetricCard key={stat.label} icon={stat.icon} label={stat.label} value={stat.value} />
-                  ))}
-                </div>
-              </div>
+          {businessSummaryFields.length > 0 ? (
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {businessSummaryFields.map((field) => (
+                <CompactField key={field.cellId} field={field} multiline={field.multiline} />
+              ))}
             </div>
           ) : null}
+
+          {roleFields.length > 0 ? (
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {roleFields.map((field) => (
+                <CompactField key={field.cellId} field={field} multiline={field.multiline} />
+              ))}
+            </div>
+          ) : null}
+
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {model.packaging.map((item) => (
+              <CompactField
+                key={item.field.cellId}
+                field={{ ...item.field, label: item.label }}
+                multiline={item.field.multiline}
+                tight
+              />
+            ))}
+          </div>
         </div>
       </div>
     </section>
@@ -1059,10 +1098,8 @@ function MetaGridCard({
 
 function SpecSectionCard({
   section,
-  onStatusChange,
 }: {
   section: SpecDocSection;
-  onStatusChange: (cellId: string, status: RowStatus) => void;
 }) {
   return (
     <section className={`rounded-[18px] px-4 py-4 ${glassPanelClass}`}>
@@ -1078,7 +1115,7 @@ function SpecSectionCard({
 
       <div className="space-y-1">
         {section.groups.map((group) => (
-          <SpecGroupBlock key={`${section.label}-${group.label}`} group={group} onStatusChange={onStatusChange} />
+          <SpecGroupBlock key={`${section.label}-${group.label}`} group={group} />
         ))}
       </div>
     </section>
@@ -1087,29 +1124,20 @@ function SpecSectionCard({
 
 function SpecGroupBlock({
   group,
-  onStatusChange,
 }: {
   group: SpecDocGroup;
-  onStatusChange: (cellId: string, status: RowStatus) => void;
 }) {
-  const summary = summarizeGroupStatuses(group.rows);
-
   return (
     <div className="flex border-b border-white/[0.05] last:border-b-0">
-      <div className="w-28 shrink-0 px-2 py-2 text-[13px] font-medium leading-6 text-[#94A3B8]">
+      <div className="flex w-28 shrink-0 items-center justify-center px-2 py-2 text-center text-[13px] font-semibold leading-6 text-[#CBD5E1]">
         <div>{group.label}</div>
-        <div className="mt-2 space-y-1 text-[11px] font-normal leading-4 text-[#64748B]">
-          <div>{summary.pass} Pass</div>
-          <div>{summary.fail} Fail</div>
-          <div>{summary.untested} 未测试</div>
-        </div>
       </div>
 
       <div className="min-w-0 flex-1">
         {group.rows.map((row, index) => (
           <div
             key={row.cellId}
-            className={`grid min-h-[36px] grid-cols-[40px_220px_minmax(0,1fr)_220px] items-start gap-3 px-2 py-1.5 text-[13px] leading-6 hover:bg-white/[0.03] ${
+            className={`grid min-h-[36px] grid-cols-[40px_220px_minmax(0,1fr)] items-start gap-3 px-2 py-1.5 text-[13px] leading-6 hover:bg-white/[0.03] ${
               index < group.rows.length - 1 ? 'border-b border-white/[0.05]' : ''
             }`}
           >
@@ -1123,12 +1151,6 @@ function SpecGroupBlock({
               >
                 {row.value || '—'}
               </div>
-            </div>
-            <div className="flex items-start justify-end">
-              <RowStatusSelector
-                value={row.status}
-                onChange={(status) => onStatusChange(row.cellId, status)}
-              />
             </div>
           </div>
         ))}
@@ -1258,21 +1280,23 @@ function QeConclusionCard({
 function CompactField({
   field,
   className = '',
+  tight = false,
   multiline,
 }: {
   field: BoundField;
   className?: string;
+  tight?: boolean;
   multiline?: boolean;
 }) {
   return (
-    <div className={`min-w-0 border-b border-white/[0.05] px-1 py-1.5 ${className}`}>
+    <div className={`min-w-0 border-b border-white/[0.05] px-1 ${tight ? 'py-0.5' : 'py-1.5'} ${className}`}>
       <p className="truncate text-[11px] text-[#94A3B8]">{field.label}</p>
       {multiline ? (
-        <div className="mt-1 whitespace-pre-wrap break-words text-[13px] leading-6 text-[#E2E8F0]">
+        <div className={`mt-1 whitespace-pre-wrap break-words text-[13px] text-[#E2E8F0] ${tight ? 'leading-5' : 'leading-6'}`}>
           {field.value || '—'}
         </div>
       ) : (
-        <div className="mt-1 break-words text-[13px] leading-6 text-[#E2E8F0]">
+        <div className={`mt-1 break-words text-[13px] text-[#E2E8F0] ${tight ? 'leading-5' : 'leading-6'}`}>
           {field.value || '—'}
         </div>
       )}
@@ -1296,61 +1320,6 @@ function MetricCard({
         <span className="text-[11px]">{label}</span>
       </div>
       <p className="mt-1 text-[13px] leading-5 text-[#E2E8F0]">{value}</p>
-    </div>
-  );
-}
-
-function RowStatusSelector({
-  value,
-  onChange,
-}: {
-  value: RowStatus;
-  onChange: (status: RowStatus) => void;
-}) {
-  const options: Array<{
-    key: RowStatus;
-    label: string;
-    activeClass: string;
-  }> = [
-    {
-      key: 'pass',
-      label: 'Pass',
-      activeClass:
-        'border-emerald-500/45 bg-[linear-gradient(180deg,rgba(4,120,87,0.42),rgba(3,84,63,0.72))] text-emerald-50 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_0_0_1px_rgba(6,95,70,0.35)]',
-    },
-    {
-      key: 'fail',
-      label: 'Fail',
-      activeClass:
-        'border-rose-500/45 bg-[linear-gradient(180deg,rgba(159,18,57,0.42),rgba(127,29,29,0.76))] text-rose-50 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_0_0_1px_rgba(127,29,29,0.35)]',
-    },
-    {
-      key: 'untested',
-      label: '未测试',
-      activeClass:
-        'border-slate-300/18 bg-[linear-gradient(180deg,rgba(51,65,85,0.48),rgba(30,41,59,0.78))] text-slate-100 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]',
-    },
-  ];
-
-  return (
-    <div className="inline-flex rounded-xl border border-white/[0.06] bg-[linear-gradient(180deg,rgba(15,23,42,0.68),rgba(2,6,23,0.86))] p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-      {options.map((option) => {
-        const active = value === option.key;
-        return (
-          <button
-            key={option.key}
-            type="button"
-            onClick={() => onChange(option.key)}
-            className={`rounded-lg px-3 py-1.5 text-[11px] font-medium transition ${
-              active
-                ? option.activeClass
-                : 'border border-transparent text-slate-400 hover:bg-white/[0.05] hover:text-slate-100'
-            }`}
-          >
-            {option.label}
-          </button>
-        );
-      })}
     </div>
   );
 }
@@ -1439,8 +1408,9 @@ function buildSpecDocModelFromWorkspaceState(state: EngineeringSpecWorkspaceStat
         multiline: true,
       },
     },
-    packaging: Array.isArray(state.packaging)
-      ? state.packaging.map((item, index) => ({
+    packaging: appendMissingPackagingFields(
+      Array.isArray(state.packaging)
+        ? state.packaging.map((item, index) => ({
           label: String(item?.label || `包装项 ${index + 1}`),
           field: {
             label: String(item?.label || `包装项 ${index + 1}`),
@@ -1448,15 +1418,20 @@ function buildSpecDocModelFromWorkspaceState(state: EngineeringSpecWorkspaceStat
             value: String(item?.value || ''),
           },
         }))
-      : [],
-    businessMeta: Array.isArray(state.businessMeta)
-      ? state.businessMeta.map((item, index) => ({
+        : [],
+      'workspace-packaging-extra',
+    ),
+    businessMeta: appendMissingBusinessMetaFields(
+      Array.isArray(state.businessMeta)
+        ? state.businessMeta.map((item, index) => ({
           label: String(item?.label || `业务字段 ${index + 1}`),
           cellId: `workspace-meta-${index + 1}`,
           value: String(item?.value || ''),
           multiline: Boolean(item?.multiline),
         }))
-      : [],
+        : [],
+      'workspace-meta-extra',
+    ),
     sections: mapWorkspaceSectionsToSpecSections(state.sections),
   };
 }
@@ -1491,8 +1466,9 @@ function buildSpecDocModelFromArchiveState(state: EngineeringSpecArchiveState): 
         multiline: true,
       },
     },
-    packaging: Array.isArray(state.packaging)
-      ? state.packaging.map((item, index) => ({
+    packaging: appendMissingPackagingFields(
+      Array.isArray(state.packaging)
+        ? state.packaging.map((item, index) => ({
           label: String(item?.label || `包装项 ${index + 1}`),
           field: {
             label: String(item?.label || `包装项 ${index + 1}`),
@@ -1500,15 +1476,20 @@ function buildSpecDocModelFromArchiveState(state: EngineeringSpecArchiveState): 
             value: String(item?.value || ''),
           },
         }))
-      : [],
-    businessMeta: Array.isArray(state.businessMeta)
-      ? state.businessMeta.map((item, index) => ({
+        : [],
+      'archive-packaging-extra',
+    ),
+    businessMeta: appendMissingBusinessMetaFields(
+      Array.isArray(state.businessMeta)
+        ? state.businessMeta.map((item, index) => ({
           label: String(item?.label || `业务字段 ${index + 1}`),
           cellId: `archive-meta-${index + 1}`,
           value: String(item?.value || ''),
           multiline: false,
         }))
-      : [],
+        : [],
+      'archive-meta-extra',
+    ),
     sections: mapArchiveSectionsToSpecSections(state.sections),
   };
 }
@@ -1635,23 +1616,6 @@ function updateSpecDocModelField(model: SpecDocModel, cellId: string, value: str
   };
 }
 
-function updateSpecDocModelRowStatus(
-  model: SpecDocModel,
-  cellId: string,
-  status: RowStatus,
-): SpecDocModel {
-  return {
-    ...model,
-    sections: model.sections.map((section) => ({
-      ...section,
-      groups: section.groups.map((group) => ({
-        ...group,
-        rows: group.rows.map((row) => (row.cellId === cellId ? { ...row, status } : row)),
-      })),
-    })),
-  };
-}
-
 function buildWorkspaceStatePayload(
   workspaceKey: string,
   model: SpecDocModel,
@@ -1720,19 +1684,22 @@ function buildSpecDocModel(preview: ProductSpecWorkbookPreview, cellTexts: CellT
     };
   };
 
-  const packaging = [3, 4, 5, 6, 7, 8, 9].map((col) => ({
+  const packaging = appendMissingPackagingFields([3, 4, 5, 6, 7, 8, 9].map((col) => ({
     label: getCellValue(locator, cellTexts, 5, col),
     field: bound(getCellValue(locator, cellTexts, 5, col), 7, col),
-  }));
+  })), 'parsed-packaging-extra');
 
-  const businessMeta: BoundField[] = [
-    bound('产品来源', 8, 3),
-    bound('开发类型', 8, 7),
-    bound('事业部', 9, 3),
-    bound('产品组', 9, 7),
-    bound('海关编码', 9, 8),
-    bound('报关中文品名', 9, 9, true),
-  ];
+  const businessMeta: BoundField[] = appendMissingBusinessMetaFields(
+    [
+      bound('产品来源', 8, 3),
+      bound('开发类型', 8, 7),
+      bound('事业部', 9, 3),
+      bound('产品组', 9, 7),
+      bound('海关编码', 9, 8),
+      bound('报关中文品名', 9, 9, true),
+    ],
+    'parsed-meta-extra',
+  );
 
   const sectionsByKey = new Map<string, SpecDocSection>();
   for (let row = 11; row <= preview.metadata.rowCount; row += 1) {
@@ -1911,22 +1878,6 @@ function countPendingRows(sections: SpecDocSection[]): number {
         0,
       ),
     0,
-  );
-}
-
-function summarizeGroupStatuses(rows: SpecDocRow[]) {
-  return rows.reduce(
-    (acc, row) => {
-      if (row.status === 'pass') {
-        acc.pass += 1;
-      } else if (row.status === 'fail') {
-        acc.fail += 1;
-      } else {
-        acc.untested += 1;
-      }
-      return acc;
-    },
-    { pass: 0, fail: 0, untested: 0 },
   );
 }
 
