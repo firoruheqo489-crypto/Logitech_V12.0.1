@@ -32,8 +32,6 @@ import {
 import type { ProductSpecPreviewCell, ProductSpecWorkbookPreview } from '@/lib/product-spec-excel-parser';
 import { parseProductSpecWorkbook } from '@/lib/product-spec-excel-parser';
 import {
-  fetchEngineeringSpecWorkspaceState,
-  saveEngineeringSpecWorkspaceState,
   type EngineeringSpecWorkspaceField,
   type EngineeringSpecWorkspaceSection,
   type EngineeringSpecWorkspaceState,
@@ -136,6 +134,14 @@ const navItems: Array<{
 
 const EVIDENCE_SLOT_COUNT = 4;
 const MAX_EVIDENCE_SIZE_BYTES = 500 * 1024;
+const PACKAGING_LABEL_TRANSLATIONS: Array<{ pattern: RegExp; label: string }> = [
+  { pattern: /^pk$/i, label: '包装方式' },
+  { pattern: /^inner\s*pc\s*\/\s*box$/i, label: '内盒数量' },
+  { pattern: /^outer\s*pc\s*\/\s*ctn$/i, label: '外箱数量' },
+  { pattern: /^n\.?\s*w\.?\s*kg\s*\/\s*ctn$/i, label: '单箱净重(KG)' },
+  { pattern: /^g\.?\s*w\.?\s*kg\s*\/\s*ctn$/i, label: '单箱毛重(KG)' },
+  { pattern: /^measm'?t\s*cbm\s*\/\s*ctn$/i, label: '单箱体积(CBM)' },
+];
 const HEADER_BUSINESS_META_LABELS = [
   '产品来源',
   '开发类型',
@@ -179,6 +185,16 @@ function appendMissingPackagingFields(packaging: PackagingMetric[], prefix: stri
 
 function findMetaField(fields: BoundField[], label: string): BoundField | null {
   return fields.find((field) => field.label.trim() === label) || null;
+}
+
+function getLocalizedPackagingLabel(label: string): string {
+  const normalized = label.trim();
+  for (const translation of PACKAGING_LABEL_TRANSLATIONS) {
+    if (translation.pattern.test(normalized)) {
+      return translation.label;
+    }
+  }
+  return normalized;
 }
 
 async function compressEvidenceImage(file: File): Promise<File> {
@@ -233,12 +249,13 @@ export default function ProductSpecExcelParserDashboard({
   const evidenceDropDepthRef = useRef(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [workspaceSyncState, setWorkspaceSyncState] = useState<WorkspaceSyncState>('idle');
-  const [workspaceSyncMessage, setWorkspaceSyncMessage] = useState('未恢复工作区草稿');
+  const [workspaceSyncMessage, setWorkspaceSyncMessage] = useState('本页不保留草稿，刷新后请从台账查看或恢复。');
   const [workspaceOrigin, setWorkspaceOrigin] = useState<WorkspaceOriginState>({
     mode: 'draft',
     label: '当前草稿',
     detail: '尚未导入规格书',
   });
+  const [isEditMode, setIsEditMode] = useState(false);
 
   const projectId = projectName.trim() || 'default-engineering-spec-workspace';
 
@@ -272,82 +289,7 @@ export default function ProductSpecExcelParserDashboard({
     };
   }, [projectId]);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadWorkspace = async () => {
-      setWorkspaceSyncState('loading');
-      setWorkspaceSyncMessage('正在恢复工作区草稿...');
-      try {
-        const state = await fetchEngineeringSpecWorkspaceState(projectId);
-        if (cancelled) return;
-
-        if (!state) {
-          setWorkspaceSyncState('idle');
-          setWorkspaceSyncMessage('未找到可恢复的工作区草稿');
-          setWorkspaceOrigin({
-            mode: 'draft',
-            label: '当前草稿',
-            detail: '尚未导入规格书',
-          });
-          return;
-        }
-
-        setWorkspaceModel(buildSpecDocModelFromWorkspaceState(state));
-        setWorkspaceMeta({
-          rowCount: Number(state.metadata?.rowCount) || 0,
-          columnCount: Number(state.metadata?.columnCount) || 0,
-        });
-        setEvidenceSlots(buildEvidenceSlotsFromWorkspaceState(state));
-        setQeConclusion(state.qeConclusion || '');
-        setWorkspaceSyncState('restored');
-        setWorkspaceSyncMessage(`已恢复草稿：${state.sourceFileName || '未命名规格书'}`);
-        setWorkspaceOrigin({
-          mode: 'draft',
-          label: '当前草稿',
-          detail: state.sourceFileName || '未命名规格书',
-        });
-      } catch (error) {
-        if (!cancelled) {
-          setWorkspaceSyncState('error');
-          setWorkspaceSyncMessage('工作区恢复失败');
-          toast.error('工作区恢复失败', {
-            description: error instanceof Error ? error.message : '请稍后重试',
-          });
-        }
-      }
-    };
-
-    void loadWorkspace();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [projectId]);
-
   const docModel = workspaceModel;
-
-  useEffect(() => {
-    if (!workspaceModel) return;
-
-    setWorkspaceSyncState('saving');
-    setWorkspaceSyncMessage('正在保存工作区草稿...');
-    const timer = window.setTimeout(() => {
-      void saveEngineeringSpecWorkspaceState(
-        buildWorkspaceStatePayload(projectId, workspaceModel, workspaceMeta, evidenceSlots, qeConclusion),
-      )
-        .then(() => {
-          setWorkspaceSyncState('saved');
-          setWorkspaceSyncMessage('工作区草稿已保存');
-        })
-        .catch(() => {
-          setWorkspaceSyncState('error');
-          setWorkspaceSyncMessage('工作区保存失败');
-        });
-    }, 400);
-
-    return () => window.clearTimeout(timer);
-  }, [projectId, qeConclusion, workspaceMeta, workspaceModel, evidenceSlots]);
 
   const sanitizedLedgerRecords = useMemo(
     () => sanitizeEngineeringSpecLedgerRecords(ledgerRecords),
@@ -433,6 +375,9 @@ export default function ProductSpecExcelParserDashboard({
       setEvidenceSlots(createEmptyEvidenceSlots());
       setQeConclusion('');
       setLightboxSlotId(null);
+      setIsEditMode(false);
+      setWorkspaceSyncState('idle');
+      setWorkspaceSyncMessage('本页不保留草稿，刷新后请从台账查看或恢复。');
       setView('workspace');
       setWorkspaceOrigin({
         mode: 'draft',
@@ -646,6 +591,30 @@ export default function ProductSpecExcelParserDashboard({
     setPendingUploadSlotId(null);
   }
 
+  function markWorkspaceAsDraft() {
+    setWorkspaceSyncState('idle');
+    setWorkspaceSyncMessage('本页只保留本次打开会话内容，刷新后请从台账查看或恢复。');
+    setWorkspaceOrigin((current) =>
+      current.mode === 'archive'
+        ? {
+            mode: 'draft',
+            label: '当前草稿',
+            detail: current.detail || '基于归档快照修改中',
+          }
+        : current,
+    );
+  }
+
+  function handleFieldChange(cellId: string, value: string) {
+    markWorkspaceAsDraft();
+    setWorkspaceModel((current) => (current ? updateSpecDocModelField(current, cellId, value) : current));
+  }
+
+  function handleQeConclusionChange(value: string) {
+    markWorkspaceAsDraft();
+    setQeConclusion(value);
+  }
+
   async function handleSelectArchiveRecord(record: EngineeringSpecLedgerRecord) {
     try {
       const snapshot = await getEngineeringSpecArchiveDocumentState({
@@ -656,10 +625,11 @@ export default function ProductSpecExcelParserDashboard({
       setWorkspaceMeta(buildWorkspaceMetaFromArchiveState(snapshot.state));
       setEvidenceSlots(buildEvidenceSlotsFromArchiveState(snapshot.state));
       setQeConclusion(snapshot.state.qeConclusion || '');
+      setIsEditMode(false);
       setLightboxSlotId(null);
       setView('workspace');
       setWorkspaceSyncState('restored');
-      setWorkspaceSyncMessage(`已恢复归档：${snapshot.document.sku || '未命名规格书'}`);
+      setWorkspaceSyncMessage(`当前内容来自台账归档：${snapshot.document.sku || '未命名规格书'}，刷新后不会保留。`);
       setWorkspaceOrigin({
         mode: 'archive',
         label: '归档快照',
@@ -686,7 +656,7 @@ export default function ProductSpecExcelParserDashboard({
                 高密度电子化产品规格书
               </h1>
               <p className="mt-1 text-[13px] leading-6 text-[#94A3B8]">
-                当前模块通过 OSS 归档规格书数据，刷新恢复当前草稿，点击台账可直接恢复到存档时的现场。
+                当前模块通过 OSS 归档规格书数据，本页不保留长期草稿，需要时请从台账直接恢复到存档现场。
               </p>
             </div>
 
@@ -790,11 +760,14 @@ export default function ProductSpecExcelParserDashboard({
             ) : docModel ? (
               <ElectronicSpecDocument
                 model={docModel}
+                isEditMode={isEditMode}
+                onToggleEditMode={() => setIsEditMode((current) => !current)}
+                onFieldChange={handleFieldChange}
                 quickFacts={quickFacts}
                 onCopySummary={handleCopySummary}
                 stats={stats}
                 qeConclusion={qeConclusion}
-                onQeConclusionChange={setQeConclusion}
+                onQeConclusionChange={handleQeConclusionChange}
                 evidenceSlots={evidenceSlots}
                 onSlotPick={handleSlotPick}
                 onSlotDelete={handleEvidenceDelete}
@@ -900,6 +873,9 @@ export default function ProductSpecExcelParserDashboard({
 
 function ElectronicSpecDocument({
   model,
+  isEditMode,
+  onToggleEditMode,
+  onFieldChange,
   quickFacts,
   onCopySummary,
   stats,
@@ -916,6 +892,9 @@ function ElectronicSpecDocument({
   onEvidenceDrop,
 }: {
   model: SpecDocModel;
+  isEditMode: boolean;
+  onToggleEditMode: () => void;
+  onFieldChange: (cellId: string, value: string) => void;
   quickFacts: Array<{ label: string; value: string }>;
   onCopySummary: () => void;
   stats: StatItem[];
@@ -935,13 +914,21 @@ function ElectronicSpecDocument({
     <div className="space-y-4">
       <HeaderCard
         model={model}
+        isEditMode={isEditMode}
+        onToggleEditMode={onToggleEditMode}
+        onFieldChange={onFieldChange}
         quickFacts={quickFacts}
         onCopySummary={onCopySummary}
         stats={stats}
       />
       <div className="space-y-4">
         {model.sections.map((section) => (
-          <SpecSectionCard key={section.label} section={section} />
+          <SpecSectionCard
+            key={section.label}
+            section={section}
+            isEditMode={isEditMode}
+            onFieldChange={onFieldChange}
+          />
         ))}
       </div>
       <EvidenceGridCard
@@ -955,18 +942,24 @@ function ElectronicSpecDocument({
         onEvidenceDragLeave={onEvidenceDragLeave}
         onEvidenceDrop={onEvidenceDrop}
       />
-      <QeConclusionCard value={qeConclusion} onChange={onQeConclusionChange} />
+      <QeConclusionCard value={qeConclusion} onChange={onQeConclusionChange} isEditMode={isEditMode} />
     </div>
   );
 }
 
 function HeaderCard({
   model,
+  isEditMode,
+  onToggleEditMode,
+  onFieldChange,
   quickFacts,
   onCopySummary,
   stats,
 }: {
   model: SpecDocModel;
+  isEditMode: boolean;
+  onToggleEditMode: () => void;
+  onFieldChange: (cellId: string, value: string) => void;
   quickFacts: Array<{ label: string; value: string }>;
   onCopySummary: () => void;
   stats: StatItem[];
@@ -989,53 +982,80 @@ function HeaderCard({
           <p className="text-[11px] uppercase tracking-[0.24em] text-[#94A3B8]">Header</p>
           <h2 className="mt-0.5 text-base font-semibold text-[#E2E8F0]">{model.header.title}</h2>
         </div>
-        {quickFacts.length > 0 ? (
+        <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={() => void onCopySummary()}
-            className="inline-flex items-center gap-2 rounded-lg border border-white/[0.08] px-2.5 py-1.5 text-[11px] text-[#94A3B8] transition hover:bg-white/[0.05]"
+            onClick={onToggleEditMode}
+            className={`inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-[11px] transition ${
+              isEditMode
+                ? 'border-cyan-400/35 bg-cyan-400/10 text-cyan-100'
+                : 'border-white/[0.08] text-[#94A3B8] hover:bg-white/[0.05]'
+            }`}
           >
-            <Copy className="h-3.5 w-3.5" />
-            复制摘要
+            {isEditMode ? '完成编辑' : '编辑内容'}
           </button>
-        ) : null}
+          {quickFacts.length > 0 ? (
+            <button
+              type="button"
+              onClick={() => void onCopySummary()}
+              className="inline-flex items-center gap-2 rounded-lg border border-white/[0.08] px-2.5 py-1.5 text-[11px] text-[#94A3B8] transition hover:bg-white/[0.05]"
+            >
+              <Copy className="h-3.5 w-3.5" />
+              复制摘要
+            </button>
+          ) : null}
+        </div>
       </div>
 
       <div className="grid items-start gap-4 xl:grid-cols-[220px_minmax(0,1fr)]">
-        <div className="space-y-4">
-          <div className="overflow-hidden rounded-xl border border-white/[0.06] bg-black/20">
-            {model.imageSrc ? (
-              <div className="relative aspect-[4/4.2] bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.05),transparent_68%)]">
-                <img src={model.imageSrc} alt="产品图片" className="h-full w-full object-contain p-5" />
-              </div>
-            ) : (
-              <div className="flex aspect-[4/4.2] items-center justify-center text-[13px] text-[#94A3B8]">
-                暂无产品图片
-              </div>
-            )}
-          </div>
-          <div className="pt-1">
-            <p className="text-sm font-medium text-[#E2E8F0]">产品包装信息</p>
-          </div>
+        <div className="overflow-hidden rounded-xl border border-white/[0.06] bg-black/20">
+          {model.imageSrc ? (
+            <div className="relative aspect-[4/4.2] bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.05),transparent_68%)]">
+              <img src={model.imageSrc} alt="产品图片" className="h-full w-full object-contain p-5" />
+            </div>
+          ) : (
+            <div className="flex aspect-[4/4.2] items-center justify-center text-[13px] text-[#94A3B8]">
+              暂无产品图片
+            </div>
+          )}
         </div>
 
         <div className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            <CompactField field={model.header.sku} />
-            <CompactField field={model.header.spu} />
-            <CompactField field={model.header.productType} multiline />
-            {hsCodeField ? <CompactField field={hsCodeField} /> : null}
+            <CompactField field={model.header.sku} isEditing={isEditMode} onChange={onFieldChange} />
+            <CompactField field={model.header.spu} isEditing={isEditMode} onChange={onFieldChange} />
+            <CompactField field={model.header.productType} multiline isEditing={isEditMode} onChange={onFieldChange} />
+            {hsCodeField ? <CompactField field={hsCodeField} isEditing={isEditMode} onChange={onFieldChange} /> : null}
             {customsNameField ? (
-              <CompactField field={{ ...customsNameField, label: '报关中文名' }} multiline />
+              <CompactField
+                field={{ ...customsNameField, label: '报关中文名' }}
+                multiline
+                isEditing={isEditMode}
+                onChange={onFieldChange}
+              />
             ) : null}
-            {customerIdField ? <CompactField field={customerIdField} /> : null}
-            <CompactField field={model.header.description} className="md:col-span-2 xl:col-span-3" multiline />
+            {customerIdField ? (
+              <CompactField field={customerIdField} isEditing={isEditMode} onChange={onFieldChange} />
+            ) : null}
+            <CompactField
+              field={model.header.description}
+              className="md:col-span-2 xl:col-span-3"
+              multiline
+              isEditing={isEditMode}
+              onChange={onFieldChange}
+            />
           </div>
 
           {businessSummaryFields.length > 0 ? (
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               {businessSummaryFields.map((field) => (
-                <CompactField key={field.cellId} field={field} multiline={field.multiline} />
+                <CompactField
+                  key={field.cellId}
+                  field={field}
+                  multiline={field.multiline}
+                  isEditing={isEditMode}
+                  onChange={onFieldChange}
+                />
               ))}
             </div>
           ) : null}
@@ -1043,21 +1063,36 @@ function HeaderCard({
           {roleFields.length > 0 ? (
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               {roleFields.map((field) => (
-                <CompactField key={field.cellId} field={field} multiline={field.multiline} />
+                <CompactField
+                  key={field.cellId}
+                  field={field}
+                  multiline={field.multiline}
+                  isEditing={isEditMode}
+                  onChange={onFieldChange}
+                />
               ))}
             </div>
           ) : null}
+        </div>
 
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {model.packaging.map((item) => (
-              <CompactField
-                key={item.field.cellId}
-                field={{ ...item.field, label: item.label }}
-                multiline={item.field.multiline}
-                tight
-              />
-            ))}
+        <div className="flex self-stretch flex-col xl:px-2">
+          <div className="mx-4 h-px bg-gradient-to-r from-transparent via-white/[0.14] to-transparent" />
+          <div className="flex flex-1 items-center justify-center px-4 py-5">
+            <p className="text-center text-sm font-semibold tracking-[0.02em] text-[#E2E8F0]">产品包装信息</p>
           </div>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+          {model.packaging.map((item) => (
+            <CompactField
+              key={item.field.cellId}
+              field={{ ...item.field, label: getLocalizedPackagingLabel(item.label) }}
+              multiline={item.field.multiline}
+              isEditing={isEditMode}
+              onChange={onFieldChange}
+              tight
+            />
+          ))}
         </div>
       </div>
     </section>
@@ -1098,8 +1133,12 @@ function MetaGridCard({
 
 function SpecSectionCard({
   section,
+  isEditMode,
+  onFieldChange,
 }: {
   section: SpecDocSection;
+  isEditMode: boolean;
+  onFieldChange: (cellId: string, value: string) => void;
 }) {
   return (
     <section className={`rounded-[18px] px-4 py-4 ${glassPanelClass}`}>
@@ -1115,7 +1154,12 @@ function SpecSectionCard({
 
       <div className="space-y-1">
         {section.groups.map((group) => (
-          <SpecGroupBlock key={`${section.label}-${group.label}`} group={group} />
+          <SpecGroupBlock
+            key={`${section.label}-${group.label}`}
+            group={group}
+            isEditMode={isEditMode}
+            onFieldChange={onFieldChange}
+          />
         ))}
       </div>
     </section>
@@ -1124,8 +1168,12 @@ function SpecSectionCard({
 
 function SpecGroupBlock({
   group,
+  isEditMode,
+  onFieldChange,
 }: {
   group: SpecDocGroup;
+  isEditMode: boolean;
+  onFieldChange: (cellId: string, value: string) => void;
 }) {
   return (
     <div className="flex border-b border-white/[0.05] last:border-b-0">
@@ -1144,13 +1192,25 @@ function SpecGroupBlock({
             <div className="pt-0.5 text-[#94A3B8]">{row.item}</div>
             <div className="pt-0.5 text-[#94A3B8]">{row.label || '确认项目'}</div>
             <div className={row.pending ? 'border-l-2 border-[#EAB308] pl-3' : ''}>
-              <div
-                className={`whitespace-pre-wrap break-words py-0 text-[13px] leading-6 ${
-                  row.pending ? 'text-[#FDE047]' : 'text-[#E2E8F0]'
-                }`}
-              >
-                {row.value || '—'}
-              </div>
+              {isEditMode ? (
+                <textarea
+                  value={row.value}
+                  onChange={(event) => onFieldChange(row.cellId, event.target.value)}
+                  rows={Math.max(2, row.value.split('\n').length)}
+                  className={`min-h-[56px] w-full resize-y rounded-lg border border-white/[0.08] bg-black/20 px-3 py-2 text-[13px] leading-6 outline-none transition focus:border-cyan-400/35 focus:bg-black/30 ${
+                    row.pending ? 'text-[#FDE047]' : 'text-[#E2E8F0]'
+                  }`}
+                  placeholder="请输入内容..."
+                />
+              ) : (
+                <div
+                  className={`whitespace-pre-wrap break-words py-0 text-[13px] leading-6 ${
+                    row.pending ? 'text-[#FDE047]' : 'text-[#E2E8F0]'
+                  }`}
+                >
+                  {row.value || '—'}
+                </div>
+              )}
             </div>
           </div>
         ))}
@@ -1256,9 +1316,11 @@ function EvidenceGridCard({
 function QeConclusionCard({
   value,
   onChange,
+  isEditMode,
 }: {
   value: string;
   onChange: (value: string) => void;
+  isEditMode: boolean;
 }) {
   return (
     <section className={`rounded-[18px] px-4 py-4 ${glassPanelClass}`}>
@@ -1267,12 +1329,18 @@ function QeConclusionCard({
         <p className="text-[11px] text-[#94A3B8]">填写本次 QE 测试的结论说明，该内容会跟随草稿保存与归档恢复。</p>
       </div>
 
-      <textarea
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="min-h-[140px] w-full resize-y rounded-xl border border-white/[0.08] bg-black/20 px-4 py-3 text-[13px] leading-7 text-[#E2E8F0] outline-none transition focus:border-cyan-400/35 focus:bg-black/30"
-        placeholder="请输入 QE 测试结论..."
-      />
+      {isEditMode ? (
+        <textarea
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          className="min-h-[140px] w-full resize-y rounded-xl border border-white/[0.08] bg-black/20 px-4 py-3 text-[13px] leading-7 text-[#E2E8F0] outline-none transition focus:border-cyan-400/35 focus:bg-black/30"
+          placeholder="请输入 QE 测试结论..."
+        />
+      ) : (
+        <div className="min-h-[140px] whitespace-pre-wrap rounded-xl border border-white/[0.06] bg-black/20 px-4 py-3 text-[13px] leading-7 text-[#E2E8F0]">
+          {value || '点击“编辑内容”后可填写 QE 测试结论。'}
+        </div>
+      )}
     </section>
   );
 }
@@ -1281,17 +1349,40 @@ function CompactField({
   field,
   className = '',
   tight = false,
+  isEditing = false,
   multiline,
+  onChange,
 }: {
   field: BoundField;
   className?: string;
   tight?: boolean;
+  isEditing?: boolean;
   multiline?: boolean;
+  onChange?: (cellId: string, value: string) => void;
 }) {
+  const resolvedMultiline = multiline ?? field.multiline;
+
   return (
     <div className={`min-w-0 border-b border-white/[0.05] px-1 ${tight ? 'py-0.5' : 'py-1.5'} ${className}`}>
       <p className="truncate text-[11px] text-[#94A3B8]">{field.label}</p>
-      {multiline ? (
+      {isEditing ? (
+        resolvedMultiline ? (
+          <textarea
+            value={field.value}
+            onChange={(event) => onChange?.(field.cellId, event.target.value)}
+            rows={Math.max(2, field.value.split('\n').length || 2)}
+            className={`mt-1 w-full resize-y rounded-lg border border-white/[0.08] bg-black/20 px-3 py-2 text-[13px] text-[#E2E8F0] outline-none transition focus:border-cyan-400/35 focus:bg-black/30 ${tight ? 'leading-5' : 'leading-6'}`}
+            placeholder="请输入内容..."
+          />
+        ) : (
+          <input
+            value={field.value}
+            onChange={(event) => onChange?.(field.cellId, event.target.value)}
+            className={`mt-1 w-full rounded-lg border border-white/[0.08] bg-black/20 px-3 py-2 text-[13px] text-[#E2E8F0] outline-none transition focus:border-cyan-400/35 focus:bg-black/30 ${tight ? 'leading-5' : 'leading-6'}`}
+            placeholder="请输入内容..."
+          />
+        )
+      ) : resolvedMultiline ? (
         <div className={`mt-1 whitespace-pre-wrap break-words text-[13px] text-[#E2E8F0] ${tight ? 'leading-5' : 'leading-6'}`}>
           {field.value || '—'}
         </div>
