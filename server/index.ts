@@ -40,12 +40,6 @@ import {
   upsertDashboardCaqAuditState,
 } from "./routes/dashboard-caq-audit-state.js";
 import {
-  deleteDashboardFishboneState,
-  ensureDashboardFishboneStateTable,
-  getDashboardFishboneState,
-  upsertDashboardFishboneState,
-} from "./routes/dashboard-fishbone-state.js";
-import {
   deleteDashboardGrrState,
   ensureDashboardGrrStateTable,
   getDashboardGrrState,
@@ -79,6 +73,20 @@ import {
   getDashboardFmeaArchiveDocument,
   listDashboardFmeaArchiveDocuments,
 } from "./routes/dashboard-fmea-archive.js";
+import {
+  createDashboardDqeQmsArchive,
+  listDashboardDqeQmsArchives,
+} from "./routes/dashboard-dqe-qms-archive.js";
+import {
+  createDashboardEngineeringSpecArchive,
+  getDashboardEngineeringSpecArchiveDocument,
+  listDashboardEngineeringSpecArchives,
+} from "./routes/dashboard-engineering-spec-archive.js";
+import {
+  ensureDashboardEngineeringSpecWorkspaceTable,
+  getDashboardEngineeringSpecWorkspaceState,
+  upsertDashboardEngineeringSpecWorkspaceState,
+} from "./routes/dashboard-engineering-spec-workspace-state.js";
 import {
   deleteDashboardFmeaState,
   getDashboardFmeaState,
@@ -268,11 +276,11 @@ async function startServer() {
     { name: "dashboard_part_fai", run: ensureDashboardPartFaiTable },
     { name: "dashboard_complaint_insight", run: ensureDashboardComplaintInsightStateTable },
     { name: "dashboard_caq_audit", run: ensureDashboardCaqAuditStateTable },
-    { name: "dashboard_fishbone", run: ensureDashboardFishboneStateTable },
     { name: "dashboard_grr", run: ensureDashboardGrrStateTable },
     { name: "dashboard_fai_dimension", run: ensureDashboardFaiDimensionTable },
     { name: "dashboard_mold_trial_evidence", run: ensureDashboardMoldTrialEvidenceTable },
     { name: "dashboard_docx_converter", run: ensureDashboardDocxConverterTable },
+    { name: "dashboard_engineering_spec_workspace", run: ensureDashboardEngineeringSpecWorkspaceTable },
     { name: "dashboard_project_gantt", run: ensureDashboardProjectGanttStateTable },
     { name: "dashboard_report_8d_submissions", run: ensureDashboardReport8DSubmissionTable },
     { name: "dashboard_trial_documents", run: ensureTrialDocumentsTable },
@@ -436,9 +444,6 @@ async function startServer() {
   app.get("/api/dashboard/caq-audit-state", getDashboardCaqAuditState);
   app.put("/api/dashboard/caq-audit-state", upsertDashboardCaqAuditState);
   app.delete("/api/dashboard/caq-audit-state", deleteDashboardCaqAuditState);
-  app.get("/api/dashboard/fishbone-state", getDashboardFishboneState);
-  app.put("/api/dashboard/fishbone-state", upsertDashboardFishboneState);
-  app.delete("/api/dashboard/fishbone-state", deleteDashboardFishboneState);
   app.get("/api/dashboard/grr-state", getDashboardGrrState);
   app.put("/api/dashboard/grr-state", upsertDashboardGrrState);
   app.delete("/api/dashboard/grr-state", deleteDashboardGrrState);
@@ -477,6 +482,13 @@ async function startServer() {
   app.post("/api/dashboard/fmea-archives", createDashboardFmeaArchiveDocument);
   app.delete("/api/dashboard/fmea-archives", deleteDashboardFmeaArchiveDocument);
   app.get("/api/dashboard/fmea-archives/document", getDashboardFmeaArchiveDocument);
+  app.get("/api/dashboard/dqe-qms-archives", listDashboardDqeQmsArchives);
+  app.post("/api/dashboard/dqe-qms-archives", createDashboardDqeQmsArchive);
+  app.get("/api/dashboard/engineering-spec-archives", listDashboardEngineeringSpecArchives);
+  app.post("/api/dashboard/engineering-spec-archives", createDashboardEngineeringSpecArchive);
+  app.get("/api/dashboard/engineering-spec-archives/document", getDashboardEngineeringSpecArchiveDocument);
+  app.get("/api/dashboard/engineering-spec-workspace-state", getDashboardEngineeringSpecWorkspaceState);
+  app.put("/api/dashboard/engineering-spec-workspace-state", upsertDashboardEngineeringSpecWorkspaceState);
   app.get("/api/dashboard/project-gantt-state", getDashboardProjectGanttState);
   app.put("/api/dashboard/project-gantt-state", upsertDashboardProjectGanttState);
   app.delete("/api/dashboard/project-gantt-state", deleteDashboardProjectGanttState);
