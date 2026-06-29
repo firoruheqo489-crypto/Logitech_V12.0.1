@@ -61,9 +61,7 @@ const CaqAuditWorkspace = lazy(() => import('./components/CaqAuditWorkspace'));
 const ProductDataDrawerWorkspace = lazy(() => import('./components/ProductDataDrawerWorkspace'));
 const ProgressLogsDrawerWorkspace = lazy(() => import('./components/ProgressLogsDrawerWorkspace'));
 const ParetoQualityDashboard = lazy(() => import('./components/ParetoQualityDashboard'));
-const FishboneDiagramDashboard2 = lazy(() => import('./components/FishboneDiagramDashboard2'));
 const ProductSpecExcelParserDashboard = lazy(() => import('./components/ProductSpecExcelParserDashboard'));
-const DqeQmsDashboard = lazy(() => import('./components/DqeQmsDashboard'));
 const GrrWorkspace = lazy(() => import('./components/GrrWorkspace'));
 const HypothesisTestingDashboard = lazy(() => import('./components/HypothesisTestingDashboard'));
 const ReliabilityCalculatorDashboard = lazy(() => import('./components/ReliabilityCalculatorDashboard'));
@@ -183,9 +181,7 @@ const DASHBOARD_TABS = [
   'image-stitcher',
   'boxplot',
   'pareto-analysis',
-  'fishbone-diagram-2',
   'product-spec-parser',
-  'dqe-qms',
   'grr-analysis',
   'hypothesis-testing',
   'reliability-calculator',
@@ -871,9 +867,7 @@ export default function DashboardHome() {
               'overview': '项目总览',
               'pareto-analysis': '柏拉图分析',
               'image-stitcher': '图片拼接',
-              'fishbone-diagram-2': '鱼骨图2',
               'product-spec-parser': '规格书解析',
-              'dqe-qms': 'DQE台账',
               'grr-analysis': 'GRR量测分析',
               'hypothesis-testing': '假设检验',
               'reliability-calculator': '可靠性寿命测试',
@@ -948,21 +942,9 @@ export default function DashboardHome() {
           </LazyWorkspace>
         )}
 
-        {selectedTab === 'fishbone-diagram-2' && (
-          <LazyWorkspace>
-            <FishboneDiagramDashboard2 />
-          </LazyWorkspace>
-        )}
-
         {selectedTab === 'product-spec-parser' && (
           <LazyWorkspace>
             <ProductSpecExcelParserDashboard projectName={activeModule || ''} />
-          </LazyWorkspace>
-        )}
-
-        {selectedTab === 'dqe-qms' && (
-          <LazyWorkspace>
-            <DqeQmsDashboard projectName={activeModule || ''} />
           </LazyWorkspace>
         )}
 

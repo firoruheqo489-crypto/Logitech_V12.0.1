@@ -74,10 +74,6 @@ import {
   listDashboardFmeaArchiveDocuments,
 } from "./routes/dashboard-fmea-archive.js";
 import {
-  createDashboardDqeQmsArchive,
-  listDashboardDqeQmsArchives,
-} from "./routes/dashboard-dqe-qms-archive.js";
-import {
   createDashboardEngineeringSpecArchive,
   getDashboardEngineeringSpecArchiveDocument,
   listDashboardEngineeringSpecArchives,
@@ -482,8 +478,6 @@ async function startServer() {
   app.post("/api/dashboard/fmea-archives", createDashboardFmeaArchiveDocument);
   app.delete("/api/dashboard/fmea-archives", deleteDashboardFmeaArchiveDocument);
   app.get("/api/dashboard/fmea-archives/document", getDashboardFmeaArchiveDocument);
-  app.get("/api/dashboard/dqe-qms-archives", listDashboardDqeQmsArchives);
-  app.post("/api/dashboard/dqe-qms-archives", createDashboardDqeQmsArchive);
   app.get("/api/dashboard/engineering-spec-archives", listDashboardEngineeringSpecArchives);
   app.post("/api/dashboard/engineering-spec-archives", createDashboardEngineeringSpecArchive);
   app.get("/api/dashboard/engineering-spec-archives/document", getDashboardEngineeringSpecArchiveDocument);
