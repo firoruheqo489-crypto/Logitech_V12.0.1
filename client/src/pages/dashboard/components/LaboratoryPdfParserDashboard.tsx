@@ -8,6 +8,7 @@ import { apiFetch } from "@/lib/api";
 import { DarkroomTelemetryWorkspace } from "./DarkroomTelemetryWorkspace";
 import EmcRadiationWorkspace from "./EmcRadiationWorkspace";
 import { FlickerTelemetryWorkspace } from "./FlickerTelemetryWorkspace";
+import HarmonicTelemetryWorkspace from "./HarmonicTelemetryWorkspace";
 import { CieDiagram } from "./jifenqiu/cie-diagram";
 import { buildReportViewModel, type IntegratingSphereParseResult } from "./jifenqiu/report-data";
 import { SpectrumChart } from "./jifenqiu/spectrum-chart";
@@ -44,7 +45,7 @@ function ModuleSection({
   title,
   children,
 }: {
-  index: "一" | "二" | "三" | "四";
+  index: "一" | "二" | "三" | "四" | "五";
   title: string;
   children: React.ReactNode;
 }) {
@@ -151,6 +152,13 @@ export default function LaboratoryPdfParserDashboard() {
           title="EMC 传导辐射解析"
         >
           <EmcRadiationWorkspace />
+        </ModuleSection>
+
+        <ModuleSection
+          index="五"
+          title="谐波报告解析"
+        >
+          <HarmonicTelemetryWorkspace />
         </ModuleSection>
       </div>
     </main>

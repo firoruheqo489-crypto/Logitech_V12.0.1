@@ -99,6 +99,9 @@ import {
   parseDashboardEmcPdfUpload,
 } from "./routes/dashboard-emc-pdf.js";
 import {
+  parseDashboardHarmonicPdfUpload,
+} from "./routes/dashboard-harmonic-pdf.js";
+import {
   deleteDashboardFmeaState,
   getDashboardFmeaState,
   upsertDashboardFmeaState,
@@ -505,6 +508,7 @@ async function startServer() {
   app.post("/api/dashboard/flicker-pdf/parse-upload", parseDashboardFlickerPdfUpload);
   app.post("/api/dashboard/flicker-pdf/parse-folder", parseDashboardFlickerPdfFolder);
   app.post("/api/dashboard/emc-pdf/parse-upload", parseDashboardEmcPdfUpload);
+  app.post("/api/dashboard/harmonic-pdf/parse-upload", parseDashboardHarmonicPdfUpload);
   app.get("/api/dashboard/project-gantt-state", getDashboardProjectGanttState);
   app.put("/api/dashboard/project-gantt-state", upsertDashboardProjectGanttState);
   app.delete("/api/dashboard/project-gantt-state", deleteDashboardProjectGanttState);
