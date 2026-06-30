@@ -75,14 +75,29 @@ import {
 } from "./routes/dashboard-fmea-archive.js";
 import {
   createDashboardEngineeringSpecArchive,
+  deleteDashboardEngineeringSpecArchive,
   getDashboardEngineeringSpecArchiveDocument,
   listDashboardEngineeringSpecArchives,
+  updateDashboardEngineeringSpecArchive,
 } from "./routes/dashboard-engineering-spec-archive.js";
 import {
   ensureDashboardEngineeringSpecWorkspaceTable,
   getDashboardEngineeringSpecWorkspaceState,
   upsertDashboardEngineeringSpecWorkspaceState,
 } from "./routes/dashboard-engineering-spec-workspace-state.js";
+import {
+  parseDashboardLaboratoryPdfUpload,
+} from "./routes/dashboard-laboratory-pdf.js";
+import {
+  parseDashboardDarkroomPdfUpload,
+} from "./routes/dashboard-darkroom-pdf.js";
+import {
+  parseDashboardFlickerPdfUpload,
+  parseDashboardFlickerPdfFolder,
+} from "./routes/dashboard-flicker-pdf.js";
+import {
+  parseDashboardEmcPdfUpload,
+} from "./routes/dashboard-emc-pdf.js";
 import {
   deleteDashboardFmeaState,
   getDashboardFmeaState,
@@ -480,9 +495,16 @@ async function startServer() {
   app.get("/api/dashboard/fmea-archives/document", getDashboardFmeaArchiveDocument);
   app.get("/api/dashboard/engineering-spec-archives", listDashboardEngineeringSpecArchives);
   app.post("/api/dashboard/engineering-spec-archives", createDashboardEngineeringSpecArchive);
+  app.patch("/api/dashboard/engineering-spec-archives", updateDashboardEngineeringSpecArchive);
+  app.delete("/api/dashboard/engineering-spec-archives", deleteDashboardEngineeringSpecArchive);
   app.get("/api/dashboard/engineering-spec-archives/document", getDashboardEngineeringSpecArchiveDocument);
   app.get("/api/dashboard/engineering-spec-workspace-state", getDashboardEngineeringSpecWorkspaceState);
   app.put("/api/dashboard/engineering-spec-workspace-state", upsertDashboardEngineeringSpecWorkspaceState);
+  app.post("/api/dashboard/laboratory-pdf/parse-upload", parseDashboardLaboratoryPdfUpload);
+  app.post("/api/dashboard/darkroom-pdf/parse-upload", parseDashboardDarkroomPdfUpload);
+  app.post("/api/dashboard/flicker-pdf/parse-upload", parseDashboardFlickerPdfUpload);
+  app.post("/api/dashboard/flicker-pdf/parse-folder", parseDashboardFlickerPdfFolder);
+  app.post("/api/dashboard/emc-pdf/parse-upload", parseDashboardEmcPdfUpload);
   app.get("/api/dashboard/project-gantt-state", getDashboardProjectGanttState);
   app.put("/api/dashboard/project-gantt-state", upsertDashboardProjectGanttState);
   app.delete("/api/dashboard/project-gantt-state", deleteDashboardProjectGanttState);

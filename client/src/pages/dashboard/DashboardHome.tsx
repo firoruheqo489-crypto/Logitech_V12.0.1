@@ -61,7 +61,10 @@ const CaqAuditWorkspace = lazy(() => import('./components/CaqAuditWorkspace'));
 const ProductDataDrawerWorkspace = lazy(() => import('./components/ProductDataDrawerWorkspace'));
 const ProgressLogsDrawerWorkspace = lazy(() => import('./components/ProgressLogsDrawerWorkspace'));
 const ParetoQualityDashboard = lazy(() => import('./components/ParetoQualityDashboard'));
+const TestProjectParserDashboard = lazy(() => import('./components/TestProjectParserDashboard'));
 const ProductSpecExcelParserDashboard = lazy(() => import('./components/ProductSpecExcelParserDashboard'));
+const LaboratoryPdfParserDashboard = lazy(() => import('./components/LaboratoryPdfParserDashboard'));
+const FishboneDiagramDashboard2 = lazy(() => import('./components/FishboneDiagramDashboard2'));
 const GrrWorkspace = lazy(() => import('./components/GrrWorkspace'));
 const HypothesisTestingDashboard = lazy(() => import('./components/HypothesisTestingDashboard'));
 const ReliabilityCalculatorDashboard = lazy(() => import('./components/ReliabilityCalculatorDashboard'));
@@ -181,7 +184,10 @@ const DASHBOARD_TABS = [
   'image-stitcher',
   'boxplot',
   'pareto-analysis',
+  'test-project-parser',
   'product-spec-parser',
+  'laboratory-pdf-parser',
+  'fishbone-diagram-2',
   'grr-analysis',
   'hypothesis-testing',
   'reliability-calculator',
@@ -866,8 +872,11 @@ export default function DashboardHome() {
             const labels: Record<string, string> = {
               'overview': '项目总览',
               'pareto-analysis': '柏拉图分析',
+              'test-project-parser': '测试项目解析',
               'image-stitcher': '图片拼接',
               'product-spec-parser': '规格书解析',
+              'laboratory-pdf-parser': '实验室报告解析',
+              'fishbone-diagram-2': '鱼骨图2',
               'grr-analysis': 'GRR量测分析',
               'hypothesis-testing': '假设检验',
               'reliability-calculator': '可靠性寿命测试',
@@ -936,6 +945,12 @@ export default function DashboardHome() {
           </LazyWorkspace>
         )}
 
+        {selectedTab === 'test-project-parser' && (
+          <LazyWorkspace>
+            <TestProjectParserDashboard />
+          </LazyWorkspace>
+        )}
+
         {selectedTab === 'image-stitcher' && (
           <LazyWorkspace>
             <ImageStitcherWorkspace />
@@ -945,6 +960,18 @@ export default function DashboardHome() {
         {selectedTab === 'product-spec-parser' && (
           <LazyWorkspace>
             <ProductSpecExcelParserDashboard projectName={activeModule || ''} />
+          </LazyWorkspace>
+        )}
+
+        {selectedTab === 'laboratory-pdf-parser' && (
+          <LazyWorkspace>
+            <LaboratoryPdfParserDashboard />
+          </LazyWorkspace>
+        )}
+
+        {selectedTab === 'fishbone-diagram-2' && (
+          <LazyWorkspace>
+            <FishboneDiagramDashboard2 />
           </LazyWorkspace>
         )}
 
