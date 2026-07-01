@@ -127,6 +127,8 @@ interface WorkbookMedia {
   extension?: string;
 }
 
+const RENDERABLE_IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp']);
+
 interface CellColorModel {
   argb?: string;
   theme?: number;
@@ -522,8 +524,7 @@ function getWorksheetImages(
   rows: ProductSpecPreviewRow[],
 ): ProductSpecPreviewImage[] {
   const media = getWorkbookMedia(workbook);
-
-  return worksheet
+  const anchoredImages = worksheet
     .getImages()
     .map((image, index) => {
       const linkedMedia = media.find((item) => Number(item.index) === Number(image.imageId));
@@ -550,11 +551,41 @@ function getWorksheetImages(
       };
     })
     .filter((image): image is ProductSpecPreviewImage => Boolean(image));
+
+  if (anchoredImages.length > 0) {
+    return anchoredImages;
+  }
+
+  const fallbackMedia = media.find((item) => isRenderableWorkbookMedia(item));
+  if (!fallbackMedia) {
+    return [];
+  }
+
+  const fallbackSrc = buildImageDataUrl(fallbackMedia);
+  if (!fallbackSrc) {
+    return [];
+  }
+
+  return [
+    {
+      id: 'image-fallback-0',
+      src: fallbackSrc,
+      leftPx: 0,
+      topPx: 0,
+      widthPx: 160,
+      heightPx: 160,
+    },
+  ];
 }
 
 function getWorkbookMedia(workbook: Workbook): WorkbookMedia[] {
   const model = workbook.model as { media?: WorkbookMedia[] } | undefined;
   return model?.media ?? [];
+}
+
+function isRenderableWorkbookMedia(media: WorkbookMedia): boolean {
+  const extension = (media.extension || '').toLowerCase();
+  return Boolean(media.buffer) && RENDERABLE_IMAGE_EXTENSIONS.has(extension);
 }
 
 function buildImageDataUrl(media: WorkbookMedia): string {

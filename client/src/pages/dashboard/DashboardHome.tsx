@@ -874,7 +874,7 @@ export default function DashboardHome() {
               'pareto-analysis': '柏拉图分析',
               'test-project-parser': '测试项目解析',
               'image-stitcher': '图片拼接',
-              'product-spec-parser': '规格书解析',
+              'product-spec-parser': '产品规格书看板',
               'laboratory-pdf-parser': '实验室报告解析',
               'fishbone-diagram-2': '鱼骨图2',
               'grr-analysis': 'GRR量测分析',

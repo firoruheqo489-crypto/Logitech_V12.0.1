@@ -936,27 +936,23 @@ export default function ProductSpecExcelParserDashboard({
             <div>
               <p className="text-[11px] uppercase tracking-[0.3em] text-[#94A3B8]">Enterprise Spec Workspace</p>
               <h1 className="mt-1 text-base font-semibold tracking-[0.02em] text-[#E2E8F0]">
-                高密度电子化产品规格书
+                产品规格书看板
               </h1>
-              <p className="mt-1 text-[13px] leading-6 text-[#94A3B8]">
-                当前模块通过 OSS 归档规格书数据，本页不保留长期草稿，需要时请从台账直接恢复到存档现场。
-              </p>
             </div>
 
-            <div className="flex flex-wrap items-center gap-3">
+            <div className="flex flex-wrap items-stretch gap-3">
               <label
-                className={`inline-flex cursor-pointer items-center gap-3 rounded-xl px-4 py-2.5 transition ${
+                className={`inline-flex min-h-[56px] w-[168px] cursor-pointer items-center gap-3 rounded-xl px-4 py-2 transition ${
                   isParsing ? 'opacity-70' : 'hover:bg-white/[0.04]'
                 } ${glassPanelClass}`}
               >
-                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-cyan-400/10 text-cyan-200">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-cyan-400/10 text-cyan-200">
                   <UploadCloud className="h-4.5 w-4.5" />
                 </div>
-                <div>
-                  <p className="text-sm font-medium text-[#E2E8F0]">
-                    {isParsing ? '正在解析规格书...' : '上传规格书 Excel'}
+                <div className="flex min-w-0 flex-1 items-center">
+                  <p className="whitespace-nowrap text-sm font-medium text-[#E2E8F0]">
+                    {isParsing ? '正在解析...' : '上传规格书'}
                   </p>
-                  <p className="text-[11px] text-[#94A3B8]">导入后自动转换为桌面电子规格版</p>
                 </div>
                 <input
                   type="file"
@@ -973,16 +969,15 @@ export default function ProductSpecExcelParserDashboard({
                 type="button"
                 onClick={() => void handleArchive('create')}
                 disabled={!docModel || isArchiving}
-                className={`inline-flex items-center gap-3 rounded-xl px-4 py-2.5 transition ${
+                className={`inline-flex min-h-[56px] w-[168px] items-center gap-3 rounded-xl px-4 py-2 transition ${
                   docModel && !isArchiving ? 'hover:bg-white/[0.04]' : 'cursor-not-allowed opacity-40'
                 } ${glassPanelClass}`}
               >
-                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-400/10 text-emerald-200">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-400/10 text-emerald-200">
                   <Archive className="h-4.5 w-4.5" />
                 </div>
-                <div className="text-left">
-                  <p className="text-sm font-medium text-[#E2E8F0]">归档入库</p>
-                  <p className="text-[11px] text-[#94A3B8]">新增写入 OSS 台账</p>
+                <div className="flex min-w-0 flex-1 items-center text-left">
+                  <p className="whitespace-nowrap text-sm font-medium text-[#E2E8F0]">归档入库</p>
                 </div>
               </button>
 
@@ -991,25 +986,20 @@ export default function ProductSpecExcelParserDashboard({
                   type="button"
                   onClick={() => void handleArchive('update')}
                   disabled={!docModel || isArchiving}
-                  className={`inline-flex items-center gap-3 rounded-xl px-4 py-2.5 transition ${
+                  className={`inline-flex min-h-[56px] w-[168px] items-center gap-3 rounded-xl px-4 py-2 transition ${
                     docModel && !isArchiving ? 'hover:bg-white/[0.04]' : 'cursor-not-allowed opacity-40'
                   } ${glassPanelClass}`}
                 >
-                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-400/10 text-amber-200">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-400/10 text-amber-200">
                     <Archive className="h-4.5 w-4.5" />
                   </div>
-                  <div className="text-left">
-                    <p className="text-sm font-medium text-[#E2E8F0]">覆盖更新归档</p>
-                    <p className="text-[11px] text-[#94A3B8]">覆盖当前归档记录</p>
+                  <div className="flex min-w-0 flex-1 items-center text-left">
+                    <p className="whitespace-nowrap text-sm font-medium text-[#E2E8F0]">覆盖更新归档</p>
                   </div>
                 </button>
               ) : null}
             </div>
           </div>
-        </div>
-
-        <div className="border-b border-white/[0.06] px-5 py-2.5">
-          <WorkspaceSyncBanner state={workspaceSyncState} message={workspaceSyncMessage} />
         </div>
 
         <div className="border-b border-white/[0.06] px-5 py-2.5">

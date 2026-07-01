@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 
 import type { EngineeringSpecLedgerRecord } from '@/lib/engineering-spec-ledger-api';
 import { formatLedgerDateTime } from '@/lib/engineering-spec-ledger-api';
@@ -9,6 +9,8 @@ type LedgerColumn = {
   width?: string;
   render: (record: EngineeringSpecLedgerRecord, index: number) => ReactNode;
 };
+
+const LEDGER_PAGE_SIZE = 10;
 
 const columns: LedgerColumn[] = [
   {
@@ -94,14 +96,22 @@ export function EngineeringSpecLedger({
   onDeleteRecord?: (record: EngineeringSpecLedgerRecord) => void;
   isLoading?: boolean;
 }) {
+  const [page, setPage] = useState(1);
   const orderedRecords = [...records].sort((left, right) => left.sequence - right.sequence);
+  const totalPages = Math.max(1, Math.ceil(orderedRecords.length / LEDGER_PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const pageStart = (currentPage - 1) * LEDGER_PAGE_SIZE;
+  const pageRecords = orderedRecords.slice(pageStart, pageStart + LEDGER_PAGE_SIZE);
+
+  useEffect(() => {
+    setPage((current) => Math.min(current, totalPages));
+  }, [totalPages]);
 
   return (
     <section className="rounded-lg border border-white/10 bg-[#0a0a0a]">
       <div className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
         <div>
           <h2 className="text-sm font-medium text-slate-100">登记台账</h2>
-          <p className="mt-0.5 text-xs text-gray-500">已归档的规格书会按配置列自动入账</p>
         </div>
         <div className="text-xs text-gray-500">共 {orderedRecords.length} 条</div>
       </div>
@@ -130,7 +140,7 @@ export function EngineeringSpecLedger({
                 </td>
               </tr>
             ) : (
-              orderedRecords.map((record, index) => (
+              pageRecords.map((record, index) => (
                 <tr
                   key={record.id}
                   className={`border-b border-white/5 transition hover:bg-white/[0.02] ${
@@ -156,7 +166,7 @@ export function EngineeringSpecLedger({
                           删除
                         </button>
                       ) : (
-                        <LedgerCellContent>{column.render(record, index)}</LedgerCellContent>
+                        <LedgerCellContent>{column.render(record, pageStart + index)}</LedgerCellContent>
                       )}
                     </td>
                   ))}
@@ -166,6 +176,40 @@ export function EngineeringSpecLedger({
           </tbody>
         </table>
       </div>
+
+      {orderedRecords.length > LEDGER_PAGE_SIZE ? (
+        <div className="flex items-center justify-between gap-3 border-t border-white/10 px-4 py-3">
+          <div className="text-xs font-semibold text-gray-400">
+            第 {currentPage} / {totalPages} 页
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setPage((current) => Math.max(1, current - 1))}
+              disabled={currentPage <= 1}
+              className={`rounded-md border px-3 py-1.5 text-xs font-semibold transition ${
+                currentPage <= 1
+                  ? 'cursor-not-allowed border-white/[0.06] text-slate-600 opacity-60'
+                  : 'border-white/10 text-slate-300 hover:bg-white/[0.05]'
+              }`}
+            >
+              上一页
+            </button>
+            <button
+              type="button"
+              onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+              disabled={currentPage >= totalPages}
+              className={`rounded-md border px-3 py-1.5 text-xs font-semibold transition ${
+                currentPage >= totalPages
+                  ? 'cursor-not-allowed border-white/[0.06] text-slate-600 opacity-60'
+                  : 'border-white/10 text-slate-300 hover:bg-white/[0.05]'
+              }`}
+            >
+              下一页
+            </button>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }

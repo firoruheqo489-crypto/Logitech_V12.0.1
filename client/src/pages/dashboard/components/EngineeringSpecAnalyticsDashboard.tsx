@@ -49,7 +49,6 @@ export function EngineeringSpecAnalyticsDashboard({
     <div className="flex h-full flex-col">
       <header className="border-b border-white/[0.06] bg-white/[0.03] px-5 py-3">
         <h1 className="text-sm font-semibold leading-tight text-slate-100">近 7 天统计看板</h1>
-        <p className="font-mono text-[11px] text-slate-400">按最近 7 天规格书归档记录自动汇总</p>
       </header>
 
       <div className="flex-1 overflow-auto p-5">
