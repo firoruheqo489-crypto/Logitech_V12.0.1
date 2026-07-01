@@ -44,7 +44,7 @@ const baseSwatches = [
 
 export function toSamples(results: FlickerParseResult[]): Sample[] {
   return results.map((result, index) => ({
-    id: `S${index + 1}`,
+    id: `样本${index + 1}`,
     fileName: result.file_name,
     sampleName: result.sample_name || result.file_name,
     voltage: result.voltage_v,

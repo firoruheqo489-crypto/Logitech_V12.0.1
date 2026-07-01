@@ -34,9 +34,7 @@ export function Oscilloscope({ samples }: { samples: Sample[] }) {
 
   return (
     <div className="flex h-full flex-col rounded-xl border border-t border-white/[0.04] border-t-cyan-400/20 bg-[#070c14]/30 p-6 shadow-2xl backdrop-blur-3xl">
-      <h2 className="mb-4 font-mono text-[10px] tracking-[0.2em] text-[#00F3FF]">
-        {"// TEMPORAL WAVEFORM OVERLAY - MASTER CORE // 时序波形叠加 - 主核"}
-      </h2>
+      <h2 className="mb-4 text-xs font-semibold tracking-[0.12em] text-[#00F3FF]">时序波形叠加</h2>
 
       <div className="relative flex min-h-[400px] flex-1 flex-col">
         <div className="absolute right-1 top-1 z-10 flex flex-col gap-1.5">
@@ -57,7 +55,7 @@ export function Oscilloscope({ samples }: { samples: Sample[] }) {
           preserveAspectRatio="none"
           className="h-full w-full flex-1"
           role="img"
-          aria-label="Oscilloscope overlay of temporal waveforms"
+          aria-label="时序波形叠加图"
         >
           <g className="stroke-white/[0.02]" strokeWidth={0.5}>
             {Array.from({ length: 21 }).map((_, i) => (
@@ -88,8 +86,8 @@ export function Oscilloscope({ samples }: { samples: Sample[] }) {
         </svg>
       </div>
 
-      <p className="mt-4 font-mono text-[9px] tracking-wider text-slate-600">
-        OVERLAY: {samples.length} TRACES // ALIGNED @ t0 对齐 // SWEEP 20ms/div 扫描
+      <p className="mt-4 text-[11px] tracking-wide text-slate-600">
+        已叠加 {samples.length} 组波形，已按 t0 对齐，扫描基准为 20 毫秒每格。
       </p>
     </div>
   )

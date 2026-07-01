@@ -13,21 +13,27 @@ const INVALID_DESCRIPTION_MARKERS = new Set([
   '确认项目',
 ]);
 
-function normalizeComparable(value: string): string {
+export function normalizeEngineeringSpecComparable(value: string): string {
   return value
     .replace(/\s+/g, '')
     .replace(/[()（）:：]/g, '')
     .toLowerCase();
 }
 
-function isHeaderLikeRecord(record: EngineeringSpecLedgerRecord): boolean {
-  const sku = normalizeComparable(record.sku || '');
-  const description = normalizeComparable(record.description || '');
-  const type = normalizeComparable(record.type || '');
-
+export function isInvalidEngineeringSpecSkuValue(value: string): boolean {
+  const sku = normalizeEngineeringSpecComparable(value || '');
   if (!sku) return true;
   if (INVALID_SKU_MARKERS.has(sku)) return true;
   if (sku.startsWith('产品编号')) return true;
+  return false;
+}
+
+function isHeaderLikeRecord(record: EngineeringSpecLedgerRecord): boolean {
+  const sku = normalizeEngineeringSpecComparable(record.sku || '');
+  const description = normalizeEngineeringSpecComparable(record.description || '');
+  const type = normalizeEngineeringSpecComparable(record.type || '');
+
+  if (isInvalidEngineeringSpecSkuValue(record.sku || '')) return true;
   if (INVALID_DESCRIPTION_MARKERS.has(description)) return true;
   if (type === '产品类型' || type.startsWith('产品类型')) return true;
 

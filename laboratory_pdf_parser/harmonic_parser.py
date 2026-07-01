@@ -65,6 +65,82 @@ def parse_process_metrics(text: str) -> dict[str, float | None]:
     return metrics
 
 
+def parse_phase_checks(text: str) -> list[dict[str, object]]:
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    rows: list[dict[str, object]] = []
+    index = 0
+    while index < len(lines):
+        token = lines[index]
+        if not re.fullmatch(r"Q[1-6]", token):
+            index += 1
+            continue
+        if index + 3 >= len(lines):
+            break
+        measured = lines[index + 1]
+        limit = lines[index + 2]
+        status = lines[index + 3]
+        if not re.fullmatch(r"[\d.]+", measured) or status not in {"Pass", "Fail"}:
+            index += 1
+            continue
+        rows.append(
+            {
+                "checkpoint": token,
+                "measured_deg": float(measured),
+                "limit_expression": limit,
+                "status": status,
+            }
+        )
+        index += 4
+    return rows
+
+
+def parse_structural_checks(text: str) -> list[dict[str, object]]:
+    patterns = [
+        (
+            "Ipeak_phase_angle",
+            r"峰值电流最大相位角=([\d.]+)\s*deg\s*(Pass|Fail)",
+            None,
+        ),
+        (
+            "I60_90pMin",
+            r"60-90度正半波最小电流\(I60_90pMin\)=([-\d.]+)\s*mA\s*限值=([-\d.]+)\s*mA\s*(Pass|Fail)",
+            "mA",
+        ),
+        (
+            "I60_90nMax",
+            r"60-90度负半波最大电流\(I60_90nMax\)=([-\d.]+)\s*mA\s*限值=([-\d.]+)\s*mA\s*(Pass|Fail)",
+            "mA",
+        ),
+    ]
+
+    checks: list[dict[str, object]] = []
+    for code, pattern, unit in patterns:
+        match = re.search(pattern, text, re.IGNORECASE | re.DOTALL)
+        if not match:
+            continue
+        if code == "Ipeak_phase_angle":
+            checks.append(
+                {
+                    "code": code,
+                    "value": float(match.group(1)),
+                    "limit": None,
+                    "unit": "deg",
+                    "status": match.group(2),
+                }
+            )
+        else:
+            checks.append(
+                {
+                    "code": code,
+                    "value": float(match.group(1)),
+                    "limit": float(match.group(2)),
+                    "unit": unit,
+                    "status": match.group(3),
+                }
+            )
+    return checks
+
+
 def parse_harmonic_rows(text: str) -> list[dict[str, object]]:
     lines = [line.strip() for line in text.splitlines() if line.strip()]
     try:
@@ -72,54 +148,92 @@ def parse_harmonic_rows(text: str) -> list[dict[str, object]]:
     except ValueError:
         return []
 
-    tokens = []
+    ignored_tokens = {
+        "谐波(avg)",
+        "谐波(max)",
+        "100%Limit",
+        "150%Limit",
+        "%Limit",
+        "100%限值",
+        "150%限值",
+        "限值",
+        "状态",
+        "%",
+        "mA",
+        "测试过程值:",
+    }
+
+    tokens: list[str] = []
     for line in lines[start_index + 1 :]:
         if line.endswith("/2"):
             break
-        if line in {"谐波(avg)", "谐波(max)", "100%Limit", "150%Limit", "%Limit", "状态", "%", "测试过程值:"}:
+        if line in ignored_tokens:
             continue
         tokens.append(line)
 
     rows: list[dict[str, object]] = []
     index = 0
     while index < len(tokens):
-      token = tokens[index]
-      if not re.fullmatch(r"\d+", token):
-          index += 1
-          continue
-      if index + 7 >= len(tokens):
-          break
-      maybe_status = tokens[index + 7]
-      number_slice = tokens[index + 1 : index + 7]
-      if maybe_status not in {"Pass", "Fail"}:
-          index += 1
-          continue
-      if not all(re.fullmatch(r"[\d.]+", value) for value in number_slice):
-          index += 1
-          continue
+        token = tokens[index]
+        if not re.fullmatch(r"\d+", token):
+            index += 1
+            continue
 
-      order = int(token)
-      avg_percent = float(tokens[index + 1])
-      max_percent = float(tokens[index + 2])
-      limit_100 = float(tokens[index + 3])
-      limit_150 = float(tokens[index + 4])
-      avg_limit_percent = float(tokens[index + 5])
-      max_limit_percent = float(tokens[index + 6])
-      status = tokens[index + 7]
+        order = int(token)
+        cursor = index + 1
+        numeric_values: list[float] = []
+        while cursor < len(tokens) and re.fullmatch(r"[\d.]+", tokens[cursor]):
+            numeric_values.append(float(tokens[cursor]))
+            cursor += 1
 
-      rows.append(
-          {
-              "order": order,
-              "avg_percent": avg_percent,
-              "max_percent": max_percent,
-              "limit_100_percent": limit_100,
-              "limit_150_percent": limit_150,
-              "avg_limit_percent": avg_limit_percent,
-              "max_limit_percent": max_limit_percent,
-              "status": status,
-          }
-      )
-      index += 8
+        if cursor >= len(tokens):
+            break
+
+        status = tokens[cursor]
+        if status not in {"Pass", "Fail", "N/A"}:
+            index += 1
+            continue
+
+        row: dict[str, object] = {
+            "order": order,
+            "avg_ma": None,
+            "max_ma": None,
+            "limit_100_ma": None,
+            "limit_150_ma": None,
+            "ratio_percent": None,
+            "avg_percent": None,
+            "limit_percent": None,
+            "max_percent": None,
+            "max_limit_percent": None,
+            "status": status,
+        }
+
+        # Current real format:
+        # order, avg_mA, limit100_mA, ratio_percent, harmonic_percent, limit_percent, status
+        if len(numeric_values) == 5:
+            row["avg_ma"] = numeric_values[0]
+            row["limit_100_ma"] = numeric_values[1]
+            row["ratio_percent"] = numeric_values[2]
+            row["avg_percent"] = numeric_values[3]
+            row["limit_percent"] = numeric_values[4]
+            row["max_percent"] = numeric_values[3]
+            row["max_limit_percent"] = numeric_values[4]
+        # Legacy fallback
+        elif len(numeric_values) >= 6:
+            row["avg_percent"] = numeric_values[0]
+            row["max_percent"] = numeric_values[1]
+            row["limit_100_ma"] = numeric_values[2]
+            row["limit_150_ma"] = numeric_values[3]
+            row["ratio_percent"] = numeric_values[4]
+            row["limit_percent"] = numeric_values[5]
+            row["max_limit_percent"] = numeric_values[5]
+        else:
+            index += 1
+            continue
+
+        rows.append(row)
+        index = cursor + 1
+
     return rows
 
 
@@ -149,6 +263,8 @@ def parse_harmonic_report_file(pdf_path: str | Path) -> dict[str, object]:
     distortion_factor = extract_optional_float(text, r"DF:([\d.]+)")
 
     process_metrics = parse_process_metrics(text)
+    phase_checks = parse_phase_checks(text)
+    structural_checks = parse_structural_checks(text)
     harmonic_rows = parse_harmonic_rows(text)
 
     return {
@@ -168,6 +284,8 @@ def parse_harmonic_report_file(pdf_path: str | Path) -> dict[str, object]:
         "pohc_limit_ma": pohc_limit_ma,
         "distortion_factor": distortion_factor,
         "process_metrics": process_metrics,
+        "phase_checks": phase_checks,
+        "structural_checks": structural_checks,
         "harmonics": harmonic_rows,
         "raw_text": text,
     }

@@ -54,7 +54,7 @@ export function FlickerTelemetryWorkspace() {
     try {
       const parsed = await Promise.all(selectedFiles.map((file) => parseUpload(file)))
       setPayload(parsed)
-      toast.success(`频闪文件已载入 ${parsed.length} 份报告`)
+      toast.success(`已载入 ${parsed.length} 份频闪报告`)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "频闪 PDF 解析失败")
     } finally {
@@ -73,14 +73,10 @@ export function FlickerTelemetryWorkspace() {
         <div className="mx-auto max-w-7xl">
           <header className="mb-8 flex flex-col gap-3 border-b border-white/[0.06] pb-6 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <h1 className="font-mono text-base tracking-[0.3em] text-cyan-400">
-                AXIOM&nbsp;SIGMA <span className="text-slate-400">公理西格玛</span>
-              </h1>
-              <p className="mt-1 font-mono text-[10px] tracking-[0.2em] text-slate-500">
-                ULTIMATE MULTI-TRACE FLICKER MATRIX // 多路频闪源矩阵 // V3
-              </p>
+              <h1 className="text-base font-semibold tracking-[0.18em] text-cyan-400">频闪报告比对台</h1>
+              <p className="mt-1 text-[12px] text-slate-500">频闪 PDF 解析、波形比对与批次差异审查</p>
             </div>
-            <div className="flex items-center gap-2 font-mono text-[10px] tracking-wider text-slate-500">
+            <div className="flex items-center gap-2 text-[11px] tracking-wide text-slate-500">
               <span
                 className={`size-1.5 rounded-full ${
                   samples.length > 0
@@ -88,7 +84,7 @@ export function FlickerTelemetryWorkspace() {
                     : "bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.6)]"
                 }`}
               />
-              {samples.length > 0 ? "STATUS: ANOMALY DETECTED // 检测到异常" : "STATUS: AWAITING PAYLOAD // 等待载荷"}
+              {samples.length > 0 ? "状态：检测到异常" : "状态：等待载入"}
             </div>
           </header>
 

@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Activity, Loader2, Radio, Upload, Zap } from "lucide-react";
+import { Activity, AlertTriangle, Loader2, Radio, Upload, Zap } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -10,11 +10,18 @@ import {
   buildHarmonicSpectrum,
   buildHarmonicWaveform,
   buildMarginAudit,
+  buildReportInsights,
   buildSecondaryStats,
+  buildStructuralAudit,
   resolveHarmonicVerdict,
   type HarmonicParseResult,
 } from "@/pages/dashboard/lib/harmonic-report";
-import { HarmonicAlphaMetricCard, HarmonicMarginAuditCard, HarmonicSecondaryStatsCard } from "./harmonic/data-panel";
+import {
+  HarmonicAlphaMetricCard,
+  HarmonicInsightCard,
+  HarmonicMarginAuditCard,
+  HarmonicSecondaryStatsCard,
+} from "./harmonic/data-panel";
 import { HarmonicFftSpectrum } from "./harmonic/fft-spectrum";
 import { HarmonicGlassCard } from "./harmonic/glass-card";
 import { HarmonicOscilloscope } from "./harmonic/oscilloscope";
@@ -53,6 +60,8 @@ export default function HarmonicTelemetryWorkspace() {
   const margins = useMemo(() => (result ? buildMarginAudit(result) : []), [result]);
   const alphaMetrics = useMemo(() => (result ? buildAlphaMetrics(result) : []), [result]);
   const secondaryStats = useMemo(() => (result ? buildSecondaryStats(result) : []), [result]);
+  const reportInsights = useMemo(() => (result ? buildReportInsights(result) : []), [result]);
+  const structuralAudit = useMemo(() => (result ? buildStructuralAudit(result) : []), [result]);
   const verdict = useMemo(() => (result ? resolveHarmonicVerdict(result) : null), [result]);
 
   const handleUploadParse = async () => {
@@ -116,18 +125,10 @@ export default function HarmonicTelemetryWorkspace() {
                     : "text-slate-400"
               }`}
             >
-              {verdict === "FAIL"
-                ? "FAIL"
-                : verdict === "PASS"
-                  ? "PASS"
-                  : "--"}
+              {verdict === "FAIL" ? "FAIL" : verdict === "PASS" ? "PASS" : "--"}
             </div>
             <div className="mt-1 text-xs text-slate-500">
-              {verdict === "FAIL"
-                ? "存在超限谐波"
-                : verdict === "PASS"
-                  ? "谐波满足标准"
-                  : "等待解析"}
+              {verdict === "FAIL" ? "存在超限谐波" : verdict === "PASS" ? "谐波满足标准" : "等待解析"}
             </div>
           </div>
         </div>
@@ -149,44 +150,107 @@ export default function HarmonicTelemetryWorkspace() {
       </section>
 
       <div className="flex flex-col gap-6">
-        <HarmonicGlassCard>
-          <div className="mb-4 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Activity className="h-4 w-4 text-[#00F3FF]" />
-              <h2 className="text-sm font-semibold text-slate-200">电压、电流波形</h2>
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+          <HarmonicAlphaMetricCard metrics={alphaMetrics} />
+          <HarmonicInsightCard rows={reportInsights} />
+        </div>
+
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.35fr_0.95fr]">
+          <HarmonicGlassCard>
+            <div className="mb-4 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Activity className="h-4 w-4 text-[#00F3FF]" />
+                <h2 className="text-sm font-semibold text-slate-200">电压、电流波形</h2>
+              </div>
+              <div className="flex items-center gap-4 text-[11px]">
+                <span className="flex items-center gap-1.5 text-slate-500">
+                  <span className="h-0.5 w-4 rounded bg-[#475569]" /> 电压
+                </span>
+                <span className="flex items-center gap-1.5 text-slate-300">
+                  <span className="h-0.5 w-4 rounded bg-[#00F3FF]" style={{ boxShadow: "0 0 8px rgba(0,243,255,0.9)" }} />
+                  电流
+                </span>
+              </div>
             </div>
-            <div className="flex items-center gap-4 text-[11px]">
-              <span className="flex items-center gap-1.5 text-slate-500">
-                <span className="h-0.5 w-4 rounded bg-[#475569]" /> 电压
-              </span>
-              <span className="flex items-center gap-1.5 text-slate-300">
-                <span className="h-0.5 w-4 rounded bg-[#00F3FF]" style={{ boxShadow: "0 0 8px rgba(0,243,255,0.9)" }} />
-                电流
-              </span>
+            <HarmonicOscilloscope data={waveform} />
+          </HarmonicGlassCard>
+
+          <HarmonicGlassCard>
+            <div className="mb-4 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 text-[#00F3FF]" />
+                <h2 className="text-sm font-semibold text-slate-200">波形失效点</h2>
+              </div>
             </div>
-          </div>
-          <HarmonicOscilloscope data={waveform} />
-        </HarmonicGlassCard>
+            <div className="space-y-4">
+              <div>
+                <div className="mb-2 text-[11px] uppercase tracking-widest text-slate-500">Q1-Q6 相位角检查</div>
+                <div className="space-y-2">
+                  {result?.phase_checks.length ? (
+                    result.phase_checks.map((check) => (
+                      <div key={check.checkpoint} className="rounded-lg border border-white/[0.05] bg-white/[0.02] px-4 py-3">
+                        <div className="flex items-center justify-between">
+                          <span className="font-mono text-sm text-slate-200">{check.checkpoint}</span>
+                          <span className={check.status === "Fail" ? "font-mono text-sm text-[#FF003C]" : "font-mono text-sm text-[#00F3FF]"}>
+                            {check.status.toUpperCase()}
+                          </span>
+                        </div>
+                        <div className="mt-2 text-[11px] text-slate-500">
+                          测试值 {check.measured_deg.toFixed(2)}° / 限值 {check.limit_expression}
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="rounded-lg border border-white/[0.05] bg-white/[0.02] px-4 py-3 text-sm text-slate-500">
+                      等待解析
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <div className="mb-2 text-[11px] uppercase tracking-widest text-slate-500">结构硬伤检查</div>
+                <div className="space-y-2">
+                  {structuralAudit.length ? (
+                    structuralAudit.map((check) => (
+                      <div key={check.label} className="rounded-lg border border-white/[0.05] bg-white/[0.02] px-4 py-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-slate-200">{check.label}</span>
+                          <span className={check.status === "Fail" ? "font-mono text-sm text-[#FF003C]" : "font-mono text-sm text-[#00F3FF]"}>
+                            {check.status.toUpperCase()}
+                          </span>
+                        </div>
+                        <div className="mt-2 text-[11px] text-slate-500">
+                          实测 {check.value} / 限值 {check.limit}
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="rounded-lg border border-white/[0.05] bg-white/[0.02] px-4 py-3 text-sm text-slate-500">
+                      等待解析
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </HarmonicGlassCard>
+        </div>
 
         <HarmonicGlassCard>
           <div className="mb-4 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Radio className="h-4 w-4 text-[#00F3FF]" />
-              <h2 className="text-sm font-semibold text-slate-200">谐波频谱阵列</h2>
+              <h2 className="text-sm font-semibold text-slate-200">谐波证据阵列</h2>
             </div>
             <span className="flex items-center gap-1.5 text-[11px] text-slate-500">
               <span className="h-0.5 w-4 rounded border-t-2 border-dashed border-[#FF003C]" />
-              IEC 限值
+              报告限值
             </span>
           </div>
           <HarmonicFftSpectrum data={spectrum} />
         </HarmonicGlassCard>
 
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-          <HarmonicAlphaMetricCard metrics={alphaMetrics} />
-          <HarmonicSecondaryStatsCard stats={secondaryStats} />
-        </div>
-
+        <HarmonicSecondaryStatsCard stats={secondaryStats} />
         <HarmonicMarginAuditCard rows={margins} />
       </div>
     </main>

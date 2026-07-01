@@ -402,6 +402,12 @@ function extractProductCategory(
   return findBusinessMetaValue(entries, ["报关中文品名", "产品类别", "报关中文名"]);
 }
 
+function extractProductManager(
+  entries: Array<{ label: string; value: string }> | null | undefined
+): string {
+  return findBusinessMetaValue(entries, "产品经理");
+}
+
 function selectLedgerImageUrl(state: EngineeringSpecArchiveState): string {
   const primaryImage = normalizeText(state?.imageUrl, 400000);
   if (primaryImage && !primaryImage.startsWith("data:")) {
@@ -420,14 +426,6 @@ async function hydrateManifestDocuments(
 ): Promise<EngineeringSpecLedgerRecord[]> {
   return Promise.all(
     documents.map(async (document) => {
-      if (
-        normalizeText(document.contentFingerprint, 128) &&
-        normalizeText(document.category, 255) &&
-        normalizeText(document.imageUrl, 4000)
-      ) {
-        return document;
-      }
-
       const snapshot = await readArchiveSnapshot(projectId, document.id);
       if (!snapshot) {
         return document;
@@ -445,6 +443,7 @@ async function hydrateManifestDocuments(
           normalizeText(document.imageUrl, 4000) ||
           selectLedgerImageUrl(snapshot.state) ||
           undefined,
+        productGroup: extractProductManager(snapshot.state.businessMeta),
       };
     })
   );
@@ -561,7 +560,8 @@ export async function listDashboardEngineeringSpecArchives(
           existing &&
           (existing.category !== document.category ||
             existing.contentFingerprint !== document.contentFingerprint ||
-            existing.imageUrl !== document.imageUrl)
+            existing.imageUrl !== document.imageUrl ||
+            existing.productGroup !== document.productGroup)
         );
       })
     ) {
@@ -723,7 +723,7 @@ export async function createDashboardEngineeringSpecArchive(
       imageUrl: selectLedgerImageUrl(normalizedState) || undefined,
       description: normalizeText(normalizedState?.productInfo?.description, 4000),
       department: normalizeText(normalizedState?.productInfo?.department, 255),
-      productGroup: normalizeText(normalizedState?.productInfo?.productGroup, 255),
+      productGroup: extractProductManager(normalizedState?.businessMeta),
       sampleQty: normalizeText(normalizedState?.productInfo?.sampleQty, 64),
       testDate: normalizeText(normalizedState?.productInfo?.testDate, 64),
       result: failCount > 0 || pendingCount > 0 ? "待完善" : "合格",
@@ -891,11 +891,7 @@ export async function updateDashboardEngineeringSpecArchive(
         255,
         existingSnapshot.document.department
       ),
-      productGroup: normalizeText(
-        normalizedState?.productInfo?.productGroup,
-        255,
-        existingSnapshot.document.productGroup
-      ),
+      productGroup: normalizeText(extractProductManager(normalizedState?.businessMeta), 255),
       sampleQty: normalizeText(
         normalizedState?.productInfo?.sampleQty,
         64,

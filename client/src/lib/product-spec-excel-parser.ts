@@ -178,7 +178,7 @@ export async function parseProductSpecWorkbook(file: File): Promise<ProductSpecW
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(await file.arrayBuffer());
 
-  const worksheet = workbook.worksheets[0];
+  const worksheet = selectBestWorksheet(workbook, file.name);
   if (!worksheet) {
     throw new Error('解析失败：未找到可用工作表。');
   }
@@ -663,4 +663,60 @@ function cellKey(row: number, col: number): string {
 
 function round(value: number): number {
   return Math.round(value * 100) / 100;
+}
+
+function normalizeWorksheetComparable(value: string): string {
+  return (value || '')
+    .replace(/\.[^.]+$/u, '')
+    .replace(/规格书[\d.\-]*/giu, '')
+    .replace(/[（）()【】\[\]_\s]/gu, '')
+    .toLowerCase();
+}
+
+function scoreWorksheet(worksheet: Worksheet, fileName: string): number {
+  const normalizedFileName = normalizeWorksheetComparable(fileName);
+  const sheetName = normalizeWorksheetComparable(worksheet.name || '');
+  const title = normalizeWorksheetComparable(getCellText(worksheet.getCell('A1').value));
+  const sku = normalizeWorksheetComparable(getCellText(worksheet.getCell('C3').value));
+  const spu = normalizeWorksheetComparable(getCellText(worksheet.getCell('G3').value));
+  const description = normalizeWorksheetComparable(getCellText(worksheet.getCell('C4').value));
+  const productType = normalizeWorksheetComparable(getCellText(worksheet.getCell('G2').value));
+
+  let score = 0;
+
+  if (sheetName && normalizedFileName.includes(sheetName)) score += 80;
+  if (sku && normalizedFileName.includes(sku)) score += 90;
+  if (spu && normalizedFileName.includes(spu)) score += 35;
+  if (title.includes('产品规格资料')) score += 10;
+  if (productType) score += 10;
+  if (description && !description.includes('包装信息')) score += 40;
+  if (sku && spu && sku !== spu) score += 15;
+
+  if (!sku) score -= 50;
+  if (!description || description.includes('包装信息')) score -= 60;
+  if (/^\d+w$/iu.test((worksheet.name || '').trim())) score -= 40;
+
+  return score;
+}
+
+function selectBestWorksheet(workbook: Workbook, fileName: string): Worksheet | undefined {
+  const visibleWorksheets = workbook.worksheets.filter((worksheet) => worksheet.state !== 'hidden');
+  const candidateWorksheets = visibleWorksheets.length > 0 ? visibleWorksheets : [];
+
+  if (candidateWorksheets.length <= 1) {
+    return candidateWorksheets[0] ?? workbook.worksheets[0];
+  }
+
+  let bestWorksheet = candidateWorksheets[0];
+  let bestScore = Number.NEGATIVE_INFINITY;
+
+  for (const worksheet of candidateWorksheets) {
+    const score = scoreWorksheet(worksheet, fileName);
+    if (score > bestScore) {
+      bestScore = score;
+      bestWorksheet = worksheet;
+    }
+  }
+
+  return bestWorksheet;
 }

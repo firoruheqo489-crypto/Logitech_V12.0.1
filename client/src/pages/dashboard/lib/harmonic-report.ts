@@ -18,12 +18,30 @@ export interface HarmonicProcessMetrics {
 
 export interface HarmonicRow {
   order: number;
+  avg_ma: number | null;
+  max_ma: number | null;
+  limit_100_ma: number | null;
+  limit_150_ma: number | null;
+  ratio_percent: number | null;
   avg_percent: number;
-  max_percent: number;
-  limit_100_percent: number;
-  limit_150_percent: number;
-  avg_limit_percent: number;
-  max_limit_percent: number;
+  limit_percent: number | null;
+  max_percent: number | null;
+  max_limit_percent: number | null;
+  status: string;
+}
+
+export interface PhaseCheck {
+  checkpoint: string;
+  measured_deg: number;
+  limit_expression: string;
+  status: string;
+}
+
+export interface StructuralCheck {
+  code: string;
+  value: number | null;
+  limit: number | null;
+  unit: string | null;
   status: string;
 }
 
@@ -44,6 +62,8 @@ export interface HarmonicParseResult {
   pohc_limit_ma: number | null;
   distortion_factor: number | null;
   process_metrics: HarmonicProcessMetrics;
+  phase_checks: PhaseCheck[];
+  structural_checks: StructuralCheck[];
   harmonics: HarmonicRow[];
   raw_text: string;
 }
@@ -73,6 +93,9 @@ export type MarginRow = {
   critical: boolean;
   maxValue: number;
   maxLimit: number;
+  avgMilliamp: number | null;
+  limitMilliamp: number | null;
+  ratioPercent: number | null;
 };
 
 export type AlphaMetric = {
@@ -86,6 +109,13 @@ export type SecondaryStat = {
   label: string;
   value: string;
   tone: "neutral" | "good" | "critical";
+};
+
+export type ReportInsight = {
+  label: string;
+  value: string;
+  tone: "neutral" | "good" | "critical";
+  hint: string;
 };
 
 function round2(value: number): number {
@@ -104,6 +134,25 @@ function resolveIecClassCLimit(order: number): number {
   if (order === 9) return 5;
   if (order >= 11 && order <= 39) return 3;
   return 3;
+}
+
+function resolveRowLimitPercent(row: HarmonicRow): number {
+  if (typeof row.limit_percent === "number") return row.limit_percent;
+  if (typeof row.max_limit_percent === "number") return row.max_limit_percent;
+  return resolveIecClassCLimit(row.order);
+}
+
+function structuralCheckLabel(code: string): string {
+  switch (code) {
+    case "Ipeak_phase_angle":
+      return "峰值电流最大相位角";
+    case "I60_90pMin":
+      return "60-90度正半波最小电流";
+    case "I60_90nMax":
+      return "60-90度负半波最大电流";
+    default:
+      return code;
+  }
 }
 
 export function buildHarmonicWaveform(result: HarmonicParseResult): WavePoint[] {
@@ -142,10 +191,10 @@ export function buildHarmonicWaveform(result: HarmonicParseResult): WavePoint[] 
 export function buildHarmonicSpectrum(result: HarmonicParseResult): HarmonicBar[] {
   return result.harmonics.map((row) => {
     const magnitude = row.avg_percent;
-    const limit = resolveIecClassCLimit(row.order);
-    const maxMagnitude = row.max_percent;
-    const maxLimit = row.limit_150_percent;
-    const exceeds = magnitude > limit;
+    const limit = resolveRowLimitPercent(row);
+    const maxMagnitude = row.max_percent ?? row.avg_percent;
+    const maxLimit = row.max_limit_percent ?? limit;
+    const exceeds = row.status === "Fail" || magnitude > limit;
     return {
       order: `K${row.order}`,
       k: row.order,
@@ -161,7 +210,7 @@ export function buildHarmonicSpectrum(result: HarmonicParseResult): HarmonicBar[
 export function buildMarginAudit(result: HarmonicParseResult): MarginRow[] {
   return result.harmonics
     .map((row) => {
-      const limit = resolveIecClassCLimit(row.order);
+      const limit = resolveRowLimitPercent(row);
       const value = row.avg_percent;
       const margin = round2(limit - value);
       return {
@@ -170,9 +219,12 @@ export function buildMarginAudit(result: HarmonicParseResult): MarginRow[] {
         value,
         limit,
         margin,
-        critical: margin < 0,
-        maxValue: row.max_percent,
-        maxLimit: row.limit_150_percent,
+        critical: row.status === "Fail" || margin < 0,
+        maxValue: row.max_percent ?? row.avg_percent,
+        maxLimit: row.max_limit_percent ?? limit,
+        avgMilliamp: row.avg_ma,
+        limitMilliamp: row.limit_100_ma,
+        ratioPercent: row.ratio_percent,
       };
     })
     .sort((left, right) => left.margin - right.margin)
@@ -180,7 +232,11 @@ export function buildMarginAudit(result: HarmonicParseResult): MarginRow[] {
 }
 
 export function resolveHarmonicVerdict(result: HarmonicParseResult): "PASS" | "FAIL" {
-  return result.harmonics.some((row) => row.avg_percent > resolveIecClassCLimit(row.order))
+  if (result.verdict === "Pass") return "PASS";
+  if (result.verdict === "Fail") return "FAIL";
+  if (result.phase_checks.some((check) => check.status === "Fail")) return "FAIL";
+  if (result.structural_checks.some((check) => check.status === "Fail")) return "FAIL";
+  return result.harmonics.some((row) => row.status === "Fail" || row.avg_percent > resolveRowLimitPercent(row))
     ? "FAIL"
     : "PASS";
 }
@@ -194,10 +250,22 @@ export function buildAlphaMetrics(result: HarmonicParseResult): AlphaMetric[] {
       sub: `THC ${result.thc_ma?.toFixed(2) ?? "--"} mA`,
     },
     {
-      label: "POHC — 部分奇次谐波电流",
-      value: result.pohc_ma?.toFixed(2) ?? "--",
+      label: "PF — 功率因数",
+      value: result.process_metrics.power_factor_avg?.toFixed(3) ?? "--",
+      unit: "",
+      sub: `DF ${result.distortion_factor?.toFixed(3) ?? "--"}`,
+    },
+    {
+      label: "POWER — 实际功率",
+      value: result.process_metrics.power_avg_w?.toFixed(2) ?? "--",
+      unit: "W",
+      sub: `Voltage ${result.process_metrics.voltage_avg_v?.toFixed(2) ?? "--"} V`,
+    },
+    {
+      label: "FUNDAMENTAL — 基波电流",
+      value: result.process_metrics.fundamental_current_avg_ma?.toFixed(2) ?? "--",
       unit: "mA",
-      sub: `Limit ${result.pohc_limit_ma?.toFixed(2) ?? "--"} mA`,
+      sub: `Ipeak ${(result.process_metrics.current_peak_avg_a ?? 0).toFixed(4)} A`,
     },
   ];
 }
@@ -205,19 +273,9 @@ export function buildAlphaMetrics(result: HarmonicParseResult): AlphaMetric[] {
 export function buildSecondaryStats(result: HarmonicParseResult): SecondaryStat[] {
   return [
     {
-      label: "功率因数",
-      value: result.process_metrics.power_factor_avg?.toFixed(3) ?? "--",
-      tone: (result.process_metrics.power_factor_avg ?? 0) >= 0.9 ? "good" : "neutral",
-    },
-    {
-      label: "波峰因数",
+      label: "波峰比",
       value: result.process_metrics.crest_factor?.toFixed(3) ?? "--",
       tone: "neutral",
-    },
-    {
-      label: "失真因数",
-      value: result.distortion_factor?.toFixed(3) ?? "--",
-      tone: (result.distortion_factor ?? 0) >= 0.95 ? "good" : "critical",
     },
     {
       label: "频率",
@@ -227,18 +285,59 @@ export function buildSecondaryStats(result: HarmonicParseResult): SecondaryStat[
       tone: "good",
     },
     {
-      label: "功率",
-      value: result.process_metrics.power_avg_w?.toFixed(2)
-        ? `${result.process_metrics.power_avg_w?.toFixed(2)} W`
-        : "--",
-      tone: "neutral",
+      label: "POHC",
+      value: result.pohc_ma?.toFixed(2) ? `${result.pohc_ma?.toFixed(2)} mA` : "--",
+      tone: result.pohc_limit_ma != null && result.pohc_ma != null && result.pohc_ma > result.pohc_limit_ma ? "critical" : "neutral",
     },
     {
-      label: "电压",
-      value: result.process_metrics.voltage_avg_v?.toFixed(2)
-        ? `${result.process_metrics.voltage_avg_v?.toFixed(2)} V`
-        : "--",
+      label: "测试标准",
+      value: result.standard || "--",
       tone: "neutral",
     },
   ];
+}
+
+export function buildReportInsights(result: HarmonicParseResult): ReportInsight[] {
+  return [
+    {
+      label: "功率因数",
+      value: result.process_metrics.power_factor_avg?.toFixed(3) ?? "--",
+      tone: (result.process_metrics.power_factor_avg ?? 0) < 0.8 ? "critical" : "good",
+      hint: "PF 偏低意味着驱动导通波形过窄，通常伴随高次谐波倒灌。",
+    },
+    {
+      label: "总谐波失真",
+      value: result.ithd_percent?.toFixed(2) ? `${result.ithd_percent?.toFixed(2)}%` : "--",
+      tone: (result.ithd_percent ?? 0) > 100 ? "critical" : "neutral",
+      hint: "THDi 明显高于 100% 时，谐波能量已经超过基波本体，属于结构性失真。",
+    },
+    {
+      label: "波形相位失效点",
+      value:
+        result.phase_checks.filter((check) => check.status === "Fail").map((check) => check.checkpoint).join(", ") || "--",
+      tone: result.phase_checks.some((check) => check.status === "Fail") ? "critical" : "good",
+      hint: "先看 Q 相位点是否越界，可快速锁定导通峰值是否后移。",
+    },
+    {
+      label: "谐波超标点",
+      value:
+        result.harmonics.filter((row) => row.status === "Fail").map((row) => `K${row.order}`).join(", ") || "--",
+      tone: result.harmonics.some((row) => row.status === "Fail") ? "critical" : "good",
+      hint: "最终定罪以具体超标谐波次序为证据链，当前重点是 3 次和 5 次。",
+    },
+  ];
+}
+
+export function buildStructuralAudit(result: HarmonicParseResult): Array<{
+  label: string;
+  value: string;
+  limit: string;
+  status: string;
+}> {
+  return result.structural_checks.map((check) => ({
+    label: structuralCheckLabel(check.code),
+    value: check.value != null ? `${check.value}${check.unit ? ` ${check.unit}` : ""}` : "--",
+    limit: check.limit != null ? `${check.limit}${check.unit ? ` ${check.unit}` : ""}` : "--",
+    status: check.status,
+  }));
 }

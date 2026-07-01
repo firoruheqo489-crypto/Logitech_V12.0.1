@@ -59,7 +59,7 @@ const columns: LedgerColumn[] = [
   },
   {
     key: 'productGroup',
-    title: '产品组',
+    title: '产品经理',
     width: '150px',
     render: (record) => <span>{record.productGroup}</span>,
   },
@@ -70,14 +70,8 @@ const columns: LedgerColumn[] = [
     render: (record) => <span>{record.sampleQty}</span>,
   },
   {
-    key: 'testDate',
-    title: '测试日期',
-    width: '140px',
-    render: (record) => <span>{formatLedgerCellDate(record.testDate)}</span>,
-  },
-  {
     key: 'createdAt',
-    title: '入库时间',
+    title: '送样日期',
     width: '160px',
     render: (record) => <span>{formatLedgerCellDate(record.createdAt)}</span>,
   },

@@ -158,7 +158,8 @@ const HEADER_BUSINESS_META_LABELS = [
   '结构工程师',
   '电子工程师',
 ] as const;
-const PACKAGING_EXTRA_LABELS = ['产品净重', '产品尺寸', '产品配件'] as const;
+const PACKAGING_EXTRA_LABELS = ['接收样品数'] as const;
+const REMOVED_PACKAGING_LABELS = new Set(['产品尺寸', '产品配件']);
 
 function createEmptyEvidenceSlots(): EvidenceSlot[] {
   return Array.from({ length: EVIDENCE_SLOT_COUNT }, (_, index) => ({
@@ -177,8 +178,31 @@ function appendMissingBusinessMetaFields(fields: BoundField[], prefix: string): 
   return [...fields, ...extras];
 }
 
+function normalizePackagingMetricLabel(label: string): string {
+  const normalized = label.trim();
+  if (normalized === '产品净重') return '接收样品数';
+  return normalized;
+}
+
+function shouldKeepPackagingMetric(label: string): boolean {
+  return !REMOVED_PACKAGING_LABELS.has(label.trim());
+}
+
 function appendMissingPackagingFields(packaging: PackagingMetric[], prefix: string): PackagingMetric[] {
-  const existingLabels = new Set(packaging.map((item) => item.label.trim()));
+  const normalizedPackaging = packaging
+    .map((item) => {
+      const normalizedLabel = normalizePackagingMetricLabel(item.label);
+      return {
+        ...item,
+        label: normalizedLabel,
+        field: {
+          ...item.field,
+          label: normalizedLabel,
+        },
+      };
+    })
+    .filter((item) => shouldKeepPackagingMetric(item.label));
+  const existingLabels = new Set(normalizedPackaging.map((item) => item.label.trim()));
   const extras = PACKAGING_EXTRA_LABELS.filter((label) => !existingLabels.has(label)).map((label, index) => ({
     label,
     field: {
@@ -187,7 +211,7 @@ function appendMissingPackagingFields(packaging: PackagingMetric[], prefix: stri
       value: '',
     },
   }));
-  return [...packaging, ...extras];
+  return [...normalizedPackaging, ...extras];
 }
 
 function findMetaField(fields: BoundField[], label: string): BoundField | null {
@@ -1386,7 +1410,7 @@ function HeaderCard({
           </div>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+        <div className="grid gap-x-4 gap-y-4 md:grid-cols-2 xl:grid-cols-4">
           {model.packaging.map((item) => (
             <CompactField
               key={item.field.cellId}
@@ -1394,7 +1418,6 @@ function HeaderCard({
               multiline={item.field.multiline}
               isEditing={isEditMode}
               onChange={onFieldChange}
-              tight
             />
           ))}
         </div>
@@ -2127,9 +2150,7 @@ function buildSpecDocModel(preview: ProductSpecWorkbookPreview, cellTexts: CellT
     { label: '单箱毛重(KG)', anchor: '单箱毛重kg', fallbackCol: 7 },
     { label: '单箱体积(CBM)', anchor: '单箱体积cbm', fallbackCol: 8 },
     { label: '外箱尺寸(cm) 长*宽*高', anchor: '外箱尺寸cm长*宽*高', fallbackCol: 9 },
-    { label: '产品净重', anchor: '产品净重' },
-    { label: '产品尺寸', anchor: '产品尺寸' },
-    { label: '产品配件', anchor: '产品配件' },
+    { label: '接收样品数', anchor: '产品净重' },
   ];
 
   const businessFieldDefinitions: Array<{ label: string; anchor: string; row?: number; col?: number; multiline?: boolean }> = [
@@ -2442,7 +2463,7 @@ function buildArchiveStateFromModel(
       type: model.header.productType.value.trim(),
       description: model.header.description.value.trim(),
       department: findFieldValue(model.businessMeta, '事业部'),
-      productGroup: findFieldValue(model.businessMeta, '产品组'),
+      productGroup: findFieldValue(model.businessMeta, '产品经理'),
       sampleQty: extractSampleQty(model.packaging),
       testDate: extractTestDate(model.sections),
     },
@@ -2472,6 +2493,8 @@ function buildArchiveStateFromModel(
 
 function extractSampleQty(packaging: PackagingMetric[]): string {
   const preferred =
+    packaging.find((item) => item.label.trim() === '接收样品数') ||
+    packaging.find((item) => item.label.trim() === '产品净重') ||
     packaging.find((item) => /inner pc\/box/i.test(item.label)) ||
     packaging.find((item) => /sample/i.test(item.label)) ||
     packaging[1];
