@@ -73,10 +73,7 @@ function sendEmcPdfRouteError(
 }
 
 function readErrorMessage(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message;
-  }
-  return String(error ?? 'Unknown error');
+  return typeof error === 'string' && error.trim() ? error : 'Unknown error';
 }
 
 function isLikelyMojibakeFileName(fileName: string): boolean {
