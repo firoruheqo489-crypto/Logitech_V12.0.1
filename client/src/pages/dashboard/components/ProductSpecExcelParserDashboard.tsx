@@ -20,12 +20,19 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 
-import { sanitizeEngineeringSpecLedgerRecords } from '@/lib/engineering-spec-ledger-clean';
+import CyberConfirmDialog from '@/components/ui/CyberConfirmDialog';
+import {
+  isInvalidEngineeringSpecSkuValue,
+  normalizeEngineeringSpecComparable,
+  sanitizeEngineeringSpecLedgerRecords,
+} from '@/lib/engineering-spec-ledger-clean';
 import { deleteAssetViaServer, uploadAssetViaServer } from '@/lib/ossUpload';
 import {
   createEngineeringSpecArchive,
+  deleteEngineeringSpecArchive,
   getEngineeringSpecArchiveDocumentState,
   listEngineeringSpecArchives,
+  updateEngineeringSpecArchive,
   type EngineeringSpecArchiveState,
   type EngineeringSpecLedgerRecord,
 } from '@/lib/engineering-spec-ledger-api';
@@ -197,6 +204,99 @@ function getLocalizedPackagingLabel(label: string): string {
   return normalized;
 }
 
+function normalizeParsedFieldValue(value: string): string {
+  const normalized = value.trim();
+  if (!normalized) return '';
+  if (/^[-—–/／\\]+$/u.test(normalized)) return '';
+  if (/^(确认项目|item)$/iu.test(normalized)) return '';
+  return normalized;
+}
+
+function looksLikePlaceholderValue(value: string): boolean {
+  const normalized = value.trim();
+  if (!normalized) return true;
+  if (/^[-—–/／\\]+$/u.test(normalized)) return true;
+  if (/^(确认项目|item|pk|包装信息|产品图片|产品来源|事业部|要求|类别)$/iu.test(normalized)) return true;
+  return false;
+}
+
+function looksLikeSpecDescription(value: string): boolean {
+  const normalized = value.trim();
+  if (!normalized) return false;
+  const descriptionSignals = [
+    /ac|dc|hz|ra|lm|smd|rohs|emc/i,
+    /[xX×*]\d/,
+    /色温|灯头|材质|尺寸|高度|外径|功率|电压/u,
+    /\s+/u,
+  ];
+  const score = descriptionSignals.reduce((sum, pattern) => (pattern.test(normalized) ? sum + 1 : sum), 0);
+  return normalized.length >= 24 || score >= 2;
+}
+
+function looksLikeCompactCode(value: string): boolean {
+  const normalized = value.trim();
+  if (!normalized) return false;
+  if (normalized.length > 32) return false;
+  if (/\s/u.test(normalized)) return false;
+  return /^[A-Za-z0-9][A-Za-z0-9._/-]*$/u.test(normalized);
+}
+
+function looksLikeProductCategory(value: string): boolean {
+  const normalized = value.trim();
+  if (!normalized) return false;
+  if (/ac|dc|hz|ra|lm|smd|rohs|emc|pf|w\b/i.test(normalized)) return false;
+  return /[\\\/]/u.test(normalized) || /照明|筒灯|面板灯|射灯|球泡|灯/u.test(normalized);
+}
+
+function validateSpecHeaderModel(model: SpecDocModel): string[] {
+  const issues: string[] = [];
+  const sku = model.header.sku.value.trim();
+  const spu = model.header.spu.value.trim();
+  const productType = model.header.productType.value.trim();
+  const description = model.header.description.value.trim();
+
+  const normalizedSku = normalizeEngineeringSpecComparable(sku);
+  const normalizedSpu = normalizeEngineeringSpecComparable(spu);
+  const normalizedType = normalizeEngineeringSpecComparable(productType);
+  const normalizedDescription = normalizeEngineeringSpecComparable(description);
+
+  if (isInvalidEngineeringSpecSkuValue(sku) || !looksLikeCompactCode(sku)) {
+    issues.push('产品编号（SKU）未识别到有效编码。');
+  }
+
+  if (looksLikePlaceholderValue(spu) || looksLikeSpecDescription(spu)) {
+    issues.push('产品编码（SPU）疑似串位到规格描述区域。');
+  }
+
+  if (
+    looksLikePlaceholderValue(productType) ||
+    (!looksLikeProductCategory(productType) && looksLikeSpecDescription(productType))
+  ) {
+    issues.push('产品类型疑似串位或解析为长描述文本。');
+  }
+
+  if (
+    (description && looksLikePlaceholderValue(description)) ||
+    (description && !looksLikeSpecDescription(description))
+  ) {
+    issues.push('规格描述未识别到有效长文本描述。');
+  }
+
+  if (normalizedDescription && (normalizedDescription === normalizedSku || normalizedDescription === normalizedSpu)) {
+    issues.push('规格描述与 SKU/SPU 完全相同，疑似表头串位。');
+  }
+
+  if (normalizedSku && normalizedSku === normalizedSpu) {
+    issues.push('SKU 与 SPU 完全相同，疑似表头串位。');
+  }
+
+  if (normalizedType && normalizedType === normalizedDescription) {
+    issues.push('产品类型与规格描述完全相同，疑似表头串位。');
+  }
+
+  return issues;
+}
+
 async function compressEvidenceImage(file: File): Promise<File> {
   if (file.size <= MAX_EVIDENCE_SIZE_BYTES) return file;
 
@@ -239,6 +339,7 @@ export default function ProductSpecExcelParserDashboard({
   const [workspaceModel, setWorkspaceModel] = useState<SpecDocModel | null>(null);
   const [workspaceMeta, setWorkspaceMeta] = useState<WorkspaceMeta>({ rowCount: 0, columnCount: 0 });
   const [isParsing, setIsParsing] = useState(false);
+  const [isArchiving, setIsArchiving] = useState(false);
   const [ledgerRecords, setLedgerRecords] = useState<EngineeringSpecLedgerRecord[]>([]);
   const [isLoadingLedger, setIsLoadingLedger] = useState(true);
   const [evidenceSlots, setEvidenceSlots] = useState<EvidenceSlot[]>(() => createEmptyEvidenceSlots());
@@ -255,6 +356,10 @@ export default function ProductSpecExcelParserDashboard({
     label: '当前草稿',
     detail: '尚未导入规格书',
   });
+  const [activeArchiveDocumentId, setActiveArchiveDocumentId] = useState<string | null>(null);
+  const [currentFileFingerprint, setCurrentFileFingerprint] = useState<string | null>(null);
+  const [pendingDeleteRecord, setPendingDeleteRecord] = useState<EngineeringSpecLedgerRecord | null>(null);
+  const [isDeletingRecord, setIsDeletingRecord] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
 
   const projectId = projectName.trim() || 'default-engineering-spec-workspace';
@@ -266,8 +371,9 @@ export default function ProductSpecExcelParserDashboard({
       setIsLoadingLedger(true);
       try {
         const documents = await listEngineeringSpecArchives(projectId);
+        const hydratedDocuments = await hydrateLedgerDisplayFieldsIfMissing(projectId, documents);
         if (!cancelled) {
-          setLedgerRecords(documents);
+          setLedgerRecords(hydratedDocuments);
         }
       } catch (error) {
         if (!cancelled) {
@@ -302,9 +408,9 @@ export default function ProductSpecExcelParserDashboard({
     return [
       { label: 'SKU', value: docModel.header.sku.value },
       { label: 'SPU', value: docModel.header.spu.value },
-      { label: '产品类型', value: docModel.header.productType.value },
+      { label: '产品系列', value: docModel.header.productType.value },
       { label: '海关编码', value: findFieldValue(docModel.businessMeta, '海关编码') },
-      { label: '报关中文品名', value: findFieldValue(docModel.businessMeta, '报关中文品名') },
+      { label: '产品类别', value: findFieldValue(docModel.businessMeta, '报关中文品名') },
     ].filter((item) => item.value);
   }, [docModel]);
 
@@ -341,6 +447,8 @@ export default function ProductSpecExcelParserDashboard({
   const lightboxImage =
     evidenceLightboxIndex >= 0 ? evidenceGalleryItems[evidenceLightboxIndex] : null;
 
+  const isEditingExistingArchive = Boolean(activeArchiveDocumentId);
+
   useEffect(() => {
     if (!lightboxImage) return;
 
@@ -362,12 +470,83 @@ export default function ProductSpecExcelParserDashboard({
 
   async function handleFile(file: File | null | undefined) {
     if (!file) return;
+    if (isLoadingLedger) {
+      toast.warning('台账正在加载中', {
+        description: '请等待登记台账加载完成后再上传规格书。',
+      });
+      return;
+    }
+
+    const duplicateByFileName = findDuplicateLedgerRecordByUploadFileName(file.name, sanitizedLedgerRecords);
+    if (duplicateByFileName) {
+      toast.warning('该产品编号已存在，已阻止上传', {
+        description: `SKU：${duplicateByFileName.sku}`,
+      });
+      return;
+    }
 
     setIsParsing(true);
     try {
+      const fileFingerprint = await buildFileFingerprint(file);
+      const duplicateRecord = ledgerRecords.find(
+        (record) => record.fileFingerprint && record.fileFingerprint === fileFingerprint,
+      );
+      if (duplicateRecord) {
+        toast.warning('该文件已上传过，已阻止重复导入', {
+          description: duplicateRecord.sku
+            ? `台账记录：${duplicateRecord.sku}`
+            : '相同文件内容已存在于登记台账中。',
+        });
+        return;
+      }
+      if (currentFileFingerprint && currentFileFingerprint === fileFingerprint) {
+        toast.warning('当前工作区已加载这份文件，无需重复上传。');
+        return;
+      }
+
       const workbook = await parseProductSpecWorkbook(file);
       const cellTexts = Object.fromEntries(workbook.cells.map((cell) => [cell.id, cell.text])) as CellTextMap;
-      setWorkspaceModel(buildSpecDocModel(workbook, cellTexts));
+      const nextModel = buildSpecDocModel(workbook, cellTexts);
+      const headerIssues = validateSpecHeaderModel(nextModel);
+      if (headerIssues.length > 0) {
+        toast.error('规格书表头解析异常', {
+          description: headerIssues.join(' '),
+        });
+        return;
+      }
+      const nextSku = nextModel.header.sku.value.trim();
+      const normalizedNextSku = normalizeEngineeringSpecComparable(nextSku);
+      if (isInvalidEngineeringSpecSkuValue(nextSku)) {
+        toast.error('未识别到有效产品编号', {
+          description: '当前上传的规格书未解析出有效 SKU，已阻止导入。请检查模板内容后重试。',
+        });
+        return;
+      }
+      const duplicateBySku = sanitizedLedgerRecords.find(
+        (record) => normalizeEngineeringSpecComparable(record.sku || '') === normalizedNextSku,
+      );
+      if (duplicateBySku) {
+        toast.warning('该产品编号已存在，禁止重复上传', {
+          description: `SKU: ${duplicateBySku.sku}`,
+        });
+        return;
+      }
+      const previewState = await finalizeArchiveState(
+        buildArchiveStateFromModel(nextModel, createEmptyEvidenceSlots(), '', fileFingerprint),
+      );
+      const duplicateByContent = ledgerRecords.find(
+        (record) => record.contentFingerprint && record.contentFingerprint === previewState.contentFingerprint,
+      );
+      if (duplicateByContent) {
+        toast.warning('该规格书内容已存在，已阻止重复导入', {
+          description: duplicateByContent.sku
+            ? `台账记录：${duplicateByContent.sku}`
+            : '相同解析结果已存在于登记台账中。',
+        });
+        return;
+      }
+
+      setWorkspaceModel(nextModel);
       setWorkspaceMeta({
         rowCount: workbook.metadata.rowCount,
         columnCount: workbook.metadata.columnCount,
@@ -379,6 +558,8 @@ export default function ProductSpecExcelParserDashboard({
       setWorkspaceSyncState('idle');
       setWorkspaceSyncMessage('本页不保留草稿，刷新后请从台账查看或恢复。');
       setView('workspace');
+      setActiveArchiveDocumentId(null);
+      setCurrentFileFingerprint(fileFingerprint);
       setWorkspaceOrigin({
         mode: 'draft',
         label: '当前草稿',
@@ -406,23 +587,65 @@ export default function ProductSpecExcelParserDashboard({
     }
   }
 
-  async function handleArchive() {
-    if (!docModel) return;
+  async function handleArchive(mode: 'create' | 'update') {
+    if (!docModel || isArchiving) return;
+
+    setIsArchiving(true);
 
     try {
-      const document = await createEngineeringSpecArchive({
-        projectId,
-        state: buildArchiveStateFromModel(docModel, evidenceSlots, qeConclusion),
-      });
+      const headerIssues = validateSpecHeaderModel(docModel);
+      if (headerIssues.length > 0) {
+        toast.error('规格书表头仍存在异常', {
+          description: headerIssues.join(' '),
+        });
+        return;
+      }
+      const archiveState = await finalizeArchiveState(
+        buildArchiveStateFromModel(docModel, evidenceSlots, qeConclusion, currentFileFingerprint),
+      );
+      const isUpdatingExistingArchive = mode === 'update' && Boolean(activeArchiveDocumentId);
+      if (mode === 'update' && !activeArchiveDocumentId) {
+        toast.warning('当前工作区不是已恢复归档', {
+          description: '请先从登记台账打开一条归档记录，再使用覆盖更新。',
+        });
+        return;
+      }
+
+      const document = isUpdatingExistingArchive
+        ? await updateEngineeringSpecArchive({
+            projectId,
+            documentId: activeArchiveDocumentId as string,
+            state: archiveState,
+          })
+        : await createEngineeringSpecArchive({
+            projectId,
+            state: archiveState,
+          });
       setLedgerRecords((current) => [document, ...current.filter((item) => item.id !== document.id)]);
+      setActiveArchiveDocumentId(document.id);
+      setWorkspaceSyncState('saved');
+      setWorkspaceSyncMessage(
+        isUpdatingExistingArchive
+          ? `当前归档 ${document.sku || document.id} 已覆盖更新。`
+          : `当前规格书 ${document.sku || document.id} 已归档入库。`,
+      );
+      setWorkspaceOrigin({
+        mode: 'archive',
+        label: '归档快照',
+        detail: `${document.sku || '未命名规格书'} · ${formatWorkspaceOriginTime(document.createdAt)}`,
+      });
       setView('ledger');
-      toast.success('规格书已归档到 OSS', {
-        description: `${document.sku} 已写入远端登记台账。`,
+      toast.success(isUpdatingExistingArchive ? '规格书归档已更新' : '规格书已归档到 OSS', {
+        description: isUpdatingExistingArchive
+          ? `${document.sku} 已覆盖更新原归档记录。`
+          : `${document.sku} 已写入远端登记台账。`,
       });
     } catch (error) {
       toast.error('归档入库失败', {
         description: error instanceof Error ? error.message : '请检查 OSS 配置与网络状态',
       });
+    } finally {
+      setIsArchiving(false);
     }
   }
 
@@ -597,8 +820,8 @@ export default function ProductSpecExcelParserDashboard({
     setWorkspaceOrigin((current) =>
       current.mode === 'archive'
         ? {
-            mode: 'draft',
-            label: '当前草稿',
+            mode: 'archive',
+            label: '归档快照',
             detail: current.detail || '基于归档快照修改中',
           }
         : current,
@@ -628,6 +851,8 @@ export default function ProductSpecExcelParserDashboard({
       setIsEditMode(false);
       setLightboxSlotId(null);
       setView('workspace');
+      setActiveArchiveDocumentId(record.id);
+      setCurrentFileFingerprint(snapshot.state.fileFingerprint || snapshot.document.fileFingerprint || null);
       setWorkspaceSyncState('restored');
       setWorkspaceSyncMessage(`当前内容来自台账归档：${snapshot.document.sku || '未命名规格书'}，刷新后不会保留。`);
       setWorkspaceOrigin({
@@ -642,6 +867,40 @@ export default function ProductSpecExcelParserDashboard({
       toast.error('归档恢复失败', {
         description: error instanceof Error ? error.message : '请稍后重试',
       });
+    }
+  }
+
+  async function handleDeleteArchiveRecord() {
+    if (!pendingDeleteRecord || isDeletingRecord) return;
+
+    const targetRecord = pendingDeleteRecord;
+    setIsDeletingRecord(true);
+
+    try {
+      await deleteEngineeringSpecArchive({
+        projectId,
+        documentId: targetRecord.id,
+      });
+      setLedgerRecords((current) => current.filter((item) => item.id !== targetRecord.id));
+      if (activeArchiveDocumentId === targetRecord.id) {
+        setActiveArchiveDocumentId(null);
+        setCurrentFileFingerprint(null);
+        setWorkspaceSyncState('idle');
+        setWorkspaceSyncMessage('当前恢复的归档已删除，工作区内容仅保留在本次会话中。');
+        setWorkspaceOrigin({
+          mode: 'draft',
+          label: '当前草稿',
+          detail: `基于已删除归档 ${targetRecord.sku || targetRecord.id} 的当前会话`,
+        });
+      }
+      toast.success(`${targetRecord.sku || '当前归档'} 已删除`);
+      setPendingDeleteRecord(null);
+    } catch (error) {
+      toast.error('归档删除失败', {
+        description: error instanceof Error ? error.message : '请稍后重试',
+      });
+    } finally {
+      setIsDeletingRecord(false);
     }
   }
 
@@ -688,10 +947,10 @@ export default function ProductSpecExcelParserDashboard({
 
               <button
                 type="button"
-                onClick={() => void handleArchive()}
-                disabled={!docModel}
+                onClick={() => void handleArchive('create')}
+                disabled={!docModel || isArchiving}
                 className={`inline-flex items-center gap-3 rounded-xl px-4 py-2.5 transition ${
-                  docModel ? 'hover:bg-white/[0.04]' : 'cursor-not-allowed opacity-40'
+                  docModel && !isArchiving ? 'hover:bg-white/[0.04]' : 'cursor-not-allowed opacity-40'
                 } ${glassPanelClass}`}
               >
                 <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-400/10 text-emerald-200">
@@ -699,9 +958,28 @@ export default function ProductSpecExcelParserDashboard({
                 </div>
                 <div className="text-left">
                   <p className="text-sm font-medium text-[#E2E8F0]">归档入库</p>
-                  <p className="text-[11px] text-[#94A3B8]">写入 OSS 台账</p>
+                  <p className="text-[11px] text-[#94A3B8]">新增写入 OSS 台账</p>
                 </div>
               </button>
+
+              {isEditingExistingArchive ? (
+                <button
+                  type="button"
+                  onClick={() => void handleArchive('update')}
+                  disabled={!docModel || isArchiving}
+                  className={`inline-flex items-center gap-3 rounded-xl px-4 py-2.5 transition ${
+                    docModel && !isArchiving ? 'hover:bg-white/[0.04]' : 'cursor-not-allowed opacity-40'
+                  } ${glassPanelClass}`}
+                >
+                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-400/10 text-amber-200">
+                    <Archive className="h-4.5 w-4.5" />
+                  </div>
+                  <div className="text-left">
+                    <p className="text-sm font-medium text-[#E2E8F0]">覆盖更新归档</p>
+                    <p className="text-[11px] text-[#94A3B8]">覆盖当前归档记录</p>
+                  </div>
+                </button>
+              ) : null}
             </div>
           </div>
         </div>
@@ -756,6 +1034,7 @@ export default function ProductSpecExcelParserDashboard({
                 records={sanitizedLedgerRecords}
                 isLoading={isLoadingLedger}
                 onSelectRecord={(record) => void handleSelectArchiveRecord(record)}
+                onDeleteRecord={setPendingDeleteRecord}
               />
             ) : docModel ? (
               <ElectronicSpecDocument
@@ -867,6 +1146,26 @@ export default function ProductSpecExcelParserDashboard({
           </div>
         </div>
       ) : null}
+
+      <CyberConfirmDialog
+        open={Boolean(pendingDeleteRecord)}
+        title="删除规格书归档"
+        message={
+          pendingDeleteRecord
+            ? `确定要删除 ${pendingDeleteRecord.sku || '当前归档'} 吗？\n删除后会从登记台账中移除，且无法恢复。`
+            : ''
+        }
+        confirmText={isDeletingRecord ? '删除中...' : '确认删除'}
+        cancelText="取消"
+        onConfirm={() => {
+          void handleDeleteArchiveRecord();
+        }}
+        onCancel={() => {
+          if (!isDeletingRecord) {
+            setPendingDeleteRecord(null);
+          }
+        }}
+      />
     </div>
   );
 }
@@ -1024,11 +1323,16 @@ function HeaderCard({
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             <CompactField field={model.header.sku} isEditing={isEditMode} onChange={onFieldChange} />
             <CompactField field={model.header.spu} isEditing={isEditMode} onChange={onFieldChange} />
-            <CompactField field={model.header.productType} multiline isEditing={isEditMode} onChange={onFieldChange} />
+            <CompactField
+              field={{ ...model.header.productType, label: '产品系列' }}
+              multiline
+              isEditing={isEditMode}
+              onChange={onFieldChange}
+            />
             {hsCodeField ? <CompactField field={hsCodeField} isEditing={isEditMode} onChange={onFieldChange} /> : null}
             {customsNameField ? (
               <CompactField
-                field={{ ...customsNameField, label: '报关中文名' }}
+                field={{ ...customsNameField, label: '产品类别' }}
                 multiline
                 isEditing={isEditMode}
                 onChange={onFieldChange}
@@ -1384,11 +1688,11 @@ function CompactField({
         )
       ) : resolvedMultiline ? (
         <div className={`mt-1 whitespace-pre-wrap break-words text-[13px] text-[#E2E8F0] ${tight ? 'leading-5' : 'leading-6'}`}>
-          {field.value || '—'}
+          {field.value || ''}
         </div>
       ) : (
         <div className={`mt-1 break-words text-[13px] text-[#E2E8F0] ${tight ? 'leading-5' : 'leading-6'}`}>
-          {field.value || '—'}
+          {field.value || ''}
         </div>
       )}
     </div>
@@ -1477,7 +1781,7 @@ function buildSpecDocModelFromWorkspaceState(state: EngineeringSpecWorkspaceStat
     header: {
       title: String(state.header?.title || '产品规格资料'),
       productType: {
-        label: String(state.header?.productType?.label || '产品类型'),
+        label: String(state.header?.productType?.label || '产品系列'),
         cellId: 'workspace-header-product-type',
         value: String(state.header?.productType?.value || ''),
         multiline: Boolean(state.header?.productType?.multiline),
@@ -1535,7 +1839,7 @@ function buildSpecDocModelFromArchiveState(state: EngineeringSpecArchiveState): 
     header: {
       title: '产品规格资料',
       productType: {
-        label: '产品类型',
+        label: '产品系列',
         cellId: 'archive-header-product-type',
         value: state.productInfo?.type || '',
         multiline: true,
@@ -1765,6 +2069,8 @@ function mapBoundFieldToWorkspaceField(field: BoundField): EngineeringSpecWorksp
 
 function buildSpecDocModel(preview: ProductSpecWorkbookPreview, cellTexts: CellTextMap): SpecDocModel {
   const locator = buildCellLocator(preview);
+  const textGrid = buildExpandedGridFromPreview(preview, cellTexts);
+  const factMap = new Map(preview.facts.map((fact) => [fact.label, fact.value]));
   const bound = (label: string, row: number, col: number, multiline = false): BoundField => {
     const cell = locator.get(`${row}:${col}`);
     return {
@@ -1775,20 +2081,111 @@ function buildSpecDocModel(preview: ProductSpecWorkbookPreview, cellTexts: CellT
     };
   };
 
-  const packaging = appendMissingPackagingFields([3, 4, 5, 6, 7, 8, 9].map((col) => ({
-    label: getCellValue(locator, cellTexts, 5, col),
-    field: bound(getCellValue(locator, cellTexts, 5, col), 7, col),
-  })), 'parsed-packaging-extra');
+  const boundWithResolvedValue = (
+    factLabel: string,
+    displayLabel: string,
+    row: number,
+    col: number,
+    mode: 'preferFact' | 'preferLong',
+    multiline = false,
+  ): BoundField => {
+    const field = bound(displayLabel, row, col, multiline);
+    const factValue =
+      factMap.get(factLabel)?.trim() ||
+      findValueByAnchorLocal(textGrid, factLabel)?.trim() ||
+      '';
+    if (!factValue) {
+      return field;
+    }
+
+    const currentValue = field.value.trim();
+    if (mode === 'preferFact') {
+      if (!currentValue || currentValue.length > factValue.length) {
+        return {
+          ...field,
+          value: factValue,
+        };
+      }
+      return field;
+    }
+
+    if (!currentValue || factValue.length > currentValue.length) {
+      return {
+        ...field,
+        value: factValue,
+      };
+    }
+
+    return field;
+  };
+
+  const packagingFieldDefinitions: Array<{ label: string; anchor: string; fallbackCol?: number }> = [
+    { label: '包装方式', anchor: '包装方式', fallbackCol: 3 },
+    { label: '内盒数量', anchor: '内盒数量', fallbackCol: 4 },
+    { label: '外箱数量', anchor: '外箱数量', fallbackCol: 5 },
+    { label: '单箱净重(KG)', anchor: '单箱净重kg', fallbackCol: 6 },
+    { label: '单箱毛重(KG)', anchor: '单箱毛重kg', fallbackCol: 7 },
+    { label: '单箱体积(CBM)', anchor: '单箱体积cbm', fallbackCol: 8 },
+    { label: '外箱尺寸(cm) 长*宽*高', anchor: '外箱尺寸cm长*宽*高', fallbackCol: 9 },
+    { label: '产品净重', anchor: '产品净重' },
+    { label: '产品尺寸', anchor: '产品尺寸' },
+    { label: '产品配件', anchor: '产品配件' },
+  ];
+
+  const businessFieldDefinitions: Array<{ label: string; anchor: string; row?: number; col?: number; multiline?: boolean }> = [
+    { label: '产品来源', anchor: '产品来源', row: 8, col: 3 },
+    { label: '开发类型', anchor: '开发类型', row: 8, col: 7 },
+    { label: '事业部', anchor: '事业部', row: 9, col: 3 },
+    { label: '产品组', anchor: '产品组', row: 9, col: 7 },
+    { label: '海关编码', anchor: '海关编码', row: 9, col: 8 },
+    { label: '报关中文品名', anchor: '报关中文品名', row: 9, col: 9, multiline: true },
+    { label: '客户编号', anchor: '客户编号' },
+    { label: '产品经理', anchor: '产品经理' },
+    { label: '结构工程师', anchor: '结构工程师' },
+    { label: '电子工程师', anchor: '电子工程师' },
+  ];
+
+  const packaging = appendMissingPackagingFields(
+    packagingFieldDefinitions.map((definition, index) => {
+      const fallbackLabel = definition.fallbackCol ? getLocalizedPackagingLabel(getCellValue(locator, cellTexts, 5, definition.fallbackCol)) : definition.label;
+      const fallbackField =
+        definition.fallbackCol
+          ? bound(definition.label, 7, definition.fallbackCol)
+          : {
+              label: definition.label,
+              cellId: `parsed-packaging-anchor-${index + 1}`,
+              value: '',
+            };
+      const anchorValue = findValueByAnchorLocal(textGrid, definition.anchor) || '';
+      return {
+        label: fallbackLabel || definition.label,
+        field: {
+          ...fallbackField,
+          label: definition.label,
+          value: normalizeParsedFieldValue(anchorValue || fallbackField.value),
+        },
+      };
+    }),
+    'parsed-packaging-extra',
+  );
 
   const businessMeta: BoundField[] = appendMissingBusinessMetaFields(
-    [
-      bound('产品来源', 8, 3),
-      bound('开发类型', 8, 7),
-      bound('事业部', 9, 3),
-      bound('产品组', 9, 7),
-      bound('海关编码', 9, 8),
-      bound('报关中文品名', 9, 9, true),
-    ],
+    businessFieldDefinitions.map((definition, index) => {
+      const fallbackField =
+        typeof definition.row === 'number' && typeof definition.col === 'number'
+          ? bound(definition.label, definition.row, definition.col, definition.multiline)
+          : {
+              label: definition.label,
+              cellId: `parsed-business-anchor-${index + 1}`,
+              value: '',
+              multiline: definition.multiline,
+            };
+      const anchorValue = findValueByAnchorLocal(textGrid, definition.anchor) || '';
+      return {
+        ...fallbackField,
+        value: normalizeParsedFieldValue(anchorValue || fallbackField.value),
+      };
+    }),
     'parsed-meta-extra',
   );
 
@@ -1832,10 +2229,10 @@ function buildSpecDocModel(preview: ProductSpecWorkbookPreview, cellTexts: CellT
     qeConclusion: '',
     header: {
       title: getCellValue(locator, cellTexts, 1, 1) || '产品规格资料',
-      productType: bound('产品类型', 2, 7, true),
-      sku: bound('产品编号 (SKU)', 3, 3),
-      spu: bound('产品编码 (SPU)', 3, 7),
-      description: bound('规格描述', 4, 3, true),
+      productType: boundWithResolvedValue('产品系列', '产品类型', 2, 7, 'preferFact', true),
+      sku: boundWithResolvedValue('SKU', '产品编号 (SKU)', 3, 3, 'preferFact'),
+      spu: boundWithResolvedValue('SPU', '产品编码 (SPU)', 3, 7, 'preferFact'),
+      description: boundWithResolvedValue('规格描述', '规格描述', 4, 3, 'preferLong', true),
     },
     packaging,
     businessMeta,
@@ -1843,13 +2240,193 @@ function buildSpecDocModel(preview: ProductSpecWorkbookPreview, cellTexts: CellT
   };
 }
 
+function buildExpandedGridFromPreview(preview: ProductSpecWorkbookPreview, cellTexts: CellTextMap): string[][] {
+  const grid = Array.from({ length: preview.metadata.rowCount }, () =>
+    Array.from({ length: preview.metadata.columnCount }, () => ''),
+  );
+
+  for (const cell of preview.cells) {
+    const text = (cellTexts[cell.id] ?? cell.text ?? '').trim();
+    for (let row = cell.row; row < cell.row + cell.rowSpan; row += 1) {
+      for (let col = cell.col; col < cell.col + cell.colSpan; col += 1) {
+        if (!grid[row - 1] || typeof grid[row - 1][col - 1] === 'undefined') continue;
+        grid[row - 1][col - 1] = text;
+      }
+    }
+  }
+
+  return grid;
+}
+
+function normalizeAnchorText(text: string): string {
+  return text.replace(/\s+/g, '').replace(/[()（）:：*×xX]/g, '').toLowerCase();
+}
+
+function extractInlineAnchorValue(text: string): string {
+  const parts = text.split(/[：:]/);
+  if (parts.length <= 1) return '';
+  return parts.slice(1).join(':').trim();
+}
+
+function findCandidateAnchorValue(row: string[], currentAnchor: string, startCol: number, endCol: number): string {
+  for (let colIndex = startCol; colIndex < endCol; colIndex += 1) {
+    const candidate = (row[colIndex] || '').trim();
+    if (!candidate) continue;
+    const normalizedCandidate = normalizeAnchorText(candidate);
+    if (!normalizedCandidate) continue;
+    if (normalizedCandidate.includes(currentAnchor)) continue;
+    if (looksLikePlaceholderValue(candidate)) continue;
+    return candidate;
+  }
+  return '';
+}
+
+function findValueByAnchorLocal(grid: string[][], anchorText: string): string {
+  const normalizedAnchor = normalizeAnchorText(anchorText);
+  for (let rowIndex = 0; rowIndex < grid.length; rowIndex += 1) {
+    const row = grid[rowIndex];
+    for (let colIndex = 0; colIndex < row.length; colIndex += 1) {
+      const cellText = row[colIndex];
+      if (!cellText) continue;
+      if (!normalizeAnchorText(cellText).includes(normalizedAnchor)) continue;
+
+      const inlineValue = extractInlineAnchorValue(cellText);
+      if (inlineValue) return inlineValue;
+
+      const sameRowValue = findCandidateAnchorValue(row, normalizedAnchor, colIndex + 1, row.length);
+      if (sameRowValue) return sameRowValue;
+
+      for (let nextRow = rowIndex + 1; nextRow < Math.min(grid.length, rowIndex + 3); nextRow += 1) {
+        const downRowValue = findCandidateAnchorValue(
+          grid[nextRow],
+          normalizedAnchor,
+          colIndex,
+          Math.min(grid[nextRow].length, colIndex + 3),
+        );
+        if (downRowValue) return downRowValue;
+      }
+    }
+  }
+  return '';
+}
+
+async function buildFileFingerprint(file: File): Promise<string> {
+  const buffer = await file.arrayBuffer();
+  const digest = await crypto.subtle.digest('SHA-256', buffer);
+  return Array.from(new Uint8Array(digest))
+    .map((value) => value.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+function extractUploadFileNameSkuCandidates(fileName: string): string[] {
+  const baseName = fileName.replace(/\.[^.]+$/, '').trim();
+  const candidates = new Set<string>();
+
+  const pushCandidate = (value: string) => {
+    const normalized = normalizeEngineeringSpecComparable(value.trim());
+    if (!normalized || isInvalidEngineeringSpecSkuValue(value)) return;
+    candidates.add(normalized);
+  };
+
+  if (!baseName) return [];
+
+  pushCandidate(baseName);
+
+  const withoutCommonSuffix = baseName
+    .replace(/[-_\s]*(产品规格书|产品规格资料|产品规格|规格书|规格资料|specification|spec)$/i, '')
+    .trim();
+  pushCandidate(withoutCommonSuffix);
+
+  const beforeChinese = baseName.split(/[\u4e00-\u9fff]/)[0]?.replace(/[-_\s]+$/, '').trim() || '';
+  pushCandidate(beforeChinese);
+
+  const leadingAscii = baseName.match(/^[A-Za-z0-9]+(?:[A-Za-z0-9._-]*[A-Za-z0-9])?/);
+  if (leadingAscii) {
+    pushCandidate(leadingAscii[0]);
+  }
+
+  return [...candidates];
+}
+
+function findDuplicateLedgerRecordByUploadFileName(
+  fileName: string,
+  records: EngineeringSpecLedgerRecord[],
+): EngineeringSpecLedgerRecord | null {
+  const candidates = extractUploadFileNameSkuCandidates(fileName);
+  if (candidates.length === 0) return null;
+
+  return (
+    records.find((record) => {
+      if (isInvalidEngineeringSpecSkuValue(record.sku || '')) return false;
+      const normalizedSku = normalizeEngineeringSpecComparable(record.sku || '');
+      return candidates.includes(normalizedSku);
+    }) || null
+  );
+}
+
+async function buildArchiveContentFingerprint(state: EngineeringSpecArchiveState): Promise<string> {
+  const payload = {
+    version: 1,
+    productInfo: {
+      sku: state.productInfo?.sku?.trim() || '',
+      spu: state.productInfo?.spu?.trim() || '',
+      type: state.productInfo?.type?.trim() || '',
+      description: state.productInfo?.description?.trim() || '',
+      department: state.productInfo?.department?.trim() || '',
+      productGroup: state.productInfo?.productGroup?.trim() || '',
+      sampleQty: state.productInfo?.sampleQty?.trim() || '',
+      testDate: state.productInfo?.testDate?.trim() || '',
+    },
+    packaging: (state.packaging || []).map((item) => ({
+      label: item.label.trim(),
+      value: item.value.trim(),
+    })),
+    businessMeta: (state.businessMeta || []).map((item) => ({
+      label: item.label.trim(),
+      value: item.value.trim(),
+    })),
+    sections: (state.sections || []).map((section) => ({
+      label: section.label.trim(),
+      groups: (section.groups || []).map((group) => ({
+        label: group.label.trim(),
+        rows: (group.rows || []).map((row) => ({
+          item: String(row.item || '').trim(),
+          label: row.label.trim(),
+          value: row.value.trim(),
+          pending: Boolean(row.pending),
+          status: row.status === 'pass' || row.status === 'fail' ? row.status : 'untested',
+        })),
+      })),
+    })),
+  };
+
+  const digest = await crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(JSON.stringify(payload)),
+  );
+  return Array.from(new Uint8Array(digest))
+    .map((value) => value.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+async function finalizeArchiveState(
+  state: EngineeringSpecArchiveState,
+): Promise<EngineeringSpecArchiveState> {
+  return {
+    ...state,
+    contentFingerprint: await buildArchiveContentFingerprint(state),
+  };
+}
+
 function buildArchiveStateFromModel(
   model: SpecDocModel,
   evidenceSlots: EvidenceSlot[],
   qeConclusion: string,
+  fileFingerprint: string | null,
 ): EngineeringSpecArchiveState {
   return {
     fileName: model.sourceFileName,
+    fileFingerprint: fileFingerprint || undefined,
     imageUrl: model.imageSrc,
     qeConclusion,
     images: evidenceSlots
@@ -1916,6 +2493,86 @@ function extractTestDate(sections: SpecDocSection[]): string {
 
 function findFieldValue(fields: BoundField[], label: string): string {
   return fields.find((field) => field.label === label)?.value.trim() || '';
+}
+
+function findArchiveMetaValue(
+  entries: Array<{ label: string; value: string }> | null | undefined,
+  labels: string[],
+): string {
+  const normalizedLabels = new Set(labels.map((label) => label.trim()));
+  for (const entry of entries ?? []) {
+    const candidateLabel = String(entry?.label || '').trim();
+    if (normalizedLabels.has(candidateLabel)) {
+      return String(entry?.value || '').trim();
+    }
+  }
+
+  return '';
+}
+
+function needsLedgerImageHydration(imageUrl: string | undefined): boolean {
+  const value = (imageUrl || '').trim();
+  if (!value) return true;
+  if (value.startsWith('data:')) return true;
+  return false;
+}
+
+function resolveArchivePreviewImageUrl(state: EngineeringSpecArchiveState): string {
+  const primaryImage = String(state.imageUrl || '').trim();
+  if (primaryImage) return primaryImage;
+
+  const firstEvidenceImage = Array.isArray(state.images)
+    ? state.images.find((item) => String(item?.url || '').trim())
+    : null;
+  return String(firstEvidenceImage?.url || '').trim();
+}
+
+async function hydrateLedgerDisplayFieldsIfMissing(
+  projectId: string,
+  records: EngineeringSpecLedgerRecord[],
+): Promise<EngineeringSpecLedgerRecord[]> {
+  const missingRecords = records.filter(
+    (record) => !(record.category || '').trim() || needsLedgerImageHydration(record.imageUrl),
+  );
+  if (missingRecords.length === 0) return records;
+
+  const resolvedFields = await Promise.all(
+    missingRecords.map(async (record) => {
+      try {
+        const snapshot = await getEngineeringSpecArchiveDocumentState({
+          projectId,
+          documentId: record.id,
+        });
+        return [
+          record.id,
+          findArchiveMetaValue(snapshot.state.businessMeta, ['产品类别', '报关中文品名', '报关中文名']),
+          resolveArchivePreviewImageUrl(snapshot.state),
+        ] as const;
+      } catch {
+        return [record.id, '', ''] as const;
+      }
+    }),
+  );
+
+  const displayFieldById = new Map(
+    resolvedFields
+      .filter((entry) => Boolean(entry[1]) || Boolean(entry[2]))
+      .map((entry) => [entry[0], { category: entry[1], imageUrl: entry[2] }] as const),
+  );
+  if (displayFieldById.size === 0) return records;
+
+  return records.map((record) => {
+    const resolved = displayFieldById.get(record.id);
+    if (!resolved) return record;
+
+    return {
+      ...record,
+      category: (record.category || '').trim() || resolved.category,
+      imageUrl: needsLedgerImageHydration(record.imageUrl)
+        ? resolved.imageUrl || undefined
+        : (record.imageUrl || '').trim() || undefined,
+    };
+  });
 }
 
 function buildCellLocator(preview: ProductSpecWorkbookPreview): Map<string, ProductSpecPreviewCell> {

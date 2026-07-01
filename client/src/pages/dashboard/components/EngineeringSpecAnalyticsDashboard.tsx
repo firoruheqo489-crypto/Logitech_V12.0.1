@@ -100,7 +100,7 @@ export function EngineeringSpecAnalyticsDashboard({
             />
           </Panel>
 
-          <Panel title="产品类型分布" sub="By Product Type">
+          <Panel title="产品类别分布" sub="By Product Category">
             <div className="relative h-44 w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
@@ -158,7 +158,7 @@ export function EngineeringSpecAnalyticsDashboard({
               <thead>
                 <tr className="border-b border-border font-mono text-[10px] tracking-wider text-muted-foreground">
                   <th className="py-2 pr-4 font-medium">产品编号</th>
-                  <th className="py-2 pr-4 font-medium">类型</th>
+                  <th className="py-2 pr-4 font-medium">产品类别</th>
                   <th className="py-2 pr-4 font-medium">结果</th>
                   <th className="py-2 pr-4 font-medium">事业部</th>
                   <th className="py-2 font-medium">归档时间</th>
@@ -168,7 +168,7 @@ export function EngineeringSpecAnalyticsDashboard({
                 {archives.slice(0, 5).map((record) => (
                   <tr key={record.id} className="font-mono text-xs hover:bg-secondary/30">
                     <td className="py-2 pr-4 font-medium text-foreground">{record.sku}</td>
-                    <td className="py-2 pr-4 text-muted-foreground">{record.type || "—"}</td>
+                    <td className="py-2 pr-4 text-muted-foreground">{record.category || "—"}</td>
                     <td className="py-2 pr-4">
                       <span
                         className={cn(
@@ -313,7 +313,7 @@ function buildDailyVolumeData(archives: EngineeringSpecLedgerRecord[]) {
 function buildTypeBreakdown(archives: EngineeringSpecLedgerRecord[]) {
   const map = new Map<string, number>();
   archives.forEach((archive) => {
-    const key = archive.type || "未分类";
+    const key = archive.category || "未分类";
     map.set(key, (map.get(key) ?? 0) + 1);
   });
   return Array.from(map.entries()).map(([type, value]) => ({ type, value }));

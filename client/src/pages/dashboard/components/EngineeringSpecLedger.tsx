@@ -12,7 +12,7 @@ type LedgerColumn = {
 
 const columns: LedgerColumn[] = [
   {
-    key: 'index',
+    key: 'sequence',
     title: '序号',
     width: '72px',
     render: (_record, index) => <span>{index + 1}</span>,
@@ -20,24 +20,42 @@ const columns: LedgerColumn[] = [
   {
     key: 'sku',
     title: '产品编号',
-    width: '220px',
-    render: (record) => <span>{record.sku}</span>,
-  },
-  {
-    key: 'description',
-    title: '规格描述',
-    width: '360px',
+    width: '300px',
     render: (record) => (
-      <div className="max-w-[360px] truncate" title={record.description}>
-        {record.description}
+      <div className="max-w-[300px] whitespace-nowrap truncate" title={record.sku}>
+        {record.sku}
       </div>
     ),
   },
   {
-    key: 'department',
-    title: '事业部',
-    width: '150px',
-    render: (record) => <span>{record.department}</span>,
+    key: 'category',
+    title: '产品类别',
+    width: '260px',
+    render: (record) => (
+      <div className="max-w-[260px] whitespace-nowrap truncate" title={record.category}>
+        {record.category}
+      </div>
+    ),
+  },
+  {
+    key: 'imageUrl',
+    title: '实物图',
+    width: '120px',
+    render: (record) =>
+      record.imageUrl ? (
+        <div className="h-14 w-14 overflow-hidden rounded-lg border border-white/10 bg-white/[0.03]">
+          <img
+            src={record.imageUrl}
+            alt=""
+            className="h-full w-full object-cover"
+            onError={(event) => {
+              event.currentTarget.style.display = 'none';
+            }}
+          />
+        </div>
+      ) : (
+        <span className="text-gray-600">—</span>
+      ),
   },
   {
     key: 'productGroup',
@@ -58,22 +76,32 @@ const columns: LedgerColumn[] = [
     render: (record) => <span>{formatLedgerCellDate(record.testDate)}</span>,
   },
   {
-    key: 'createDate',
+    key: 'createdAt',
     title: '入库时间',
     width: '160px',
     render: (record) => <span>{formatLedgerCellDate(record.createdAt)}</span>,
+  },
+  {
+    key: 'action',
+    title: '操作',
+    width: '120px',
+    render: () => null,
   },
 ];
 
 export function EngineeringSpecLedger({
   records,
   onSelectRecord,
+  onDeleteRecord,
   isLoading = false,
 }: {
   records: EngineeringSpecLedgerRecord[];
   onSelectRecord?: (record: EngineeringSpecLedgerRecord) => void;
+  onDeleteRecord?: (record: EngineeringSpecLedgerRecord) => void;
   isLoading?: boolean;
 }) {
+  const orderedRecords = [...records].sort((left, right) => left.sequence - right.sequence);
+
   return (
     <section className="rounded-lg border border-white/10 bg-[#0a0a0a]">
       <div className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
@@ -81,7 +109,7 @@ export function EngineeringSpecLedger({
           <h2 className="text-sm font-medium text-slate-100">登记台账</h2>
           <p className="mt-0.5 text-xs text-gray-500">已归档的规格书会按配置列自动入账</p>
         </div>
-        <div className="text-xs text-gray-500">共 {records.length} 条</div>
+        <div className="text-xs text-gray-500">共 {orderedRecords.length} 条</div>
       </div>
 
       <div className="overflow-x-auto">
@@ -101,14 +129,14 @@ export function EngineeringSpecLedger({
           </thead>
 
           <tbody>
-            {records.length === 0 ? (
+            {orderedRecords.length === 0 ? (
               <tr>
                 <td colSpan={columns.length} className="px-4 py-8 text-center text-sm text-gray-500">
                   {isLoading ? '正在读取台账...' : '暂无归档记录，点击“归档入库”后会自动生成台账。'}
                 </td>
               </tr>
             ) : (
-              records.map((record, index) => (
+              orderedRecords.map((record, index) => (
                 <tr
                   key={record.id}
                   className={`border-b border-white/5 transition hover:bg-white/[0.02] ${
@@ -122,9 +150,20 @@ export function EngineeringSpecLedger({
                       className="px-4 py-2.5 align-middle text-sm text-slate-200"
                       style={column.width ? { width: column.width } : undefined}
                     >
-                      <LedgerCellContent>
-                        {column.render(record, index)}
-                      </LedgerCellContent>
+                      {column.key === 'action' ? (
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            onDeleteRecord?.(record);
+                          }}
+                          className="rounded-md border border-white/10 px-3 py-1.5 text-xs text-slate-300 transition hover:bg-white/[0.05]"
+                        >
+                          删除
+                        </button>
+                      ) : (
+                        <LedgerCellContent>{column.render(record, index)}</LedgerCellContent>
+                      )}
                     </td>
                   ))}
                 </tr>
