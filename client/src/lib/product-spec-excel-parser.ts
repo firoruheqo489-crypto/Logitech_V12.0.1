@@ -556,7 +556,9 @@ function getWorksheetImages(
     return anchoredImages;
   }
 
-  const fallbackMedia = media.find((item) => isRenderableWorkbookMedia(item));
+  const fallbackMedia = media
+    .filter((item) => isRenderableWorkbookMedia(item))
+    .sort((left, right) => getWorkbookMediaByteLength(right) - getWorkbookMediaByteLength(left))[0];
   if (!fallbackMedia) {
     return [];
   }
@@ -586,6 +588,16 @@ function getWorkbookMedia(workbook: Workbook): WorkbookMedia[] {
 function isRenderableWorkbookMedia(media: WorkbookMedia): boolean {
   const extension = (media.extension || '').toLowerCase();
   return Boolean(media.buffer) && RENDERABLE_IMAGE_EXTENSIONS.has(extension);
+}
+
+function getWorkbookMediaByteLength(media: WorkbookMedia): number {
+  if (media.buffer instanceof Uint8Array) {
+    return media.buffer.byteLength;
+  }
+  if (media.buffer instanceof ArrayBuffer) {
+    return media.buffer.byteLength;
+  }
+  return 0;
 }
 
 function buildImageDataUrl(media: WorkbookMedia): string {

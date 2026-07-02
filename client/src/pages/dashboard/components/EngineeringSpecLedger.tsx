@@ -7,6 +7,8 @@ type LedgerColumn = {
   key: string;
   title: string;
   width?: string;
+  headerClassName?: string;
+  cellClassName?: string;
   render: (record: EngineeringSpecLedgerRecord, index: number) => ReactNode;
 };
 
@@ -16,15 +18,19 @@ const columns: LedgerColumn[] = [
   {
     key: 'sequence',
     title: '序号',
-    width: '72px',
+    width: '6%',
+    headerClassName: 'text-center',
+    cellClassName: 'text-center text-slate-300',
     render: (_record, index) => <span>{index + 1}</span>,
   },
   {
     key: 'sku',
     title: '产品编号',
-    width: '300px',
+    width: '29%',
+    headerClassName: 'text-left',
+    cellClassName: 'text-left',
     render: (record) => (
-      <div className="max-w-[300px] whitespace-nowrap truncate" title={record.sku}>
+      <div className="block w-full min-w-0 whitespace-nowrap truncate font-medium text-slate-100" title={record.sku}>
         {record.sku}
       </div>
     ),
@@ -32,9 +38,11 @@ const columns: LedgerColumn[] = [
   {
     key: 'category',
     title: '产品类别',
-    width: '260px',
+    width: '19%',
+    headerClassName: 'text-left',
+    cellClassName: 'text-left',
     render: (record) => (
-      <div className="max-w-[260px] whitespace-nowrap truncate" title={record.category}>
+      <div className="block w-full min-w-0 whitespace-nowrap truncate" title={record.category}>
         {record.category}
       </div>
     ),
@@ -42,10 +50,12 @@ const columns: LedgerColumn[] = [
   {
     key: 'imageUrl',
     title: '实物图',
-    width: '120px',
+    width: '9%',
+    headerClassName: 'text-center',
+    cellClassName: 'text-center',
     render: (record) =>
       record.imageUrl ? (
-        <div className="h-14 w-14 overflow-hidden rounded-lg border border-white/10 bg-white/[0.03]">
+        <div className="mx-auto h-12 w-12 overflow-hidden rounded-lg border border-white/10 bg-white/[0.03]">
           <img
             src={record.imageUrl}
             alt=""
@@ -62,25 +72,37 @@ const columns: LedgerColumn[] = [
   {
     key: 'productGroup',
     title: '产品经理',
-    width: '150px',
-    render: (record) => <span>{record.productGroup}</span>,
+    width: '10%',
+    headerClassName: 'text-center',
+    cellClassName: 'text-center',
+    render: (record) => (
+      <div className="mx-auto w-full min-w-0 whitespace-nowrap truncate" title={record.productGroup}>
+        {record.productGroup}
+      </div>
+    ),
   },
   {
     key: 'sampleQty',
     title: '样品数',
-    width: '100px',
-    render: (record) => <span>{record.sampleQty}</span>,
+    width: '7%',
+    headerClassName: 'text-center',
+    cellClassName: 'text-center',
+    render: (record) => <span className="font-semibold text-slate-100">{record.sampleQty}</span>,
   },
   {
     key: 'createdAt',
     title: '送样日期',
-    width: '160px',
-    render: (record) => <span>{formatLedgerCellDate(record.createdAt)}</span>,
+    width: '12%',
+    headerClassName: 'text-center',
+    cellClassName: 'text-center',
+    render: (record) => <LedgerDateCell value={record.createdAt} />,
   },
   {
     key: 'action',
     title: '操作',
-    width: '120px',
+    width: '8%',
+    headerClassName: 'text-center',
+    cellClassName: 'text-center',
     render: () => null,
   },
 ];
@@ -116,14 +138,16 @@ export function EngineeringSpecLedger({
         <div className="text-xs text-gray-500">共 {orderedRecords.length} 条</div>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="min-w-full table-fixed">
+      <div className="overflow-x-hidden">
+        <table className="w-full table-fixed">
           <thead className="bg-white/[0.03]">
             <tr className="border-b border-white/10">
               {columns.map((column) => (
                 <th
                   key={column.key}
-                  className="px-4 py-3 text-left text-sm font-medium text-gray-400"
+                  className={`px-3 py-3 text-[13px] font-medium text-gray-400 whitespace-nowrap ${
+                    column.headerClassName || 'text-left'
+                  }`}
                   style={column.width ? { width: column.width } : undefined}
                 >
                   {column.title}
@@ -151,7 +175,9 @@ export function EngineeringSpecLedger({
                   {columns.map((column) => (
                     <td
                       key={column.key}
-                      className="px-4 py-2.5 align-middle text-sm text-slate-200"
+                      className={`px-3 py-3 align-middle text-[13px] text-slate-200 ${
+                        column.cellClassName || 'text-left'
+                      }`}
                       style={column.width ? { width: column.width } : undefined}
                     >
                       {column.key === 'action' ? (
@@ -161,7 +187,7 @@ export function EngineeringSpecLedger({
                             event.stopPropagation();
                             onDeleteRecord?.(record);
                           }}
-                          className="rounded-md border border-white/10 px-3 py-1.5 text-xs text-slate-300 transition hover:bg-white/[0.05]"
+                          className="mx-auto inline-flex whitespace-nowrap rounded-md border border-white/10 px-2.5 py-1 text-[12px] text-slate-300 transition hover:bg-white/[0.05]"
                         >
                           删除
                         </button>
@@ -226,6 +252,21 @@ function LedgerCellContent({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
+function LedgerDateCell({ value }: { value: string }) {
+  const [datePart, timePart] = splitLedgerCellDate(value);
+
+  if (!datePart) {
+    return <span className="text-gray-600">—</span>;
+  }
+
+  return (
+    <div className="flex flex-col items-center leading-tight text-slate-100">
+      <span className="whitespace-nowrap">{datePart}</span>
+      {timePart ? <span className="mt-1 whitespace-nowrap text-[12px] text-slate-400">{timePart}</span> : null}
+    </div>
+  );
+}
+
 function formatLedgerCellDate(value: string): string {
   if (!value) return '';
   const normalized = formatLedgerDateTime(value);
@@ -237,6 +278,14 @@ function formatLedgerCellDate(value: string): string {
   }
 
   return trimmed;
+}
+
+function splitLedgerCellDate(value: string): [string, string] {
+  const formatted = formatLedgerCellDate(value).trim();
+  if (!formatted) return ['', ''];
+
+  const [datePart, timePart = ''] = formatted.split(/\s+/, 2);
+  return [datePart || '', timePart || ''];
 }
 
 export { columns as engineeringSpecLedgerColumns };

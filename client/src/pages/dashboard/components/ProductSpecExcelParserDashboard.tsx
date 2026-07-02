@@ -119,6 +119,14 @@ type EvidenceSlot = {
   imageUrl?: string;
 };
 
+type PreviewImageCandidate = {
+  src: string;
+  leftPx: number;
+  topPx: number;
+  widthPx: number;
+  heightPx: number;
+};
+
 type EvidenceGalleryItem = {
   id: string;
   label: string;
@@ -624,8 +632,9 @@ export default function ProductSpecExcelParserDashboard({
         });
         return;
       }
+      const archiveDraftState = buildArchiveStateFromModel(docModel, evidenceSlots, qeConclusion, currentFileFingerprint);
       const archiveState = await finalizeArchiveState(
-        buildArchiveStateFromModel(docModel, evidenceSlots, qeConclusion, currentFileFingerprint),
+        await persistArchivePrimaryImageIfNeeded(archiveDraftState, projectId),
       );
       const isUpdatingExistingArchive = mode === 'update' && Boolean(activeArchiveDocumentId);
       if (mode === 'update' && !activeArchiveDocumentId) {
@@ -2234,9 +2243,11 @@ function buildSpecDocModel(preview: ProductSpecWorkbookPreview, cellTexts: CellT
     });
   }
 
+  const primaryPreviewImage = selectPrimaryPreviewImage(preview);
+
   return {
     sourceFileName: preview.fileName,
-    imageSrc: preview.images[0]?.src,
+    imageSrc: primaryPreviewImage?.src,
     qeConclusion: '',
     header: {
       title: getCellValue(locator, cellTexts, 1, 1) || '产品规格资料',
@@ -2249,6 +2260,29 @@ function buildSpecDocModel(preview: ProductSpecWorkbookPreview, cellTexts: CellT
     businessMeta,
     sections: Array.from(sectionsByKey.values()),
   };
+}
+
+function selectPrimaryPreviewImage(preview: ProductSpecWorkbookPreview): PreviewImageCandidate | null {
+  const candidates = preview.images.filter((image) => Boolean(image.src));
+  if (candidates.length === 0) return null;
+  if (candidates.length === 1) return candidates[0];
+
+  const sheetWidth = Math.max(preview.sheetWidthPx || 0, 1);
+  const sheetHeight = Math.max(preview.sheetHeightPx || 0, 1);
+
+  const scored = candidates.map((image) => {
+    const area = Math.max(image.widthPx, 1) * Math.max(image.heightPx, 1);
+    const aspectRatio = Math.max(image.widthPx, 1) / Math.max(image.heightPx, 1);
+    const aspectPenalty = aspectRatio > 1 ? aspectRatio : 1 / aspectRatio;
+    const leftBias = 1 - Math.min(image.leftPx / sheetWidth, 1);
+    const topBias = 1 - Math.min(image.topPx / sheetHeight, 1);
+    const aspectScore = aspectPenalty <= 2.5 ? 1 : aspectPenalty <= 4 ? 0.45 : 0.08;
+    const score = area * aspectScore * (0.55 + leftBias * 0.3 + topBias * 0.15);
+    return { image, score };
+  });
+
+  scored.sort((left, right) => right.score - left.score);
+  return scored[0]?.image ?? candidates[0] ?? null;
 }
 
 function buildExpandedGridFromPreview(preview: ProductSpecWorkbookPreview, cellTexts: CellTextMap): string[][] {
@@ -2426,6 +2460,37 @@ async function finalizeArchiveState(
   return {
     ...state,
     contentFingerprint: await buildArchiveContentFingerprint(state),
+  };
+}
+
+async function dataUrlToFile(dataUrl: string, fileName: string): Promise<File> {
+  const response = await fetch(dataUrl);
+  const blob = await response.blob();
+  const extension = blob.type === 'image/jpeg' ? 'jpg' : blob.type.split('/')[1] || 'png';
+  return new File([blob], `${fileName}.${extension}`, { type: blob.type || 'image/png' });
+}
+
+async function persistArchivePrimaryImageIfNeeded(
+  state: EngineeringSpecArchiveState,
+  projectId: string,
+): Promise<EngineeringSpecArchiveState> {
+  const imageUrl = String(state.imageUrl || '').trim();
+  if (!imageUrl.startsWith('data:')) {
+    return state;
+  }
+
+  const sku = state.productInfo?.sku?.trim() || 'draft';
+  const uploadFile = await dataUrlToFile(imageUrl, `${sku}-spec-cover`);
+  const uploadResult = await uploadAssetViaServer({
+    file: uploadFile,
+    category: 'engineering-spec-evidence',
+    entityId: `${projectId}-${sku}`,
+    slot: 'parsed-cover',
+  });
+
+  return {
+    ...state,
+    imageUrl: uploadResult.url,
   };
 }
 

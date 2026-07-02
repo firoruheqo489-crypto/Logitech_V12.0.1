@@ -12,6 +12,7 @@ type UnknownRecord = Record<string, unknown>;
 
 const DASHBOARD_PROJECTS_ENDPOINT = '/api/dashboard/projects';
 const DASHBOARD_PROGRESS_ENDPOINT = '/api/dashboard/progress-notes';
+const DASHBOARD_PROJECTS_TIMEOUT_MS = 8000;
 
 export type DashboardProgressEntry = {
   id: string;
@@ -314,7 +315,16 @@ function decorateProjectData(project: ProjectData): DashboardProjectViewData {
 }
 
 export async function fetchDashboardProjectData(): Promise<DashboardProjectViewData[]> {
-  const response = await apiFetch(DASHBOARD_PROJECTS_ENDPOINT);
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), DASHBOARD_PROJECTS_TIMEOUT_MS);
+  let response: Response;
+
+  try {
+    response = await apiFetch(DASHBOARD_PROJECTS_ENDPOINT, { signal: controller.signal });
+  } finally {
+    window.clearTimeout(timer);
+  }
+
   if (!response.ok) return [];
   const payload = await response.json();
   return normalizeDashboardProjectRows(payload)

@@ -15,6 +15,24 @@ const __dirname = path.dirname(__filename);
 const envPath = path.resolve(__dirname, '..', '.env');
 const result = dotenv.config({ path: envPath });
 
+function expandEnvReferences(): void {
+  const variablePattern = /\$\{([^}]+)\}/g;
+  const entries = Object.entries(process.env);
+
+  for (const [key, rawValue] of entries) {
+    if (typeof rawValue !== 'string' || !rawValue.includes('${')) continue;
+
+    const expandedValue = rawValue.replace(variablePattern, (_match, variableName: string) => {
+      const referenced = process.env[variableName];
+      return typeof referenced === 'string' ? referenced : '';
+    });
+
+    process.env[key] = expandedValue;
+  }
+}
+
+expandEnvReferences();
+
 if (result.error) {
   console.warn(`⚠️  无法加载 ${envPath}:`, result.error.message);
 } else {

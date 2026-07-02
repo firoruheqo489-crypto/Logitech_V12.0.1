@@ -14,12 +14,12 @@ import postgres from 'postgres';
 import * as schema from '../shared/schema.js';
 
 const connectionString = process.env.DATABASE_URL;
-const parsedPoolMax = Number.parseInt(process.env.DB_POOL_MAX || '4', 10);
-const poolMax = Number.isFinite(parsedPoolMax) ? Math.min(Math.max(parsedPoolMax, 1), 10) : 4;
-const parsedConnectTimeout = Number.parseInt(process.env.DB_CONNECT_TIMEOUT_SECONDS || '20', 10);
+const parsedPoolMax = Number.parseInt(process.env.DB_POOL_MAX || '2', 10);
+const poolMax = Number.isFinite(parsedPoolMax) ? Math.min(Math.max(parsedPoolMax, 1), 2) : 2;
+const parsedConnectTimeout = Number.parseInt(process.env.DB_CONNECT_TIMEOUT_SECONDS || '10', 10);
 const connectTimeoutSeconds = Number.isFinite(parsedConnectTimeout)
-  ? Math.min(Math.max(parsedConnectTimeout, 5), 60)
-  : 20;
+  ? Math.min(Math.max(parsedConnectTimeout, 5), 30)
+  : 10;
 const isTestEnv = process.env.NODE_ENV === 'test' || process.env.VITEST === 'true' || process.env.VITEST === '1';
 
 if (!connectionString && !isTestEnv) {
