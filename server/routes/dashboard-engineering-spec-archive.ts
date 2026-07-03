@@ -30,6 +30,17 @@ type EngineeringSpecArchiveState = {
   contentFingerprint?: string;
   imageUrl?: string;
   qeConclusion?: string;
+  inspectionTestProject?: {
+    testType?: string;
+    sampleDeliveryDate?: string;
+    testItemCount?: string;
+    remark?: string;
+  };
+  oaInfo?: {
+    workflowName?: string;
+    workflowNo?: string;
+    reportStatus?: string;
+  };
   laboratoryTests?: Array<{
     id?: string;
     testItem: string;

@@ -31,10 +31,12 @@ import {
   EMC_RISK_META,
   overallEmcVerdict,
   parseEmcBinaryFile,
+  resolveEmcLimit,
   type EmcBand,
   type EmcChannelData,
   type EmcChannelId,
   type EmcDetector,
+  type EmcLimitProfilePoint,
   type EmcLimits,
   type EmcPeakRecord,
   type EmcRiskLevel,
@@ -42,6 +44,7 @@ import {
 } from "../lib/emc-radiation";
 
 type MergedRow = { freq: number; L?: number | null; N?: number | null; F?: number | null };
+type SpectrumRow = MergedRow & { limit?: number | null };
 
 type EmcParseResponse = {
   ok: boolean;
@@ -96,6 +99,16 @@ function toChannelData(result: ParsedEmcPdfResult, fileName: string): EmcChannel
     band: result.band,
     source: "pdf",
     pdfFileName: fileName,
+    limitProfile: result.points.flatMap<EmcLimitProfilePoint>((point) => {
+      const profilePoints: EmcLimitProfilePoint[] = [];
+      if (typeof point.qp_limit === "number") {
+        profilePoints.push({ freq: point.freq, detector: "QP", limit: point.qp_limit });
+      }
+      if (typeof point.av_limit === "number") {
+        profilePoints.push({ freq: point.freq, detector: "AV", limit: point.av_limit });
+      }
+      return profilePoints;
+    }),
     points: result.points.map((point) => ({
       freq: point.freq,
       qp: point.qp,
@@ -114,6 +127,14 @@ function formatFreqLabel(freq: number): string {
 function xTick(freq: number): string {
   if (freq >= 1) return `${freq >= 10 ? freq.toFixed(0) : freq.toFixed(1)}M`;
   return `${(freq * 1000).toFixed(0)}k`;
+}
+
+function formatLimitDescriptor(detector: EmcDetector, band: EmcBand, fallback: EmcLimits): string {
+  if (band === "conducted") {
+    return detector === "QP" ? "66→56→60 dB" : "56→46→50 dB";
+  }
+  const limit = detector === "QP" ? fallback.qp : fallback.av;
+  return `${limit.toFixed(1)} dB`;
 }
 
 function UploadCard({
@@ -450,14 +471,15 @@ function SpectrumChart({
   selected: EmcPeakRecord | null;
   band: EmcBand;
 }) {
-  const data = useMemo<MergedRow[]>(() => {
-    const map = new Map<number, MergedRow>();
+  const data = useMemo<SpectrumRow[]>(() => {
+    const map = new Map<number, SpectrumRow>();
     for (const channel of channels) {
       if (channel.band !== band || !enabled[channel.channel]) continue;
       for (const point of channel.points) {
         const value = detector === "QP" ? point.qp : point.av;
         const row = map.get(point.freq) ?? { freq: point.freq };
         row[channel.channel] = value;
+        row.limit = resolveEmcLimit(point, detector, channel.band, limits, channel.limitProfile);
         map.set(point.freq, row);
       }
     }
@@ -529,19 +551,16 @@ function SpectrumChart({
             labelFormatter={(label) => `f = ${Number(label).toFixed(3)} MHz`}
             formatter={(value, name) => [`${Number(value).toFixed(1)} dBµV`, `${name} 线`]}
           />
-          <ReferenceLine
-            y={limits.qp}
+          <Line
+            type="monotone"
+            dataKey="limit"
+            name={`${detector} Limit`}
             stroke="#FF003C"
-            strokeDasharray="3 3"
-            strokeWidth={1}
-            label={{ value: `QP 限值 ${limits.qp}`, position: "right", fill: "#ef4444", fontSize: 10 }}
-          />
-          <ReferenceLine
-            y={limits.av}
-            stroke="#FF003C"
-            strokeDasharray="3 3"
-            strokeWidth={1}
-            label={{ value: `AV 限值 ${limits.av}`, position: "right", fill: "#f87171", fontSize: 10 }}
+            strokeDasharray="4 4"
+            strokeWidth={1.2}
+            dot={false}
+            connectNulls
+            isAnimationActive={false}
           />
           {selected ? (
             <>
@@ -659,6 +678,7 @@ export default function EmcRadiationWorkspace() {
           source: "emc",
           emcFileName: parsed.fileName,
           pdfFileName: existing?.pdfFileName,
+          limitProfile: existing?.limitProfile,
           points: parsed.points,
         };
         return [...previous.filter((channel) => channel.channel !== resolvedChannel), nextChannel];
@@ -683,6 +703,7 @@ export default function EmcRadiationWorkspace() {
           {
             ...existing,
             pdfFileName: pdfChannel.pdfFileName,
+            limitProfile: pdfChannel.limitProfile,
           },
         ];
       }
@@ -799,12 +820,14 @@ export default function EmcRadiationWorkspace() {
               {[
                 {
                   title: "传导诊断区",
+                  band: "conducted" as EmcBand,
                   bandLabel: "传导 0.15–30M",
                   detectorLabel: "QP / AV",
                   data: conductedDiagnostics,
                 },
                 {
                   title: "辐射诊断区",
+                  band: "radiated" as EmcBand,
                   bandLabel: "辐射 30–300M",
                   detectorLabel: "QP / AV",
                   data: radiatedDiagnostics,
@@ -834,11 +857,11 @@ export default function EmcRadiationWorkspace() {
                       </div>
                       <div className="flex min-h-[84px] items-center justify-between p-3 bg-black/40 ring-1 ring-white/5 rounded-md">
                         <span className="text-[10px] text-slate-400 font-sans">QP 限值</span>
-                        <span className="text-sm font-mono font-semibold text-gray-200">{limits.qp.toFixed(1)} dB</span>
+                        <span className="text-sm font-mono font-semibold text-gray-200">{formatLimitDescriptor("QP", section.band, limits)}</span>
                       </div>
                       <div className="flex min-h-[84px] items-center justify-between p-3 bg-black/40 ring-1 ring-white/5 rounded-md">
                         <span className="text-[10px] text-slate-400 font-sans">AV 限值</span>
-                        <span className="text-sm font-mono font-semibold text-gray-200">{limits.av.toFixed(1)} dB</span>
+                        <span className="text-sm font-mono font-semibold text-gray-200">{formatLimitDescriptor("AV", section.band, limits)}</span>
                       </div>
                       <div className="flex min-h-[84px] items-center justify-between p-3 bg-black/40 ring-1 ring-white/5 rounded-md">
                         <span className="text-[10px] text-slate-400 font-sans">最小余量</span>

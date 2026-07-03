@@ -15,11 +15,18 @@ export interface SpectrumPoint {
   avLimit?: number | null;
 }
 
+export interface EmcLimitProfilePoint {
+  freq: number;
+  detector: EmcDetector;
+  limit: number;
+}
+
 export interface EmcChannelData {
   channel: EmcChannelId;
   fileName: string;
   band: EmcBand;
   points: SpectrumPoint[];
+  limitProfile?: EmcLimitProfilePoint[];
   source: "pdf" | "emc" | "sample";
   pdfFileName?: string;
   emcFileName?: string;
@@ -97,6 +104,89 @@ export function classifyEmcMargin(margin: number): EmcRiskLevel {
   return "safe";
 }
 
+function interpolateLogLinear(
+  freq: number,
+  startFreq: number,
+  endFreq: number,
+  startLimit: number,
+  endLimit: number,
+): number {
+  const startLog = Math.log10(startFreq);
+  const endLog = Math.log10(endFreq);
+  const valueLog = Math.log10(freq);
+  const ratio = (valueLog - startLog) / (endLog - startLog);
+  return startLimit + (endLimit - startLimit) * ratio;
+}
+
+function resolveProfileLimit(
+  freq: number,
+  detector: EmcDetector,
+  profile?: EmcLimitProfilePoint[],
+): number | null {
+  if (!profile?.length) return null;
+  const detectorPoints = profile
+    .filter((point) => point.detector === detector && Number.isFinite(point.freq) && Number.isFinite(point.limit))
+    .sort((left, right) => left.freq - right.freq);
+  if (detectorPoints.length === 0) return null;
+  if (detectorPoints.length === 1) return detectorPoints[0].limit;
+
+  const exact = detectorPoints.find((point) => Math.abs(point.freq - freq) < 1e-9);
+  if (exact) return exact.limit;
+
+  let left: EmcLimitProfilePoint | null = null;
+  let right: EmcLimitProfilePoint | null = null;
+  for (const point of detectorPoints) {
+    if (point.freq < freq) {
+      left = point;
+      continue;
+    }
+    right = point;
+    break;
+  }
+
+  if (left && right && left.freq > 0 && right.freq > left.freq) {
+    return round1(interpolateLogLinear(freq, left.freq, right.freq, left.limit, right.limit));
+  }
+  if (left) return left.limit;
+  if (right) return right.limit;
+  return null;
+}
+
+export function resolveEmcLimit(
+  point: SpectrumPoint,
+  detector: EmcDetector,
+  band: EmcBand,
+  fallback: EmcLimits,
+  profile?: EmcLimitProfilePoint[],
+): number {
+  const explicitLimit = detector === "QP" ? point.qpLimit : point.avLimit;
+  if (typeof explicitLimit === "number" && Number.isFinite(explicitLimit)) {
+    return explicitLimit;
+  }
+
+  const profileLimit = resolveProfileLimit(point.freq, detector, profile);
+  if (typeof profileLimit === "number" && Number.isFinite(profileLimit)) {
+    return profileLimit;
+  }
+
+  if (band === "conducted") {
+    const freq = point.freq;
+    if (freq >= 0.15 && freq < 0.5) {
+      return detector === "QP"
+        ? round1(interpolateLogLinear(freq, 0.15, 0.5, 66, 56))
+        : round1(interpolateLogLinear(freq, 0.15, 0.5, 56, 46));
+    }
+    if (freq >= 0.5 && freq < 5) {
+      return detector === "QP" ? 56 : 46;
+    }
+    if (freq >= 5 && freq <= 30) {
+      return detector === "QP" ? 60 : 50;
+    }
+  }
+
+  return detector === "QP" ? fallback.qp : fallback.av;
+}
+
 function round1(value: number): number {
   return Math.round(value * 10) / 10;
 }
@@ -111,7 +201,7 @@ export function buildEmcPeakRecords(channels: EmcChannelData[], limits: EmcLimit
   for (const channel of channels) {
     for (const point of channel.points) {
       if (point.qp !== null) {
-        const qpLimit = point.qpLimit ?? limits.qp;
+        const qpLimit = resolveEmcLimit(point, "QP", channel.band, limits, channel.limitProfile);
         const margin = round1(qpLimit - point.qp);
         records.push({
           id: `${channel.channel}-${channel.band}-QP-${point.freq}`,
@@ -127,7 +217,7 @@ export function buildEmcPeakRecords(channels: EmcChannelData[], limits: EmcLimit
       }
 
       if (point.av !== null) {
-        const avLimit = point.avLimit ?? limits.av;
+        const avLimit = resolveEmcLimit(point, "AV", channel.band, limits, channel.limitProfile);
         const margin = round1(avLimit - point.av);
         records.push({
           id: `${channel.channel}-${channel.band}-AV-${point.freq}`,

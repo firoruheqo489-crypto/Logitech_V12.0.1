@@ -4,6 +4,7 @@ import imageCompression from 'browser-image-compression';
 import {
   AlertTriangle,
   Archive,
+  CalendarDays,
   Camera,
   ChevronLeft,
   ChevronRight,
@@ -39,6 +40,8 @@ import {
 import type { ProductSpecPreviewCell, ProductSpecWorkbookPreview } from '@/lib/product-spec-excel-parser';
 import { parseProductSpecWorkbook } from '@/lib/product-spec-excel-parser';
 import {
+  fetchEngineeringSpecWorkspaceState,
+  saveEngineeringSpecWorkspaceState,
   type EngineeringSpecWorkspaceField,
   type EngineeringSpecWorkspaceSection,
   type EngineeringSpecWorkspaceState,
@@ -107,6 +110,19 @@ type WorkspaceMeta = {
   columnCount: number;
 };
 
+type InspectionTestProjectState = {
+  testType: '送样测试' | '终样测试' | null;
+  sampleDeliveryDate: string;
+  testItemCount: string;
+  remark: string;
+};
+
+type OaInfoState = {
+  workflowName: string;
+  workflowNo: string;
+  reportStatus: string;
+};
+
 type StatItem = {
   icon: LucideIcon;
   label: string;
@@ -117,6 +133,19 @@ type EvidenceSlot = {
   id: string;
   label: string;
   imageUrl?: string;
+};
+
+const DEFAULT_INSPECTION_TEST_PROJECT_STATE: InspectionTestProjectState = {
+  testType: null,
+  sampleDeliveryDate: '',
+  testItemCount: '1',
+  remark: '',
+};
+
+const DEFAULT_OA_INFO_STATE: OaInfoState = {
+  workflowName: '',
+  workflowNo: '',
+  reportStatus: '',
 };
 
 type PreviewImageCandidate = {
@@ -376,13 +405,17 @@ export default function ProductSpecExcelParserDashboard({
   const [isLoadingLedger, setIsLoadingLedger] = useState(true);
   const [evidenceSlots, setEvidenceSlots] = useState<EvidenceSlot[]>(() => createEmptyEvidenceSlots());
   const [qeConclusion, setQeConclusion] = useState('');
+  const [inspectionTestProject, setInspectionTestProject] = useState<InspectionTestProjectState>(
+    DEFAULT_INSPECTION_TEST_PROJECT_STATE,
+  );
+  const [oaInfo, setOaInfo] = useState<OaInfoState>(DEFAULT_OA_INFO_STATE);
   const [pendingUploadSlotId, setPendingUploadSlotId] = useState<string | null>(null);
   const [lightboxSlotId, setLightboxSlotId] = useState<string | null>(null);
   const [isEvidenceDropActive, setIsEvidenceDropActive] = useState(false);
   const evidenceDropDepthRef = useRef(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [workspaceSyncState, setWorkspaceSyncState] = useState<WorkspaceSyncState>('idle');
-  const [workspaceSyncMessage, setWorkspaceSyncMessage] = useState('本页不保留草稿，刷新后请从台账查看或恢复。');
+  const [workspaceSyncMessage, setWorkspaceSyncMessage] = useState('工作区草稿会自动保存。');
   const [workspaceOrigin, setWorkspaceOrigin] = useState<WorkspaceOriginState>({
     mode: 'draft',
     label: '当前草稿',
@@ -393,6 +426,8 @@ export default function ProductSpecExcelParserDashboard({
   const [pendingDeleteRecord, setPendingDeleteRecord] = useState<EngineeringSpecLedgerRecord | null>(null);
   const [isDeletingRecord, setIsDeletingRecord] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
+  const hasHydratedWorkspaceStateRef = useRef(false);
+  const suppressNextAutoSaveRef = useRef(false);
 
   const projectId = projectName.trim() || 'default-engineering-spec-workspace';
 
@@ -421,6 +456,62 @@ export default function ProductSpecExcelParserDashboard({
     };
 
     void loadLedger();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    hasHydratedWorkspaceStateRef.current = false;
+
+    const loadWorkspaceDraft = async () => {
+      setWorkspaceSyncState('loading');
+      setWorkspaceSyncMessage('正在恢复工作区草稿...');
+      try {
+        const state = await fetchEngineeringSpecWorkspaceState(projectId);
+        if (cancelled) return;
+
+        if (!state) {
+          setWorkspaceSyncState('idle');
+          setWorkspaceSyncMessage('当前没有可恢复的工作区草稿。');
+          hasHydratedWorkspaceStateRef.current = true;
+          return;
+        }
+
+        suppressNextAutoSaveRef.current = true;
+        setWorkspaceModel(buildSpecDocModelFromWorkspaceState(state));
+        setWorkspaceMeta(buildWorkspaceMetaFromWorkspaceState(state));
+        setEvidenceSlots(buildEvidenceSlotsFromWorkspaceState(state));
+        setQeConclusion(state.qeConclusion || '');
+        setInspectionTestProject(buildInspectionTestProjectStateFromWorkspaceState(state));
+        setOaInfo(buildOaInfoStateFromWorkspaceState(state));
+        setLightboxSlotId(null);
+        setIsEditMode(false);
+        setView('workspace');
+        setActiveArchiveDocumentId(null);
+        setCurrentFileFingerprint(null);
+        setWorkspaceSyncState('restored');
+        setWorkspaceSyncMessage('已恢复上次未归档的工作区草稿。');
+        setWorkspaceOrigin({
+          mode: 'draft',
+          label: '当前草稿',
+          detail: state.sourceFileName || '自动恢复的工作区草稿',
+        });
+        hasHydratedWorkspaceStateRef.current = true;
+      } catch (error) {
+        if (cancelled) return;
+        setWorkspaceSyncState('error');
+        setWorkspaceSyncMessage('工作区草稿恢复失败，请继续使用当前会话内容。');
+        toast.error('工作区草稿恢复失败', {
+          description: error instanceof Error ? error.message : '请稍后重试',
+        });
+        hasHydratedWorkspaceStateRef.current = true;
+      }
+    };
+
+    void loadWorkspaceDraft();
 
     return () => {
       cancelled = true;
@@ -480,6 +571,48 @@ export default function ProductSpecExcelParserDashboard({
     evidenceLightboxIndex >= 0 ? evidenceGalleryItems[evidenceLightboxIndex] : null;
 
   const isEditingExistingArchive = Boolean(activeArchiveDocumentId);
+
+  useEffect(() => {
+    if (!hasHydratedWorkspaceStateRef.current) return;
+    if (!docModel) return;
+
+    if (suppressNextAutoSaveRef.current) {
+      suppressNextAutoSaveRef.current = false;
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      const payload = buildWorkspaceStatePayload(
+        projectId,
+        docModel,
+        workspaceMeta,
+        evidenceSlots,
+        qeConclusion,
+        inspectionTestProject,
+        oaInfo,
+      );
+
+      setWorkspaceSyncState('saving');
+      setWorkspaceSyncMessage('正在自动保存工作区草稿...');
+
+      void saveEngineeringSpecWorkspaceState(payload)
+        .then(() => {
+          setWorkspaceSyncState('saved');
+          setWorkspaceSyncMessage('工作区草稿已自动保存。');
+        })
+        .catch((error) => {
+          setWorkspaceSyncState('error');
+          setWorkspaceSyncMessage('工作区草稿自动保存失败。');
+          toast.error('工作区草稿自动保存失败', {
+            description: error instanceof Error ? error.message : '请稍后重试',
+          });
+        });
+    }, 700);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [projectId, docModel, workspaceMeta, evidenceSlots, qeConclusion, inspectionTestProject, oaInfo]);
 
   useEffect(() => {
     if (!lightboxImage) return;
@@ -564,7 +697,14 @@ export default function ProductSpecExcelParserDashboard({
         return;
       }
       const previewState = await finalizeArchiveState(
-        buildArchiveStateFromModel(nextModel, createEmptyEvidenceSlots(), '', fileFingerprint),
+        buildArchiveStateFromModel(
+          nextModel,
+          createEmptyEvidenceSlots(),
+          '',
+          DEFAULT_INSPECTION_TEST_PROJECT_STATE,
+          DEFAULT_OA_INFO_STATE,
+          fileFingerprint,
+        ),
       );
       const duplicateByContent = ledgerRecords.find(
         (record) => record.contentFingerprint && record.contentFingerprint === previewState.contentFingerprint,
@@ -585,10 +725,12 @@ export default function ProductSpecExcelParserDashboard({
       });
       setEvidenceSlots(createEmptyEvidenceSlots());
       setQeConclusion('');
+      setInspectionTestProject(DEFAULT_INSPECTION_TEST_PROJECT_STATE);
+      setOaInfo(DEFAULT_OA_INFO_STATE);
       setLightboxSlotId(null);
       setIsEditMode(false);
       setWorkspaceSyncState('idle');
-      setWorkspaceSyncMessage('本页不保留草稿，刷新后请从台账查看或恢复。');
+      setWorkspaceSyncMessage('工作区草稿会自动保存。');
       setView('workspace');
       setActiveArchiveDocumentId(null);
       setCurrentFileFingerprint(fileFingerprint);
@@ -632,7 +774,14 @@ export default function ProductSpecExcelParserDashboard({
         });
         return;
       }
-      const archiveDraftState = buildArchiveStateFromModel(docModel, evidenceSlots, qeConclusion, currentFileFingerprint);
+      const archiveDraftState = buildArchiveStateFromModel(
+        docModel,
+        evidenceSlots,
+        qeConclusion,
+        inspectionTestProject,
+        oaInfo,
+        currentFileFingerprint,
+      );
       const archiveState = await finalizeArchiveState(
         await persistArchivePrimaryImageIfNeeded(archiveDraftState, projectId),
       );
@@ -849,7 +998,7 @@ export default function ProductSpecExcelParserDashboard({
 
   function markWorkspaceAsDraft() {
     setWorkspaceSyncState('idle');
-    setWorkspaceSyncMessage('本页只保留本次打开会话内容，刷新后请从台账查看或恢复。');
+    setWorkspaceSyncMessage('工作区内容已变更，等待自动保存。');
     setWorkspaceOrigin((current) =>
       current.mode === 'archive'
         ? {
@@ -871,6 +1020,16 @@ export default function ProductSpecExcelParserDashboard({
     setQeConclusion(value);
   }
 
+  function handleInspectionTestProjectChange(nextState: InspectionTestProjectState) {
+    markWorkspaceAsDraft();
+    setInspectionTestProject(nextState);
+  }
+
+  function handleOaInfoChange(nextState: OaInfoState) {
+    markWorkspaceAsDraft();
+    setOaInfo(nextState);
+  }
+
   async function handleSelectArchiveRecord(record: EngineeringSpecLedgerRecord) {
     try {
       const snapshot = await getEngineeringSpecArchiveDocumentState({
@@ -881,6 +1040,8 @@ export default function ProductSpecExcelParserDashboard({
       setWorkspaceMeta(buildWorkspaceMetaFromArchiveState(snapshot.state));
       setEvidenceSlots(buildEvidenceSlotsFromArchiveState(snapshot.state));
       setQeConclusion(snapshot.state.qeConclusion || '');
+      setInspectionTestProject(buildInspectionTestProjectStateFromArchiveState(snapshot.state));
+      setOaInfo(buildOaInfoStateFromArchiveState(snapshot.state));
       setIsEditMode(false);
       setLightboxSlotId(null);
       setView('workspace');
@@ -919,7 +1080,7 @@ export default function ProductSpecExcelParserDashboard({
         setActiveArchiveDocumentId(null);
         setCurrentFileFingerprint(null);
         setWorkspaceSyncState('idle');
-        setWorkspaceSyncMessage('当前恢复的归档已删除，工作区内容仅保留在本次会话中。');
+        setWorkspaceSyncMessage('当前恢复的归档已删除，工作区草稿将继续自动保存。');
         setWorkspaceOrigin({
           mode: 'draft',
           label: '当前草稿',
@@ -1068,6 +1229,10 @@ export default function ProductSpecExcelParserDashboard({
                 quickFacts={quickFacts}
                 onCopySummary={handleCopySummary}
                 stats={stats}
+                inspectionTestProject={inspectionTestProject}
+                onInspectionTestProjectChange={handleInspectionTestProjectChange}
+                oaInfo={oaInfo}
+                onOaInfoChange={handleOaInfoChange}
                 qeConclusion={qeConclusion}
                 onQeConclusionChange={handleQeConclusionChange}
                 evidenceSlots={evidenceSlots}
@@ -1201,6 +1366,10 @@ function ElectronicSpecDocument({
   quickFacts,
   onCopySummary,
   stats,
+  inspectionTestProject,
+  onInspectionTestProjectChange,
+  oaInfo,
+  onOaInfoChange,
   qeConclusion,
   onQeConclusionChange,
   evidenceSlots,
@@ -1220,6 +1389,10 @@ function ElectronicSpecDocument({
   quickFacts: Array<{ label: string; value: string }>;
   onCopySummary: () => void;
   stats: StatItem[];
+  inspectionTestProject: InspectionTestProjectState;
+  onInspectionTestProjectChange: (nextState: InspectionTestProjectState) => void;
+  oaInfo: OaInfoState;
+  onOaInfoChange: (nextState: OaInfoState) => void;
   qeConclusion: string;
   onQeConclusionChange: (value: string) => void;
   evidenceSlots: EvidenceSlot[];
@@ -1242,6 +1415,10 @@ function ElectronicSpecDocument({
         quickFacts={quickFacts}
         onCopySummary={onCopySummary}
         stats={stats}
+        inspectionTestProject={inspectionTestProject}
+        onInspectionTestProjectChange={onInspectionTestProjectChange}
+        oaInfo={oaInfo}
+        onOaInfoChange={onOaInfoChange}
       />
       <div className="space-y-4">
         {model.sections.map((section) => (
@@ -1277,6 +1454,10 @@ function HeaderCard({
   quickFacts,
   onCopySummary,
   stats,
+  inspectionTestProject,
+  onInspectionTestProjectChange,
+  oaInfo,
+  onOaInfoChange,
 }: {
   model: SpecDocModel;
   isEditMode: boolean;
@@ -1285,8 +1466,13 @@ function HeaderCard({
   quickFacts: Array<{ label: string; value: string }>;
   onCopySummary: () => void;
   stats: StatItem[];
+  inspectionTestProject: InspectionTestProjectState;
+  onInspectionTestProjectChange: (nextState: InspectionTestProjectState) => void;
+  oaInfo: OaInfoState;
+  onOaInfoChange: (nextState: OaInfoState) => void;
 }) {
   void stats;
+  const sampleDeliveryDateInputRef = useRef<HTMLInputElement>(null);
   const hsCodeField = findMetaField(model.businessMeta, '海关编码');
   const customsNameField = findMetaField(model.businessMeta, '报关中文品名');
   const customerIdField = findMetaField(model.businessMeta, '客户编号');
@@ -1373,34 +1559,47 @@ function HeaderCard({
             />
           </div>
 
-          {businessSummaryFields.length > 0 ? (
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {businessSummaryFields.map((field) => (
-                <CompactField
-                  key={field.cellId}
-                  field={field}
-                  multiline={field.multiline}
-                  isEditing={isEditMode}
-                  onChange={onFieldChange}
-                />
-              ))}
-            </div>
-          ) : null}
-
-          {roleFields.length > 0 ? (
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {roleFields.map((field) => (
-                <CompactField
-                  key={field.cellId}
-                  field={field}
-                  multiline={field.multiline}
-                  isEditing={isEditMode}
-                  onChange={onFieldChange}
-                />
-              ))}
-            </div>
-          ) : null}
         </div>
+
+        {businessSummaryFields.length > 0 || roleFields.length > 0 ? (
+          <>
+            <div className="flex self-stretch items-start justify-center px-4 pt-10 pb-2 xl:px-2">
+              <div className="flex h-full items-start justify-center">
+                <p className="text-center text-sm font-semibold tracking-[0.02em] text-[#E2E8F0]">人员信息</p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              {businessSummaryFields.length > 0 ? (
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                  {businessSummaryFields.map((field) => (
+                    <CompactField
+                      key={field.cellId}
+                      field={field}
+                      multiline={field.multiline}
+                      isEditing={isEditMode}
+                      onChange={onFieldChange}
+                    />
+                  ))}
+                </div>
+              ) : null}
+
+              {roleFields.length > 0 ? (
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                  {roleFields.map((field) => (
+                    <CompactField
+                      key={field.cellId}
+                      field={field}
+                      multiline={field.multiline}
+                      isEditing={isEditMode}
+                      onChange={onFieldChange}
+                    />
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          </>
+        ) : null}
 
         <div className="flex self-stretch flex-col xl:px-2">
           <div className="mx-4 h-px bg-gradient-to-r from-transparent via-white/[0.14] to-transparent" />
@@ -1409,7 +1608,7 @@ function HeaderCard({
           </div>
         </div>
 
-        <div className="grid gap-x-4 gap-y-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-x-4 gap-y-4 md:grid-cols-2 xl:grid-cols-3">
           {model.packaging.map((item) => (
             <CompactField
               key={item.field.cellId}
@@ -1420,9 +1619,231 @@ function HeaderCard({
             />
           ))}
         </div>
+
+        <div className="mt-5 flex self-stretch flex-col xl:px-2">
+          <div className="mx-4 h-px bg-gradient-to-r from-transparent via-white/[0.14] to-transparent" />
+          <div className="flex flex-1 items-center justify-center px-4 py-5">
+            <p className="text-center text-sm font-semibold tracking-[0.02em] text-[#E2E8F0]">送检测试项目</p>
+          </div>
+        </div>
+
+        <div className="grid min-w-0 gap-x-3 gap-y-4 md:grid-cols-[170px_178px_128px_minmax(380px,1fr)] md:grid-rows-[56px_56px]">
+            {(['送样测试', '终样测试'] as const).map((option, index) => {
+              const isSelected = inspectionTestProject.testType === option;
+              const isStruckThrough = inspectionTestProject.testType !== null && !isSelected;
+
+              return (
+                <div key={option} className="min-w-0 border-b border-white/[0.05] px-1 py-1.5" style={{ gridRow: index + 1 }}>
+                  <button
+                    type="button"
+                    disabled={!isEditMode}
+                    onClick={() => {
+                      if (!isEditMode || isSelected) return;
+                      onInspectionTestProjectChange({
+                        ...inspectionTestProject,
+                        testType: option,
+                      });
+                    }}
+                    className={`inline-flex h-full w-full items-center gap-3 text-left text-sm font-semibold tracking-[0.02em] transition ${
+                      !isEditMode
+                        ? isStruckThrough
+                          ? 'cursor-not-allowed text-white/30'
+                          : 'cursor-not-allowed text-[#E2E8F0]'
+                        : isStruckThrough
+                          ? 'text-white/30 hover:text-cyan-100'
+                          : 'text-[#E2E8F0] hover:text-cyan-100'
+                    }`}
+                  >
+                    <span
+                      className={`flex h-4 w-4 items-center justify-center rounded-full border transition ${
+                        isSelected ? 'border-cyan-300/80 bg-cyan-400/10' : 'border-white/[0.22] bg-transparent'
+                      }`}
+                    >
+                      {isSelected ? <span className="h-1.5 w-1.5 rounded-full bg-cyan-200" /> : null}
+                    </span>
+                    <span className={isStruckThrough ? 'line-through' : ''}>{option}</span>
+                  </button>
+                </div>
+              );
+            })}
+
+            <div className="min-w-0 border-b border-white/[0.05] px-1 py-1.5" style={{ gridColumn: 2, gridRow: 1 }}>
+              <div className="flex h-full items-center justify-center">
+                <p className="truncate text-center text-sm font-semibold tracking-[0.02em] text-[#E2E8F0]">送样日期</p>
+              </div>
+            </div>
+
+            <div className="min-w-0 border-b border-white/[0.05] px-1 py-1.5" style={{ gridColumn: 2, gridRow: 2 }}>
+              <div className="relative flex h-full items-center">
+                <button
+                  type="button"
+                  disabled={!isEditMode}
+                  onClick={() => {
+                    if (!isEditMode) return;
+                    const input = sampleDeliveryDateInputRef.current;
+                    if (!input) return;
+                    input.showPicker?.();
+                    input.focus();
+                  }}
+                  className={`absolute left-3 top-1/2 z-10 -translate-y-1/2 transition ${
+                    isEditMode ? 'text-[#E2E8F0] hover:text-cyan-100' : 'cursor-not-allowed text-white/35'
+                  }`}
+                >
+                  <CalendarDays className="h-4 w-4" />
+                </button>
+                <input
+                  ref={sampleDeliveryDateInputRef}
+                  type="date"
+                  disabled={!isEditMode}
+                  value={inspectionTestProject.sampleDeliveryDate}
+                  onChange={(event) =>
+                    onInspectionTestProjectChange({
+                      ...inspectionTestProject,
+                      sampleDeliveryDate: event.target.value,
+                    })
+                  }
+                  className="w-full appearance-none rounded-lg border border-white/[0.08] bg-black/20 py-2 pl-10 pr-3 text-left text-sm font-semibold text-[#E2E8F0] outline-none transition focus:border-cyan-400/35 focus:bg-black/30"
+                />
+              </div>
+            </div>
+
+            <div className="min-w-0 border-b border-white/[0.05] px-1 py-1.5" style={{ gridColumn: 3, gridRow: 1 }}>
+              <div className="flex h-full items-center justify-center">
+                <p className="truncate text-center text-sm font-semibold tracking-[0.02em] text-[#E2E8F0]">测试项目</p>
+              </div>
+            </div>
+
+            <div className="min-w-0 border-b border-white/[0.05] px-1 py-1.5" style={{ gridColumn: 3, gridRow: 2 }}>
+              <div className="flex h-full items-center">
+                <select
+                  disabled={!isEditMode}
+                  value={inspectionTestProject.testItemCount}
+                  onChange={(event) =>
+                    onInspectionTestProjectChange({
+                      ...inspectionTestProject,
+                      testItemCount: event.target.value,
+                    })
+                  }
+                  className="w-full rounded-lg border border-white/[0.08] bg-black/20 px-2 py-2 text-center text-sm font-semibold text-[#E2E8F0] outline-none transition focus:border-cyan-400/35 focus:bg-black/30"
+                >
+                  {Array.from({ length: 10 }, (_, index) => String(index + 1)).map((value) => (
+                    <option key={value} value={value}>
+                      {value}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="flex min-w-0 self-stretch border-b border-white/[0.05] px-1 pt-1.5 pb-3" style={{ gridColumn: 4, gridRow: '1 / span 2' }}>
+              <div className="h-full min-h-0 w-full rounded-lg border border-white/[0.08] bg-black/20 px-3 py-2 transition focus-within:border-cyan-400/35 focus-within:bg-black/30">
+                <textarea
+                  disabled={!isEditMode}
+                  value={inspectionTestProject.remark}
+                  rows={5}
+                  wrap="off"
+                  onChange={(event) =>
+                    onInspectionTestProjectChange({
+                      ...inspectionTestProject,
+                      remark: limitRemarkLines(event.target.value),
+                    })
+                  }
+                  onKeyDown={(event) => {
+                    if (event.key !== 'Enter') return;
+                    const lineCount = inspectionTestProject.remark.split('\n').length;
+                    if (lineCount >= 5) {
+                      event.preventDefault();
+                    }
+                  }}
+                  className="h-full w-full resize-none overflow-x-auto overflow-y-hidden whitespace-nowrap bg-transparent p-0 text-[13px] leading-6 text-[#E2E8F0] outline-none"
+                  placeholder="请输入备注..."
+                />
+              </div>
+            </div>
+        </div>
+
+        <div className="mt-5 flex self-stretch flex-col xl:px-2">
+          <div className="mx-4 h-px bg-gradient-to-r from-transparent via-white/[0.14] to-transparent" />
+          <div className="flex flex-1 items-center justify-center px-4 py-5">
+            <p className="text-center text-sm font-semibold tracking-[0.02em] text-[#E2E8F0]">OA流程信息</p>
+          </div>
+        </div>
+
+        <div className="grid gap-x-4 gap-y-4 md:grid-cols-2 xl:grid-cols-3">
+          <div className="min-w-0 border-b border-white/[0.05] px-1 py-1.5">
+            <p className="truncate text-[11px] text-[#94A3B8]">流程名称</p>
+            {isEditMode ? (
+              <input
+                value={oaInfo.workflowName}
+                onChange={(event) =>
+                  onOaInfoChange({
+                    ...oaInfo,
+                    workflowName: event.target.value,
+                  })
+                }
+                className="mt-1 w-full rounded-lg border border-white/[0.08] bg-black/20 px-3 py-2 text-[13px] text-[#E2E8F0] outline-none transition focus:border-cyan-400/35 focus:bg-black/30"
+                placeholder="请输入流程名称..."
+              />
+            ) : (
+              <div className="mt-1 break-words text-[13px] leading-6 text-[#E2E8F0]">
+                {oaInfo.workflowName || ''}
+              </div>
+            )}
+          </div>
+
+          <div className="min-w-0 border-b border-white/[0.05] px-1 py-1.5">
+            <p className="truncate text-[11px] text-[#94A3B8]">流程单号</p>
+            {isEditMode ? (
+              <input
+                value={oaInfo.workflowNo}
+                onChange={(event) =>
+                  onOaInfoChange({
+                    ...oaInfo,
+                    workflowNo: event.target.value,
+                  })
+                }
+                className="mt-1 w-full rounded-lg border border-white/[0.08] bg-black/20 px-3 py-2 text-[13px] text-[#E2E8F0] outline-none transition focus:border-cyan-400/35 focus:bg-black/30"
+                placeholder="请输入流程单号..."
+              />
+            ) : (
+              <div className="mt-1 break-words text-[13px] leading-6 text-[#E2E8F0]">
+                {oaInfo.workflowNo || ''}
+              </div>
+            )}
+          </div>
+
+          <div className="min-w-0 border-b border-white/[0.05] px-1 py-1.5">
+            <p className="truncate text-[11px] text-[#94A3B8]">报告状态</p>
+            {isEditMode ? (
+              <select
+                value={oaInfo.reportStatus}
+                onChange={(event) =>
+                  onOaInfoChange({
+                    ...oaInfo,
+                    reportStatus: event.target.value,
+                  })
+                }
+                className="mt-1 w-full rounded-lg border border-white/[0.08] bg-black/20 px-3 py-2 text-[13px] text-[#E2E8F0] outline-none transition focus:border-cyan-400/35 focus:bg-black/30"
+              >
+                <option value="">请选择报告状态...</option>
+                <option value="已送检，测试中">已送检，测试中</option>
+                <option value="测试完成，报告归档">测试完成，报告归档</option>
+              </select>
+            ) : (
+              <div className="mt-1 break-words text-[13px] leading-6 text-[#E2E8F0]">
+                {oaInfo.reportStatus || ''}
+              </div>
+            )}
+          </div>
+        </div>
+
       </div>
     </section>
   );
+}
+
+function limitRemarkLines(value: string): string {
+  return value.split(/\r?\n/).slice(0, 5).join('\n');
 }
 
 function MetaGridCard({
@@ -1853,6 +2274,18 @@ function buildSpecDocModelFromWorkspaceState(state: EngineeringSpecWorkspaceStat
   };
 }
 
+function buildInspectionTestProjectStateFromWorkspaceState(
+  state: EngineeringSpecWorkspaceState,
+): InspectionTestProjectState {
+  return normalizeInspectionTestProjectState(state.inspectionTestProject);
+}
+
+function buildOaInfoStateFromWorkspaceState(
+  state: EngineeringSpecWorkspaceState,
+): OaInfoState {
+  return normalizeOaInfoState(state.oaInfo);
+}
+
 function buildSpecDocModelFromArchiveState(state: EngineeringSpecArchiveState): SpecDocModel {
   return {
     sourceFileName: state.fileName || '已归档规格书.xlsx',
@@ -1908,6 +2341,58 @@ function buildSpecDocModelFromArchiveState(state: EngineeringSpecArchiveState): 
       'archive-meta-extra',
     ),
     sections: mapArchiveSectionsToSpecSections(state.sections),
+  };
+}
+
+function buildInspectionTestProjectStateFromArchiveState(
+  state: EngineeringSpecArchiveState,
+): InspectionTestProjectState {
+  return normalizeInspectionTestProjectState(state.inspectionTestProject);
+}
+
+function buildOaInfoStateFromArchiveState(
+  state: EngineeringSpecArchiveState,
+): OaInfoState {
+  return normalizeOaInfoState(state.oaInfo);
+}
+
+function normalizeInspectionTestProjectState(
+  value:
+    | {
+        testType?: string;
+        sampleDeliveryDate?: string;
+        testItemCount?: string;
+        remark?: string;
+      }
+    | null
+    | undefined,
+): InspectionTestProjectState {
+  const testType =
+    value?.testType === '送样测试' || value?.testType === '终样测试' ? value.testType : null;
+  const testItemCount = String(value?.testItemCount || DEFAULT_INSPECTION_TEST_PROJECT_STATE.testItemCount).trim();
+
+  return {
+    testType,
+    sampleDeliveryDate: String(value?.sampleDeliveryDate || '').trim(),
+    testItemCount: /^\d+$/.test(testItemCount) ? testItemCount : DEFAULT_INSPECTION_TEST_PROJECT_STATE.testItemCount,
+    remark: String(value?.remark || ''),
+  };
+}
+
+function normalizeOaInfoState(
+  value:
+    | {
+        workflowName?: string;
+        workflowNo?: string;
+        reportStatus?: string;
+      }
+    | null
+    | undefined,
+): OaInfoState {
+  return {
+    workflowName: String(value?.workflowName || ''),
+    workflowNo: String(value?.workflowNo || ''),
+    reportStatus: String(value?.reportStatus || ''),
   };
 }
 
@@ -1988,6 +2473,15 @@ function buildEvidenceSlotsFromArchiveState(state: EngineeringSpecArchiveState):
   }));
 }
 
+function buildWorkspaceMetaFromWorkspaceState(state: EngineeringSpecWorkspaceState): WorkspaceMeta {
+  const rowCount = Number(state.metadata?.rowCount);
+  const columnCount = Number(state.metadata?.columnCount);
+  return {
+    rowCount: Number.isFinite(rowCount) ? rowCount : 0,
+    columnCount: Number.isFinite(columnCount) ? columnCount : 0,
+  };
+}
+
 function buildWorkspaceMetaFromArchiveState(state: EngineeringSpecArchiveState): WorkspaceMeta {
   const rowCount = (state.sections || []).reduce(
     (sectionTotal, section) =>
@@ -2039,12 +2533,25 @@ function buildWorkspaceStatePayload(
   meta: WorkspaceMeta,
   evidenceSlots: EvidenceSlot[],
   qeConclusion: string,
+  inspectionTestProject: InspectionTestProjectState,
+  oaInfo: OaInfoState,
 ): EngineeringSpecWorkspaceState {
   return {
     workspaceKey,
     sourceFileName: model.sourceFileName,
     imageSrc: model.imageSrc,
     qeConclusion,
+    inspectionTestProject: {
+      testType: inspectionTestProject.testType || undefined,
+      sampleDeliveryDate: inspectionTestProject.sampleDeliveryDate || undefined,
+      testItemCount: inspectionTestProject.testItemCount || undefined,
+      remark: inspectionTestProject.remark || undefined,
+    },
+    oaInfo: {
+      workflowName: oaInfo.workflowName || undefined,
+      workflowNo: oaInfo.workflowNo || undefined,
+      reportStatus: oaInfo.reportStatus || undefined,
+    },
     metadata: {
       rowCount: meta.rowCount,
       columnCount: meta.columnCount,
@@ -2498,6 +3005,8 @@ function buildArchiveStateFromModel(
   model: SpecDocModel,
   evidenceSlots: EvidenceSlot[],
   qeConclusion: string,
+  inspectionTestProject: InspectionTestProjectState,
+  oaInfo: OaInfoState,
   fileFingerprint: string | null,
 ): EngineeringSpecArchiveState {
   return {
@@ -2505,6 +3014,17 @@ function buildArchiveStateFromModel(
     fileFingerprint: fileFingerprint || undefined,
     imageUrl: model.imageSrc,
     qeConclusion,
+    inspectionTestProject: {
+      testType: inspectionTestProject.testType || undefined,
+      sampleDeliveryDate: inspectionTestProject.sampleDeliveryDate || undefined,
+      testItemCount: inspectionTestProject.testItemCount || undefined,
+      remark: inspectionTestProject.remark || undefined,
+    },
+    oaInfo: {
+      workflowName: oaInfo.workflowName || undefined,
+      workflowNo: oaInfo.workflowNo || undefined,
+      reportStatus: oaInfo.reportStatus || undefined,
+    },
     images: evidenceSlots
       .filter((slot) => slot.imageUrl)
       .map((slot) => ({

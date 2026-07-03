@@ -13,12 +13,14 @@ type LedgerColumn = {
 };
 
 const LEDGER_PAGE_SIZE = 10;
+const LEDGER_ACTION_BUTTON_BASE_CLASSNAME =
+  'mx-auto inline-flex h-9 w-[72px] items-center justify-center whitespace-nowrap rounded-md border px-2.5 text-[12px] transition';
 
 const columns: LedgerColumn[] = [
   {
     key: 'sequence',
     title: '序号',
-    width: '6%',
+    width: '5%',
     headerClassName: 'text-center',
     cellClassName: 'text-center text-slate-300',
     render: (_record, index) => <span>{index + 1}</span>,
@@ -26,7 +28,7 @@ const columns: LedgerColumn[] = [
   {
     key: 'sku',
     title: '产品编号',
-    width: '29%',
+    width: '23%',
     headerClassName: 'text-left',
     cellClassName: 'text-left',
     render: (record) => (
@@ -38,7 +40,7 @@ const columns: LedgerColumn[] = [
   {
     key: 'category',
     title: '产品类别',
-    width: '19%',
+    width: '15%',
     headerClassName: 'text-left',
     cellClassName: 'text-left',
     render: (record) => (
@@ -72,7 +74,7 @@ const columns: LedgerColumn[] = [
   {
     key: 'productGroup',
     title: '产品经理',
-    width: '10%',
+    width: '11%',
     headerClassName: 'text-center',
     cellClassName: 'text-center',
     render: (record) => (
@@ -84,7 +86,7 @@ const columns: LedgerColumn[] = [
   {
     key: 'sampleQty',
     title: '样品数',
-    width: '7%',
+    width: '8%',
     headerClassName: 'text-center',
     cellClassName: 'text-center',
     render: (record) => <span className="font-semibold text-slate-100">{record.sampleQty}</span>,
@@ -92,10 +94,18 @@ const columns: LedgerColumn[] = [
   {
     key: 'createdAt',
     title: '送样日期',
-    width: '12%',
+    width: '13%',
     headerClassName: 'text-center',
     cellClassName: 'text-center',
     render: (record) => <LedgerDateCell value={record.createdAt} />,
+  },
+  {
+    key: 'report',
+    title: '报告',
+    width: '8%',
+    headerClassName: 'text-center',
+    cellClassName: 'text-center',
+    render: (record) => <LedgerReportLink record={record} />,
   },
   {
     key: 'action',
@@ -187,7 +197,7 @@ export function EngineeringSpecLedger({
                             event.stopPropagation();
                             onDeleteRecord?.(record);
                           }}
-                          className="mx-auto inline-flex whitespace-nowrap rounded-md border border-white/10 px-2.5 py-1 text-[12px] text-slate-300 transition hover:bg-white/[0.05]"
+                          className={`${LEDGER_ACTION_BUTTON_BASE_CLASSNAME} border-white/10 text-slate-300 hover:bg-white/[0.05]`}
                         >
                           删除
                         </button>
@@ -264,6 +274,26 @@ function LedgerDateCell({ value }: { value: string }) {
       <span className="whitespace-nowrap">{datePart}</span>
       {timePart ? <span className="mt-1 whitespace-nowrap text-[12px] text-slate-400">{timePart}</span> : null}
     </div>
+  );
+}
+
+function LedgerReportLink({ record }: { record: EngineeringSpecLedgerRecord }) {
+  if (!record.ossUrl?.trim()) {
+    return <span className="text-gray-600">—</span>;
+  }
+
+  return (
+    <a
+      href={record.ossUrl}
+      target="_blank"
+      rel="noreferrer"
+      onClick={(event) => {
+        event.stopPropagation();
+      }}
+      className={`${LEDGER_ACTION_BUTTON_BASE_CLASSNAME} border-cyan-500/20 bg-cyan-500/8 text-cyan-200 hover:bg-cyan-500/14`}
+    >
+      查看
+    </a>
   );
 }
 

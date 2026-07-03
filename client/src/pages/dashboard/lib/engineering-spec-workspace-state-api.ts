@@ -30,11 +30,26 @@ export type EngineeringSpecWorkspaceEvidenceSlot = {
   imageUrl?: string;
 };
 
+export type EngineeringSpecWorkspaceInspectionTestProject = {
+  testType?: string;
+  sampleDeliveryDate?: string;
+  testItemCount?: string;
+  remark?: string;
+};
+
+export type EngineeringSpecWorkspaceOaInfo = {
+  workflowName?: string;
+  workflowNo?: string;
+  reportStatus?: string;
+};
+
 export type EngineeringSpecWorkspaceState = {
   workspaceKey: string;
   sourceFileName: string;
   imageSrc?: string;
   qeConclusion?: string;
+  inspectionTestProject?: EngineeringSpecWorkspaceInspectionTestProject;
+  oaInfo?: EngineeringSpecWorkspaceOaInfo;
   metadata: {
     rowCount: number;
     columnCount: number;

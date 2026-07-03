@@ -65,6 +65,25 @@ function sanitizeWorkspaceState(value: unknown, workspaceKeyFallback: string) {
     sourceFileName: normalizeText(record.sourceFileName, 255),
     imageSrc: normalizeText(record.imageSrc, 8_000_000) || undefined,
     qeConclusion: normalizeText(record.qeConclusion, 12000) || undefined,
+    inspectionTestProject:
+      record.inspectionTestProject && typeof record.inspectionTestProject === 'object'
+        ? {
+            testType: normalizeText((record.inspectionTestProject as Record<string, unknown>).testType, 32) || undefined,
+            sampleDeliveryDate:
+              normalizeText((record.inspectionTestProject as Record<string, unknown>).sampleDeliveryDate, 64) || undefined,
+            testItemCount:
+              normalizeText((record.inspectionTestProject as Record<string, unknown>).testItemCount, 32) || undefined,
+            remark: normalizeText((record.inspectionTestProject as Record<string, unknown>).remark, 4000) || undefined,
+          }
+        : undefined,
+    oaInfo:
+      record.oaInfo && typeof record.oaInfo === 'object'
+        ? {
+            workflowName: normalizeText((record.oaInfo as Record<string, unknown>).workflowName, 255) || undefined,
+            workflowNo: normalizeText((record.oaInfo as Record<string, unknown>).workflowNo, 255) || undefined,
+            reportStatus: normalizeText((record.oaInfo as Record<string, unknown>).reportStatus, 64) || undefined,
+          }
+        : undefined,
     metadata: record.metadata ?? {},
     header: record.header ?? {},
     packaging: Array.isArray(record.packaging) ? record.packaging : [],
