@@ -84,6 +84,23 @@ function sanitizeWorkspaceState(value: unknown, workspaceKeyFallback: string) {
             reportStatus: normalizeText((record.oaInfo as Record<string, unknown>).reportStatus, 64) || undefined,
           }
         : undefined,
+    testProjectSelection:
+      record.testProjectSelection && typeof record.testProjectSelection === 'object'
+        ? {
+            selectedCategoryId:
+              normalizeText((record.testProjectSelection as Record<string, unknown>).selectedCategoryId, 64) || undefined,
+            checkedIds: Array.isArray((record.testProjectSelection as Record<string, unknown>).checkedIds)
+              ? ((record.testProjectSelection as Record<string, unknown>).checkedIds as unknown[])
+                  .map((value) => normalizeText(value, 64))
+                  .filter(Boolean)
+              : [],
+            customItems:
+              (record.testProjectSelection as Record<string, unknown>).customItems &&
+              typeof (record.testProjectSelection as Record<string, unknown>).customItems === 'object'
+                ? ((record.testProjectSelection as Record<string, unknown>).customItems as Record<string, unknown>)
+                : {},
+          }
+        : undefined,
     metadata: record.metadata ?? {},
     header: record.header ?? {},
     packaging: Array.isArray(record.packaging) ? record.packaging : [],

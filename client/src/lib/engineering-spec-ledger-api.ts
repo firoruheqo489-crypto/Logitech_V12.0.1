@@ -28,6 +28,22 @@ export interface EngineeringSpecArchiveState {
     workflowNo?: string;
     reportStatus?: string;
   };
+  testProjectSelection?: {
+    selectedCategoryId?: string;
+    checkedIds?: string[];
+    customItems?: Record<
+      string,
+      Record<
+        string,
+        Array<{
+          id: string;
+          section: string;
+          name: string;
+          standard: string;
+        }>
+      >
+    >;
+  };
   laboratoryTests?: Array<{
     id?: string;
     testItem: string;

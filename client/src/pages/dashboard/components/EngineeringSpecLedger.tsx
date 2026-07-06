@@ -129,15 +129,24 @@ export function EngineeringSpecLedger({
   isLoading?: boolean;
 }) {
   const [page, setPage] = useState(1);
+  const [skuQuery, setSkuQuery] = useState('');
   const orderedRecords = [...records].sort((left, right) => left.sequence - right.sequence);
-  const totalPages = Math.max(1, Math.ceil(orderedRecords.length / LEDGER_PAGE_SIZE));
+  const normalizedQuery = skuQuery.trim().toLowerCase();
+  const filteredRecords = normalizedQuery
+    ? orderedRecords.filter((record) => (record.sku || '').toLowerCase().includes(normalizedQuery))
+    : orderedRecords;
+  const totalPages = Math.max(1, Math.ceil(filteredRecords.length / LEDGER_PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
   const pageStart = (currentPage - 1) * LEDGER_PAGE_SIZE;
-  const pageRecords = orderedRecords.slice(pageStart, pageStart + LEDGER_PAGE_SIZE);
+  const pageRecords = filteredRecords.slice(pageStart, pageStart + LEDGER_PAGE_SIZE);
 
   useEffect(() => {
     setPage((current) => Math.min(current, totalPages));
   }, [totalPages]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [normalizedQuery]);
 
   return (
     <section className="rounded-lg border border-white/10 bg-[#0a0a0a]">
@@ -145,7 +154,19 @@ export function EngineeringSpecLedger({
         <div>
           <h2 className="text-sm font-medium text-slate-100">登记台账</h2>
         </div>
-        <div className="text-xs text-gray-500">共 {orderedRecords.length} 条</div>
+        <div className="flex items-center gap-3">
+          <div className="text-xs text-gray-500">
+            共 {filteredRecords.length} 条
+            {normalizedQuery ? <span className="ml-1 text-gray-600">/ 总 {orderedRecords.length} 条</span> : null}
+          </div>
+          <input
+            type="text"
+            value={skuQuery}
+            onChange={(event) => setSkuQuery(event.target.value)}
+            placeholder="搜索编号"
+            className="h-9 w-[220px] rounded-md border border-white/[0.08] bg-black/20 px-3 text-[12px] text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-cyan-400/35 focus:bg-black/30"
+          />
+        </div>
       </div>
 
       <div className="overflow-x-hidden">
@@ -167,10 +188,14 @@ export function EngineeringSpecLedger({
           </thead>
 
           <tbody>
-            {orderedRecords.length === 0 ? (
+            {filteredRecords.length === 0 ? (
               <tr>
                 <td colSpan={columns.length} className="px-4 py-8 text-center text-sm text-gray-500">
-                  {isLoading ? '正在读取台账...' : '暂无归档记录，点击“归档入库”后会自动生成台账。'}
+                  {isLoading
+                    ? '正在读取台账...'
+                    : normalizedQuery
+                      ? '未找到匹配的产品编号。'
+                      : '暂无归档记录，点击“归档入库”后会自动生成台账。'}
                 </td>
               </tr>
             ) : (
@@ -213,7 +238,7 @@ export function EngineeringSpecLedger({
         </table>
       </div>
 
-      {orderedRecords.length > LEDGER_PAGE_SIZE ? (
+      {filteredRecords.length > LEDGER_PAGE_SIZE ? (
         <div className="flex items-center justify-between gap-3 border-t border-white/10 px-4 py-3">
           <div className="text-xs font-semibold text-gray-400">
             第 {currentPage} / {totalPages} 页

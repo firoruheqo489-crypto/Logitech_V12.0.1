@@ -43,6 +43,19 @@ export type EngineeringSpecWorkspaceOaInfo = {
   reportStatus?: string;
 };
 
+export type EngineeringSpecWorkspaceSelectedTestItem = {
+  id: string;
+  section: string;
+  name: string;
+  standard: string;
+};
+
+export type EngineeringSpecWorkspaceTestProjectSelection = {
+  selectedCategoryId?: string;
+  checkedIds?: string[];
+  customItems?: Record<string, Record<string, EngineeringSpecWorkspaceSelectedTestItem[]>>;
+};
+
 export type EngineeringSpecWorkspaceState = {
   workspaceKey: string;
   sourceFileName: string;
@@ -50,6 +63,7 @@ export type EngineeringSpecWorkspaceState = {
   qeConclusion?: string;
   inspectionTestProject?: EngineeringSpecWorkspaceInspectionTestProject;
   oaInfo?: EngineeringSpecWorkspaceOaInfo;
+  testProjectSelection?: EngineeringSpecWorkspaceTestProjectSelection;
   metadata: {
     rowCount: number;
     columnCount: number;

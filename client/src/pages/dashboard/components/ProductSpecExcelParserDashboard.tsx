@@ -43,11 +43,20 @@ import {
   fetchEngineeringSpecWorkspaceState,
   saveEngineeringSpecWorkspaceState,
   type EngineeringSpecWorkspaceField,
+  type EngineeringSpecWorkspaceSelectedTestItem,
   type EngineeringSpecWorkspaceSection,
   type EngineeringSpecWorkspaceState,
 } from '@/pages/dashboard/lib/engineering-spec-workspace-state-api';
 import { EngineeringSpecAnalyticsDashboard } from './EngineeringSpecAnalyticsDashboard';
 import { EngineeringSpecLedger } from './EngineeringSpecLedger';
+import { CategoryBar } from './test-project-parser/category-sidebar';
+import { TestSection } from './test-project-parser/test-section';
+import {
+  CATEGORIES as TEST_PROJECT_CATEGORIES,
+  SECTION_LABELS as TEST_PROJECT_SECTION_LABELS,
+  type SectionKey,
+  type TestItem,
+} from './test-project-parser/test-data';
 
 type ViewKey = 'workspace' | 'analytics' | 'ledger';
 type WorkspaceSyncState = 'idle' | 'loading' | 'restored' | 'saving' | 'saved' | 'error';
@@ -123,6 +132,12 @@ type OaInfoState = {
   reportStatus: string;
 };
 
+type TestProjectSelectionState = {
+  selectedCategoryId: string;
+  checkedIds: string[];
+  customItems: Record<string, Record<SectionKey, TestItem[]>>;
+};
+
 type StatItem = {
   icon: LucideIcon;
   label: string;
@@ -146,6 +161,20 @@ const DEFAULT_OA_INFO_STATE: OaInfoState = {
   workflowName: '',
   workflowNo: '',
   reportStatus: '',
+};
+
+const TEST_PROJECT_SECTION_ORDER: SectionKey[] = ['routine', 'destructive', 'reliability'];
+
+const TEST_PROJECT_SECTION_BADGES: Record<SectionKey, string> = {
+  routine: 'bg-primary',
+  destructive: 'bg-destructive',
+  reliability: 'bg-chart-2',
+};
+
+const DEFAULT_TEST_PROJECT_SELECTION_STATE: TestProjectSelectionState = {
+  selectedCategoryId: TEST_PROJECT_CATEGORIES[0]?.id ?? '',
+  checkedIds: [],
+  customItems: {},
 };
 
 type PreviewImageCandidate = {
@@ -409,6 +438,9 @@ export default function ProductSpecExcelParserDashboard({
     DEFAULT_INSPECTION_TEST_PROJECT_STATE,
   );
   const [oaInfo, setOaInfo] = useState<OaInfoState>(DEFAULT_OA_INFO_STATE);
+  const [testProjectSelection, setTestProjectSelection] = useState<TestProjectSelectionState>(
+    DEFAULT_TEST_PROJECT_SELECTION_STATE,
+  );
   const [pendingUploadSlotId, setPendingUploadSlotId] = useState<string | null>(null);
   const [lightboxSlotId, setLightboxSlotId] = useState<string | null>(null);
   const [isEvidenceDropActive, setIsEvidenceDropActive] = useState(false);
@@ -426,6 +458,7 @@ export default function ProductSpecExcelParserDashboard({
   const [pendingDeleteRecord, setPendingDeleteRecord] = useState<EngineeringSpecLedgerRecord | null>(null);
   const [isDeletingRecord, setIsDeletingRecord] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
+  const [isTestProjectDialogOpen, setIsTestProjectDialogOpen] = useState(false);
   const hasHydratedWorkspaceStateRef = useRef(false);
   const suppressNextAutoSaveRef = useRef(false);
 
@@ -487,6 +520,7 @@ export default function ProductSpecExcelParserDashboard({
         setQeConclusion(state.qeConclusion || '');
         setInspectionTestProject(buildInspectionTestProjectStateFromWorkspaceState(state));
         setOaInfo(buildOaInfoStateFromWorkspaceState(state));
+        setTestProjectSelection(buildTestProjectSelectionStateFromWorkspaceState(state));
         setLightboxSlotId(null);
         setIsEditMode(false);
         setView('workspace');
@@ -590,6 +624,7 @@ export default function ProductSpecExcelParserDashboard({
         qeConclusion,
         inspectionTestProject,
         oaInfo,
+        testProjectSelection,
       );
 
       setWorkspaceSyncState('saving');
@@ -612,7 +647,7 @@ export default function ProductSpecExcelParserDashboard({
     return () => {
       window.clearTimeout(timer);
     };
-  }, [projectId, docModel, workspaceMeta, evidenceSlots, qeConclusion, inspectionTestProject, oaInfo]);
+  }, [projectId, docModel, workspaceMeta, evidenceSlots, qeConclusion, inspectionTestProject, oaInfo, testProjectSelection]);
 
   useEffect(() => {
     if (!lightboxImage) return;
@@ -703,6 +738,7 @@ export default function ProductSpecExcelParserDashboard({
           '',
           DEFAULT_INSPECTION_TEST_PROJECT_STATE,
           DEFAULT_OA_INFO_STATE,
+          DEFAULT_TEST_PROJECT_SELECTION_STATE,
           fileFingerprint,
         ),
       );
@@ -727,6 +763,7 @@ export default function ProductSpecExcelParserDashboard({
       setQeConclusion('');
       setInspectionTestProject(DEFAULT_INSPECTION_TEST_PROJECT_STATE);
       setOaInfo(DEFAULT_OA_INFO_STATE);
+      setTestProjectSelection(DEFAULT_TEST_PROJECT_SELECTION_STATE);
       setLightboxSlotId(null);
       setIsEditMode(false);
       setWorkspaceSyncState('idle');
@@ -780,6 +817,7 @@ export default function ProductSpecExcelParserDashboard({
         qeConclusion,
         inspectionTestProject,
         oaInfo,
+        testProjectSelection,
         currentFileFingerprint,
       );
       const archiveState = await finalizeArchiveState(
@@ -1030,6 +1068,11 @@ export default function ProductSpecExcelParserDashboard({
     setOaInfo(nextState);
   }
 
+  function handleTestProjectSelectionChange(nextState: TestProjectSelectionState) {
+    markWorkspaceAsDraft();
+    setTestProjectSelection(nextState);
+  }
+
   async function handleSelectArchiveRecord(record: EngineeringSpecLedgerRecord) {
     try {
       const snapshot = await getEngineeringSpecArchiveDocumentState({
@@ -1042,6 +1085,7 @@ export default function ProductSpecExcelParserDashboard({
       setQeConclusion(snapshot.state.qeConclusion || '');
       setInspectionTestProject(buildInspectionTestProjectStateFromArchiveState(snapshot.state));
       setOaInfo(buildOaInfoStateFromArchiveState(snapshot.state));
+      setTestProjectSelection(buildTestProjectSelectionStateFromArchiveState(snapshot.state));
       setIsEditMode(false);
       setLightboxSlotId(null);
       setView('workspace');
@@ -1233,6 +1277,10 @@ export default function ProductSpecExcelParserDashboard({
                 onInspectionTestProjectChange={handleInspectionTestProjectChange}
                 oaInfo={oaInfo}
                 onOaInfoChange={handleOaInfoChange}
+                testProjectSelection={testProjectSelection}
+                onTestProjectSelectionChange={handleTestProjectSelectionChange}
+                isTestProjectDialogOpen={isTestProjectDialogOpen}
+                onToggleTestProjectDialog={setIsTestProjectDialogOpen}
                 qeConclusion={qeConclusion}
                 onQeConclusionChange={handleQeConclusionChange}
                 evidenceSlots={evidenceSlots}
@@ -1370,6 +1418,10 @@ function ElectronicSpecDocument({
   onInspectionTestProjectChange,
   oaInfo,
   onOaInfoChange,
+  testProjectSelection,
+  onTestProjectSelectionChange,
+  isTestProjectDialogOpen,
+  onToggleTestProjectDialog,
   qeConclusion,
   onQeConclusionChange,
   evidenceSlots,
@@ -1393,6 +1445,10 @@ function ElectronicSpecDocument({
   onInspectionTestProjectChange: (nextState: InspectionTestProjectState) => void;
   oaInfo: OaInfoState;
   onOaInfoChange: (nextState: OaInfoState) => void;
+  testProjectSelection: TestProjectSelectionState;
+  onTestProjectSelectionChange: (nextState: TestProjectSelectionState) => void;
+  isTestProjectDialogOpen: boolean;
+  onToggleTestProjectDialog: (open: boolean) => void;
   qeConclusion: string;
   onQeConclusionChange: (value: string) => void;
   evidenceSlots: EvidenceSlot[];
@@ -1419,6 +1475,10 @@ function ElectronicSpecDocument({
         onInspectionTestProjectChange={onInspectionTestProjectChange}
         oaInfo={oaInfo}
         onOaInfoChange={onOaInfoChange}
+        testProjectSelection={testProjectSelection}
+        onTestProjectSelectionChange={onTestProjectSelectionChange}
+        isTestProjectDialogOpen={isTestProjectDialogOpen}
+        onToggleTestProjectDialog={onToggleTestProjectDialog}
       />
       <div className="space-y-4">
         {model.sections.map((section) => (
@@ -1458,6 +1518,10 @@ function HeaderCard({
   onInspectionTestProjectChange,
   oaInfo,
   onOaInfoChange,
+  testProjectSelection,
+  onTestProjectSelectionChange,
+  isTestProjectDialogOpen,
+  onToggleTestProjectDialog,
 }: {
   model: SpecDocModel;
   isEditMode: boolean;
@@ -1470,6 +1534,10 @@ function HeaderCard({
   onInspectionTestProjectChange: (nextState: InspectionTestProjectState) => void;
   oaInfo: OaInfoState;
   onOaInfoChange: (nextState: OaInfoState) => void;
+  testProjectSelection: TestProjectSelectionState;
+  onTestProjectSelectionChange: (nextState: TestProjectSelectionState) => void;
+  isTestProjectDialogOpen: boolean;
+  onToggleTestProjectDialog: (open: boolean) => void;
 }) {
   void stats;
   const sampleDeliveryDateInputRef = useRef<HTMLInputElement>(null);
@@ -1482,6 +1550,7 @@ function HeaderCard({
   const roleFields = ['产品经理', '结构工程师', '电子工程师']
     .map((label) => findMetaField(model.businessMeta, label))
     .filter((field): field is BoundField => Boolean(field));
+  const selectedTestProjectCount = testProjectSelection.checkedIds.length;
 
   return (
     <section className={`rounded-[18px] px-4 py-4 ${glassPanelClass}`}>
@@ -1618,6 +1687,25 @@ function HeaderCard({
               onChange={onFieldChange}
             />
           ))}
+          <div className="flex min-h-[136px] items-center justify-center border-b border-white/[0.05] px-1 py-1.5">
+            <div className="flex items-center justify-center gap-3">
+              <span className="inline-flex h-9 items-center text-[12px] leading-none text-[#94A3B8]">
+                已选 {selectedTestProjectCount} 项
+              </span>
+              <button
+                type="button"
+                disabled={!isEditMode}
+                onClick={() => onToggleTestProjectDialog(true)}
+                className={`inline-flex h-9 items-center rounded-lg border bg-black/20 px-3 text-[12px] leading-none transition ${
+                  isEditMode
+                    ? 'border-white/[0.08] text-[#E2E8F0] hover:bg-white/[0.05]'
+                    : 'cursor-not-allowed border-white/[0.08] text-white/35'
+                }`}
+              >
+                添加测试项目
+              </button>
+            </div>
+          </div>
         </div>
 
         <div className="mt-5 flex self-stretch flex-col xl:px-2">
@@ -1669,7 +1757,7 @@ function HeaderCard({
 
             <div className="min-w-0 border-b border-white/[0.05] px-1 py-1.5" style={{ gridColumn: 2, gridRow: 1 }}>
               <div className="flex h-full items-center justify-center">
-                <p className="truncate text-center text-sm font-semibold tracking-[0.02em] text-[#E2E8F0]">送样日期</p>
+                <p className="truncate text-center text-[13px] font-semibold tracking-[0.02em] text-[#E2E8F0]">送样日期</p>
               </div>
             </div>
 
@@ -1709,7 +1797,7 @@ function HeaderCard({
 
             <div className="min-w-0 border-b border-white/[0.05] px-1 py-1.5" style={{ gridColumn: 3, gridRow: 1 }}>
               <div className="flex h-full items-center justify-center">
-                <p className="truncate text-center text-sm font-semibold tracking-[0.02em] text-[#E2E8F0]">测试项目</p>
+                <p className="truncate text-center text-[13px] font-semibold tracking-[0.02em] text-[#E2E8F0]">测试项目</p>
               </div>
             </div>
 
@@ -1837,6 +1925,16 @@ function HeaderCard({
           </div>
         </div>
 
+        <TestProjectSelectionDialog
+          open={isTestProjectDialogOpen}
+          initialState={testProjectSelection}
+          onClose={() => onToggleTestProjectDialog(false)}
+          onSave={(nextState) => {
+            onTestProjectSelectionChange(nextState);
+            onToggleTestProjectDialog(false);
+          }}
+        />
+
       </div>
     </section>
   );
@@ -1844,6 +1942,133 @@ function HeaderCard({
 
 function limitRemarkLines(value: string): string {
   return value.split(/\r?\n/).slice(0, 5).join('\n');
+}
+
+function TestProjectSelectionDialog({
+  open,
+  initialState,
+  onClose,
+  onSave,
+}: {
+  open: boolean;
+  initialState: TestProjectSelectionState;
+  onClose: () => void;
+  onSave: (nextState: TestProjectSelectionState) => void;
+}) {
+  const [selectedCategoryId, setSelectedCategoryId] = useState(initialState.selectedCategoryId);
+  const [checkedIds, setCheckedIds] = useState<Set<string>>(() => new Set(initialState.checkedIds));
+  const [customItems, setCustomItems] = useState<Record<string, Record<SectionKey, TestItem[]>>>(initialState.customItems);
+
+  useEffect(() => {
+    if (!open) return;
+    setSelectedCategoryId(initialState.selectedCategoryId);
+    setCheckedIds(new Set(initialState.checkedIds));
+    setCustomItems(initialState.customItems);
+  }, [initialState, open]);
+
+  const category =
+    TEST_PROJECT_CATEGORIES.find((item) => item.id === selectedCategoryId) ?? TEST_PROJECT_CATEGORIES[0];
+
+  const sectionsWithCustom = useMemo(() => {
+    const custom = customItems[category.id];
+    return TEST_PROJECT_SECTION_ORDER.map((key) => ({
+      key,
+      items: [...category.sections[key], ...(custom?.[key] ?? [])],
+    }));
+  }, [category, customItems]);
+
+  function toggleItem(id: string) {
+    setCheckedIds((previous) => {
+      const next = new Set(previous);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function addCustom(section: SectionKey, name: string, standard: string) {
+    const newItem: TestItem = {
+      id: `spec-custom-${category.id}-${section}-${Date.now()}`,
+      name,
+      standard,
+    };
+
+    setCustomItems((previous) => {
+      const current = previous[category.id] ?? {
+        routine: [],
+        destructive: [],
+        reliability: [],
+      };
+
+      return {
+        ...previous,
+        [category.id]: {
+          ...current,
+          [section]: [...current[section], newItem],
+        },
+      };
+    });
+
+    setCheckedIds((previous) => {
+      const next = new Set(previous);
+      next.add(newItem.id);
+      return next;
+    });
+  }
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/78 p-6 backdrop-blur-sm">
+      <div className="flex max-h-[88vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-white/[0.08] bg-[#090c13] shadow-2xl">
+        <div className="flex items-center justify-between gap-3 border-b border-white/[0.06] px-6 py-4">
+          <div>
+            <h2 className="text-base font-semibold text-[#E2E8F0]">测试项目解析</h2>
+            <p className="mt-1 text-[12px] text-[#94A3B8]">选择需要纳入规格书流程的测试项目，保存后自动写入当前工作区。</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-lg border border-white/[0.08] px-3 py-1.5 text-[12px] text-[#94A3B8] transition hover:bg-white/[0.05]"
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                onSave({
+                  selectedCategoryId: category.id,
+                  checkedIds: Array.from(checkedIds),
+                  customItems,
+                })
+              }
+              className="rounded-lg border border-cyan-400/35 bg-cyan-400/10 px-3 py-1.5 text-[12px] font-medium text-cyan-100 transition hover:bg-cyan-400/15"
+            >
+              保存测试项目
+            </button>
+          </div>
+        </div>
+
+        <div className="overflow-y-auto p-6">
+          <div className="mx-auto flex max-w-5xl flex-col gap-5">
+            <CategoryBar selectedId={category.id} onSelect={setSelectedCategoryId} />
+            {sectionsWithCustom.map(({ key, items }) => (
+              <TestSection
+                key={`${category.id}-${key}`}
+                title={TEST_PROJECT_SECTION_LABELS[key]}
+                badgeClass={TEST_PROJECT_SECTION_BADGES[key]}
+                items={items}
+                checkedIds={checkedIds}
+                onToggle={toggleItem}
+                onAddCustom={(name, standard) => addCustom(key, name, standard)}
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function MetaGridCard({
@@ -2286,6 +2511,12 @@ function buildOaInfoStateFromWorkspaceState(
   return normalizeOaInfoState(state.oaInfo);
 }
 
+function buildTestProjectSelectionStateFromWorkspaceState(
+  state: EngineeringSpecWorkspaceState,
+): TestProjectSelectionState {
+  return normalizeTestProjectSelectionState(state.testProjectSelection);
+}
+
 function buildSpecDocModelFromArchiveState(state: EngineeringSpecArchiveState): SpecDocModel {
   return {
     sourceFileName: state.fileName || '已归档规格书.xlsx',
@@ -2356,6 +2587,12 @@ function buildOaInfoStateFromArchiveState(
   return normalizeOaInfoState(state.oaInfo);
 }
 
+function buildTestProjectSelectionStateFromArchiveState(
+  state: EngineeringSpecArchiveState,
+): TestProjectSelectionState {
+  return normalizeTestProjectSelectionState(state.testProjectSelection);
+}
+
 function normalizeInspectionTestProjectState(
   value:
     | {
@@ -2394,6 +2631,70 @@ function normalizeOaInfoState(
     workflowNo: String(value?.workflowNo || ''),
     reportStatus: String(value?.reportStatus || ''),
   };
+}
+
+function normalizeTestProjectSelectionState(
+  value:
+    | {
+        selectedCategoryId?: string;
+        checkedIds?: string[];
+        customItems?: Record<string, Record<string, EngineeringSpecWorkspaceSelectedTestItem[]>>;
+      }
+    | null
+    | undefined,
+): TestProjectSelectionState {
+  const selectedCategoryId = String(value?.selectedCategoryId || TEST_PROJECT_CATEGORIES[0]?.id || '');
+  const checkedIds = Array.isArray(value?.checkedIds) ? value.checkedIds.map((item) => String(item)) : [];
+  const customItemsRecord = value?.customItems && typeof value.customItems === 'object' ? value.customItems : {};
+  const customItems: Record<string, Record<SectionKey, TestItem[]>> = {};
+
+  for (const [categoryId, sectionMap] of Object.entries(customItemsRecord)) {
+    if (!sectionMap || typeof sectionMap !== 'object') continue;
+    const normalizedSectionMap: Record<SectionKey, TestItem[]> = {
+      routine: [],
+      destructive: [],
+      reliability: [],
+    };
+
+    for (const sectionKey of TEST_PROJECT_SECTION_ORDER) {
+      const rows = (sectionMap as Record<string, EngineeringSpecWorkspaceSelectedTestItem[]>)[sectionKey];
+      normalizedSectionMap[sectionKey] = Array.isArray(rows)
+        ? rows.map((row) => ({
+            id: String(row?.id || `${categoryId}-${sectionKey}-${Math.random()}`),
+            name: String(row?.name || ''),
+            standard: String(row?.standard || ''),
+          }))
+        : [];
+    }
+
+    customItems[categoryId] = normalizedSectionMap;
+  }
+
+  return {
+    selectedCategoryId,
+    checkedIds,
+    customItems,
+  };
+}
+
+function serializeTestProjectCustomItems(
+  customItems: Record<string, Record<SectionKey, TestItem[]>>,
+): Record<string, Record<string, EngineeringSpecWorkspaceSelectedTestItem[]>> {
+  const serialized: Record<string, Record<string, EngineeringSpecWorkspaceSelectedTestItem[]>> = {};
+
+  for (const [categoryId, sectionMap] of Object.entries(customItems)) {
+    serialized[categoryId] = {};
+    for (const sectionKey of TEST_PROJECT_SECTION_ORDER) {
+      serialized[categoryId][sectionKey] = (sectionMap[sectionKey] || []).map((item) => ({
+        id: item.id,
+        section: sectionKey,
+        name: item.name,
+        standard: item.standard,
+      }));
+    }
+  }
+
+  return serialized;
 }
 
 function mapWorkspaceSectionsToSpecSections(
@@ -2535,6 +2836,7 @@ function buildWorkspaceStatePayload(
   qeConclusion: string,
   inspectionTestProject: InspectionTestProjectState,
   oaInfo: OaInfoState,
+  testProjectSelection: TestProjectSelectionState,
 ): EngineeringSpecWorkspaceState {
   return {
     workspaceKey,
@@ -2551,6 +2853,11 @@ function buildWorkspaceStatePayload(
       workflowName: oaInfo.workflowName || undefined,
       workflowNo: oaInfo.workflowNo || undefined,
       reportStatus: oaInfo.reportStatus || undefined,
+    },
+    testProjectSelection: {
+      selectedCategoryId: testProjectSelection.selectedCategoryId || undefined,
+      checkedIds: testProjectSelection.checkedIds,
+      customItems: serializeTestProjectCustomItems(testProjectSelection.customItems),
     },
     metadata: {
       rowCount: meta.rowCount,
@@ -3007,6 +3314,7 @@ function buildArchiveStateFromModel(
   qeConclusion: string,
   inspectionTestProject: InspectionTestProjectState,
   oaInfo: OaInfoState,
+  testProjectSelection: TestProjectSelectionState,
   fileFingerprint: string | null,
 ): EngineeringSpecArchiveState {
   return {
@@ -3024,6 +3332,11 @@ function buildArchiveStateFromModel(
       workflowName: oaInfo.workflowName || undefined,
       workflowNo: oaInfo.workflowNo || undefined,
       reportStatus: oaInfo.reportStatus || undefined,
+    },
+    testProjectSelection: {
+      selectedCategoryId: testProjectSelection.selectedCategoryId || undefined,
+      checkedIds: testProjectSelection.checkedIds,
+      customItems: serializeTestProjectCustomItems(testProjectSelection.customItems),
     },
     images: evidenceSlots
       .filter((slot) => slot.imageUrl)

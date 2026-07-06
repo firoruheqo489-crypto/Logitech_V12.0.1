@@ -62,7 +62,7 @@ export function PrintReport({ selectedItems, onClose }: PrintReportProps) {
           <caption className="sr-only">选定的测试项目清单</caption>
           <thead>
             <tr>
-              {['测试类别', '序号', '测试项目', '标准与条件', '结果'].map((header, headerIndex) => (
+              {['测试类别', '序号', '测试项目', '标准与条件', '备注'].map((header, headerIndex) => (
                 <th
                   key={header}
                   style={{ border: '1px solid black' }}
@@ -71,6 +71,8 @@ export function PrintReport({ selectedItems, onClose }: PrintReportProps) {
                       ? 'w-[28mm] whitespace-nowrap text-center'
                       : headerIndex === 1
                         ? 'w-[16mm] whitespace-nowrap text-center'
+                        : headerIndex === 4
+                          ? 'w-[42mm] text-left'
                         : 'text-left'
                   }`}
                 >
@@ -104,24 +106,7 @@ export function PrintReport({ selectedItems, onClose }: PrintReportProps) {
                   {item.standard}
                 </td>
                 <td style={{ border: '1px solid black' }} className="px-2 py-1.5">
-                  <span className="inline-flex items-center gap-3">
-                    <span className="inline-flex items-center gap-1">
-                      <span
-                        className="inline-block size-3"
-                        style={{ border: '1px solid black' }}
-                        aria-hidden="true"
-                      />
-                      Pass
-                    </span>
-                    <span className="inline-flex items-center gap-1">
-                      <span
-                        className="inline-block size-3"
-                        style={{ border: '1px solid black' }}
-                        aria-hidden="true"
-                      />
-                      Fail
-                    </span>
-                  </span>
+                  &nbsp;
                 </td>
               </tr>
             ))}
