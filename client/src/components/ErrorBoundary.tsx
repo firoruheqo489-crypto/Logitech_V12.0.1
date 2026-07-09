@@ -27,18 +27,46 @@ function hardReloadWithCacheBust() {
   window.location.replace(url.toString());
 }
 
+function releaseBootOverlay() {
+  document.documentElement.style.opacity = "1";
+  document.documentElement.style.transition = "";
+  document.getElementById("app-boot-splash")?.remove();
+}
+
+function autoReloadChunkFailureOnce() {
+  const url = new URL(window.location.href);
+  if (url.searchParams.get("_chunkReload") === "1") {
+    return;
+  }
+  url.searchParams.set("_chunkReload", "1");
+  url.searchParams.set("_reload", Date.now().toString());
+  window.setTimeout(() => {
+    window.location.replace(url.toString());
+  }, 250);
+}
+
 class ErrorBoundary extends Component<Props, State> {
+  private reloadTimer: number | null = null;
+
   constructor(props: Props) {
     super(props);
     this.state = { hasError: false, error: null };
   }
 
   componentDidMount(): void {
-    // No-op. We keep manual recovery so users can review the state before refreshing.
+    releaseBootOverlay();
   }
 
   componentDidCatch(error: Error): void {
+    releaseBootOverlay();
     if (!isDynamicImportFetchError(error)) return;
+    this.reloadTimer = window.setTimeout(autoReloadChunkFailureOnce, 0);
+  }
+
+  componentWillUnmount(): void {
+    if (this.reloadTimer !== null) {
+      window.clearTimeout(this.reloadTimer);
+    }
   }
 
   static getDerivedStateFromError(error: Error): State {
@@ -49,26 +77,25 @@ class ErrorBoundary extends Component<Props, State> {
     if (this.state.hasError) {
       const chunkLoadFailure = isDynamicImportFetchError(this.state.error);
       return (
-        <div className="flex items-center justify-center min-h-screen p-8 bg-background">
-          <div className="flex flex-col items-center w-full max-w-2xl p-8">
+        <div className="flex min-h-screen items-center justify-center bg-slate-950 p-8 text-slate-100">
+          <div className="flex w-full max-w-2xl flex-col items-center rounded-xl border border-white/10 bg-slate-900/80 p-8 shadow-2xl">
             <AlertTriangle
               size={48}
-              className="text-destructive mb-6 flex-shrink-0"
+              className="mb-6 flex-shrink-0 text-amber-300"
             />
 
-            <h2 className="text-xl mb-4">
-              {chunkLoadFailure ? "A newer version of this page is available." : "An unexpected error occurred."}
+            <h2 className="mb-4 text-xl font-semibold text-white">
+              {chunkLoadFailure ? "页面正在切换到最新版本" : "页面出现异常"}
             </h2>
 
             {chunkLoadFailure ? (
-              <p className="mb-6 text-center text-sm text-muted-foreground">
-                This tab is still using an older module bundle. Refresh to load the latest version before switching
-                workspaces again.
+              <p className="mb-6 text-center text-sm text-slate-300">
+                当前标签页还缓存着发布前的模块，系统会自动刷新一次并重新加载最新文件。
               </p>
             ) : null}
 
-            <div className="p-4 w-full rounded bg-muted overflow-auto mb-6">
-              <pre className="text-sm text-muted-foreground whitespace-break-spaces">
+            <div className="mb-6 max-h-72 w-full overflow-auto rounded-lg border border-white/10 bg-black/35 p-4">
+              <pre className="whitespace-break-spaces text-xs text-slate-300">
                 {this.state.error?.stack}
               </pre>
             </div>
@@ -77,12 +104,12 @@ class ErrorBoundary extends Component<Props, State> {
               onClick={hardReloadWithCacheBust}
               className={cn(
                 "flex items-center gap-2 px-4 py-2 rounded-lg",
-                "bg-primary text-primary-foreground",
+                "bg-cyan-400 text-slate-950",
                 "hover:opacity-90 cursor-pointer"
               )}
             >
               <RotateCcw size={16} />
-              {chunkLoadFailure ? "Refresh To Update" : "Reload Page"}
+              {chunkLoadFailure ? "立即刷新" : "重新加载页面"}
             </button>
           </div>
         </div>
