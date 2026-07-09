@@ -112,6 +112,14 @@ body::-webkit-scrollbar-button,
   --color-danger-foreground: var(--danger-foreground);
   --color-info: var(--info);
   --color-info-foreground: var(--info-foreground);
+  --color-pass: var(--pass);
+  --color-pass-foreground: var(--pass-foreground);
+  --color-fail: var(--fail);
+  --color-fail-foreground: var(--fail-foreground);
+  --color-untested: var(--untested);
+  --color-untested-foreground: var(--untested-foreground);
+  --color-warn: var(--warn);
+  --color-warn-foreground: var(--warn-foreground);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
@@ -189,6 +197,14 @@ body::-webkit-scrollbar-button,
   --danger-foreground: #ffffff;
   --info: #38bdf8;
   --info-foreground: #0b0f14;
+  --pass: oklch(0.78 0.15 195);
+  --pass-foreground: oklch(0.16 0.02 260);
+  --fail: oklch(0.64 0.24 18);
+  --fail-foreground: oklch(0.98 0.01 20);
+  --untested: oklch(0.62 0.1 75);
+  --untested-foreground: oklch(0.78 0.12 75);
+  --warn: oklch(0.72 0.15 75);
+  --warn-foreground: oklch(0.82 0.14 78);
 
   /* ═══ Typography Token System — Industrial Console ═══ */
   /* Font stacks */

@@ -61,6 +61,7 @@ const CaqAuditWorkspace = lazy(() => import('./components/CaqAuditWorkspace'));
 const ProductDataDrawerWorkspace = lazy(() => import('./components/ProductDataDrawerWorkspace'));
 const ProgressLogsDrawerWorkspace = lazy(() => import('./components/ProgressLogsDrawerWorkspace'));
 const ParetoQualityDashboard = lazy(() => import('./components/ParetoQualityDashboard'));
+const FinalSampleReportDashboard = lazy(() => import('./components/FinalSampleReportDashboard'));
 const TestProjectParserDashboard = lazy(() => import('./components/TestProjectParserDashboard'));
 const ProductSpecExcelParserDashboard = lazy(() => import('./components/ProductSpecExcelParserDashboard'));
 const LaboratoryPdfParserDashboard = lazy(() => import('./components/LaboratoryPdfParserDashboard'));
@@ -184,6 +185,7 @@ const DASHBOARD_TABS = [
   'image-stitcher',
   'boxplot',
   'pareto-analysis',
+  'final-sample-report',
   'test-project-parser',
   'product-spec-parser',
   'laboratory-pdf-parser',
@@ -872,6 +874,7 @@ export default function DashboardHome() {
             const labels: Record<string, string> = {
               'overview': '项目总览',
               'pareto-analysis': '柏拉图分析',
+              'final-sample-report': '终样报告',
               'test-project-parser': '测试项目解析',
               'image-stitcher': '图片拼接',
               'product-spec-parser': '产品规格书看板',
@@ -942,6 +945,12 @@ export default function DashboardHome() {
         {selectedTab === 'pareto-analysis' && (
           <LazyWorkspace>
             <ParetoQualityDashboard />
+          </LazyWorkspace>
+        )}
+
+        {selectedTab === 'final-sample-report' && (
+          <LazyWorkspace>
+            <FinalSampleReportDashboard />
           </LazyWorkspace>
         )}
 
