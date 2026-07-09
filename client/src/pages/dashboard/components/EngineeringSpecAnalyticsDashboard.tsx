@@ -58,9 +58,9 @@ export function EngineeringSpecAnalyticsDashboard({
 
         <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-3">
           <Panel title="每日处理量" sub="Recent 7 Days" className="lg:col-span-2">
-            <div className="h-64 w-full">
+            <div className="h-[316px] w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={volumeData} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
+                <BarChart data={volumeData} margin={{ top: 8, right: 8, left: -16, bottom: 18 }}>
                   <XAxis
                     dataKey="day"
                     tick={{ fill: "var(--muted-foreground)", fontSize: 11, fontFamily: "var(--font-mono)" }}
@@ -81,20 +81,17 @@ export function EngineeringSpecAnalyticsDashboard({
                       borderRadius: 6,
                       fontSize: 12,
                       fontFamily: "var(--font-mono)",
-                      color: "var(--popover-foreground)",
+                      color: "#fff",
                     }}
+                    labelStyle={{ color: "#fff" }}
+                    itemStyle={{ color: "#fff" }}
+                    wrapperStyle={{ color: "#fff" }}
                   />
                   <Bar dataKey="count" name="处理总数" fill="var(--chart-1)" radius={[3, 3, 0, 0]} maxBarSize={42} />
                   <Bar dataKey="pass" name="一次通过" fill="var(--chart-2)" radius={[3, 3, 0, 0]} maxBarSize={42} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
-            <Legend
-              items={[
-                { label: "处理总数", color: "var(--chart-1)" },
-                { label: "一次通过", color: "var(--chart-2)" },
-              ]}
-            />
           </Panel>
 
           <Panel title="样品分布" sub="By Product Category">
@@ -122,8 +119,11 @@ export function EngineeringSpecAnalyticsDashboard({
                       borderRadius: 6,
                       fontSize: 12,
                       fontFamily: "var(--font-mono)",
-                      color: "var(--popover-foreground)",
+                      color: "#fff",
                     }}
+                    labelStyle={{ color: "#fff" }}
+                    itemStyle={{ color: "#fff" }}
+                    wrapperStyle={{ color: "#fff" }}
                   />
                 </PieChart>
               </ResponsiveContainer>
@@ -239,19 +239,6 @@ function Panel({
       </div>
       {children}
     </section>
-  );
-}
-
-function Legend({ items }: { items: { label: string; color: string }[] }) {
-  return (
-    <ul className="mt-1 flex items-center gap-4">
-      {items.map((item) => (
-        <li key={item.label} className="flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground">
-          <span className="h-2.5 w-2.5 rounded-[2px]" style={{ background: item.color }} />
-          {item.label}
-        </li>
-      ))}
-    </ul>
   );
 }
 
