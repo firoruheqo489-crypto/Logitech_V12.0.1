@@ -141,6 +141,98 @@ function parseEnvFile(filePath) {
   return envMap;
 }
 
+function readEnvValue(envMap, key) {
+  return (process.env[key] || envMap.get(key) || '').trim();
+}
+
+function extractDbHost(connectionString) {
+  if (!connectionString) return '';
+  try {
+    return new URL(connectionString).hostname;
+  } catch {
+    return '';
+  }
+}
+
+function isSupabaseDirectHost(host) {
+  return /^db\./i.test(host) && /\.supabase\.co$/i.test(host);
+}
+
+function isSupabasePoolerHost(host) {
+  return /\.pooler\.supabase\.com$/i.test(host);
+}
+
+function parsePinnedHosts(value) {
+  if (!value) return [];
+
+  return value
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      const [hostPart, portPart] = entry.split(':');
+      const parsedPort = Number.parseInt(portPart || '5432', 10);
+      return {
+        host: hostPart.trim(),
+        port: Number.isFinite(parsedPort) ? parsedPort : 5432,
+      };
+    })
+    .filter((entry) => entry.host);
+}
+
+function buildPinnedConnectionString(baseConnectionString, pinnedHosts) {
+  if (!baseConnectionString || pinnedHosts.length === 0) return baseConnectionString;
+
+  try {
+    const parsedUrl = new URL(baseConnectionString);
+    const hostSegment = pinnedHosts.map((entry) => `${entry.host}:${entry.port}`).join(',');
+    return baseConnectionString.replace(parsedUrl.host, hostSegment);
+  } catch {
+    return baseConnectionString;
+  }
+}
+
+function resolveSmokeDatabase(envMap) {
+  const configuredDatabaseUrl = readEnvValue(envMap, 'DATABASE_URL');
+  const poolerConnectionString = readEnvValue(envMap, 'DATABASE_URL_POOLER');
+  const directConnectionString = readEnvValue(envMap, 'DATABASE_URL_DIRECT');
+  const pinnedHosts = parsePinnedHosts(readEnvValue(envMap, 'DATABASE_URL_POOLER_IPS'));
+
+  let connectionString = configuredDatabaseUrl;
+  let source = 'DATABASE_URL';
+  let activePinnedHosts = [];
+
+  const configuredHost = extractDbHost(configuredDatabaseUrl);
+  const poolerHost = extractDbHost(poolerConnectionString);
+  if (
+    (
+      !configuredDatabaseUrl
+      || !configuredHost
+      || (poolerConnectionString && isSupabaseDirectHost(configuredHost))
+    )
+    && poolerConnectionString
+  ) {
+    connectionString = poolerConnectionString;
+    source = configuredDatabaseUrl
+      ? 'DATABASE_URL_POOLER preferred for local smoke'
+      : 'DATABASE_URL_POOLER fallback';
+    activePinnedHosts = pinnedHosts;
+  } else if (!configuredDatabaseUrl && directConnectionString) {
+    connectionString = directConnectionString;
+    source = 'DATABASE_URL_DIRECT fallback';
+  } else if (isSupabasePoolerHost(configuredHost)) {
+    activePinnedHosts = pinnedHosts;
+  }
+
+  const resolvedHost = extractDbHost(connectionString);
+  return {
+    connectionString: buildPinnedConnectionString(connectionString, activePinnedHosts),
+    source,
+    resolvedHost,
+    pinnedHosts: activePinnedHosts,
+  };
+}
+
 function resolveApiKey(args, envFilePath) {
   const envMap = parseEnvFile(envFilePath);
   return (
@@ -176,8 +268,14 @@ async function postFailureEvent(args, currentShots, recoveryRating, ordinal, api
   });
 }
 
-async function queryStoredMetrics(connectionString, moldId) {
-  const sql = postgres(connectionString, { ssl: 'require', max: 1 });
+async function queryStoredMetrics(database, moldId) {
+  const sql = postgres(database.connectionString, {
+    ssl:
+      database.pinnedHosts.length > 0
+        ? { rejectUnauthorized: false, servername: database.resolvedHost }
+        : 'require',
+    max: 1,
+  });
   try {
     const rows = await sql.unsafe(
       `
@@ -254,12 +352,13 @@ async function main() {
   }
 
   const envMap = parseEnvFile(envFilePath);
-  const connectionString = process.env.DATABASE_URL || envMap.get('DATABASE_URL') || '';
-  if (!connectionString) {
+  const database = resolveSmokeDatabase(envMap);
+  if (!database.connectionString) {
     throw new Error(`Reliability smoke failed: DATABASE_URL missing in ${envFilePath}.`);
   }
+  console.log(`[INFO] Reliability DB target=${database.resolvedHost || 'unknown-host'} (${database.source})`);
 
-  const storedMetrics = await queryStoredMetrics(connectionString, args.moldId);
+  const storedMetrics = await queryStoredMetrics(database, args.moldId);
   const storedBeta = readNumber(storedMetrics?.beta, 0);
   if (!(storedBeta > beforeBeta)) {
     throw new Error(
