@@ -88,6 +88,8 @@ type EngineeringSpecLedgerRecord = {
   productGroup: string;
   sampleQty: string;
   testDate: string;
+  sampleType?: string;
+  reportStatus?: string;
   result: "合格" | "待完善";
   pendingCount: number;
   createdAt: string;
@@ -282,6 +284,8 @@ function sanitizeRecord(
     productGroup: normalizeText(record.productGroup, 255),
     sampleQty: normalizeText(record.sampleQty, 64),
     testDate: normalizeText(record.testDate, 64),
+    sampleType: normalizeText(record.sampleType, 32) || undefined,
+    reportStatus: normalizeText(record.reportStatus, 64) || undefined,
     result: normalizeText(record.result, 16) === "待完善" ? "待完善" : "合格",
     pendingCount: Number(record.pendingCount) || 0,
     createdAt: normalizeText(record.createdAt, 64, createdAtFallback),
@@ -455,6 +459,14 @@ async function hydrateManifestDocuments(
           selectLedgerImageUrl(snapshot.state) ||
           undefined,
         productGroup: extractProductManager(snapshot.state.businessMeta),
+        sampleType:
+          normalizeText(document.sampleType, 32) ||
+          normalizeText(snapshot.state.inspectionTestProject?.testType, 32) ||
+          undefined,
+        reportStatus:
+          normalizeText(document.reportStatus, 64) ||
+          normalizeText(snapshot.state.oaInfo?.reportStatus, 64) ||
+          undefined,
       };
     })
   );
@@ -546,6 +558,65 @@ async function readArchiveSnapshot(
   }
 }
 
+async function writeArchiveSnapshot(
+  projectId: string,
+  snapshot: EngineeringSpecArchiveSnapshot
+): Promise<void> {
+  await putOssObject({
+    objectKey: buildDocumentObjectKey(projectId, snapshot.document.id),
+    body: Buffer.from(JSON.stringify(snapshot, null, 2), "utf8"),
+    mimeType: "application/json",
+    cacheControl: "no-cache",
+  });
+}
+
+function compactLedgerSequences(
+  documents: EngineeringSpecLedgerRecord[]
+): { documents: EngineeringSpecLedgerRecord[]; changed: boolean } {
+  let changed = false;
+  const compacted = [...documents]
+    .sort((left, right) => {
+      const leftSequence = Number(left.sequence) || 0;
+      const rightSequence = Number(right.sequence) || 0;
+      if (leftSequence !== rightSequence) return leftSequence - rightSequence;
+      return String(left.createdAt || "").localeCompare(String(right.createdAt || ""));
+    })
+    .map((document, index) => {
+      const nextSequence = index + 1;
+      if (document.sequence === nextSequence) return document;
+      changed = true;
+      return {
+        ...document,
+        sequence: nextSequence,
+      };
+    });
+
+  return {
+    documents: sortDocumentsDescending(compacted),
+    changed,
+  };
+}
+
+async function syncArchiveSnapshotSequences(
+  projectId: string,
+  documents: EngineeringSpecLedgerRecord[]
+): Promise<void> {
+  await Promise.all(
+    documents.map(async (document) => {
+      const snapshot = await readArchiveSnapshot(projectId, document.id);
+      if (!snapshot || snapshot.document.sequence === document.sequence) return;
+
+      await writeArchiveSnapshot(projectId, {
+        ...snapshot,
+        document: {
+          ...snapshot.document,
+          sequence: document.sequence,
+        },
+      });
+    })
+  );
+}
+
 export async function listDashboardEngineeringSpecArchives(
   req: Request,
   res: Response
@@ -560,23 +631,32 @@ export async function listDashboardEngineeringSpecArchives(
 
   try {
     const manifest = await readManifest(projectId);
-    const documents = manifest
+    const hydratedDocuments = manifest
       ? await hydrateManifestDocuments(projectId, manifest.documents)
       : [];
+    const compacted = compactLedgerSequences(hydratedDocuments);
+    const documents = compacted.documents;
     if (
       manifest &&
-      documents.some((document, index) => {
-        const existing = manifest.documents[index];
+      (compacted.changed ||
+        documents.some((document) => {
+        const existing = manifest.documents.find((item) => item.id === document.id);
         return (
           existing &&
-          (existing.category !== document.category ||
+          (existing.sequence !== document.sequence ||
+            existing.category !== document.category ||
             existing.contentFingerprint !== document.contentFingerprint ||
             existing.imageUrl !== document.imageUrl ||
-            existing.productGroup !== document.productGroup)
+            existing.productGroup !== document.productGroup ||
+            existing.sampleType !== document.sampleType ||
+            existing.reportStatus !== document.reportStatus)
         );
-      })
+      }))
     ) {
       await writeManifest(projectId, documents);
+      if (compacted.changed) {
+        await syncArchiveSnapshotSequences(projectId, documents);
+      }
     }
     res.status(200).json({
       documents,
@@ -651,7 +731,13 @@ export async function createDashboardEngineeringSpecArchive(
   const createdAt = new Date().toISOString();
   const documentId = crypto.randomUUID();
   const documentObjectKey = buildDocumentObjectKey(projectId, documentId);
-  const existingDocuments = (await readManifest(projectId))?.documents ?? [];
+  let existingDocuments = (await readManifest(projectId))?.documents ?? [];
+  const compactedExistingDocuments = compactLedgerSequences(existingDocuments);
+  if (compactedExistingDocuments.changed) {
+    existingDocuments = compactedExistingDocuments.documents;
+    await writeManifest(projectId, existingDocuments);
+    await syncArchiveSnapshotSequences(projectId, existingDocuments);
+  }
   const hydratedDocuments = await hydrateManifestDocuments(
     projectId,
     existingDocuments
@@ -737,6 +823,8 @@ export async function createDashboardEngineeringSpecArchive(
       productGroup: extractProductManager(normalizedState?.businessMeta),
       sampleQty: normalizeText(normalizedState?.productInfo?.sampleQty, 64),
       testDate: normalizeText(normalizedState?.productInfo?.testDate, 64),
+      sampleType: normalizeText(normalizedState?.inspectionTestProject?.testType, 32) || undefined,
+      reportStatus: normalizeText(normalizedState?.oaInfo?.reportStatus, 64) || undefined,
       result: failCount > 0 || pendingCount > 0 ? "待完善" : "合格",
       pendingCount,
       createdAt,
@@ -913,6 +1001,12 @@ export async function updateDashboardEngineeringSpecArchive(
         64,
         existingSnapshot.document.testDate
       ),
+      sampleType:
+        normalizeText(normalizedState?.inspectionTestProject?.testType, 32) ||
+        existingSnapshot.document.sampleType,
+      reportStatus:
+        normalizeText(normalizedState?.oaInfo?.reportStatus, 64) ||
+        existingSnapshot.document.reportStatus,
       result: failCount > 0 || pendingCount > 0 ? "待完善" : "合格",
       pendingCount,
     };
@@ -980,10 +1074,13 @@ export async function deleteDashboardEngineeringSpecArchive(
   try {
     const snapshot = await readArchiveSnapshot(projectId, documentId);
     const existingDocuments = (await readManifest(projectId))?.documents ?? [];
-    await writeManifest(
-      projectId,
+    const compactedDocuments = compactLedgerSequences(
       existingDocuments.filter(item => item.id !== documentId)
     );
+    await writeManifest(projectId, compactedDocuments.documents);
+    if (compactedDocuments.changed) {
+      await syncArchiveSnapshotSequences(projectId, compactedDocuments.documents);
+    }
     await deleteOssObject(buildDocumentObjectKey(projectId, documentId)).catch(
       () => undefined
     );

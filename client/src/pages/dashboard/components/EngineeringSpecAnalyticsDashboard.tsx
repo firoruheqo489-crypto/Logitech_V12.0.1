@@ -17,8 +17,6 @@ import {
   CalendarDays,
   Target,
   TrendingUp,
-  CheckCircle2,
-  AlertTriangle,
 } from "lucide-react";
 
 import type { EngineeringSpecLedgerRecord } from "@/lib/engineering-spec-ledger-api";
@@ -36,14 +34,14 @@ export function EngineeringSpecAnalyticsDashboard({
 }: {
   archives: EngineeringSpecLedgerRecord[];
 }) {
-  const recentArchives = getRecentSevenDayArchives(archives);
+  const orderedArchives = orderArchivesBySequence(archives);
+  const recentArchives = getRecentSevenDayArchives(orderedArchives);
   const total = recentArchives.length;
-  const totalPass = recentArchives.filter((item) => item.result === "合格").length;
+  const totalSampleOrders = orderedArchives.length;
   const dailyAvg = total === 0 ? "0.0" : (total / 7).toFixed(1);
-  const fpy = total === 0 ? "0.0" : ((totalPass / total) * 100).toFixed(1);
   const volumeData = buildDailyVolumeData(recentArchives);
-  const typeData = buildTypeBreakdown(recentArchives);
-  const typeTotal = typeData.reduce((sum, item) => sum + item.value, 0);
+  const categoryData = buildCategoryBreakdown(orderedArchives);
+  const categoryTotal = categoryData.reduce((sum, item) => sum + item.value, 0);
 
   return (
     <div className="flex h-full flex-col">
@@ -55,7 +53,7 @@ export function EngineeringSpecAnalyticsDashboard({
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <KpiCard icon={Layers} label="近 7 天处理总数" sub="Total Processed" value={String(total)} unit="份" />
           <KpiCard icon={CalendarDays} label="日均处理量" sub="Daily Average" value={dailyAvg} unit="份/日" />
-          <KpiCard icon={Target} label="直通率" sub="First Pass Yield" value={fpy} unit="%" accent />
+          <KpiCard icon={Target} label="总样品单数" sub="Ledger Orders" value={String(totalSampleOrders)} unit="单" accent />
         </div>
 
         <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-3">
@@ -99,12 +97,12 @@ export function EngineeringSpecAnalyticsDashboard({
             />
           </Panel>
 
-          <Panel title="产品类别分布" sub="By Product Category">
+          <Panel title="样品分布" sub="By Product Category">
             <div className="relative h-44 w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie
-                    data={typeData}
+                    data={categoryData}
                     dataKey="value"
                     nameKey="type"
                     innerRadius={48}
@@ -113,7 +111,7 @@ export function EngineeringSpecAnalyticsDashboard({
                     stroke="var(--card)"
                     strokeWidth={2}
                   >
-                    {typeData.map((_, index) => (
+                    {categoryData.map((_, index) => (
                       <Cell key={index} fill={DONUT_COLORS[index % DONUT_COLORS.length]} />
                     ))}
                   </Pie>
@@ -130,12 +128,12 @@ export function EngineeringSpecAnalyticsDashboard({
                 </PieChart>
               </ResponsiveContainer>
               <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-                <span className="font-mono text-xl font-bold tabular-nums">{typeTotal}</span>
-                <span className="font-mono text-[10px] text-muted-foreground">总数</span>
+                <span className="font-mono text-xl font-bold tabular-nums">{categoryTotal}</span>
+                <span className="font-mono text-[10px] text-muted-foreground">单数</span>
               </div>
             </div>
             <ul className="mt-2 flex flex-col gap-1">
-              {typeData.map((item, index) => (
+              {categoryData.map((item, index) => (
                 <li key={item.type} className="flex items-center gap-2 font-mono text-xs">
                   <span
                     className="h-2.5 w-2.5 shrink-0 rounded-[2px]"
@@ -143,7 +141,7 @@ export function EngineeringSpecAnalyticsDashboard({
                   />
                   <span className="text-foreground">{item.type}</span>
                   <span className="ml-auto tabular-nums text-muted-foreground">
-                    {item.value} ({typeTotal === 0 ? 0 : ((item.value / typeTotal) * 100).toFixed(0)}%)
+                    {item.value} ({categoryTotal === 0 ? 0 : ((item.value / categoryTotal) * 100).toFixed(0)}%)
                   </span>
                 </li>
               ))}
@@ -152,38 +150,24 @@ export function EngineeringSpecAnalyticsDashboard({
         </div>
 
         <Panel title="最近归档记录" sub="Latest 5" className="mt-3">
-          <div className="overflow-x-auto">
+          <div className="h-[286px] overflow-y-auto overflow-x-hidden scrollbar-soft pr-2">
             <table className="w-full border-collapse text-left">
               <thead>
-                <tr className="border-b border-border font-mono text-[10px] tracking-wider text-muted-foreground">
+                <tr className="sticky top-0 z-10 border-b border-border bg-[#111111] font-mono text-[10px] tracking-wider text-muted-foreground">
                   <th className="py-2 pr-4 font-medium">产品编号</th>
                   <th className="py-2 pr-4 font-medium">产品类别</th>
-                  <th className="py-2 pr-4 font-medium">结果</th>
-                  <th className="py-2 pr-4 font-medium">事业部</th>
+                  <th className="py-2 pr-4 font-medium">样品状态</th>
+                  <th className="py-2 pr-4 font-medium">产品经理</th>
                   <th className="py-2 font-medium">归档时间</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {archives.slice(0, 5).map((record) => (
+                {orderedArchives.map((record) => (
                   <tr key={record.id} className="font-mono text-xs hover:bg-secondary/30">
                     <td className="py-2 pr-4 font-medium text-foreground">{record.sku}</td>
                     <td className="py-2 pr-4 text-muted-foreground">{record.category || "—"}</td>
-                    <td className="py-2 pr-4">
-                      <span
-                        className={cn(
-                          "inline-flex items-center gap-1",
-                          record.result === "合格" ? "text-emerald-300" : "text-amber-300",
-                        )}
-                      >
-                        {record.result === "合格" ? (
-                          <CheckCircle2 className="h-3.5 w-3.5" />
-                        ) : (
-                          <AlertTriangle className="h-3.5 w-3.5" />
-                        )}
-                        {record.result}
-                      </span>
-                    </td>
-                    <td className="py-2 pr-4 text-muted-foreground">{record.department || "—"}</td>
+                    <td className="py-2 pr-4">{renderAnalyticsSampleStatus(record.sampleType)}</td>
+                    <td className="py-2 pr-4 text-muted-foreground">{record.productGroup || "—"}</td>
                     <td className="py-2 tabular-nums text-muted-foreground">{formatTime(record.createdAt)}</td>
                   </tr>
                 ))}
@@ -271,6 +255,15 @@ function Legend({ items }: { items: { label: string; color: string }[] }) {
   );
 }
 
+function orderArchivesBySequence(archives: EngineeringSpecLedgerRecord[]): EngineeringSpecLedgerRecord[] {
+  return [...archives].sort((left, right) => {
+    const rightSequence = Number(right.sequence) || 0;
+    const leftSequence = Number(left.sequence) || 0;
+    if (rightSequence !== leftSequence) return rightSequence - leftSequence;
+    return String(right.createdAt || "").localeCompare(String(left.createdAt || ""));
+  });
+}
+
 function getRecentSevenDayArchives(archives: EngineeringSpecLedgerRecord[]) {
   const end = new Date();
   end.setHours(23, 59, 59, 999);
@@ -309,10 +302,10 @@ function buildDailyVolumeData(archives: EngineeringSpecLedgerRecord[]) {
   });
 }
 
-function buildTypeBreakdown(archives: EngineeringSpecLedgerRecord[]) {
+function buildCategoryBreakdown(archives: EngineeringSpecLedgerRecord[]) {
   const map = new Map<string, number>();
   archives.forEach((archive) => {
-    const key = archive.category || "未分类";
+    const key = String(archive.category || "").trim() || "未分类";
     map.set(key, (map.get(key) ?? 0) + 1);
   });
   return Array.from(map.entries()).map(([type, value]) => ({ type, value }));
@@ -348,4 +341,25 @@ function formatTime(value: string) {
   return `${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")} ${String(
     date.getHours(),
   ).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+
+function renderAnalyticsSampleStatus(sampleType?: string) {
+  const status = formatAnalyticsSampleType(sampleType);
+  if (!status) {
+    return <span className="text-muted-foreground">—</span>;
+  }
+
+  return (
+    <span className={cn("font-medium", status === "终样" ? "text-cyan-300" : "text-violet-300")}>
+      {status}
+    </span>
+  );
+}
+
+function formatAnalyticsSampleType(sampleType?: string): string {
+  const normalized = String(sampleType || "").trim();
+  if (!normalized) return "";
+  if (normalized.includes("终样")) return "终样";
+  if (normalized.includes("送样") || normalized.includes("样品")) return "样品";
+  return normalized;
 }

@@ -841,8 +841,13 @@ export default function ProductSpecExcelParserDashboard({
             projectId,
             state: archiveState,
           });
-      setLedgerRecords((current) => [document, ...current.filter((item) => item.id !== document.id)]);
-      setActiveArchiveDocumentId(document.id);
+      const syncedDocument: EngineeringSpecLedgerRecord = {
+        ...document,
+        sampleType: String(archiveState.inspectionTestProject?.testType || document.sampleType || '').trim() || undefined,
+        reportStatus: String(archiveState.oaInfo?.reportStatus || document.reportStatus || '').trim() || undefined,
+      };
+      setLedgerRecords((current) => [syncedDocument, ...current.filter((item) => item.id !== syncedDocument.id)]);
+      setActiveArchiveDocumentId(syncedDocument.id);
       setWorkspaceSyncState('saved');
       setWorkspaceSyncMessage(
         isUpdatingExistingArchive
@@ -1632,11 +1637,7 @@ function HeaderCard({
 
         {businessSummaryFields.length > 0 || roleFields.length > 0 ? (
           <>
-            <div className="flex self-stretch items-start justify-center px-4 pt-10 pb-2 xl:px-2">
-              <div className="flex h-full items-start justify-center">
-                <p className="text-center text-sm font-semibold tracking-[0.02em] text-[#E2E8F0]">人员信息</p>
-              </div>
-            </div>
+            <SectionRailTitle title="人员信息" />
 
             <div className="space-y-4">
               {businessSummaryFields.length > 0 ? (
@@ -1670,12 +1671,7 @@ function HeaderCard({
           </>
         ) : null}
 
-        <div className="flex self-stretch flex-col xl:px-2">
-          <div className="mx-4 h-px bg-gradient-to-r from-transparent via-white/[0.14] to-transparent" />
-          <div className="flex flex-1 items-center justify-center px-4 py-5">
-            <p className="text-center text-sm font-semibold tracking-[0.02em] text-[#E2E8F0]">产品包装信息</p>
-          </div>
-        </div>
+        <SectionRailTitle title="产品包装信息" />
 
         <div className="grid gap-x-4 gap-y-4 md:grid-cols-2 xl:grid-cols-3">
           {model.packaging.map((item) => (
@@ -1687,7 +1683,7 @@ function HeaderCard({
               onChange={onFieldChange}
             />
           ))}
-          <div className="flex min-h-[136px] items-center justify-center border-b border-white/[0.05] px-1 py-1.5">
+          <div className="flex min-h-[68px] items-center justify-center border-b border-white/[0.05] px-1 py-1.5">
             <div className="flex items-center justify-center gap-3">
               <span className="inline-flex h-9 items-center text-[12px] leading-none text-[#94A3B8]">
                 已选 {selectedTestProjectCount} 项
@@ -1708,12 +1704,7 @@ function HeaderCard({
           </div>
         </div>
 
-        <div className="mt-5 flex self-stretch flex-col xl:px-2">
-          <div className="mx-4 h-px bg-gradient-to-r from-transparent via-white/[0.14] to-transparent" />
-          <div className="flex flex-1 items-center justify-center px-4 py-5">
-            <p className="text-center text-sm font-semibold tracking-[0.02em] text-[#E2E8F0]">送检测试项目</p>
-          </div>
-        </div>
+        <SectionRailTitle title="送检测试项目" />
 
         <div className="grid min-w-0 gap-x-3 gap-y-4 md:grid-cols-[170px_178px_128px_minmax(380px,1fr)] md:grid-rows-[56px_56px]">
             {(['送样测试', '终样测试'] as const).map((option, index) => {
@@ -1824,7 +1815,7 @@ function HeaderCard({
             </div>
 
             <div className="flex min-w-0 self-stretch border-b border-white/[0.05] px-1 pt-1.5 pb-3" style={{ gridColumn: 4, gridRow: '1 / span 2' }}>
-              <div className="h-full min-h-0 w-full rounded-lg border border-white/[0.08] bg-black/20 px-3 py-2 transition focus-within:border-cyan-400/35 focus-within:bg-black/30">
+              <div className="h-[112px] max-h-[112px] w-full overflow-hidden rounded-lg border border-white/[0.08] bg-black/20 px-3 py-2 transition focus-within:border-cyan-400/35 focus-within:bg-black/30">
                 <textarea
                   disabled={!isEditMode}
                   value={inspectionTestProject.remark}
@@ -1843,19 +1834,14 @@ function HeaderCard({
                       event.preventDefault();
                     }
                   }}
-                  className="h-full w-full resize-none overflow-x-auto overflow-y-hidden whitespace-nowrap bg-transparent p-0 text-[13px] leading-6 text-[#E2E8F0] outline-none"
+                  className="h-full w-full resize-none overflow-x-auto overflow-y-auto whitespace-pre-wrap break-words bg-transparent p-0 text-[13px] leading-6 text-[#E2E8F0] outline-none"
                   placeholder="请输入备注..."
                 />
               </div>
             </div>
         </div>
 
-        <div className="mt-5 flex self-stretch flex-col xl:px-2">
-          <div className="mx-4 h-px bg-gradient-to-r from-transparent via-white/[0.14] to-transparent" />
-          <div className="flex flex-1 items-center justify-center px-4 py-5">
-            <p className="text-center text-sm font-semibold tracking-[0.02em] text-[#E2E8F0]">OA流程信息</p>
-          </div>
-        </div>
+        <SectionRailTitle title="OA流程信息" />
 
         <div className="grid gap-x-4 gap-y-4 md:grid-cols-2 xl:grid-cols-3">
           <div className="min-w-0 border-b border-white/[0.05] px-1 py-1.5">
@@ -1873,7 +1859,7 @@ function HeaderCard({
                 placeholder="请输入流程名称..."
               />
             ) : (
-              <div className="mt-1 break-words text-[13px] leading-6 text-[#E2E8F0]">
+              <div className="mt-1 min-h-[42px] break-words px-3 py-2 text-[13px] leading-6 text-[#E2E8F0]">
                 {oaInfo.workflowName || ''}
               </div>
             )}
@@ -1894,7 +1880,7 @@ function HeaderCard({
                 placeholder="请输入流程单号..."
               />
             ) : (
-              <div className="mt-1 break-words text-[13px] leading-6 text-[#E2E8F0]">
+              <div className="mt-1 min-h-[42px] break-words px-3 py-2 text-[13px] leading-6 text-[#E2E8F0]">
                 {oaInfo.workflowNo || ''}
               </div>
             )}
@@ -1914,11 +1900,12 @@ function HeaderCard({
                 className="mt-1 w-full rounded-lg border border-white/[0.08] bg-black/20 px-3 py-2 text-[13px] text-[#E2E8F0] outline-none transition focus:border-cyan-400/35 focus:bg-black/30"
               >
                 <option value="">请选择报告状态...</option>
-                <option value="已送检，测试中">已送检，测试中</option>
-                <option value="测试完成，报告归档">测试完成，报告归档</option>
+                <option value="测试完成">测试完成</option>
+                <option value="测试中">测试中</option>
+                <option value="待送样">待送样</option>
               </select>
             ) : (
-              <div className="mt-1 break-words text-[13px] leading-6 text-[#E2E8F0]">
+              <div className="mt-1 min-h-[42px] break-words px-3 py-2 text-[13px] leading-6 text-[#E2E8F0]">
                 {oaInfo.reportStatus || ''}
               </div>
             )}
@@ -1937,6 +1924,17 @@ function HeaderCard({
 
       </div>
     </section>
+  );
+}
+
+function SectionRailTitle({ title }: { title: string }) {
+  return (
+    <div className="grid self-stretch grid-rows-[1px_minmax(0,1fr)] px-4 xl:px-2">
+      <div className="mx-4 h-px bg-gradient-to-r from-transparent via-white/[0.14] to-transparent xl:mx-4" />
+      <div className="flex items-center justify-center">
+        <p className="text-center text-sm font-semibold leading-none tracking-[0.02em] text-[#E2E8F0]">{title}</p>
+      </div>
+    </div>
   );
 }
 
@@ -3443,7 +3441,11 @@ async function hydrateLedgerDisplayFieldsIfMissing(
   records: EngineeringSpecLedgerRecord[],
 ): Promise<EngineeringSpecLedgerRecord[]> {
   const missingRecords = records.filter(
-    (record) => !(record.category || '').trim() || needsLedgerImageHydration(record.imageUrl),
+    (record) =>
+      !(record.category || '').trim() ||
+      needsLedgerImageHydration(record.imageUrl) ||
+      !(record.sampleType || '').trim() ||
+      !(record.reportStatus || '').trim(),
   );
   if (missingRecords.length === 0) return records;
 
@@ -3458,17 +3460,30 @@ async function hydrateLedgerDisplayFieldsIfMissing(
           record.id,
           findArchiveMetaValue(snapshot.state.businessMeta, ['产品类别', '报关中文品名', '报关中文名']),
           resolveArchivePreviewImageUrl(snapshot.state),
+          String(snapshot.state.inspectionTestProject?.testType || '').trim(),
+          String(snapshot.state.oaInfo?.reportStatus || '').trim(),
         ] as const;
       } catch {
-        return [record.id, '', ''] as const;
+        return [record.id, '', '', '', ''] as const;
       }
     }),
   );
 
   const displayFieldById = new Map(
     resolvedFields
-      .filter((entry) => Boolean(entry[1]) || Boolean(entry[2]))
-      .map((entry) => [entry[0], { category: entry[1], imageUrl: entry[2] }] as const),
+      .filter((entry) => Boolean(entry[1]) || Boolean(entry[2]) || Boolean(entry[3]) || Boolean(entry[4]))
+      .map(
+        (entry) =>
+          [
+            entry[0],
+            {
+              category: entry[1],
+              imageUrl: entry[2],
+              sampleType: entry[3],
+              reportStatus: entry[4],
+            },
+          ] as const,
+      ),
   );
   if (displayFieldById.size === 0) return records;
 
@@ -3479,6 +3494,8 @@ async function hydrateLedgerDisplayFieldsIfMissing(
     return {
       ...record,
       category: (record.category || '').trim() || resolved.category,
+      sampleType: (record.sampleType || '').trim() || resolved.sampleType || undefined,
+      reportStatus: (record.reportStatus || '').trim() || resolved.reportStatus,
       imageUrl: needsLedgerImageHydration(record.imageUrl)
         ? resolved.imageUrl || undefined
         : (record.imageUrl || '').trim() || undefined,

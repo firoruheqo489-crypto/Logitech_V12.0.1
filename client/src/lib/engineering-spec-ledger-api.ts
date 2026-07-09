@@ -91,6 +91,8 @@ export interface EngineeringSpecLedgerRecord {
   productGroup: string;
   sampleQty: string;
   testDate: string;
+  sampleType?: string;
+  reportStatus?: string;
   result: "合格" | "待完善";
   pendingCount: number;
   createdAt: string;

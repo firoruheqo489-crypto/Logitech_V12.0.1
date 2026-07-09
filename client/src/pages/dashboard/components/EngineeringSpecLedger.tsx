@@ -9,7 +9,7 @@ type LedgerColumn = {
   width?: string;
   headerClassName?: string;
   cellClassName?: string;
-  render: (record: EngineeringSpecLedgerRecord, index: number) => ReactNode;
+  render: (record: EngineeringSpecLedgerRecord, index: number, displaySequence: number) => ReactNode;
 };
 
 const LEDGER_PAGE_SIZE = 10;
@@ -23,12 +23,12 @@ const columns: LedgerColumn[] = [
     width: '5%',
     headerClassName: 'text-center',
     cellClassName: 'text-center text-slate-300',
-    render: (_record, index) => <span>{index + 1}</span>,
+    render: (_record, _index, displaySequence) => <span>{displaySequence}</span>,
   },
   {
     key: 'sku',
     title: '产品编号',
-    width: '23%',
+    width: '20%',
     headerClassName: 'text-left',
     cellClassName: 'text-left',
     render: (record) => (
@@ -40,7 +40,7 @@ const columns: LedgerColumn[] = [
   {
     key: 'category',
     title: '产品类别',
-    width: '15%',
+    width: '10%',
     headerClassName: 'text-left',
     cellClassName: 'text-left',
     render: (record) => (
@@ -50,9 +50,17 @@ const columns: LedgerColumn[] = [
     ),
   },
   {
+    key: 'sampleType',
+    title: '测试类别',
+    width: '8%',
+    headerClassName: 'text-center',
+    cellClassName: 'text-center',
+    render: (record) => <LedgerSampleTypeCell value={record.sampleType} />,
+  },
+  {
     key: 'imageUrl',
     title: '实物图',
-    width: '9%',
+    width: '10%',
     headerClassName: 'text-center',
     cellClassName: 'text-center',
     render: (record) =>
@@ -74,7 +82,7 @@ const columns: LedgerColumn[] = [
   {
     key: 'productGroup',
     title: '产品经理',
-    width: '11%',
+    width: '10%',
     headerClassName: 'text-center',
     cellClassName: 'text-center',
     render: (record) => (
@@ -86,7 +94,7 @@ const columns: LedgerColumn[] = [
   {
     key: 'sampleQty',
     title: '样品数',
-    width: '8%',
+    width: '7%',
     headerClassName: 'text-center',
     cellClassName: 'text-center',
     render: (record) => <span className="font-semibold text-slate-100">{record.sampleQty}</span>,
@@ -94,23 +102,23 @@ const columns: LedgerColumn[] = [
   {
     key: 'createdAt',
     title: '送样日期',
-    width: '13%',
+    width: '12%',
     headerClassName: 'text-center',
     cellClassName: 'text-center',
     render: (record) => <LedgerDateCell value={record.createdAt} />,
   },
   {
     key: 'report',
-    title: '报告',
-    width: '8%',
+    title: '报告状态',
+    width: '9%',
     headerClassName: 'text-center',
     cellClassName: 'text-center',
-    render: (record) => <LedgerReportLink record={record} />,
+    render: (record) => <LedgerReportStatusCell record={record} />,
   },
   {
     key: 'action',
     title: '操作',
-    width: '8%',
+    width: '9%',
     headerClassName: 'text-center',
     cellClassName: 'text-center',
     render: () => null,
@@ -130,7 +138,10 @@ export function EngineeringSpecLedger({
 }) {
   const [page, setPage] = useState(1);
   const [skuQuery, setSkuQuery] = useState('');
-  const orderedRecords = [...records].sort((left, right) => left.sequence - right.sequence);
+  const orderedRecords = [...records].sort((left, right) => right.sequence - left.sequence);
+  const displaySequenceById = new Map(
+    orderedRecords.map((record, index) => [record.id, orderedRecords.length - index] as const),
+  );
   const normalizedQuery = skuQuery.trim().toLowerCase();
   const filteredRecords = normalizedQuery
     ? orderedRecords.filter((record) => (record.sku || '').toLowerCase().includes(normalizedQuery))
@@ -202,10 +213,8 @@ export function EngineeringSpecLedger({
               pageRecords.map((record, index) => (
                 <tr
                   key={record.id}
-                  className={`border-b border-white/5 transition hover:bg-white/[0.02] ${
-                    onSelectRecord ? 'cursor-pointer' : ''
-                  }`}
-                  onClick={() => onSelectRecord?.(record)}
+                  className="border-b border-white/5 transition hover:bg-white/[0.02]"
+                  onDoubleClick={() => onSelectRecord?.(record)}
                 >
                   {columns.map((column) => (
                     <td
@@ -216,18 +225,25 @@ export function EngineeringSpecLedger({
                       style={column.width ? { width: column.width } : undefined}
                     >
                       {column.key === 'action' ? (
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            onDeleteRecord?.(record);
-                          }}
-                          className={`${LEDGER_ACTION_BUTTON_BASE_CLASSNAME} border-white/10 text-slate-300 hover:bg-white/[0.05]`}
-                        >
-                          删除
-                        </button>
+                        <div className="flex items-center justify-center" onDoubleClick={(event) => event.stopPropagation()}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onDeleteRecord?.(record);
+                            }}
+                            className={`${LEDGER_ACTION_BUTTON_BASE_CLASSNAME} border-white/10 text-slate-300 hover:bg-white/[0.05]`}
+                          >
+                            删除
+                          </button>
+                        </div>
                       ) : (
-                        <LedgerCellContent>{column.render(record, pageStart + index)}</LedgerCellContent>
+                        <LedgerCellContent>
+                          {column.render(
+                            record,
+                            pageStart + index,
+                            displaySequenceById.get(record.id) ?? orderedRecords.length - (pageStart + index),
+                          )}
+                        </LedgerCellContent>
                       )}
                     </td>
                   ))}
@@ -302,24 +318,30 @@ function LedgerDateCell({ value }: { value: string }) {
   );
 }
 
-function LedgerReportLink({ record }: { record: EngineeringSpecLedgerRecord }) {
-  if (!record.ossUrl?.trim()) {
+function LedgerSampleTypeCell({ value }: { value?: string }) {
+  const label = formatLedgerSampleType(value);
+  if (!label) {
     return <span className="text-gray-600">—</span>;
   }
 
-  return (
-    <a
-      href={record.ossUrl}
-      target="_blank"
-      rel="noreferrer"
-      onClick={(event) => {
-        event.stopPropagation();
-      }}
-      className={`${LEDGER_ACTION_BUTTON_BASE_CLASSNAME} border-cyan-500/20 bg-cyan-500/8 text-cyan-200 hover:bg-cyan-500/14`}
-    >
-      查看
-    </a>
-  );
+  return <span className="text-[12px] font-medium text-slate-200">{label}</span>;
+}
+
+function LedgerReportStatusCell({ record }: { record: EngineeringSpecLedgerRecord }) {
+  const status = String(record.reportStatus || '').trim();
+  if (!status) {
+    return <span className="text-gray-600">—</span>;
+  }
+
+  return <span className="text-[12px] font-medium text-slate-200">{status}</span>;
+}
+
+function formatLedgerSampleType(value?: string): string {
+  const normalized = String(value || '').trim();
+  if (!normalized) return '';
+  if (normalized.includes('终样')) return '终样';
+  if (normalized.includes('送样') || normalized.includes('样品')) return '样品';
+  return normalized;
 }
 
 function formatLedgerCellDate(value: string): string {
