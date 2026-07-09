@@ -13,9 +13,12 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import * as schema from '../shared/schema.js';
 
+type PinnedHost = { host: string; port: number };
+
 const configuredDatabaseUrl = process.env.DATABASE_URL;
 const poolerConnectionString = process.env.DATABASE_URL_POOLER;
 const directConnectionString = process.env.DATABASE_URL_DIRECT;
+const poolerPinnedHostsRaw = process.env.DATABASE_URL_POOLER_IPS;
 const parsedPoolMax = Number.parseInt(process.env.DB_POOL_MAX || '2', 10);
 const poolMax = Number.isFinite(parsedPoolMax) ? Math.min(Math.max(parsedPoolMax, 1), 2) : 2;
 const parsedConnectTimeout = Number.parseInt(process.env.DB_CONNECT_TIMEOUT_SECONDS || '10', 10);
@@ -40,15 +43,54 @@ function isSupabaseDirectHost(host: string): boolean {
   return /^db\./i.test(host) && /\.supabase\.co$/i.test(host);
 }
 
-function resolveDatabaseUrl(): { connectionString: string | undefined; source: string } {
+function parsePinnedHosts(value: string | undefined): PinnedHost[] {
+  if (!value) return [];
+
+  return value
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      const [hostPart, portPart] = entry.split(':');
+      const parsedPort = Number.parseInt(portPart || '5432', 10);
+      return {
+        host: hostPart.trim(),
+        port: Number.isFinite(parsedPort) ? parsedPort : 5432,
+      };
+    })
+    .filter((entry) => entry.host);
+}
+
+function isSupabasePoolerHost(host: string): boolean {
+  return /\.pooler\.supabase\.com$/i.test(host);
+}
+
+function buildPinnedConnectionString(
+  baseConnectionString: string | undefined,
+  pinnedHosts: PinnedHost[],
+): string | undefined {
+  if (!baseConnectionString || pinnedHosts.length === 0) return baseConnectionString;
+
+  try {
+    const parsedUrl = new URL(baseConnectionString);
+    const hostSegment = pinnedHosts.map((entry) => `${entry.host}:${entry.port}`).join(',');
+    return baseConnectionString.replace(parsedUrl.host, hostSegment);
+  } catch {
+    return baseConnectionString;
+  }
+}
+
+function resolveDatabaseUrl(): { connectionString: string | undefined; source: string; pinnedHosts: PinnedHost[] } {
+  const pinnedHosts = parsePinnedHosts(poolerPinnedHostsRaw);
+
   if (!configuredDatabaseUrl) {
     if (poolerConnectionString) {
-      return { connectionString: poolerConnectionString, source: 'DATABASE_URL_POOLER fallback' };
+      return { connectionString: poolerConnectionString, source: 'DATABASE_URL_POOLER fallback', pinnedHosts };
     }
     if (directConnectionString) {
-      return { connectionString: directConnectionString, source: 'DATABASE_URL_DIRECT fallback' };
+      return { connectionString: directConnectionString, source: 'DATABASE_URL_DIRECT fallback', pinnedHosts: [] };
     }
-    return { connectionString: undefined, source: 'unset' };
+    return { connectionString: undefined, source: 'unset', pinnedHosts: [] };
   }
 
   const configuredHost = extractDbHost(configuredDatabaseUrl);
@@ -64,15 +106,25 @@ function resolveDatabaseUrl(): { connectionString: string | undefined; source: s
       `⚠️  Local dev detected direct Supabase host (${configuredHost}). ` +
       `Switching runtime DB connection to pooler host (${poolerHost}) to reduce local connectivity issues.`,
     );
-    return { connectionString: poolerConnectionString, source: 'DATABASE_URL_POOLER preferred for local dev' };
+    return {
+      connectionString: poolerConnectionString,
+      source: 'DATABASE_URL_POOLER preferred for local dev',
+      pinnedHosts,
+    };
   }
 
-  return { connectionString: configuredDatabaseUrl, source: 'DATABASE_URL' };
+  return {
+    connectionString: configuredDatabaseUrl,
+    source: 'DATABASE_URL',
+    pinnedHosts: isLocalDevRuntime && isSupabasePoolerHost(configuredHost) ? pinnedHosts : [],
+  };
 }
 
 const resolvedDatabase = resolveDatabaseUrl();
-const connectionString = resolvedDatabase.connectionString;
-const resolvedHost = extractDbHost(connectionString);
+const pinnedRuntimeHosts = resolvedDatabase.pinnedHosts;
+const runtimeConnectionString = buildPinnedConnectionString(resolvedDatabase.connectionString, pinnedRuntimeHosts);
+const connectionString = runtimeConnectionString;
+const resolvedHost = extractDbHost(resolvedDatabase.connectionString);
 
 if (!connectionString && !isTestEnv) {
   console.warn(
@@ -82,6 +134,13 @@ if (!connectionString && !isTestEnv) {
   );
 } else if (connectionString && !isTestEnv) {
   console.log(`✅ Database runtime target: ${resolvedHost || 'unknown-host'} (${resolvedDatabase.source})`);
+  if (pinnedRuntimeHosts.length > 0) {
+    console.log(
+      `🔒 Local dev DNS fallback active for ${resolvedHost}: ${pinnedRuntimeHosts
+        .map((entry) => `${entry.host}:${entry.port}`)
+        .join(', ')}`,
+    );
+  }
 }
 
 // Create postgres.js connection (lazy — only connects when queries run)
@@ -91,7 +150,10 @@ const client = connectionString
       max: poolMax,         // Session mode 下收敛连接池，避免撞满数据库连接上限
       idle_timeout: 20,     // Close idle connections after 20s
       connect_timeout: connectTimeoutSeconds,
-      ssl: 'require',       // ← Supabase 必须 SSL
+      ssl:
+        pinnedRuntimeHosts.length > 0
+          ? { rejectUnauthorized: false, servername: resolvedHost }
+          : 'require',       // ← Supabase 必须 SSL
     })
   : null;
 

@@ -95,8 +95,11 @@ function isRetryableDashboardDbError(error: unknown): boolean {
   const signature = getErrorSignature(error);
   return [
     "CONNECT_TIMEOUT",
+    "ECONNREFUSED",
     "ECONNRESET",
     "ETIMEDOUT",
+    "ENOTFOUND",
+    "EAI_AGAIN",
     "CONNECTION TERMINATED",
     "SOCKET HANG UP",
     "EPIPE",

@@ -277,6 +277,9 @@ async function startServer() {
   const app = express();
   const server = createServer(app);
   let isShuttingDown = false;
+  const shouldSuppressDevDbCrash = (error: unknown): boolean => isDevApiOnly && isRetryableWarmupError(error);
+  const formatProcessError = (error: unknown): string =>
+    error instanceof Error ? `${error.name}: ${error.message}` : String(error);
   const warmupState: DbWarmupState = {
     phase: "pending",
     startedAt: null,
@@ -621,6 +624,23 @@ async function startServer() {
   });
   process.on("SIGTERM", () => {
     void shutdown("SIGTERM");
+  });
+  process.on("unhandledRejection", (reason) => {
+    if (shouldSuppressDevDbCrash(reason)) {
+      console.warn("[process] Suppressed recoverable dev DB rejection:", formatProcessError(reason));
+      return;
+    }
+
+    console.error("[process] Unhandled rejection:", reason);
+  });
+  process.on("uncaughtException", (error) => {
+    if (shouldSuppressDevDbCrash(error)) {
+      console.warn("[process] Suppressed recoverable dev DB exception:", formatProcessError(error));
+      return;
+    }
+
+    console.error("[process] Uncaught exception:", error);
+    process.exit(1);
   });
 
   server.listen(port, () => {
