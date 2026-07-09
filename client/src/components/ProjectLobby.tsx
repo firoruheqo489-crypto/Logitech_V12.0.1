@@ -305,7 +305,12 @@ export default function ProjectLobby({ onSelect }: ProjectLobbyProps) {
             <p className="text-slate-400">暂无项目数据</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
+          <div
+            className="grid justify-start gap-6"
+            style={{
+              gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 400px), 400px))",
+            }}
+          >
             {modules.map((module) => (
               <ModuleCard key={module.moduleId} module={module} onSelect={onSelect} />
             ))}
