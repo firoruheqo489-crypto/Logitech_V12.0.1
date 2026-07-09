@@ -116,7 +116,8 @@ export function generateSpectrum() {
 }
 
 export function buildReportViewModel(fileName: string, result: IntegratingSphereParseResult | null): ReportViewModel {
-  const r9 = result ? findRenderIndex(result.render_indices, "R9") : null;
+  const renderRows = result?.render_indices ?? [];
+  const r9 = result ? findRenderIndex(renderRows, "R9") : null;
   const hasCorePass =
     result != null &&
     [

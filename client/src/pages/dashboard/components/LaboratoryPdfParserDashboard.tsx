@@ -1,16 +1,15 @@
 import { useMemo, useRef, useState } from "react"
-import { Download, Loader2, Upload } from "lucide-react"
+import { CheckCircle2, Circle, Download, FileText, Loader2, Upload, X } from "lucide-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { apiFetch } from "@/lib/api"
 import { DarkroomTelemetryWorkspace } from "./DarkroomTelemetryWorkspace"
 import EmcRadiationWorkspace from "./EmcRadiationWorkspace"
 import { FlickerTelemetryWorkspace } from "./FlickerTelemetryWorkspace"
 import HarmonicTelemetryWorkspace from "./HarmonicTelemetryWorkspace"
 import { CieDiagram } from "./jifenqiu/cie-diagram"
-import { buildReportViewModel, type IntegratingSphereParseResult } from "./jifenqiu/report-data"
+import { buildReportViewModel, type IntegratingSphereParseResult, type Judgment } from "./jifenqiu/report-data"
 import { SpectrumChart } from "./jifenqiu/spectrum-chart"
 import { SummaryBanner } from "./jifenqiu/summary-banner"
 import { TelemetryVector } from "./jifenqiu/telemetry-vector"
@@ -21,6 +20,47 @@ type ParseResponse = {
   sourceType: "upload"
   fileName?: string
   result: IntegratingSphereParseResult
+}
+
+type LightVariantKey = "white" | "warm" | "neutral"
+
+type VariantSelection = {
+  key: LightVariantKey
+  label: string
+  hint: string
+  accent: string
+  file: File | null
+}
+
+type VariantParsePayload = {
+  key: LightVariantKey
+  label: string
+  fileName: string
+  result: IntegratingSphereParseResult
+}
+
+const VARIANT_ORDER: Array<Omit<VariantSelection, "file">> = [
+  { key: "white", label: "白光", hint: "White", accent: "cyan" },
+  { key: "warm", label: "暖光", hint: "Warm", accent: "amber" },
+  { key: "neutral", label: "中性光", hint: "Neutral", accent: "emerald" },
+]
+
+function variantTone(accent: string, active = false) {
+  if (accent === "amber") {
+    return active
+      ? "border-amber-300/60 bg-amber-400/[0.08] text-amber-100"
+      : "border-amber-300/20 bg-amber-400/[0.025] text-amber-200/80 hover:border-amber-300/40"
+  }
+
+  if (accent === "emerald") {
+    return active
+      ? "border-emerald-300/60 bg-emerald-400/[0.08] text-emerald-100"
+      : "border-emerald-300/20 bg-emerald-400/[0.025] text-emerald-200/80 hover:border-emerald-300/40"
+  }
+
+  return active
+    ? "border-cyan-300/60 bg-cyan-400/[0.08] text-cyan-100"
+    : "border-cyan-300/20 bg-cyan-400/[0.025] text-cyan-200/80 hover:border-cyan-300/40"
 }
 
 async function parseByUpload(file: File): Promise<ParseResponse> {
@@ -48,9 +88,9 @@ function ModuleSection({
   children: React.ReactNode
 }) {
   return (
-    <section className="mb-8 rounded-[28px] border border-white/[0.06] bg-black/20 p-5 shadow-[0_0_0_1px_rgba(255,255,255,0.02)] md:p-6">
-      <div className="mb-5 border-b border-white/[0.05] pb-3">
-        <h2 className="font-mono text-sm tracking-[0.24em] text-slate-300 uppercase">{title}</h2>
+    <section className="mb-8 rounded-[28px] border border-white/[0.06] bg-black/20 p-4 shadow-[0_0_0_1px_rgba(255,255,255,0.02)] md:p-5">
+      <div className="mb-4 border-b border-white/[0.05] pb-3">
+        <h2 className="text-base font-bold tracking-wide text-slate-100">{title}</h2>
       </div>
       {children}
     </section>
@@ -58,28 +98,85 @@ function ModuleSection({
 }
 
 export default function LaboratoryPdfParserDashboard() {
-  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [selectedFiles, setSelectedFiles] = useState<VariantSelection[]>(
+    VARIANT_ORDER.map((variant) => ({ ...variant, file: null })),
+  )
+  const [activeVariantKey, setActiveVariantKey] = useState<LightVariantKey>("white")
   const [isParsing, setIsParsing] = useState(false)
   const [isExportingPdf, setIsExportingPdf] = useState(false)
-  const [result, setResult] = useState<ParseResponse | null>(null)
+  const [results, setResults] = useState<VariantParsePayload[]>([])
   const exportRootRef = useRef<HTMLDivElement | null>(null)
 
+  const activeVariantMeta = selectedFiles.find((variant) => variant.key === activeVariantKey) ?? selectedFiles[0]
+  const activeResult = results.find((entry) => entry.key === activeVariantKey) ?? null
+
   const viewModel = useMemo(
-    () => buildReportViewModel(result?.fileName || selectedFile?.name || "--", result?.result || null),
-    [result, selectedFile],
+    () => buildReportViewModel(activeResult?.fileName || activeVariantMeta?.file?.name || "--", activeResult?.result || null),
+    [activeResult, activeVariantMeta],
   )
 
+  const combinedJudgment = useMemo<Judgment>(() => {
+    if (results.length !== VARIANT_ORDER.length) return "FAIL"
+    return results.every((entry) => buildReportViewModel(entry.fileName, entry.result).reportMeta.judgment === "PASS")
+      ? "PASS"
+      : "FAIL"
+  }, [results])
+
+  const summaryReportMeta = useMemo(() => {
+    const base = viewModel.reportMeta
+    return {
+      ...base,
+      fileName:
+        results.length > 0
+          ? `${activeVariantMeta.label} / ${activeResult?.fileName || activeVariantMeta.file?.name || "--"}`
+          : base.fileName,
+      judgment: combinedJudgment,
+    }
+  }, [activeResult?.fileName, activeVariantMeta.file, activeVariantMeta.label, combinedJudgment, results.length, viewModel.reportMeta])
+
+  const selectedCount = selectedFiles.filter((variant) => variant.file).length
+  const parsedCount = results.length
+  const canParseBundle = selectedCount === VARIANT_ORDER.length
+
+  const handleVariantFileChange = (variantKey: LightVariantKey, file: File | null) => {
+    setResults((current) => current.filter((entry) => entry.key !== variantKey))
+    setSelectedFiles((current) =>
+      current.map((entry) => (entry.key === variantKey ? { ...entry, file } : entry)),
+    )
+    setActiveVariantKey(variantKey)
+  }
+
+  const handleClearAll = () => {
+    setResults([])
+    setSelectedFiles(VARIANT_ORDER.map((variant) => ({ ...variant, file: null })))
+    setActiveVariantKey("white")
+  }
+
   const handleUploadParse = async () => {
-    if (!selectedFile) {
-      toast.error("请先选择 PDF 文件")
+    const filesToParse = selectedFiles.filter((variant) => variant.file)
+    if (filesToParse.length !== VARIANT_ORDER.length) {
+      toast.error("请一次选择白光、暖光、中性光三份 PDF 报告")
       return
     }
 
     setIsParsing(true)
     try {
-      const payload = await parseByUpload(selectedFile)
-      setResult(payload)
-      toast.success("PDF 解析完成")
+      const payloads: VariantParsePayload[] = []
+
+      for (const variant of selectedFiles) {
+        if (!variant.file) continue
+        const payload = await parseByUpload(variant.file)
+        payloads.push({
+          key: variant.key,
+          label: variant.label,
+          fileName: payload.fileName || variant.file.name,
+          result: payload.result,
+        })
+      }
+
+      setResults(payloads)
+      setActiveVariantKey(payloads[0]?.key ?? "white")
+      toast.success(`PDF 解析完成：已接入 ${payloads.length} 份积分球报告`)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "PDF 解析失败")
     } finally {
@@ -155,7 +252,7 @@ export default function LaboratoryPdfParserDashboard() {
         heightLeft -= pdfHeight
       }
 
-      const baseName = (result?.fileName || "laboratory-workspace")
+      const baseName = (results.length > 1 ? "integrating-sphere-3-light-workspace" : activeResult?.fileName || "laboratory-workspace")
         .replace(/\.pdf$/i, "")
         .replace(/[\\/:*?"<>|]+/g, "-")
       pdf.save(`${baseName}-workspace.pdf`)
@@ -170,36 +267,98 @@ export default function LaboratoryPdfParserDashboard() {
   return (
     <main className="min-h-screen bg-[#020406] bg-[radial-gradient(circle_at_50%_20%,_rgba(0,243,255,0.06),_transparent_50%)] px-6 py-8 text-zinc-50 md:px-10 lg:px-14">
       <div ref={exportRootRef} className="mx-auto w-full max-w-7xl">
-        <ModuleSection title="INTEGRATING SPHERE REPORT PARSER">
-          <section className={`${glassPanel} mb-6 p-5`}>
-            <div className="flex flex-col gap-4 md:flex-row md:items-center">
-              <Input
-                type="file"
-                accept=".pdf,application/pdf"
-                onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)}
-                className="border-white/[0.06] bg-black/40 text-white file:text-white"
-              />
-              <Button
-                onClick={handleUploadParse}
-                disabled={isParsing}
-                className="min-w-[200px] bg-white text-black hover:bg-white/90"
-              >
-                {isParsing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-                {isParsing ? "PARSING..." : "UPLOAD PDF / PARSE"}
-              </Button>
-              <Button
-                onClick={handleExportPdf}
-                disabled={isExportingPdf}
-                variant="outline"
-                className="min-w-[220px] border-white/[0.08] bg-transparent text-slate-100 hover:bg-white/[0.04]"
-              >
-                {isExportingPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-                {isExportingPdf ? "EXPORTING..." : "EXPORT WORKSPACE PDF"}
-              </Button>
+        <ModuleSection title="积分球解析">
+          <section className={`${glassPanel} mb-4 p-3`}>
+            <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1fr)_300px] xl:items-stretch">
+              <div className="grid grid-cols-1 gap-2 lg:grid-cols-3">
+                {selectedFiles.map((variant) => {
+                  const variantResult = results.find((entry) => entry.key === variant.key)
+                  const isActive = activeVariantKey === variant.key
+                  const stateLabel = variantResult ? "已解析" : variant.file ? "待解析" : "未选择"
+
+                  return (
+                    <div
+                      key={variant.key}
+                      className={`relative min-h-[58px] rounded-lg border transition ${variantTone(variant.accent, isActive)}`}
+                      onClick={() => setActiveVariantKey(variant.key)}
+                    >
+                      <label className="flex h-full cursor-pointer items-center gap-3 px-3 py-2 pr-10">
+                        {variantResult ? (
+                          <CheckCircle2 className="h-4 w-4 shrink-0" />
+                        ) : variant.file ? (
+                          <FileText className="h-4 w-4 shrink-0" />
+                        ) : (
+                          <Circle className="h-4 w-4 shrink-0" />
+                        )}
+                        <span className="min-w-0 flex-1">
+                          <span className="flex items-center gap-2">
+                            <span className="font-mono text-xs font-bold tracking-[0.18em]">{variant.label}</span>
+                            <span className="rounded-full border border-white/[0.08] bg-black/25 px-2 py-0.5 text-[10px] text-slate-300">
+                              {stateLabel}
+                            </span>
+                          </span>
+                          <span className="mt-1 block truncate text-xs text-slate-400">
+                            {variant.file?.name || `选择${variant.label}PDF`}
+                          </span>
+                        </span>
+                        <input
+                          key={variant.file?.name ?? `${variant.key}-empty`}
+                          type="file"
+                          accept=".pdf,application/pdf"
+                          className="hidden"
+                          onChange={(event) => handleVariantFileChange(variant.key, event.target.files?.[0] ?? null)}
+                        />
+                      </label>
+                      {variant.file ? (
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            handleVariantFileChange(variant.key, null)
+                          }}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full border border-white/[0.08] bg-black/55 p-1.5 text-slate-400 transition hover:border-rose-300/40 hover:text-rose-200"
+                          aria-label={`清除${variant.label}报告`}
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      ) : null}
+                    </div>
+                  )
+                })}
+              </div>
+
+              <div className="grid grid-cols-3 gap-2 xl:self-center">
+                <Button
+                  onClick={handleUploadParse}
+                  disabled={isParsing || !canParseBundle}
+                  className="h-10 justify-center bg-white text-black hover:bg-white/90"
+                >
+                  {isParsing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                  {isParsing ? "解析中" : "解析"}
+                </Button>
+                <Button
+                  onClick={handleExportPdf}
+                  disabled={isExportingPdf || parsedCount === 0}
+                  variant="outline"
+                  className="h-10 justify-center border-white/[0.08] bg-transparent text-slate-100 hover:bg-white/[0.04]"
+                >
+                  {isExportingPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                  导出
+                </Button>
+                <Button
+                  onClick={handleClearAll}
+                  disabled={isParsing || (selectedCount === 0 && parsedCount === 0)}
+                  variant="outline"
+                  className="h-10 justify-center border-white/[0.06] bg-black/20 text-slate-400 hover:bg-white/[0.04] hover:text-slate-100"
+                >
+                  <X className="h-4 w-4" />
+                  清空
+                </Button>
+              </div>
             </div>
           </section>
 
-          <SummaryBanner reportMeta={viewModel.reportMeta} />
+          <SummaryBanner reportMeta={summaryReportMeta} />
 
           <div className="mb-6 grid w-full grid-cols-1 gap-6 lg:grid-cols-2">
             <SpectrumChart spectrumStats={viewModel.spectrumStats} />
@@ -207,9 +366,9 @@ export default function LaboratoryPdfParserDashboard() {
           </div>
 
           <div className="grid w-full grid-cols-1 gap-6 md:grid-cols-3">
-            <TelemetryVector title="// ELECTRICAL INPUT TELEMETRY" fields={viewModel.electricalInput} />
-            <TelemetryVector title="// LUMINOUS OUTPUT TELEMETRY" fields={viewModel.luminousOutput} />
-            <TelemetryVector title="// COLOR QUALITY TELEMETRY" fields={viewModel.colorQuality} />
+            <TelemetryVector title="电参数输入" fields={viewModel.electricalInput} />
+            <TelemetryVector title="光参数输出" fields={viewModel.luminousOutput} />
+            <TelemetryVector title="颜色质量" fields={viewModel.colorQuality} />
           </div>
 
           <footer className="mt-8 flex items-center justify-between border-t border-white/[0.04] pt-4">
@@ -222,7 +381,7 @@ export default function LaboratoryPdfParserDashboard() {
           </footer>
         </ModuleSection>
 
-        <ModuleSection title="DARKROOM PHOTOMETRY PARSER">
+        <ModuleSection title="暗房解析">
           <DarkroomTelemetryWorkspace />
         </ModuleSection>
 

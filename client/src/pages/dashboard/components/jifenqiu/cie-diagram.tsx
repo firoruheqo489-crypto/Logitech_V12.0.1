@@ -1,7 +1,7 @@
 "use client";
 
 import type { ChromaticityModel } from "./report-data";
-import { glassPanel, subTitle } from "./ui";
+import { glassPanel } from "./ui";
 
 const LOCUS: [number, number][] = [
   [0.1741, 0.005], [0.1566, 0.0177], [0.144, 0.0297], [0.1241, 0.0578],
@@ -28,12 +28,12 @@ function locusPath() {
 function Gauge({ label, a, b }: { label: string; a: [string, string]; b: [string, string] }) {
   return (
     <div className="grid grid-cols-2 gap-1.5 rounded border border-white/[0.03] bg-black/40 px-2.5 py-1.5 font-mono text-xs">
-      <span className="col-span-2 text-[9px] uppercase tracking-widest text-slate-500">{label}</span>
+      <span className="col-span-2 text-[9px] font-bold uppercase tracking-widest text-slate-400">{label}</span>
       <span className="text-slate-500">
-        {a[0]}: <span className="text-cyan-400">{a[1]}</span>
+        {a[0]}: <span className="text-cyan-300">{a[1]}</span>
       </span>
       <span className="text-slate-500">
-        {b[0]}: <span className="text-cyan-400">{b[1]}</span>
+        {b[0]}: <span className="text-cyan-300">{b[1]}</span>
       </span>
     </div>
   );
@@ -48,13 +48,18 @@ export function CieDiagram({ chromaticity }: { chromaticity: ChromaticityModel }
 
   return (
     <div className={`flex flex-col ${glassPanel} p-5`}>
-      <div className="mb-4 flex items-baseline justify-between">
-        <h3 className={subTitle}>// CIE 1931 CHROMATICITY</h3>
-        <span className="text-[10px] tracking-wide text-slate-600">色品图 / 颜色空间</span>
+      <div className="mb-4 flex items-start border-b border-white/[0.05] pb-3">
+        <div className="flex items-center gap-2">
+          <span className="h-4 w-1 rounded-full bg-cyan-300/80" aria-hidden />
+          <div className="flex flex-col gap-0.5">
+            <h3 className="text-sm font-bold text-cyan-100">色品图</h3>
+            <span className="text-[10px] font-semibold tracking-wide text-slate-500">颜色空间</span>
+          </div>
+        </div>
       </div>
 
       <div className="flex items-center justify-center">
-        <svg viewBox={`-10 -10 ${W + 20} ${H + 20}`} className="h-56 w-auto" role="img" aria-label="CIE 1931 色品坐标图">
+        <svg viewBox={`-10 -10 ${W + 20} ${H + 20}`} className="h-56 w-auto" role="img" aria-label="色品坐标图">
           <defs>
             <radialGradient id="gamut" cx="38%" cy="42%" r="65%">
               <stop offset="0%" stopColor="#e2e8f0" stopOpacity={0.55} />
@@ -91,25 +96,25 @@ export function CieDiagram({ chromaticity }: { chromaticity: ChromaticityModel }
         <Gauge label="CIE 1931 (x, y)" a={["X", chromaticity.x]} b={["Y", chromaticity.y]} />
         <Gauge label="CIE 1976 (u', v')" a={["u'", chromaticity.uPrime]} b={["v'", chromaticity.vPrime]} />
         <div className="col-span-2 grid grid-cols-2 gap-1.5 rounded border border-white/[0.03] bg-black/40 px-2.5 py-1.5 font-mono text-xs">
-          <span className="col-span-2 text-[9px] uppercase tracking-widest text-slate-500">CCT / Duv</span>
+          <span className="col-span-2 text-[9px] font-bold uppercase tracking-widest text-slate-400">CCT / Duv</span>
           <span className="text-slate-500">
-            CCT: <span className="text-cyan-400">{chromaticity.cct} K</span>
+            CCT: <span className="text-cyan-300">{chromaticity.cct} K</span>
           </span>
           <span className="text-slate-500">
-            Duv: <span className="text-cyan-400">{chromaticity.duv}</span>
+            Duv: <span className="text-cyan-300">{chromaticity.duv}</span>
           </span>
         </div>
       </div>
 
       <div className="mt-3 flex items-center justify-between rounded-lg border border-white/[0.03] bg-black/40 px-3 py-2">
         <div className="flex flex-col gap-0.5">
-          <span className="text-[10px] font-medium uppercase tracking-widest text-slate-500">SDCM / 色品容差</span>
+          <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">SDCM / 色品容差</span>
           <span className="font-mono text-sm font-semibold text-gray-100 tabular-nums">
             {chromaticity.sdcm > 0 ? chromaticity.sdcm.toFixed(1) : "--"} step
           </span>
         </div>
         <span
-          className={`font-mono text-xs font-medium tracking-wider ${sdcmPass ? "text-emerald-400" : "text-red-400"}`}
+          className={`font-mono text-xs font-semibold tracking-wider ${sdcmPass ? "text-emerald-300" : "text-red-300"}`}
         >
           {sdcmPass ? `<=${chromaticity.sdcmTarget} / WITHIN TOL` : "OUT OF TOL"}
         </span>

@@ -1,5 +1,5 @@
 import type { MetricField } from "./report-data";
-import { glassPanel, subTitle } from "./ui";
+import { glassPanel } from "./ui";
 
 interface TelemetryVectorProps {
   title: string;
@@ -9,7 +9,12 @@ interface TelemetryVectorProps {
 export function TelemetryVector({ title, fields }: TelemetryVectorProps) {
   return (
     <div className={`flex flex-col ${glassPanel} p-5`}>
-      <h3 className={`${subTitle} mb-3`}>{title}</h3>
+      <div className="mb-3 flex items-start border-b border-white/[0.05] pb-3">
+        <div className="flex items-center gap-2">
+          <span className="h-4 w-1 rounded-full bg-cyan-300/80" aria-hidden />
+          <h3 className="text-sm font-bold text-cyan-100">{title}</h3>
+        </div>
+      </div>
       <div className="flex flex-col">
         {fields.map((field) => (
           <div

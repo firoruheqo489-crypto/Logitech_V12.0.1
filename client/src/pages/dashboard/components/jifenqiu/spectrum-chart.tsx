@@ -1,22 +1,22 @@
 "use client";
 
-import { Area, AreaChart, ResponsiveContainer, XAxis, YAxis, ReferenceLine } from "recharts";
+import { Area, AreaChart, ReferenceLine, ResponsiveContainer, XAxis, YAxis } from "recharts";
 
 import type { SpectrumStats } from "./report-data";
 import { generateSpectrum } from "./report-data";
-import { glassPanel, subTitle } from "./ui";
+import { glassPanel } from "./ui";
 
 const data = generateSpectrum();
 
 function Stat({ label, sub, value, unit }: { label: string; sub: string; value: string; unit: string }) {
   return (
     <div className="flex flex-col gap-0.5">
-      <span className="text-[10px] font-medium uppercase tracking-widest text-slate-500">{label}</span>
+      <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{label}</span>
       <div className="flex items-baseline gap-1">
-        <span className="font-mono text-base font-semibold text-gray-200 tabular-nums">{value}</span>
-        <span className="text-[9px] text-slate-500">{unit}</span>
+        <span className="font-mono text-base font-semibold text-gray-100 tabular-nums">{value}</span>
+        <span className="text-[9px] text-cyan-300/70">{unit}</span>
       </div>
-      <span className="text-[9px] text-slate-600">{sub}</span>
+      <span className="text-[9px] text-slate-500">{sub}</span>
     </div>
   );
 }
@@ -24,9 +24,14 @@ function Stat({ label, sub, value, unit }: { label: string; sub: string; value: 
 export function SpectrumChart({ spectrumStats }: { spectrumStats: SpectrumStats }) {
   return (
     <div className={`${glassPanel} p-5`}>
-      <div className="mb-4 flex items-baseline justify-between">
-        <h3 className={subTitle}>// SPECTRAL POWER DISTRIBUTION</h3>
-        <span className="text-[10px] tracking-wide text-slate-600">光谱功率分布 / 380-780nm</span>
+      <div className="mb-4 flex items-start border-b border-white/[0.05] pb-3">
+        <div className="flex items-center gap-2">
+          <span className="h-4 w-1 rounded-full bg-cyan-300/80" aria-hidden />
+          <div className="flex flex-col gap-0.5">
+            <h3 className="text-sm font-bold text-cyan-100">光谱功率分布</h3>
+            <span className="font-mono text-[10px] font-semibold tracking-widest text-slate-500">380-780nm</span>
+          </div>
+        </div>
       </div>
 
       <div className="h-56 w-full">
@@ -65,8 +70,8 @@ export function SpectrumChart({ spectrumStats }: { spectrumStats: SpectrumStats 
       </div>
 
       <div className="mt-4 grid grid-cols-4 gap-3 border-t border-white/[0.04] pt-4">
-        <Stat label="λp" sub="峰值波长" value={spectrumStats.peakWavelength} unit="nm" />
-        <Stat label="λd" sub="主波长" value={spectrumStats.dominantWavelength} unit="nm" />
+        <Stat label="Lp" sub="峰值波长" value={spectrumStats.peakWavelength} unit="nm" />
+        <Stat label="Ld" sub="主波长" value={spectrumStats.dominantWavelength} unit="nm" />
         <Stat label="FWHM" sub="半带宽" value={spectrumStats.halfBandwidth} unit="nm" />
         <Stat label="Purity" sub="颜色纯度" value={spectrumStats.purity} unit="%" />
       </div>
