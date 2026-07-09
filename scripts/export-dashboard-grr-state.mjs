@@ -22,8 +22,9 @@ function parseArgs(argv) {
 
 function ensureEnvLoaded() {
   const envPath = path.join(repoRoot, '.env');
+  const parsedEnv = fs.existsSync(envPath) ? dotenv.parse(fs.readFileSync(envPath, 'utf8')) : {};
   dotenv.config({ path: envPath });
-  return envPath;
+  return parsedEnv;
 }
 
 function resolveOutputPath(rawOut) {
@@ -33,21 +34,107 @@ function resolveOutputPath(rawOut) {
   return path.isAbsolute(rawOut) ? rawOut : path.resolve(process.cwd(), rawOut);
 }
 
+function readEnvValue(envMap, key, seen = new Set()) {
+  const rawValue = (process.env[key] || envMap[key] || '').trim();
+  if (!rawValue || seen.has(key)) return rawValue;
+
+  return rawValue.replace(/\$\{([A-Z0-9_]+)\}/gi, (_match, referencedKey) => {
+    return readEnvValue(envMap, referencedKey, new Set([...seen, key]));
+  });
+}
+
+function extractDbHost(connectionString) {
+  if (!connectionString) return '';
+  try {
+    return new URL(connectionString).hostname;
+  } catch {
+    return '';
+  }
+}
+
+function isSupabaseDirectHost(host) {
+  return /^db\./i.test(host) && /\.supabase\.co$/i.test(host);
+}
+
+function isSupabasePoolerHost(host) {
+  return /\.pooler\.supabase\.com$/i.test(host);
+}
+
+function parsePinnedHosts(value) {
+  if (!value) return [];
+
+  return value
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      const [hostPart, portPart] = entry.split(':');
+      const parsedPort = Number.parseInt(portPart || '5432', 10);
+      return {
+        host: hostPart.trim(),
+        port: Number.isFinite(parsedPort) ? parsedPort : 5432,
+      };
+    })
+    .filter((entry) => entry.host);
+}
+
+function buildPinnedConnectionString(baseConnectionString, pinnedHosts) {
+  if (!baseConnectionString || pinnedHosts.length === 0) return baseConnectionString;
+
+  try {
+    const parsedUrl = new URL(baseConnectionString);
+    const hostSegment = pinnedHosts.map((entry) => `${entry.host}:${entry.port}`).join(',');
+    return baseConnectionString.replace(parsedUrl.host, hostSegment);
+  } catch {
+    return baseConnectionString;
+  }
+}
+
+function resolveDatabase(envMap) {
+  const configuredDatabaseUrl = readEnvValue(envMap, 'DATABASE_URL');
+  const poolerConnectionString = readEnvValue(envMap, 'DATABASE_URL_POOLER');
+  const directConnectionString = readEnvValue(envMap, 'DATABASE_URL_DIRECT');
+  const pinnedHosts = parsePinnedHosts(readEnvValue(envMap, 'DATABASE_URL_POOLER_IPS'));
+
+  let connectionString = configuredDatabaseUrl;
+  let activePinnedHosts = [];
+  const configuredHost = extractDbHost(configuredDatabaseUrl);
+
+  if ((!configuredDatabaseUrl || !configuredHost || isSupabaseDirectHost(configuredHost)) && poolerConnectionString) {
+    connectionString = poolerConnectionString;
+    activePinnedHosts = pinnedHosts;
+  } else if (!configuredDatabaseUrl && directConnectionString) {
+    connectionString = directConnectionString;
+  } else if (isSupabasePoolerHost(configuredHost)) {
+    activePinnedHosts = pinnedHosts;
+  }
+
+  const resolvedHost = extractDbHost(connectionString);
+  return {
+    connectionString: buildPinnedConnectionString(connectionString, activePinnedHosts),
+    resolvedHost,
+    pinnedHosts: activePinnedHosts,
+  };
+}
+
 async function exportDashboardGrrState() {
   const args = parseArgs(process.argv.slice(2));
   const outputPath = resolveOutputPath(args.out);
-  ensureEnvLoaded();
+  const envMap = ensureEnvLoaded();
 
-  const connectionString = process.env.DATABASE_URL || '';
-  if (!connectionString) {
+  const database = resolveDatabase(envMap);
+  if (!database.connectionString) {
     throw new Error('DATABASE_URL is required to export dashboard GRR state');
   }
 
-  const sql = postgres(connectionString, {
+  const sql = postgres(database.connectionString, {
     max: 1,
     idle_timeout: 5,
     connect_timeout: 20,
-    ssl: 'require',
+    ssl:
+      database.pinnedHosts.length > 0
+        ? { rejectUnauthorized: false, servername: database.resolvedHost }
+        : 'require',
   });
 
   try {
