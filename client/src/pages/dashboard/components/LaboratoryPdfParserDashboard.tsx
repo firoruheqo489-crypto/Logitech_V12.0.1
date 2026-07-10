@@ -120,6 +120,372 @@ async function parseByUpload(file: File): Promise<ParseResponse> {
   return payload as ParseResponse
 }
 
+function openPdfPreviewWindow(options: {
+  source: HTMLElement
+  fileBaseName: string
+  onConfirmExport: () => void | Promise<void>
+}) {
+  void options.source
+  void options.fileBaseName
+  void Promise.resolve(options.onConfirmExport())
+}
+
+const UNSUPPORTED_COLOR_FUNCTION_RE = /\b(?:oklch|oklab|color)\(/i
+const PURE_COLOR_PROPERTIES = new Set([
+  "background-color",
+  "border-bottom-color",
+  "border-left-color",
+  "border-right-color",
+  "border-top-color",
+  "caret-color",
+  "color",
+  "column-rule-color",
+  "fill",
+  "flood-color",
+  "lighting-color",
+  "outline-color",
+  "stop-color",
+  "stroke",
+  "text-decoration-color",
+  "text-emphasis-color",
+])
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value))
+}
+
+function srgbEncode(value: number) {
+  const clamped = clamp(value, 0, 1)
+  return clamped <= 0.0031308 ? 12.92 * clamped : 1.055 * clamped ** (1 / 2.4) - 0.055
+}
+
+function parseCssNumber(token: string) {
+  const trimmed = token.trim()
+  if (!trimmed) return null
+  if (trimmed.endsWith("%")) {
+    const value = Number.parseFloat(trimmed.slice(0, -1))
+    return Number.isFinite(value) ? value / 100 : null
+  }
+  const value = Number.parseFloat(trimmed)
+  return Number.isFinite(value) ? value : null
+}
+
+function parseHue(token: string) {
+  const trimmed = token.trim().toLowerCase()
+  if (!trimmed) return null
+
+  if (trimmed.endsWith("deg")) {
+    const value = Number.parseFloat(trimmed.slice(0, -3))
+    return Number.isFinite(value) ? value : null
+  }
+  if (trimmed.endsWith("grad")) {
+    const value = Number.parseFloat(trimmed.slice(0, -4))
+    return Number.isFinite(value) ? value * 0.9 : null
+  }
+  if (trimmed.endsWith("rad")) {
+    const value = Number.parseFloat(trimmed.slice(0, -3))
+    return Number.isFinite(value) ? (value * 180) / Math.PI : null
+  }
+  if (trimmed.endsWith("turn")) {
+    const value = Number.parseFloat(trimmed.slice(0, -4))
+    return Number.isFinite(value) ? value * 360 : null
+  }
+
+  const value = Number.parseFloat(trimmed)
+  return Number.isFinite(value) ? value : null
+}
+
+function formatRgba(red: number, green: number, blue: number, alpha: number) {
+  const r = Math.round(clamp(red, 0, 1) * 255)
+  const g = Math.round(clamp(green, 0, 1) * 255)
+  const b = Math.round(clamp(blue, 0, 1) * 255)
+  const a = Math.round(clamp(alpha, 0, 1) * 1000) / 1000
+  return `rgba(${r}, ${g}, ${b}, ${a})`
+}
+
+function convertOklchToRgba(oklchValue: string) {
+  const inner = oklchValue.slice(oklchValue.indexOf("(") + 1, -1).trim()
+  const [valuePart, alphaPart] = inner.split("/")
+  const tokens = valuePart.trim().split(/\s+/).filter(Boolean)
+  if (tokens.length < 3) return null
+
+  const lightness = parseCssNumber(tokens[0])
+  const chroma = parseCssNumber(tokens[1])
+  const hue = parseHue(tokens[2])
+  const alpha = alphaPart ? parseCssNumber(alphaPart) : 1
+  if (lightness === null || chroma === null || hue === null || alpha === null) return null
+
+  const hueRadians = (hue * Math.PI) / 180
+  const a = chroma * Math.cos(hueRadians)
+  const b = chroma * Math.sin(hueRadians)
+
+  const lRoot = lightness + 0.3963377774 * a + 0.2158037573 * b
+  const mRoot = lightness - 0.1055613458 * a - 0.0638541728 * b
+  const sRoot = lightness - 0.0894841775 * a - 1.291485548 * b
+
+  const l = lRoot ** 3
+  const m = mRoot ** 3
+  const s = sRoot ** 3
+
+  const red = srgbEncode(4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s)
+  const green = srgbEncode(-1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s)
+  const blue = srgbEncode(-0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s)
+
+  return formatRgba(red, green, blue, alpha)
+}
+
+function replaceUnsupportedColorFunctions(value: string) {
+  let result = ""
+  let cursor = 0
+  const lowerValue = value.toLowerCase()
+
+  while (cursor < value.length) {
+    const start = lowerValue.indexOf("oklch(", cursor)
+    if (start === -1) {
+      result += value.slice(cursor)
+      break
+    }
+
+    result += value.slice(cursor, start)
+    let depth = 0
+    let end = start
+
+    while (end < value.length) {
+      const char = value[end]
+      if (char === "(") depth += 1
+      if (char === ")") {
+        depth -= 1
+        if (depth === 0) {
+          end += 1
+          break
+        }
+      }
+      end += 1
+    }
+
+    const fnText = value.slice(start, end)
+    const converted = convertOklchToRgba(fnText)
+    result += converted ?? "rgba(0, 0, 0, 0)"
+    cursor = end
+  }
+
+  return result
+}
+
+function normalizeCssValue(
+  property: string,
+  value: string,
+  sandbox: HTMLElement,
+  colorContext: CanvasRenderingContext2D | null,
+) {
+  const trimmed = replaceUnsupportedColorFunctions(value.trim())
+  if (!trimmed) return ""
+
+  if (!UNSUPPORTED_COLOR_FUNCTION_RE.test(trimmed)) {
+    return trimmed
+  }
+
+  if (PURE_COLOR_PROPERTIES.has(property) && colorContext) {
+    try {
+      colorContext.fillStyle = "#000000"
+      colorContext.fillStyle = trimmed
+      const normalizedColor = colorContext.fillStyle
+      if (normalizedColor && !UNSUPPORTED_COLOR_FUNCTION_RE.test(normalizedColor)) {
+        return normalizedColor
+      }
+    } catch {
+      // Fall through to browser serialization.
+    }
+  }
+
+  try {
+    sandbox.style.removeProperty(property)
+    sandbox.style.setProperty(property, trimmed)
+    const normalized = getComputedStyle(sandbox).getPropertyValue(property).trim()
+    sandbox.style.removeProperty(property)
+    if (normalized && !UNSUPPORTED_COLOR_FUNCTION_RE.test(normalized)) {
+      return normalized
+    }
+  } catch {
+    return PURE_COLOR_PROPERTIES.has(property) ? "rgba(0, 0, 0, 0)" : ""
+  }
+
+  return PURE_COLOR_PROPERTIES.has(property) ? "rgba(0, 0, 0, 0)" : ""
+}
+
+function syncFormValues(source: HTMLElement, clone: HTMLElement) {
+  const sourceInputs = Array.from(
+    source.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>("input, textarea, select"),
+  )
+  const cloneInputs = Array.from(
+    clone.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>("input, textarea, select"),
+  )
+
+  sourceInputs.forEach((sourceInput, index) => {
+    const cloneInput = cloneInputs[index]
+    if (!cloneInput) return
+
+    if (sourceInput instanceof HTMLInputElement && cloneInput instanceof HTMLInputElement) {
+      cloneInput.value = sourceInput.value
+      cloneInput.checked = sourceInput.checked
+      cloneInput.setAttribute("value", sourceInput.value)
+      if (sourceInput.checked) cloneInput.setAttribute("checked", "checked")
+      else cloneInput.removeAttribute("checked")
+      return
+    }
+
+    if (sourceInput instanceof HTMLTextAreaElement && cloneInput instanceof HTMLTextAreaElement) {
+      cloneInput.value = sourceInput.value
+      cloneInput.textContent = sourceInput.value
+      return
+    }
+
+    if (sourceInput instanceof HTMLSelectElement && cloneInput instanceof HTMLSelectElement) {
+      cloneInput.value = sourceInput.value
+      Array.from(cloneInput.options).forEach((option) => {
+        option.selected = option.value === sourceInput.value
+      })
+    }
+  })
+}
+
+function inlineResolvedStyles(source: HTMLElement, clone: HTMLElement) {
+  const sourceNodes = [source, ...Array.from(source.querySelectorAll("*"))]
+  const cloneNodes = [clone, ...Array.from(clone.querySelectorAll("*"))]
+  const sandbox = document.createElement("div")
+  sandbox.setAttribute("aria-hidden", "true")
+  sandbox.style.position = "fixed"
+  sandbox.style.left = "-100000px"
+  sandbox.style.top = "0"
+  sandbox.style.visibility = "hidden"
+  sandbox.style.pointerEvents = "none"
+  sandbox.style.all = "initial"
+  document.body.appendChild(sandbox)
+
+  const colorCanvas = document.createElement("canvas")
+  const colorContext = colorCanvas.getContext("2d")
+
+  try {
+    const length = Math.min(sourceNodes.length, cloneNodes.length)
+    for (let index = 0; index < length; index += 1) {
+      const sourceNode = sourceNodes[index]
+      const cloneNode = cloneNodes[index]
+      if (!(cloneNode instanceof HTMLElement || cloneNode instanceof SVGElement)) continue
+
+      const computed = getComputedStyle(sourceNode)
+      for (let propIndex = 0; propIndex < computed.length; propIndex += 1) {
+        const property = computed[propIndex]
+        if (!property || property.startsWith("--")) continue
+
+        const value = computed.getPropertyValue(property)
+        if (!value) continue
+
+        const normalized = normalizeCssValue(property, value, sandbox, colorContext)
+        if (!normalized) continue
+
+        cloneNode.style.setProperty(property, normalized)
+      }
+
+      cloneNode.style.setProperty("animation", "none")
+      cloneNode.style.setProperty("transition", "none")
+      cloneNode.removeAttribute("class")
+    }
+  } finally {
+    sandbox.remove()
+  }
+}
+
+async function exportDomNodeAsPdf(target: HTMLDivElement, fileBaseName: string): Promise<void> {
+  await Promise.all(
+    Array.from(target.querySelectorAll("img")).map(
+      (image) =>
+        new Promise<void>((resolve) => {
+          const img = image as HTMLImageElement
+          if (img.complete) {
+            resolve()
+            return
+          }
+          const finalize = () => resolve()
+          img.addEventListener("load", finalize, { once: true })
+          img.addEventListener("error", finalize, { once: true })
+        }),
+    ),
+  )
+
+  const [{ default: html2canvas }, jspdfModule] = await Promise.all([
+    import("html2canvas"),
+    import("jspdf"),
+  ])
+  const jsPDF = jspdfModule.jsPDF || jspdfModule.default
+
+  const width = Math.max(Math.ceil(target.scrollWidth), Math.ceil(target.getBoundingClientRect().width), 1)
+  const cloneHost = document.createElement("div")
+  cloneHost.setAttribute("aria-hidden", "true")
+  cloneHost.style.position = "fixed"
+  cloneHost.style.left = "-100000px"
+  cloneHost.style.top = "0"
+  cloneHost.style.width = `${width}px`
+  cloneHost.style.pointerEvents = "none"
+  cloneHost.style.zIndex = "-1"
+  cloneHost.style.overflow = "visible"
+  cloneHost.style.background = "transparent"
+
+  const clone = target.cloneNode(true) as HTMLDivElement
+  syncFormValues(target, clone)
+  inlineResolvedStyles(target, clone)
+  clone.style.width = `${width}px`
+  clone.style.maxWidth = "none"
+  clone.style.margin = "0"
+  clone.style.height = "auto"
+  clone.style.minHeight = "0"
+  clone.style.overflow = "visible"
+  cloneHost.appendChild(clone)
+  document.body.appendChild(cloneHost)
+
+  try {
+    const canvas = await html2canvas(clone, {
+      scale: 2,
+      useCORS: true,
+      backgroundColor: "#020406",
+      logging: false,
+      width,
+      height: Math.max(Math.ceil(clone.scrollHeight), Math.ceil(clone.getBoundingClientRect().height), 1),
+      windowWidth: width,
+      windowHeight: Math.max(Math.ceil(clone.scrollHeight), Math.ceil(clone.getBoundingClientRect().height), 1),
+      imageTimeout: 0,
+    })
+
+    const pdf = new jsPDF({
+      orientation: "portrait",
+      unit: "mm",
+      format: "a4",
+      compress: false,
+    })
+
+    const imageData = canvas.toDataURL("image/png", 1)
+    const pdfWidth = 210
+    const pdfHeight = 297
+    const imageHeight = (canvas.height * pdfWidth) / canvas.width
+
+    let heightLeft = imageHeight
+    let position = 0
+
+    pdf.addImage(imageData, "PNG", 0, position, pdfWidth, imageHeight, fileBaseName, "FAST")
+    heightLeft -= pdfHeight
+
+    while (heightLeft > 0) {
+      position = heightLeft - imageHeight
+      pdf.addPage()
+      pdf.addImage(imageData, "PNG", 0, position, pdfWidth, imageHeight, undefined, "FAST")
+      heightLeft -= pdfHeight
+    }
+
+    pdf.save(`${fileBaseName}.pdf`)
+  } finally {
+    cloneHost.remove()
+  }
+}
+
 function ModuleSection({
   title,
   children,
@@ -143,9 +509,7 @@ function IntegratingSphereTool() {
   )
   const [activeVariantKey, setActiveVariantKey] = useState<LightVariantKey>("white")
   const [isParsing, setIsParsing] = useState(false)
-  const [isExportingPdf, setIsExportingPdf] = useState(false)
   const [results, setResults] = useState<VariantParsePayload[]>([])
-  const exportRootRef = useRef<HTMLDivElement | null>(null)
 
   const activeVariantMeta = selectedFiles.find((variant) => variant.key === activeVariantKey) ?? selectedFiles[0]
   const activeResult = results.find((entry) => entry.key === activeVariantKey) ?? null
@@ -176,7 +540,7 @@ function IntegratingSphereTool() {
 
   const selectedCount = selectedFiles.filter((variant) => variant.file).length
   const parsedCount = results.length
-  const canParseBundle = selectedCount === VARIANT_ORDER.length
+  const canParseBundle = selectedCount > 0
 
   const handleVariantFileChange = (variantKey: LightVariantKey, file: File | null) => {
     setResults((current) => current.filter((entry) => entry.key !== variantKey))
@@ -194,8 +558,8 @@ function IntegratingSphereTool() {
 
   const handleUploadParse = async () => {
     const filesToParse = selectedFiles.filter((variant) => variant.file)
-    if (filesToParse.length !== VARIANT_ORDER.length) {
-      toast.error("请一次选择白光、暖光、中性光三份 PDF 报告")
+    if (filesToParse.length === 0) {
+      toast.error("请至少选择一份积分球 PDF 报告")
       return
     }
 
@@ -224,88 +588,8 @@ function IntegratingSphereTool() {
     }
   }
 
-  const handleExportPdf = async () => {
-    const target = exportRootRef.current
-    if (!target) {
-      toast.error("当前没有可导出的页面内容")
-      return
-    }
-
-    setIsExportingPdf(true)
-    try {
-      await Promise.all(
-        Array.from(target.querySelectorAll("img")).map(
-          (image) =>
-            new Promise<void>((resolve) => {
-              const img = image as HTMLImageElement
-              if (img.complete) {
-                resolve()
-                return
-              }
-              const finalize = () => resolve()
-              img.addEventListener("load", finalize, { once: true })
-              img.addEventListener("error", finalize, { once: true })
-            }),
-        ),
-      )
-
-      const [{ default: html2canvas }, jspdfModule] = await Promise.all([
-        import("html2canvas"),
-        import("jspdf"),
-      ])
-      const jsPDF = jspdfModule.jsPDF || jspdfModule.default
-
-      const canvas = await html2canvas(target, {
-        scale: 2,
-        useCORS: true,
-        backgroundColor: "#020406",
-        logging: false,
-        width: target.scrollWidth,
-        height: target.scrollHeight,
-        windowWidth: target.scrollWidth,
-        windowHeight: target.scrollHeight,
-        imageTimeout: 0,
-      })
-
-      const pdf = new jsPDF({
-        orientation: "portrait",
-        unit: "mm",
-        format: "a4",
-        compress: false,
-      })
-
-      const imageData = canvas.toDataURL("image/png", 1)
-      const pdfWidth = 210
-      const pdfHeight = 297
-      const imageHeight = (canvas.height * pdfWidth) / canvas.width
-
-      let heightLeft = imageHeight
-      let position = 0
-
-      pdf.addImage(imageData, "PNG", 0, position, pdfWidth, imageHeight, "laboratory-workspace", "FAST")
-      heightLeft -= pdfHeight
-
-      while (heightLeft > 0) {
-        position = heightLeft - imageHeight
-        pdf.addPage()
-        pdf.addImage(imageData, "PNG", 0, position, pdfWidth, imageHeight, undefined, "FAST")
-        heightLeft -= pdfHeight
-      }
-
-      const baseName = (results.length > 1 ? "integrating-sphere-3-light-workspace" : activeResult?.fileName || "laboratory-workspace")
-        .replace(/\.pdf$/i, "")
-        .replace(/[\\/:*?"<>|]+/g, "-")
-      pdf.save(`${baseName}-workspace.pdf`)
-      toast.success("PDF 导出完成")
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "PDF 导出失败")
-    } finally {
-      setIsExportingPdf(false)
-    }
-  }
-
   return (
-    <div ref={exportRootRef} className="mx-auto w-full max-w-7xl">
+    <div className="mx-auto w-full max-w-7xl">
       <ModuleSection title="积分球解析">
         <section className={`${glassPanel} mb-4 p-3`}>
           <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1fr)_300px] xl:items-stretch">
@@ -380,15 +664,6 @@ function IntegratingSphereTool() {
               >
                 {isParsing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
                 {isParsing ? "解析中..." : "解析"}
-              </Button>
-              <Button
-                onClick={handleExportPdf}
-                disabled={isExportingPdf || parsedCount === 0}
-                variant="outline"
-                className="h-10 justify-center border-white/[0.08] bg-transparent text-slate-100 hover:bg-white/[0.04]"
-              >
-                {isExportingPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-                导出
               </Button>
               <Button
                 onClick={handleClearAll}
@@ -519,9 +794,12 @@ export default function LaboratoryPdfParserDashboard() {
   const [nodes, setNodes] = useState<WorkspaceNode[]>([{ id: 1, type: null, isConfirmed: false }])
   const [draftSelections, setDraftSelections] = useState<Record<number, TelemetryNodeType | "">>({ 1: "" })
   const [pendingUnmountNodeId, setPendingUnmountNodeId] = useState<number | null>(null)
+  const [isExportingWorkspace, setIsExportingWorkspace] = useState(false)
   const nextNodeIdRef = useRef(2)
+  const workspaceExportRef = useRef<HTMLDivElement | null>(null)
 
   const hasEmptyNode = nodes.some((node) => !node.isConfirmed || !node.type)
+  const confirmedNodeCount = nodes.filter((node) => node.isConfirmed && node.type).length
   const pendingUnmountNode =
     pendingUnmountNodeId == null ? null : nodes.find((node) => node.id === pendingUnmountNodeId) ?? null
   const pendingUnmountOption =
@@ -589,38 +867,80 @@ export default function LaboratoryPdfParserDashboard() {
     setDraftSelections((current) => ({ ...current, [id]: "" }))
   }
 
+  const handleExportWorkspacePdf = async () => {
+    const target = workspaceExportRef.current
+    if (!target || confirmedNodeCount === 0) {
+      toast.error("当前没有可导出的测试模块")
+      return
+    }
+    try {
+      openPdfPreviewWindow({
+        source: target,
+        fileBaseName: "laboratory-workspace",
+        onConfirmExport: async () => {
+          setIsExportingWorkspace(true)
+          try {
+            await exportDomNodeAsPdf(target, "laboratory-workspace")
+            toast.success("工作区 PDF 导出完成")
+          } catch (error) {
+            toast.error(error instanceof Error ? error.message : "工作区 PDF 导出失败")
+          } finally {
+            setIsExportingWorkspace(false)
+          }
+        },
+      })
+      toast.success("PDF 预览已打开")
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "PDF 预览打开失败")
+    }
+  }
+
   return (
     <main className="min-h-screen bg-[#020406] bg-[radial-gradient(circle_at_50%_20%,_rgba(0,243,255,0.06),_transparent_50%)] px-6 py-8 text-zinc-50 md:px-10 lg:px-14">
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-8">
         <div className="rounded-[28px] border border-white/[0.06] bg-black/25 px-6 py-4 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
-          <h1 className="text-2xl font-bold text-slate-100">实验室工作区</h1>
+          <div className="flex items-center justify-between gap-4">
+            <h1 className="text-2xl font-bold text-slate-100">实验室工作区</h1>
+            <Button
+              type="button"
+              onClick={handleExportWorkspacePdf}
+              disabled={isExportingWorkspace || confirmedNodeCount === 0}
+              variant="outline"
+              className="h-10 border-white/[0.08] bg-white/[0.03] text-white hover:bg-white/[0.06]"
+            >
+              {isExportingWorkspace ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+              导出 PDF
+            </Button>
+          </div>
         </div>
 
-        {nodes.map((node) => (
-          <section key={node.id} className="w-full">
-            {!node.isConfirmed || !node.type ? (
-              <EmptyNodePortal
-                value={draftSelections[node.id] ?? ""}
-                onValueChange={(value) => handleDraftChange(node.id, value)}
-                onConfirm={() => handleMountNode(node.id)}
-              />
-            ) : (
-              <ActiveNodeShell
-                node={{ ...node, type: node.type }}
-                onRequestUnmount={() => setPendingUnmountNodeId(node.id)}
-              />
-            )}
-          </section>
-        ))}
+        <div ref={workspaceExportRef} className="flex flex-col gap-8">
+          {nodes.map((node) => (
+            <section key={node.id} className="w-full">
+              {!node.isConfirmed || !node.type ? (
+                <EmptyNodePortal
+                  value={draftSelections[node.id] ?? ""}
+                  onValueChange={(value) => handleDraftChange(node.id, value)}
+                  onConfirm={() => handleMountNode(node.id)}
+                />
+              ) : (
+                <ActiveNodeShell
+                  node={{ ...node, type: node.type }}
+                  onRequestUnmount={() => setPendingUnmountNodeId(node.id)}
+                />
+              )}
+            </section>
+          ))}
 
-        <div
-          onClick={handleAddNode}
-          className="flex w-full cursor-pointer justify-center rounded-xl border-2 border-dashed border-white/10 py-6 transition-all hover:border-cyan-500/50 hover:bg-cyan-400/[0.03]"
-        >
-          <span className="inline-flex items-center gap-3 font-mono tracking-[0.08em] text-white">
-            <Plus className="h-4 w-4" />
-            添加测试模块
-          </span>
+          <div
+            onClick={handleAddNode}
+            className="flex w-full cursor-pointer justify-center rounded-xl border-2 border-dashed border-white/10 py-6 transition-all hover:border-cyan-500/50 hover:bg-cyan-400/[0.03]"
+          >
+            <span className="inline-flex items-center gap-3 font-mono tracking-[0.08em] text-white">
+              <Plus className="h-4 w-4" />
+              添加测试模块
+            </span>
+          </div>
         </div>
       </div>
 

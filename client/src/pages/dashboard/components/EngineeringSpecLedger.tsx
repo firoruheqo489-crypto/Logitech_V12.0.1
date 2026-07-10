@@ -214,7 +214,7 @@ export function EngineeringSpecLedger({
                 <tr
                   key={record.id}
                   className="border-b border-white/5 transition hover:bg-white/[0.02]"
-                  onDoubleClick={() => onSelectRecord?.(record)}
+                  onClick={() => onSelectRecord?.(record)}
                 >
                   {columns.map((column) => (
                     <td
@@ -225,7 +225,7 @@ export function EngineeringSpecLedger({
                       style={column.width ? { width: column.width } : undefined}
                     >
                       {column.key === 'action' ? (
-                        <div className="flex items-center justify-center" onDoubleClick={(event) => event.stopPropagation()}>
+                        <div className="flex items-center justify-center" onClick={(event) => event.stopPropagation()}>
                           <button
                             type="button"
                             onClick={() => {

@@ -4,7 +4,7 @@ import { glassPanel } from "./ui";
 function MetaItem({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex flex-col gap-0.5">
-      <span className="text-[10px] font-medium uppercase tracking-widest text-slate-500">{label}</span>
+      <span className="text-[10px] font-medium tracking-widest text-slate-500">{label}</span>
       <span className="font-mono text-sm font-semibold tracking-tight text-gray-100">{value}</span>
     </div>
   );
@@ -19,22 +19,19 @@ export function SummaryBanner({ reportMeta }: { reportMeta: ReportMeta }) {
     >
       <div className="flex flex-col gap-4">
         <div className="flex items-center gap-3">
-          <span className="font-mono text-xs font-bold uppercase tracking-[0.3em] text-cyan-500/80">
-            Integrating Sphere
-          </span>
           <span className="text-xs text-slate-600">积分球检测报告</span>
         </div>
         <div className="flex flex-wrap gap-x-10 gap-y-4">
-          <MetaItem label="Parsed File" value={reportMeta.fileName} />
-          <MetaItem label="Product" value={reportMeta.productModel} />
-          <MetaItem label="Test Date" value={reportMeta.testDate} />
-          <MetaItem label="Equipment ID" value={reportMeta.equipmentId} />
-          <MetaItem label="Operator" value={reportMeta.operator} />
+          <MetaItem label="解析文件" value={reportMeta.fileName} />
+          <MetaItem label="产品型号" value={reportMeta.productModel} />
+          <MetaItem label="测试日期" value={reportMeta.testDate} />
+          <MetaItem label="设备编号" value={reportMeta.equipmentId} />
+          <MetaItem label="操作员" value={reportMeta.operator} />
         </div>
       </div>
 
       <div className="relative flex flex-col items-start gap-0.5 md:items-end">
-        <span className="text-[10px] font-medium uppercase tracking-widest text-slate-500">Global Judgment</span>
+        <span className="text-[10px] font-medium tracking-widest text-slate-500">综合判定</span>
         <span className="relative font-mono text-4xl font-bold tracking-tight">
           <span
             aria-hidden
@@ -47,7 +44,7 @@ export function SummaryBanner({ reportMeta }: { reportMeta: ReportMeta }) {
           />
           <span className={pass ? "text-emerald-400" : "text-red-400"}>{reportMeta.judgment}</span>
         </span>
-        <span className="text-xs text-slate-600">{pass ? "COMPLIANT / 合规" : "NON-COMPLIANT / 待复核"}</span>
+        <span className="text-xs text-slate-600">{pass ? "合规" : "待复核"}</span>
       </div>
     </header>
   );

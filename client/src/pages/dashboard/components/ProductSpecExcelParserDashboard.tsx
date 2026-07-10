@@ -326,9 +326,13 @@ function looksLikeSpecDescription(value: string): boolean {
 function looksLikeCompactCode(value: string): boolean {
   const normalized = value.trim();
   if (!normalized) return false;
-  if (normalized.length > 32) return false;
-  if (/\s/u.test(normalized)) return false;
-  return /^[A-Za-z0-9][A-Za-z0-9._/-]*$/u.test(normalized);
+  if (normalized.length > 48) return false;
+  if (/[\r\n\t]/u.test(normalized)) return false;
+
+  const compact = normalized.replace(/\s+/gu, '');
+  if (compact.length < 3) return false;
+  if (!/[A-Za-z]/u.test(compact) || !/\d/u.test(compact)) return false;
+  return /^[A-Za-z0-9][A-Za-z0-9._/\-\p{Script=Han}]*$/u.test(compact);
 }
 
 function looksLikeProductCategory(value: string): boolean {
@@ -461,6 +465,7 @@ export default function ProductSpecExcelParserDashboard({
   const [isTestProjectDialogOpen, setIsTestProjectDialogOpen] = useState(false);
   const hasHydratedWorkspaceStateRef = useRef(false);
   const suppressNextAutoSaveRef = useRef(false);
+  const hasUserSwitchedViewRef = useRef(false);
 
   const projectId = projectName.trim() || 'default-engineering-spec-workspace';
 
@@ -498,6 +503,7 @@ export default function ProductSpecExcelParserDashboard({
   useEffect(() => {
     let cancelled = false;
     hasHydratedWorkspaceStateRef.current = false;
+    hasUserSwitchedViewRef.current = false;
 
     const loadWorkspaceDraft = async () => {
       setWorkspaceSyncState('loading');
@@ -523,7 +529,7 @@ export default function ProductSpecExcelParserDashboard({
         setTestProjectSelection(buildTestProjectSelectionStateFromWorkspaceState(state));
         setLightboxSlotId(null);
         setIsEditMode(false);
-        setView('workspace');
+        setView((current) => (hasUserSwitchedViewRef.current ? current : 'workspace'));
         setActiveArchiveDocumentId(null);
         setCurrentFileFingerprint(null);
         setWorkspaceSyncState('restored');
@@ -1063,6 +1069,11 @@ export default function ProductSpecExcelParserDashboard({
     setQeConclusion(value);
   }
 
+  function handleViewChange(nextView: ViewKey) {
+    hasUserSwitchedViewRef.current = true;
+    setView(nextView);
+  }
+
   function handleInspectionTestProjectChange(nextState: InspectionTestProjectState) {
     markWorkspaceAsDraft();
     setInspectionTestProject(nextState);
@@ -1235,7 +1246,7 @@ export default function ProductSpecExcelParserDashboard({
                   <button
                     key={item.key}
                     type="button"
-                    onClick={() => setView(item.key)}
+                    onClick={() => handleViewChange(item.key)}
                     className={`flex items-center gap-3 rounded-xl border px-3 py-3 text-left transition ${
                       isActive
                         ? 'border-cyan-400/30 bg-cyan-400/10 text-slate-100'
