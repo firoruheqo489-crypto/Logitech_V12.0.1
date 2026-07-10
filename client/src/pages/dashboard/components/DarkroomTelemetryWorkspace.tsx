@@ -170,9 +170,12 @@ export function DarkroomTelemetryWorkspace() {
                     <div
                       key={variant.key}
                       className={`relative min-h-[58px] rounded-lg border transition ${variantTone(variant.accent, isActive)}`}
-                      onClick={() => setActiveVariantKey(variant.key)}
                     >
-                      <label className="flex h-full cursor-pointer items-center gap-3 px-3 py-2 pr-10">
+                      <button
+                        type="button"
+                        onClick={() => setActiveVariantKey(variant.key)}
+                        className="flex h-full w-full items-center gap-3 px-3 py-2 pr-24 text-left"
+                      >
                         {variantResult ? (
                           <CheckCircle2 className="h-4 w-4 shrink-0" />
                         ) : variant.file ? (
@@ -191,8 +194,14 @@ export function DarkroomTelemetryWorkspace() {
                             {variant.file?.name || `选择${variant.label}PDF`}
                           </span>
                         </span>
+                      </button>
+                      <label
+                        className="absolute right-10 top-1/2 -translate-y-1/2 cursor-pointer rounded-full border border-white/[0.08] bg-black/45 px-2 py-1 text-[10px] text-slate-300 transition hover:border-cyan-300/30 hover:text-white"
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        {variant.file ? "更换" : "选择"}
                         <input
-                          key={variant.file?.name ?? `${variant.key}-empty`}
+                          key={`${variant.key}-${variant.file?.name ?? "empty"}-picker`}
                           type="file"
                           accept=".pdf,application/pdf"
                           className="hidden"
@@ -202,10 +211,7 @@ export function DarkroomTelemetryWorkspace() {
                       {variant.file ? (
                         <button
                           type="button"
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            handleVariantFileChange(variant.key, null)
-                          }}
+                          onClick={() => handleVariantFileChange(variant.key, null)}
                           className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full border border-white/[0.08] bg-black/55 p-1.5 text-slate-400 transition hover:border-rose-300/40 hover:text-rose-200"
                           aria-label={`清除${variant.label}报告`}
                         >

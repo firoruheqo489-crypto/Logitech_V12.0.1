@@ -340,6 +340,8 @@ try {
   Copy-Item -Force (Join-Path $repoRoot "package.json") (Join-Path $payloadRoot "package.json")
   Copy-Item -Force (Join-Path $repoRoot "pnpm-lock.yaml") (Join-Path $payloadRoot "pnpm-lock.yaml")
   Copy-Item -Force (Join-Path $repoRoot "ecosystem.config.cjs") (Join-Path $payloadRoot "ecosystem.config.cjs")
+  Copy-Item -Recurse -Force (Join-Path $repoRoot "laboratory_pdf_parser") (Join-Path $payloadRoot "laboratory_pdf_parser")
+  Copy-Item -Force (Join-Path $repoRoot "scripts/bootstrap-parser-runtime.sh") (Join-Path $payloadScriptsRoot "bootstrap-parser-runtime.sh")
   Copy-Item -Force (Join-Path $repoRoot "scripts/verify-oss-http-smoke.mjs") (Join-Path $payloadScriptsRoot "verify-oss-http-smoke.mjs")
   Copy-Item -Force (Join-Path $repoRoot "scripts/verify-reliability-smoke.mjs") (Join-Path $payloadScriptsRoot "verify-reliability-smoke.mjs")
   Copy-Item -Force (Join-Path $repoRoot "scripts/verify-reliability-smoke.ps1") (Join-Path $payloadScriptsRoot "verify-reliability-smoke.ps1")

@@ -1,8 +1,25 @@
 import { useMemo, useRef, useState } from "react"
-import { CheckCircle2, Circle, Download, FileText, Loader2, Upload, X } from "lucide-react"
+import {
+  CheckCircle2,
+  Circle,
+  Download,
+  FileText,
+  Loader2,
+  Plus,
+  Upload,
+  X,
+} from "lucide-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
+import CyberConfirmDialog from "@/components/ui/CyberConfirmDialog"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { apiFetch } from "@/lib/api"
 import { DarkroomTelemetryWorkspace } from "./DarkroomTelemetryWorkspace"
 import EmcRadiationWorkspace from "./EmcRadiationWorkspace"
@@ -27,7 +44,6 @@ type LightVariantKey = "white" | "warm" | "neutral"
 type VariantSelection = {
   key: LightVariantKey
   label: string
-  hint: string
   accent: string
   file: File | null
 }
@@ -39,10 +55,34 @@ type VariantParsePayload = {
   result: IntegratingSphereParseResult
 }
 
+type TelemetryNodeType =
+  | "INTEGRATING_SPHERE"
+  | "DARKROOM"
+  | "FLICKER"
+  | "EMISSION"
+  | "HARMONIC"
+
+type WorkspaceNode = {
+  id: number
+  type: TelemetryNodeType | null
+  isConfirmed: boolean
+}
+
 const VARIANT_ORDER: Array<Omit<VariantSelection, "file">> = [
-  { key: "white", label: "白光", hint: "White", accent: "cyan" },
-  { key: "warm", label: "暖光", hint: "Warm", accent: "amber" },
-  { key: "neutral", label: "中性光", hint: "Neutral", accent: "emerald" },
+  { key: "white", label: "白光", accent: "cyan" },
+  { key: "warm", label: "暖光", accent: "amber" },
+  { key: "neutral", label: "中性光", accent: "emerald" },
+]
+
+const TOOL_OPTIONS: Array<{
+  type: TelemetryNodeType
+  label: string
+}> = [
+  { type: "INTEGRATING_SPHERE", label: "积分球解析" },
+  { type: "DARKROOM", label: "暗房解析" },
+  { type: "FLICKER", label: "频闪解析" },
+  { type: "EMISSION", label: "传导 / 辐射解析" },
+  { type: "HARMONIC", label: "谐波解析" },
 ]
 
 function variantTone(accent: string, active = false) {
@@ -88,7 +128,7 @@ function ModuleSection({
   children: React.ReactNode
 }) {
   return (
-    <section className="mb-8 rounded-[28px] border border-white/[0.06] bg-black/20 p-4 shadow-[0_0_0_1px_rgba(255,255,255,0.02)] md:p-5">
+    <section className="rounded-[28px] border border-white/[0.06] bg-black/20 p-4 shadow-[0_0_0_1px_rgba(255,255,255,0.02)] md:p-5">
       <div className="mb-4 border-b border-white/[0.05] pb-3">
         <h2 className="text-base font-bold tracking-wide text-slate-100">{title}</h2>
       </div>
@@ -97,7 +137,7 @@ function ModuleSection({
   )
 }
 
-export default function LaboratoryPdfParserDashboard() {
+function IntegratingSphereTool() {
   const [selectedFiles, setSelectedFiles] = useState<VariantSelection[]>(
     VARIANT_ORDER.map((variant) => ({ ...variant, file: null })),
   )
@@ -265,138 +305,338 @@ export default function LaboratoryPdfParserDashboard() {
   }
 
   return (
-    <main className="min-h-screen bg-[#020406] bg-[radial-gradient(circle_at_50%_20%,_rgba(0,243,255,0.06),_transparent_50%)] px-6 py-8 text-zinc-50 md:px-10 lg:px-14">
-      <div ref={exportRootRef} className="mx-auto w-full max-w-7xl">
-        <ModuleSection title="积分球解析">
-          <section className={`${glassPanel} mb-4 p-3`}>
-            <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1fr)_300px] xl:items-stretch">
-              <div className="grid grid-cols-1 gap-2 lg:grid-cols-3">
-                {selectedFiles.map((variant) => {
-                  const variantResult = results.find((entry) => entry.key === variant.key)
-                  const isActive = activeVariantKey === variant.key
-                  const stateLabel = variantResult ? "已解析" : variant.file ? "待解析" : "未选择"
+    <div ref={exportRootRef} className="mx-auto w-full max-w-7xl">
+      <ModuleSection title="积分球解析">
+        <section className={`${glassPanel} mb-4 p-3`}>
+          <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1fr)_300px] xl:items-stretch">
+            <div className="grid grid-cols-1 gap-2 lg:grid-cols-3">
+              {selectedFiles.map((variant) => {
+                const variantResult = results.find((entry) => entry.key === variant.key)
+                const isActive = activeVariantKey === variant.key
+                const stateLabel = variantResult ? "已解析" : variant.file ? "待解析" : "未选择"
 
-                  return (
-                    <div
-                      key={variant.key}
-                      className={`relative min-h-[58px] rounded-lg border transition ${variantTone(variant.accent, isActive)}`}
+                return (
+                  <div
+                    key={variant.key}
+                    className={`relative min-h-[58px] rounded-lg border transition ${variantTone(variant.accent, isActive)}`}
+                  >
+                    <button
+                      type="button"
                       onClick={() => setActiveVariantKey(variant.key)}
+                      className="flex h-full w-full items-center gap-3 px-3 py-2 pr-24 text-left"
                     >
-                      <label className="flex h-full cursor-pointer items-center gap-3 px-3 py-2 pr-10">
-                        {variantResult ? (
-                          <CheckCircle2 className="h-4 w-4 shrink-0" />
-                        ) : variant.file ? (
-                          <FileText className="h-4 w-4 shrink-0" />
-                        ) : (
-                          <Circle className="h-4 w-4 shrink-0" />
-                        )}
-                        <span className="min-w-0 flex-1">
-                          <span className="flex items-center gap-2">
-                            <span className="font-mono text-xs font-bold tracking-[0.18em]">{variant.label}</span>
-                            <span className="rounded-full border border-white/[0.08] bg-black/25 px-2 py-0.5 text-[10px] text-slate-300">
-                              {stateLabel}
-                            </span>
-                          </span>
-                          <span className="mt-1 block truncate text-xs text-slate-400">
-                            {variant.file?.name || `选择${variant.label}PDF`}
+                      {variantResult ? (
+                        <CheckCircle2 className="h-4 w-4 shrink-0" />
+                      ) : variant.file ? (
+                        <FileText className="h-4 w-4 shrink-0" />
+                      ) : (
+                        <Circle className="h-4 w-4 shrink-0" />
+                      )}
+                      <span className="min-w-0 flex-1">
+                        <span className="flex items-center gap-2">
+                          <span className="font-mono text-xs font-bold tracking-[0.18em]">{variant.label}</span>
+                          <span className="rounded-full border border-white/[0.08] bg-black/25 px-2 py-0.5 text-[10px] text-slate-300">
+                            {stateLabel}
                           </span>
                         </span>
-                        <input
-                          key={variant.file?.name ?? `${variant.key}-empty`}
-                          type="file"
-                          accept=".pdf,application/pdf"
-                          className="hidden"
-                          onChange={(event) => handleVariantFileChange(variant.key, event.target.files?.[0] ?? null)}
-                        />
-                      </label>
-                      {variant.file ? (
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            handleVariantFileChange(variant.key, null)
-                          }}
-                          className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full border border-white/[0.08] bg-black/55 p-1.5 text-slate-400 transition hover:border-rose-300/40 hover:text-rose-200"
-                          aria-label={`清除${variant.label}报告`}
-                        >
-                          <X className="h-3.5 w-3.5" />
-                        </button>
-                      ) : null}
-                    </div>
-                  )
-                })}
-              </div>
-
-              <div className="grid grid-cols-3 gap-2 xl:self-center">
-                <Button
-                  onClick={handleUploadParse}
-                  disabled={isParsing || !canParseBundle}
-                  className="h-10 justify-center bg-white text-black hover:bg-white/90"
-                >
-                  {isParsing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-                  {isParsing ? "解析中" : "解析"}
-                </Button>
-                <Button
-                  onClick={handleExportPdf}
-                  disabled={isExportingPdf || parsedCount === 0}
-                  variant="outline"
-                  className="h-10 justify-center border-white/[0.08] bg-transparent text-slate-100 hover:bg-white/[0.04]"
-                >
-                  {isExportingPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-                  导出
-                </Button>
-                <Button
-                  onClick={handleClearAll}
-                  disabled={isParsing || (selectedCount === 0 && parsedCount === 0)}
-                  variant="outline"
-                  className="h-10 justify-center border-white/[0.06] bg-black/20 text-slate-400 hover:bg-white/[0.04] hover:text-slate-100"
-                >
-                  <X className="h-4 w-4" />
-                  清空
-                </Button>
-              </div>
+                        <span className="mt-1 block truncate text-xs text-slate-400">
+                          {variant.file?.name || `选择${variant.label}PDF`}
+                        </span>
+                      </span>
+                    </button>
+                    <label
+                      className="absolute right-10 top-1/2 -translate-y-1/2 cursor-pointer rounded-full border border-white/[0.08] bg-black/45 px-2 py-1 text-[10px] text-slate-300 transition hover:border-cyan-300/30 hover:text-white"
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      {variant.file ? "更换" : "选择"}
+                      <input
+                        key={`${variant.key}-${variant.file?.name ?? "empty"}-picker`}
+                        type="file"
+                        accept=".pdf,application/pdf"
+                        className="hidden"
+                        onChange={(event) => handleVariantFileChange(variant.key, event.target.files?.[0] ?? null)}
+                      />
+                    </label>
+                    {variant.file ? (
+                      <button
+                        type="button"
+                        onClick={() => handleVariantFileChange(variant.key, null)}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full border border-white/[0.08] bg-black/55 p-1.5 text-slate-400 transition hover:border-rose-300/40 hover:text-rose-200"
+                        aria-label={`清除${variant.label}报告`}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    ) : null}
+                  </div>
+                )
+              })}
             </div>
-          </section>
 
-          <SummaryBanner reportMeta={summaryReportMeta} />
-
-          <div className="mb-6 grid w-full grid-cols-1 gap-6 lg:grid-cols-2">
-            <SpectrumChart spectrumStats={viewModel.spectrumStats} />
-            <CieDiagram chromaticity={viewModel.chromaticity} />
+            <div className="grid grid-cols-3 gap-2 xl:self-center">
+              <Button
+                onClick={handleUploadParse}
+                disabled={isParsing || !canParseBundle}
+                className="h-10 justify-center bg-white text-black hover:bg-white/90"
+              >
+                {isParsing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                {isParsing ? "解析中..." : "解析"}
+              </Button>
+              <Button
+                onClick={handleExportPdf}
+                disabled={isExportingPdf || parsedCount === 0}
+                variant="outline"
+                className="h-10 justify-center border-white/[0.08] bg-transparent text-slate-100 hover:bg-white/[0.04]"
+              >
+                {isExportingPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                导出
+              </Button>
+              <Button
+                onClick={handleClearAll}
+                disabled={isParsing || (selectedCount === 0 && parsedCount === 0)}
+                variant="outline"
+                className="h-10 justify-center border-white/[0.06] bg-black/20 text-slate-400 hover:bg-white/[0.04] hover:text-slate-100"
+              >
+                <X className="h-4 w-4" />
+                清空
+              </Button>
+            </div>
           </div>
+        </section>
 
-          <div className="grid w-full grid-cols-1 gap-6 md:grid-cols-3">
-            <TelemetryVector title="电参数输入" fields={viewModel.electricalInput} />
-            <TelemetryVector title="光参数输出" fields={viewModel.luminousOutput} />
-            <TelemetryVector title="颜色质量" fields={viewModel.colorQuality} />
-          </div>
+        <SummaryBanner reportMeta={summaryReportMeta} />
 
-          <footer className="mt-8 flex items-center justify-between border-t border-white/[0.04] pt-4">
-            <span className="font-mono text-[10px] tracking-widest text-slate-600">
-              INTEGRATING SPHERE DIAGNOSTIC WORKSPACE v1
-            </span>
-            <span className="font-mono text-[10px] tracking-widest text-slate-600">
-              CIE 1931 / IES TM-30 / CIE 13.3 Ra
-            </span>
-          </footer>
-        </ModuleSection>
+        <div className="mb-6 grid w-full grid-cols-1 gap-6 lg:grid-cols-2">
+          <SpectrumChart spectrumStats={viewModel.spectrumStats} />
+          <CieDiagram chromaticity={viewModel.chromaticity} />
+        </div>
 
-        <ModuleSection title="暗房解析">
-          <DarkroomTelemetryWorkspace />
-        </ModuleSection>
+        <div className="grid w-full grid-cols-1 gap-6 md:grid-cols-3">
+          <TelemetryVector title="电参数输入" fields={viewModel.electricalInput} />
+          <TelemetryVector title="光参数输出" fields={viewModel.luminousOutput} />
+          <TelemetryVector title="颜色质量" fields={viewModel.colorQuality} />
+        </div>
 
-        <ModuleSection title="FLICKER REPORT PARSER">
-          <FlickerTelemetryWorkspace />
-        </ModuleSection>
+        <footer className="mt-8 flex items-center justify-between border-t border-white/[0.04] pt-4">
+          <span className="font-mono text-[10px] tracking-widest text-slate-600">
+            INTEGRATING SPHERE DIAGNOSTIC WORKSPACE v1
+          </span>
+          <span className="font-mono text-[10px] tracking-widest text-slate-600">
+            CIE 1931 / IES TM-30 / CIE 13.3 Ra
+          </span>
+        </footer>
+      </ModuleSection>
+    </div>
+  )
+}
 
-        <ModuleSection title="EMC RADIATION / CONDUCTION PARSER">
-          <EmcRadiationWorkspace />
-        </ModuleSection>
+function renderTelemetryModule(type: TelemetryNodeType, nodeId: number) {
+  switch (type) {
+    case "INTEGRATING_SPHERE":
+      return <IntegratingSphereTool key={`integrating-sphere-${nodeId}`} />
+    case "DARKROOM":
+      return <DarkroomTelemetryWorkspace key={`darkroom-${nodeId}`} />
+    case "FLICKER":
+      return <FlickerTelemetryWorkspace key={`flicker-${nodeId}`} />
+    case "EMISSION":
+      return <EmcRadiationWorkspace key={`emission-${nodeId}`} />
+    case "HARMONIC":
+      return <HarmonicTelemetryWorkspace key={`harmonic-${nodeId}`} />
+    default:
+      return null
+  }
+}
 
-        <ModuleSection title="HARMONIC REPORT PARSER">
-          <HarmonicTelemetryWorkspace />
-        </ModuleSection>
+function EmptyNodePortal({
+  value,
+  onValueChange,
+  onConfirm,
+}: {
+  value: TelemetryNodeType | ""
+  onValueChange: (value: TelemetryNodeType) => void
+  onConfirm: () => void
+}) {
+  return (
+    <div className="flex min-h-[168px] flex-col items-center justify-center rounded-xl border border-white/[0.05] bg-white/[0.02] p-5 backdrop-blur-xl">
+      <div className="mb-4 text-center">
+        <h3 className="text-xl font-bold text-slate-100">添加测试模块</h3>
       </div>
+
+      <div className="grid w-full max-w-xl gap-4 md:grid-cols-[minmax(0,1fr)_220px] md:items-center">
+        <Select value={value} onValueChange={(nextValue) => onValueChange(nextValue as TelemetryNodeType)}>
+          <SelectTrigger className="h-12 w-full rounded-xl border-cyan-400/30 bg-black/40 text-slate-100 shadow-[0_0_0_1px_rgba(0,243,255,0.06)] hover:border-cyan-400/50 focus-visible:border-cyan-400 focus-visible:ring-cyan-400/20">
+            <SelectValue placeholder="选择一个测试模块" />
+          </SelectTrigger>
+          <SelectContent className="rounded-xl border-cyan-400/20 bg-[#050911] text-slate-100 shadow-2xl">
+            {TOOL_OPTIONS.map((option) => (
+              <SelectItem
+                key={option.type}
+                value={option.type}
+                className="rounded-lg py-2.5 text-slate-100 data-[highlighted]:bg-cyan-400/10 data-[highlighted]:text-cyan-100"
+              >
+                <span className="text-sm">{option.label}</span>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Button
+          type="button"
+          onClick={onConfirm}
+          className="h-12 rounded-xl border border-cyan-400/20 bg-cyan-400/80 font-mono tracking-[0.12em] text-white shadow-[0_0_24px_rgba(0,243,255,0.16)] transition-all hover:bg-cyan-300/90"
+        >
+          挂载模块
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+function ActiveNodeShell({
+  node,
+  onRequestUnmount,
+}: {
+  node: WorkspaceNode & { type: TelemetryNodeType }
+  onRequestUnmount: () => void
+}) {
+  return (
+    <div className="relative">
+      <div className="absolute right-5 top-5 z-20 flex items-center rounded-full border border-white/[0.08] bg-black/55 px-3 py-2 backdrop-blur-xl">
+        <button
+          type="button"
+          onClick={onRequestUnmount}
+          className="inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-[11px] font-mono tracking-[0.08em] text-white transition-colors hover:border-rose-300/30 hover:bg-rose-400/10"
+        >
+          <X className="h-3.5 w-3.5" />
+          删除模块
+        </button>
+      </div>
+      {renderTelemetryModule(node.type, node.id)}
+    </div>
+  )
+}
+
+export default function LaboratoryPdfParserDashboard() {
+  const [nodes, setNodes] = useState<WorkspaceNode[]>([{ id: 1, type: null, isConfirmed: false }])
+  const [draftSelections, setDraftSelections] = useState<Record<number, TelemetryNodeType | "">>({ 1: "" })
+  const [pendingUnmountNodeId, setPendingUnmountNodeId] = useState<number | null>(null)
+  const nextNodeIdRef = useRef(2)
+
+  const hasEmptyNode = nodes.some((node) => !node.isConfirmed || !node.type)
+  const pendingUnmountNode =
+    pendingUnmountNodeId == null ? null : nodes.find((node) => node.id === pendingUnmountNodeId) ?? null
+  const pendingUnmountOption =
+    pendingUnmountNode?.type == null ? null : TOOL_OPTIONS.find((item) => item.type === pendingUnmountNode.type) ?? null
+
+  const handleDraftChange = (nodeId: number, type: TelemetryNodeType) => {
+    setDraftSelections((current) => ({ ...current, [nodeId]: type }))
+  }
+
+  const handleMountNode = (nodeId: number) => {
+    const selectedType = draftSelections[nodeId]
+    if (!selectedType) {
+      toast.error("请先选择一个解析模块")
+      return
+    }
+
+    setNodes((current) =>
+      current.map((node) =>
+        node.id === nodeId
+          ? { ...node, type: selectedType, isConfirmed: true }
+          : node,
+      ),
+    )
+  }
+
+  const handleUnmountNode = (nodeId: number) => {
+    setNodes((current) => {
+      const hasOtherEmptyNode = current.some(
+        (node) => node.id !== nodeId && (!node.isConfirmed || !node.type),
+      )
+
+      if (hasOtherEmptyNode) {
+        return current.filter((node) => node.id !== nodeId)
+      }
+
+      return current.map((node) =>
+        node.id === nodeId
+          ? { ...node, type: null, isConfirmed: false }
+          : node,
+      )
+    })
+
+    setDraftSelections((current) => {
+      const next = { ...current }
+      next[nodeId] = ""
+      return next
+    })
+  }
+
+  const handleConfirmUnmount = () => {
+    if (pendingUnmountNodeId == null) return
+    handleUnmountNode(pendingUnmountNodeId)
+    setPendingUnmountNodeId(null)
+  }
+
+  const handleAddNode = () => {
+    if (hasEmptyNode) {
+      toast.error("当前已有一个空载节点，请先完成挂载")
+      return
+    }
+
+    const id = nextNodeIdRef.current
+    nextNodeIdRef.current += 1
+    setNodes((current) => [...current, { id, type: null, isConfirmed: false }])
+    setDraftSelections((current) => ({ ...current, [id]: "" }))
+  }
+
+  return (
+    <main className="min-h-screen bg-[#020406] bg-[radial-gradient(circle_at_50%_20%,_rgba(0,243,255,0.06),_transparent_50%)] px-6 py-8 text-zinc-50 md:px-10 lg:px-14">
+      <div className="mx-auto flex w-full max-w-7xl flex-col gap-8">
+        <div className="rounded-[28px] border border-white/[0.06] bg-black/25 px-6 py-4 shadow-[0_0_0_1px_rgba(255,255,255,0.02)]">
+          <h1 className="text-2xl font-bold text-slate-100">实验室工作区</h1>
+        </div>
+
+        {nodes.map((node) => (
+          <section key={node.id} className="w-full">
+            {!node.isConfirmed || !node.type ? (
+              <EmptyNodePortal
+                value={draftSelections[node.id] ?? ""}
+                onValueChange={(value) => handleDraftChange(node.id, value)}
+                onConfirm={() => handleMountNode(node.id)}
+              />
+            ) : (
+              <ActiveNodeShell
+                node={{ ...node, type: node.type }}
+                onRequestUnmount={() => setPendingUnmountNodeId(node.id)}
+              />
+            )}
+          </section>
+        ))}
+
+        <div
+          onClick={handleAddNode}
+          className="flex w-full cursor-pointer justify-center rounded-xl border-2 border-dashed border-white/10 py-6 transition-all hover:border-cyan-500/50 hover:bg-cyan-400/[0.03]"
+        >
+          <span className="inline-flex items-center gap-3 font-mono tracking-[0.08em] text-white">
+            <Plus className="h-4 w-4" />
+            添加测试模块
+          </span>
+        </div>
+      </div>
+
+      <CyberConfirmDialog
+        open={pendingUnmountNodeId !== null}
+        title="删除模块确认"
+        message={
+          pendingUnmountOption
+            ? `确定要删除当前 ${pendingUnmountOption.label} 节点吗？\n删除后该节点会从当前工作区移除。`
+            : "确定要删除当前节点吗？\n删除后该节点会从当前工作区移除。"
+        }
+        onCancel={() => setPendingUnmountNodeId(null)}
+        onConfirm={handleConfirmUnmount}
+        confirmText="确认删除"
+        cancelText="取消"
+      />
     </main>
   )
 }

@@ -1,3 +1,12 @@
+const path = require('path');
+
+const defaultPythonExecutable = path.join(
+  __dirname,
+  '.venv',
+  process.platform === 'win32' ? 'Scripts' : 'bin',
+  process.platform === 'win32' ? 'python.exe' : 'python',
+);
+
 module.exports = {
   apps: [
     {
@@ -14,10 +23,12 @@ module.exports = {
       env: {
         NODE_ENV: 'production',
         PORT: '3000',
+        PYTHON_EXECUTABLE: process.env.PYTHON_EXECUTABLE || defaultPythonExecutable,
       },
       env_production: {
         NODE_ENV: 'production',
         PORT: '3000',
+        PYTHON_EXECUTABLE: process.env.PYTHON_EXECUTABLE || defaultPythonExecutable,
       },
     },
   ],

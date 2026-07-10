@@ -103,12 +103,69 @@ function round(value: number, digits = 3): number {
   return Number(value.toFixed(digits))
 }
 
-function buildEnergyZones(telemetry: Pick<DarkroomTelemetry, "ratedFlux" | "candelaPlane">): EnergyZone[] {
+function buildEnergyZones(
+  telemetry: Pick<DarkroomTelemetry, "ratedFlux" | "candelaPlane" | "beamAngle" | "fieldAngle">,
+  result: DarkroomParseResult | null,
+): EnergyZone[] {
+  const totalFlux = telemetry.ratedFlux > 0 ? telemetry.ratedFlux : zonalFlux(90, telemetry.candelaPlane)
+
+  if (
+    result &&
+    (result.beam_lumens_lm != null ||
+      result.field_lumens_lm != null ||
+      result.erp_phiuse_lm != null ||
+      result.beam_efficiency_percent != null ||
+      result.field_efficiency_percent != null ||
+      result.irf_percent != null)
+  ) {
+    const beamFlux =
+      result.beam_lumens_lm ??
+      zonalFlux((telemetry.beamAngle.h + telemetry.beamAngle.v) / 4, telemetry.candelaPlane)
+    const beamPercent =
+      result.beam_efficiency_percent ?? (totalFlux > 0 ? (beamFlux / totalFlux) * 100 : 0)
+    const erpFlux = result.erp_phiuse_lm ?? zonalFlux(60, telemetry.candelaPlane)
+    const erpPercent =
+      result.irf_percent ?? (totalFlux > 0 ? (erpFlux / totalFlux) * 100 : 0)
+    const fieldFlux =
+      result.field_lumens_lm ??
+      zonalFlux((telemetry.fieldAngle.h + telemetry.fieldAngle.v) / 4, telemetry.candelaPlane)
+    const fieldPercent =
+      result.field_efficiency_percent ?? (totalFlux > 0 ? (fieldFlux / totalFlux) * 100 : 0)
+    const beamHalf = (telemetry.beamAngle.h + telemetry.beamAngle.v) / 4
+    const fieldHalf = (telemetry.fieldAngle.h + telemetry.fieldAngle.v) / 4
+
+    return [
+      {
+        label: "光束区 BEAM 50%",
+        sub: `≤ ±${beamHalf.toFixed(2)}°`,
+        lumens: round(beamFlux, 1),
+        percent: round(beamPercent, 1),
+      },
+      {
+        label: "有效区 ErP φuse",
+        sub: "120° CONE",
+        lumens: round(erpFlux, 1),
+        percent: round(erpPercent, 1),
+      },
+      {
+        label: "场角区 FIELD 10%",
+        sub: `≤ ±${fieldHalf.toFixed(2)}°`,
+        lumens: round(fieldFlux, 1),
+        percent: round(fieldPercent, 1),
+      },
+      {
+        label: "全光通 TOTAL",
+        sub: "0-180°",
+        lumens: round(totalFlux, 1),
+        percent: 100,
+      },
+    ]
+  }
+
   const beamFull = coneAngle(0.5, telemetry.candelaPlane)
   const fieldFull = coneAngle(0.1, telemetry.candelaPlane)
   const beamHalf = beamFull / 2
   const fieldHalf = fieldFull / 2
-  const totalFlux = zonalFlux(90, telemetry.candelaPlane)
   const beamFlux = zonalFlux(beamHalf, telemetry.candelaPlane)
   const erpFlux = zonalFlux(60, telemetry.candelaPlane)
   const fieldFlux = zonalFlux(fieldHalf, telemetry.candelaPlane)
@@ -134,7 +191,7 @@ function buildEnergyZones(telemetry: Pick<DarkroomTelemetry, "ratedFlux" | "cand
     },
     {
       label: "全光通 TOTAL",
-      sub: "0–180°",
+      sub: "0-180°",
       lumens: round(totalFlux, 1),
       percent: 100,
     },
@@ -189,10 +246,11 @@ export function buildDarkroomTelemetry(result: DarkroomParseResult | null): Dark
         },
         spaceEMax: result.space_max_illuminance_lx ?? defaultTelemetry.spaceEMax,
         workingPlaneEMax: result.plane_max_illuminance_lx ?? defaultTelemetry.workingPlaneEMax,
+        upwardFluxRatio: result.irf_percent ?? defaultTelemetry.upwardFluxRatio,
       }
     : { ...defaultTelemetry }
 
-  telemetry.energyZones = buildEnergyZones(telemetry)
+  telemetry.energyZones = buildEnergyZones(telemetry, result)
   telemetry.attenuationSlots = buildAttenuationSlots(telemetry, result?.attenuation_slots ?? null)
   return telemetry
 }

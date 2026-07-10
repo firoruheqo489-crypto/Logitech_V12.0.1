@@ -430,6 +430,10 @@ $remoteDeployScript = @(
   'cp "$EXTRACT_DIR/payload/pnpm-lock.yaml" "$REMOTE_DIR/pnpm-lock.yaml"',
   'cp "$EXTRACT_DIR/payload/ecosystem.config.cjs" "$REMOTE_DIR/ecosystem.config.cjs"',
   'mkdir -p "$REMOTE_DIR/scripts"',
+  'rm -rf "$REMOTE_DIR/laboratory_pdf_parser"',
+  'cp -a "$EXTRACT_DIR/payload/laboratory_pdf_parser" "$REMOTE_DIR/laboratory_pdf_parser"',
+  'cp "$EXTRACT_DIR/payload/scripts/bootstrap-parser-runtime.sh" "$REMOTE_DIR/scripts/bootstrap-parser-runtime.sh"',
+  'chmod +x "$REMOTE_DIR/scripts/bootstrap-parser-runtime.sh"',
   'cp "$EXTRACT_DIR/payload/scripts/verify-oss-http-smoke.mjs" "$REMOTE_DIR/scripts/verify-oss-http-smoke.mjs"',
   'cp "$EXTRACT_DIR/payload/scripts/verify-reliability-smoke.mjs" "$REMOTE_DIR/scripts/verify-reliability-smoke.mjs"',
   'cp "$EXTRACT_DIR/payload/scripts/verify-reliability-smoke.ps1" "$REMOTE_DIR/scripts/verify-reliability-smoke.ps1"',
@@ -438,6 +442,7 @@ $remoteDeployScript = @(
   'if [ -d "$EXTRACT_DIR/payload/patches" ]; then rm -rf "$REMOTE_DIR/patches"; cp -a "$EXTRACT_DIR/payload/patches" "$REMOTE_DIR/patches"; fi',
   'if [ -d "$EXTRACT_DIR/payload/drizzle" ]; then rm -rf "$REMOTE_DIR/drizzle"; cp -a "$EXTRACT_DIR/payload/drizzle" "$REMOTE_DIR/drizzle"; fi',
   'cd "$REMOTE_DIR"',
+  '"$REMOTE_DIR/scripts/bootstrap-parser-runtime.sh" "$REMOTE_DIR"',
   'pnpm install --prod --reporter append-only --loglevel error',
   'if [ -f "$REMOTE_DIR/dashboard-grr-state.snapshot.json" ]; then node scripts/import-dashboard-grr-state.mjs --file "$REMOTE_DIR/dashboard-grr-state.snapshot.json"; fi',
   'if pm2 describe logitech > /dev/null 2>&1; then PM2_APP_NAME=logitech pm2 startOrReload ecosystem.config.cjs --only logitech --env production --update-env; elif pm2 describe mold-gantt-v3 > /dev/null 2>&1; then PM2_APP_NAME=mold-gantt-v3 pm2 startOrReload ecosystem.config.cjs --only mold-gantt-v3 --env production --update-env; else PM2_APP_NAME=logitech pm2 start ecosystem.config.cjs --only logitech --env production && pm2 save; fi'
