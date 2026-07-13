@@ -93,12 +93,6 @@ function sendHarmonicRouteError(
   });
 }
 
-function readErrorMessage(error: unknown): string {
-  if (typeof error === 'string' && error.trim()) return error;
-  if (error instanceof Error && error.message.trim()) return error.message;
-  return 'Unknown error';
-}
-
 function isLikelyMojibakeFileName(fileName: string): boolean {
   return /[-¿À-ÿ]/.test(fileName);
 }
@@ -197,7 +191,12 @@ async function handleHarmonicPdfUpload(req: Request, res: Response): Promise<voi
     });
   } catch (error) {
     console.error('POST /api/dashboard/harmonic-pdf/parse-upload error:', error);
-    sendHarmonicRouteError(res, 422, 'HARMONIC_PDF_PARSE_FAILED', readErrorMessage(error));
+    sendHarmonicRouteError(
+      res,
+      422,
+      'HARMONIC_PDF_PARSE_FAILED',
+      'Harmonic PDF parser could not extract supported evidence',
+    );
   } finally {
     await unlink(tempFilePath).catch(() => undefined);
   }

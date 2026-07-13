@@ -196,7 +196,7 @@ describe('dashboard flicker PDF upload route', () => {
       code: 'FLICKER_PDF_PARSE_FAILED',
       error: 'Failed to parse flicker PDF reports',
     });
-    expect(payload.details).toContain('Parser did not find flicker, Pst, or SVM evidence');
+    expect(payload.details).toBe('Flicker PDF parser could not extract supported evidence');
   });
 
   it('rejects non-PDF uploads before invoking the parser', async () => {

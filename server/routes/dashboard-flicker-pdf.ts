@@ -80,10 +80,8 @@ function sendFlickerRouteError(
   });
 }
 
-function readErrorMessage(error: unknown): string {
-  if (typeof error === 'string' && error.trim()) return error;
-  if (error instanceof Error && error.message.trim()) return error.message;
-  return 'Unknown error';
+function isNodeErrorCode(error: unknown, code: string): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && (error as { code?: unknown }).code === code;
 }
 
 function hasFlickerEvidence(result: FlickerParseResult): boolean {
@@ -174,10 +172,16 @@ export async function parseDashboardFlickerPdfFolder(_req: Request, res: Respons
       results,
     });
   } catch (error) {
-    const message = readErrorMessage(error);
-    const code = message.includes('ENOENT') ? 'FLICKER_FOLDER_NOT_FOUND' : 'FLICKER_PDF_PARSE_FAILED';
+    const code = isNodeErrorCode(error, 'ENOENT') ? 'FLICKER_FOLDER_NOT_FOUND' : 'FLICKER_PDF_PARSE_FAILED';
     console.error('POST /api/dashboard/flicker-pdf/parse-folder error:', error);
-    sendFlickerRouteError(res, code === 'FLICKER_FOLDER_NOT_FOUND' ? 404 : 422, code, message);
+    sendFlickerRouteError(
+      res,
+      code === 'FLICKER_FOLDER_NOT_FOUND' ? 404 : 422,
+      code,
+      code === 'FLICKER_FOLDER_NOT_FOUND'
+        ? 'Configured flicker PDF folder was not found'
+        : 'Flicker PDF parser could not extract supported evidence',
+    );
   } finally {
     await rm(tempDir, { recursive: true, force: true }).catch(() => undefined);
   }
@@ -211,7 +215,12 @@ async function handleFlickerPdfUpload(req: Request, res: Response): Promise<void
     });
   } catch (error) {
     console.error('POST /api/dashboard/flicker-pdf/parse-upload error:', error);
-    sendFlickerRouteError(res, 422, 'FLICKER_PDF_PARSE_FAILED', readErrorMessage(error));
+    sendFlickerRouteError(
+      res,
+      422,
+      'FLICKER_PDF_PARSE_FAILED',
+      'Flicker PDF parser could not extract supported evidence',
+    );
   } finally {
     await unlink(tempFilePath).catch(() => undefined);
   }
