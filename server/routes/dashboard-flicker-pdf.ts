@@ -5,10 +5,25 @@ import { execFile } from 'node:child_process';
 import { copyFile, mkdir, readdir, rm, unlink, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { promisify } from 'node:util';
 import type { NextFunction, Request, Response } from 'express';
 
-const execFileAsync = promisify(execFile);
+function execFileAsync(
+  file: string,
+  args: string[],
+  options: { cwd: string; timeout: number; maxBuffer: number },
+): Promise<{ stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    execFile(file, args, options, (error, stdout, stderr) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+
+      resolve({ stdout, stderr });
+    });
+  });
+}
+
 const DEFAULT_FLICKER_FOLDER =
   'C:\\Users\\bqgff\\Desktop\\实验室报告\\恒流MR16-8W-27k、65k\\频闪';
 const upload = multer({
@@ -20,15 +35,22 @@ const upload = multer({
 
 type FlickerParseResult = {
   file_name: string;
+  report_type: 'flicker' | 'pst' | 'svm';
   sample_name: string | null;
   measurement_time: string | null;
   average_lx: number | null;
   flicker_index: number | null;
   flicker_percent: number | null;
+  pst: number | null;
+  svm: number | null;
   frequency_hz: number | null;
   sample_rate_ks: number | null;
   sample_time_s: number | null;
   voltage_v: number | null;
+  result: string | null;
+  visibility: string | null;
+  erp: string | null;
+  standard: string | null;
   raw_text: string;
 };
 
@@ -59,7 +81,18 @@ function sendFlickerRouteError(
 }
 
 function readErrorMessage(error: unknown): string {
-  return typeof error === 'string' && error.trim() ? error : 'Unknown error';
+  if (typeof error === 'string' && error.trim()) return error;
+  if (error instanceof Error && error.message.trim()) return error.message;
+  return 'Unknown error';
+}
+
+function hasFlickerEvidence(result: FlickerParseResult): boolean {
+  return [
+    result.flicker_percent,
+    result.flicker_index,
+    result.pst,
+    result.svm,
+  ].some((value) => typeof value === 'number' && Number.isFinite(value));
 }
 
 async function runFlickerPdfParser(pdfPath: string): Promise<FlickerParseResult> {
@@ -79,7 +112,12 @@ async function runFlickerPdfParser(pdfPath: string): Promise<FlickerParseResult>
     throw new Error(stderr.trim() || 'Parser returned empty output');
   }
 
-  return JSON.parse(payloadText) as FlickerParseResult;
+  const result = JSON.parse(payloadText) as FlickerParseResult;
+  if (!hasFlickerEvidence(result)) {
+    throw new Error('Parser did not find flicker, Pst, or SVM evidence in the PDF');
+  }
+
+  return result;
 }
 
 function sampleSortKey(result: FlickerParseResult): string {
@@ -87,7 +125,7 @@ function sampleSortKey(result: FlickerParseResult): string {
 }
 
 function readVoltageFromFileName(fileName: string): number | null {
-  const match = fileName.match(/(\d+)V/i);
+  const match = fileName.match(/(?<![A-Za-z0-9])(\d+(?:\.\d+)?)\s*V(?![A-Za-z])/i);
   if (!match) return null;
   const value = Number.parseFloat(match[1]);
   return Number.isFinite(value) ? value : null;

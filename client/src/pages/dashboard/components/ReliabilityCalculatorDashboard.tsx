@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   ArrowDownRight,
@@ -24,6 +24,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { cn } from "@/lib/utils";
+import {
+  buildReliabilityLifeModuleSummary,
+  type LaboratoryModuleSummary,
+} from "./laboratory/laboratory-contract";
 import { ARRHENIUS_BOLTZMANN_K, ARRHENIUS_KELVIN_OFFSET, HOURS_PER_YEAR, ROOM_TEMP, useArrheniusStore } from "./useArrheniusStore";
 
 import "./reliability-calculator.css";
@@ -885,7 +889,63 @@ function AuditTrail() {
 }
 
 
-export default function ReliabilityCalculatorDashboard() {
+type ReliabilityCalculatorDashboardProps = {
+  nodeId?: number;
+  onSummaryChange?: (summary: LaboratoryModuleSummary | null) => void;
+};
+
+export default function ReliabilityCalculatorDashboard({
+  nodeId,
+  onSummaryChange,
+}: ReliabilityCalculatorDashboardProps = {}) {
+  const tUse = useArrheniusStore((state) => state.tUse);
+  const tOven = useArrheniusStore((state) => state.tOven);
+  const ea = useArrheniusStore((state) => state.ea);
+  const duration = useArrheniusStore((state) => state.duration);
+  const targetYears = useArrheniusStore((state) => state.targetYears);
+  const dailyHours = useArrheniusStore((state) => state.dailyHours);
+  const af = useArrheniusStore((state) => state.af);
+  const projectedLife = useArrheniusStore((state) => state.projectedLife);
+  const survivalYears = useArrheniusStore((state) => state.survivalYears);
+  const targetLifeHours = useArrheniusStore((state) => state.targetLifeHours);
+  const requiredTestHours = useArrheniusStore((state) => state.requiredTestHours);
+  const valid = useArrheniusStore((state) => state.valid);
+
+  useEffect(() => {
+    if (!nodeId || !onSummaryChange) return;
+
+    onSummaryChange(
+      buildReliabilityLifeModuleSummary(nodeId, {
+        tUse,
+        tOven,
+        ea,
+        duration,
+        targetYears,
+        dailyHours,
+        af,
+        projectedLife,
+        survivalYears,
+        targetLifeHours,
+        requiredTestHours,
+        valid,
+      }),
+    );
+  }, [
+    af,
+    dailyHours,
+    duration,
+    ea,
+    nodeId,
+    onSummaryChange,
+    projectedLife,
+    requiredTestHours,
+    survivalYears,
+    tOven,
+    tUse,
+    targetLifeHours,
+    targetYears,
+    valid,
+  ]);
 
   return (
     <main className="reliability-calculator-dashboard overflow-hidden rounded-[28px] border border-cyan/15 shadow-[0_24px_80px_rgba(0,0,0,0.45)]">

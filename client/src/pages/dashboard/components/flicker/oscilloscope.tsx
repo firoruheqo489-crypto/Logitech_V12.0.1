@@ -1,93 +1,113 @@
-import { buildTraceStyles, type Sample } from "./batch-data"
+import {
+  hasFailingEvidence,
+  hasWatchEvidence,
+  reportTypeLabel,
+  type Sample,
+} from "./batch-data"
 
-const W = 320
-const H = 180
-const MID = H / 2
+const formatNumber = (value: number | null, digits = 3, unit = "") =>
+  value == null ? "--" : `${value.toFixed(digits)}${unit}`
 
-function sinePath(amplitude: number, freq: number, phase: number) {
-  const pts: string[] = []
-  for (let x = 0; x <= W; x += 2) {
-    const y = MID - amplitude * Math.sin((x / W) * freq * Math.PI * 2 + phase)
-    pts.push(`${x === 0 ? "M" : "L"}${x.toFixed(1)} ${y.toFixed(1)}`)
+function primaryMetric(sample: Sample) {
+  if (sample.reportType === "pst") {
+    return { label: "Pst", value: formatNumber(sample.pst), detail: sample.result || "PDF 结论未标注" }
   }
-  return pts.join(" ")
+  if (sample.reportType === "svm") {
+    return { label: "SVM", value: formatNumber(sample.svm), detail: sample.erp ? `ERP ${sample.erp}` : sample.visibility || "PDF 结论未标注" }
+  }
+  return { label: "频闪率", value: formatNumber(sample.f, 3, "%"), detail: `指数 ${formatNumber(sample.idx)}` }
 }
 
-function waveFor(sample: Sample, index: number, maxFlicker: number) {
-  const normalizedFlicker = maxFlicker > 0 ? sample.f / maxFlicker : 0
-  return {
-    amplitude: 18 + normalizedFlicker * 40,
-    freq: sample.freq > 0 ? Math.max(1.5, sample.freq / 40) : 2 + index * 0.2,
-    phase: index * 0.55,
-  }
+function conclusionText(sample: Sample) {
+  if (sample.result) return sample.result
+  if (sample.erp) return `ERP ${sample.erp}`
+  if (sample.visibility) return sample.visibility
+  if (sample.f != null && sample.f > 8) return "超出低风险阈值"
+  if (sample.f != null && sample.f > 1) return "低风险观察"
+  return "可接受"
 }
 
-function glowFor(isAnomaly: boolean, id: string) {
-  if (isAnomaly) return "drop-shadow(0 0 12px rgba(255,0,60,0.8))"
-  if (id === "S1") return "drop-shadow(0 0 12px rgba(0,243,255,0.8))"
-  return "none"
+function conclusionClass(sample: Sample) {
+  if (hasFailingEvidence(sample)) return "border-[#FF003C]/40 bg-[#FF003C]/10 text-[#FF6B86]"
+  if (hasWatchEvidence(sample)) return "border-cyan-300/30 bg-cyan-400/10 text-cyan-200"
+  return "border-emerald-300/30 bg-emerald-400/10 text-emerald-200"
+}
+
+function flickerPosition(value: number | null) {
+  if (value == null) return "0%"
+  return `${Math.min(Math.max(value, 0), 10) * 10}%`
+}
+
+function EvidenceRow({ sample }: { sample: Sample }) {
+  const metric = primaryMetric(sample)
+  const isFlicker = sample.reportType === "flicker"
+
+  return (
+    <div className="grid gap-4 border-b border-white/[0.04] py-5 last:border-b-0 lg:grid-cols-[160px_1fr_150px] lg:items-center">
+      <div className="min-w-0">
+        <div className="text-xs font-semibold tracking-[0.12em] text-[#00F3FF]">{reportTypeLabel(sample.reportType)}</div>
+        <div className="mt-2 truncate font-mono text-[11px] text-slate-300" title={sample.fileName}>
+          {sample.fileName}
+        </div>
+        <div className="mt-1 text-[11px] text-slate-600">{sample.measuredAt || "--"}</div>
+      </div>
+
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          <span className="text-[11px] tracking-wide text-slate-500">{metric.label}</span>
+          <span className="font-mono text-2xl font-semibold text-slate-100">{metric.value}</span>
+          <span className="text-xs text-slate-500">{metric.detail}</span>
+        </div>
+        <div className="mt-3 grid gap-2 sm:grid-cols-3">
+          <div>
+            <div className="text-[10px] tracking-wide text-slate-600">频率</div>
+            <div className="mt-1 font-mono text-xs text-slate-300">{formatNumber(sample.freq, 3, " Hz")}</div>
+          </div>
+          <div>
+            <div className="text-[10px] tracking-wide text-slate-600">平均照度</div>
+            <div className="mt-1 font-mono text-xs text-slate-300">{formatNumber(sample.illuminance, 2, " lx")}</div>
+          </div>
+          <div className="min-w-0">
+            <div className="text-[10px] tracking-wide text-slate-600">标准</div>
+            <div className="mt-1 truncate text-xs text-slate-300" title={sample.standard || ""}>
+              {sample.standard || "--"}
+            </div>
+          </div>
+        </div>
+        {isFlicker ? (
+          <div className="relative mt-5 h-[2px] rounded-full bg-white/10">
+            <span className="absolute top-1/2 h-3 w-px -translate-y-1/2 bg-cyan-300/60" style={{ left: "10%" }} />
+            <span className="absolute top-1/2 h-3 w-px -translate-y-1/2 bg-slate-400/70" style={{ left: "80%" }} />
+            <span
+              className="absolute top-1/2 size-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-cyan-300 shadow-[0_0_10px_rgba(103,232,249,0.8)]"
+              style={{ left: flickerPosition(sample.f) }}
+            />
+          </div>
+        ) : null}
+      </div>
+
+      <div className="flex lg:justify-end">
+        <span className={`inline-flex h-8 items-center rounded-md border px-3 text-xs font-medium ${conclusionClass(sample)}`}>
+          {conclusionText(sample)}
+        </span>
+      </div>
+    </div>
+  )
 }
 
 export function Oscilloscope({ samples }: { samples: Sample[] }) {
-  const traceStyles = buildTraceStyles(samples)
-  const maxFlicker = Math.max(...samples.map((sample) => sample.f), 0)
-
   return (
     <div className="flex h-full flex-col rounded-xl border border-t border-white/[0.04] border-t-cyan-400/20 bg-[#070c14]/30 p-6 shadow-2xl backdrop-blur-3xl">
-      <h2 className="mb-4 text-xs font-semibold tracking-[0.12em] text-[#00F3FF]">时序波形叠加</h2>
+      <h2 className="mb-4 text-xs font-semibold tracking-[0.12em] text-[#00F3FF]">PDF 证据视图</h2>
 
-      <div className="relative flex min-h-[400px] flex-1 flex-col">
-        <div className="absolute right-1 top-1 z-10 flex flex-col gap-1.5">
-          {traceStyles.map((trace) => (
-            <div key={trace.id} className="flex items-center justify-end gap-1.5">
-              <span className="font-mono text-[8px] tracking-wider text-slate-500">{trace.id}</span>
-              <span
-                className={`h-[2px] w-5 ${trace.swatch} ${
-                  trace.isAnomaly ? "shadow-[0_0_8px_rgba(255,0,60,0.8)]" : ""
-                }`}
-              />
-            </div>
-          ))}
-        </div>
-
-        <svg
-          viewBox={`0 0 ${W} ${H}`}
-          preserveAspectRatio="none"
-          className="h-full w-full flex-1"
-          role="img"
-          aria-label="时序波形叠加图"
-        >
-          <g className="stroke-white/[0.02]" strokeWidth={0.5}>
-            {Array.from({ length: 21 }).map((_, i) => (
-              <line key={`v${i}`} x1={(W / 20) * i} y1={0} x2={(W / 20) * i} y2={H} />
-            ))}
-            {Array.from({ length: 13 }).map((_, i) => (
-              <line key={`h${i}`} x1={0} y1={(H / 12) * i} x2={W} y2={(H / 12) * i} />
-            ))}
-          </g>
-          <line x1={0} y1={MID} x2={W} y2={MID} className="stroke-cyan-500/15" strokeWidth={0.5} />
-
-          {samples.map((sample, index) => {
-            const wave = waveFor(sample, index, maxFlicker)
-            const trace = traceStyles[index]
-            return (
-              <path
-                key={sample.id}
-                d={sinePath(wave.amplitude, wave.freq, wave.phase)}
-                fill="none"
-                className={trace.className}
-                strokeWidth={trace.strokeWidth}
-                strokeDasharray={trace.dash}
-                strokeLinecap="round"
-                style={{ filter: glowFor(Boolean(trace.isAnomaly), trace.id) }}
-              />
-            )
-          })}
-        </svg>
+      <div className="min-h-[400px] flex-1">
+        {samples.map((sample) => (
+          <EvidenceRow key={`${sample.reportType}-${sample.fileName}`} sample={sample} />
+        ))}
       </div>
 
       <p className="mt-4 text-[11px] tracking-wide text-slate-600">
-        已叠加 {samples.length} 组波形，已按 t0 对齐，扫描基准为 20 毫秒每格。
+        已载入 {samples.length} 份报告，按实验室 PDF 结论字段归档。
       </p>
     </div>
   )

@@ -62,6 +62,7 @@ const ProductDataDrawerWorkspace = lazy(() => import('./components/ProductDataDr
 const ProgressLogsDrawerWorkspace = lazy(() => import('./components/ProgressLogsDrawerWorkspace'));
 const ParetoQualityDashboard = lazy(() => import('./components/ParetoQualityDashboard'));
 const FinalSampleReportDashboard = lazy(() => import('./components/FinalSampleReportDashboard'));
+const BatteryCycleDashboard = lazy(() => import('./components/battery-cycle/BatteryCycleDashboard'));
 const TestProjectParserDashboard = lazy(() => import('./components/TestProjectParserDashboard'));
 const ProductSpecExcelParserDashboard = lazy(() => import('./components/ProductSpecExcelParserDashboard'));
 const LaboratoryPdfParserDashboard = lazy(() => import('./components/LaboratoryPdfParserDashboard'));
@@ -186,6 +187,7 @@ const DASHBOARD_TABS = [
   'boxplot',
   'pareto-analysis',
   'final-sample-report',
+  'battery-cycle-test',
   'test-project-parser',
   'product-spec-parser',
   'laboratory-pdf-parser',
@@ -875,6 +877,7 @@ export default function DashboardHome() {
               'overview': '项目总览',
               'pareto-analysis': '柏拉图分析',
               'final-sample-report': '终样报告',
+              'battery-cycle-test': '电池充放电',
               'test-project-parser': '测试项目解析',
               'image-stitcher': '图片拼接',
               'product-spec-parser': '产品规格书看板',
@@ -951,6 +954,12 @@ export default function DashboardHome() {
         {selectedTab === 'final-sample-report' && (
           <LazyWorkspace>
             <FinalSampleReportDashboard />
+          </LazyWorkspace>
+        )}
+
+        {selectedTab === 'battery-cycle-test' && (
+          <LazyWorkspace>
+            <BatteryCycleDashboard />
           </LazyWorkspace>
         )}
 

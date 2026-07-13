@@ -11,7 +11,7 @@ export function HarmonicGlassCard({
   return (
     <section
       className={cn(
-        "bg-white/[0.02] backdrop-blur-xl border border-white/[0.05] shadow-[0_8px_32px_rgba(0,0,0,0.9)] rounded-2xl p-6",
+        "rounded-lg border border-white/[0.06] bg-white/[0.025] p-4 shadow-[0_6px_24px_rgba(0,0,0,0.65)] backdrop-blur-xl",
         className,
       )}
     >

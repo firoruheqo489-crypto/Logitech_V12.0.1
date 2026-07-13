@@ -36,6 +36,46 @@ def extract_pdf_text(pdf_path: Path) -> str:
     return normalize_text("\n".join(pages))
 
 
+def parse_flicker_report_text(text: str, file_name: str) -> dict[str, object]:
+    sample_name = extract_optional_string(text, r"样品名称\s*[:：]\s*(.+?)\s+样品型号\s*[:：]")
+    measurement_time = extract_optional_string(text, r"测量时间\s*[:：]\s*([0-9:/\-\s]+)")
+    average_lx = extract_optional_float(text, r"平均值\(lx\)\s*[:：]\s*([\d.]+)")
+    flicker_index = extract_optional_float(text, r"闪烁指数\s*[:：]\s*([\d.]+)")
+    flicker_percent = extract_optional_float(text, r"闪烁百分比\s*[:：]\s*([\d.]+)%")
+    pst = extract_optional_float(text, r"\bPst\s*[:：]\s*([\d.]+)")
+    svm = extract_optional_float(text, r"\bSVM\s*[:：]\s*([\d.]+)")
+    frequency_hz = extract_optional_float(text, r"频率(?:\(Hz\))?\s*[:：]\s*([\d.]+)\s*Hz")
+    sample_rate_ks = extract_optional_float(text, r"采样速率\s*[:：]\s*([\d.]+)\s*kS/s")
+    sample_time_s = extract_optional_float(text, r"采样时间\s*[:：]\s*([\d.]+)\s*s")
+    voltage_v = extract_optional_float(file_name, r"(?<![A-Za-z0-9])(\d+(?:\.\d+)?)\s*V(?![A-Za-z])")
+    result = extract_optional_string(text, r"\bResult\s*[:：]\s*([^\s\n]+)")
+    visibility = extract_optional_string(text, r"可见性\s*[:：]\s*([^\s\n]+)")
+    erp = extract_optional_string(text, r"\bERP\s*[:：]\s*([^\s\n]+)")
+    standard = extract_optional_string(text, r"标准\s*[:：]\s*([^\n]+)")
+    report_type = "pst" if pst is not None else "svm" if svm is not None else "flicker"
+
+    return {
+      "file_name": file_name,
+      "report_type": report_type,
+      "sample_name": sample_name,
+      "measurement_time": measurement_time,
+      "average_lx": average_lx,
+      "flicker_index": flicker_index,
+      "flicker_percent": flicker_percent,
+      "pst": pst,
+      "svm": svm,
+      "frequency_hz": frequency_hz,
+      "sample_rate_ks": sample_rate_ks,
+      "sample_time_s": sample_time_s,
+      "voltage_v": voltage_v,
+      "result": result,
+      "visibility": visibility,
+      "erp": erp,
+      "standard": standard,
+      "raw_text": text,
+    }
+
+
 def parse_flicker_report_file(pdf_path: str | Path) -> dict[str, object]:
     path = Path(pdf_path).expanduser().resolve()
     if not path.exists():
@@ -44,30 +84,7 @@ def parse_flicker_report_file(pdf_path: str | Path) -> dict[str, object]:
         raise ValueError(f"Expected a PDF file, got: {path.name}")
 
     text = extract_pdf_text(path)
-
-    sample_name = extract_optional_string(text, r"样品名称:\s*(.+?)\s+样品型号:")
-    measurement_time = extract_optional_string(text, r"测量时间:\s*([0-9:/\-\s]+)")
-    average_lx = extract_optional_float(text, r"平均值\(lx\):\s*([\d.]+)")
-    flicker_index = extract_optional_float(text, r"闪烁指数:([\d.]+)")
-    flicker_percent = extract_optional_float(text, r"闪烁百分比:([\d.]+)%")
-    frequency_hz = extract_optional_float(text, r"频率:([\d.]+)Hz")
-    sample_rate_ks = extract_optional_float(text, r"采样速率:([\d.]+)kS/s")
-    sample_time_s = extract_optional_float(text, r"采样时间:([\d.]+)s")
-    voltage_v = extract_optional_float(path.name, r"(\d+)V")
-
-    return {
-      "file_name": path.name,
-      "sample_name": sample_name,
-      "measurement_time": measurement_time,
-      "average_lx": average_lx,
-      "flicker_index": flicker_index,
-      "flicker_percent": flicker_percent,
-      "frequency_hz": frequency_hz,
-      "sample_rate_ks": sample_rate_ks,
-      "sample_time_s": sample_time_s,
-      "voltage_v": voltage_v,
-      "raw_text": text,
-    }
+    return parse_flicker_report_text(text, path.name)
 
 
 def build_argument_parser() -> argparse.ArgumentParser:

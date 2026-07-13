@@ -4,6 +4,10 @@ import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
 import { apiFetch } from "@/lib/api"
+import {
+  buildDarkroomModuleSummary,
+  type LaboratoryModuleSummary,
+} from "./laboratory/laboratory-contract"
 import { ConicalAttenuation } from "./darkroom/conical-attenuation"
 import {
   buildDarkroomTelemetry,
@@ -86,7 +90,13 @@ async function parseByUpload(file: File): Promise<ParseResponse> {
   return payload as ParseResponse
 }
 
-export function DarkroomTelemetryWorkspace() {
+export function DarkroomTelemetryWorkspace({
+  nodeId,
+  onSummaryChange,
+}: {
+  nodeId?: number
+  onSummaryChange?: (summary: LaboratoryModuleSummary | null) => void
+}) {
   const [selectedFiles, setSelectedFiles] = useState<VariantSelection[]>(
     VARIANT_ORDER.map((variant) => ({ ...variant, file: null })),
   )
@@ -104,7 +114,38 @@ export function DarkroomTelemetryWorkspace() {
 
   const selectedCount = selectedFiles.filter((variant) => variant.file).length
   const parsedCount = results.length
-  const canParseBundle = selectedCount === VARIANT_ORDER.length
+  const canParseBundle = selectedCount > 0
+
+  const publishSummary = (nextResults: VariantParsePayload[], nextActiveKey: LightVariantKey) => {
+    if (!nodeId || !onSummaryChange || nextResults.length === 0) {
+      onSummaryChange?.(null)
+      return
+    }
+
+    const activeEntry = nextResults.find((entry) => entry.key === nextActiveKey) ?? nextResults[0]
+    const activeTelemetry = buildDarkroomTelemetry(activeEntry.result)
+    onSummaryChange(
+      buildDarkroomModuleSummary(nodeId, {
+        sourceFiles: nextResults.map((entry) => `${entry.label}:${entry.fileName}`),
+        activeVariantLabel: activeEntry.label,
+        parsedCount: nextResults.length,
+        expectedCount: nextResults.length,
+        activeMetrics: {
+          name: activeTelemetry.name,
+          testDate: activeTelemetry.testDate,
+          ratedFlux: activeTelemetry.ratedFlux,
+          testedPower: activeTelemetry.testedPower,
+          efficacy: activeTelemetry.efficacy,
+          maxCandela: activeTelemetry.maxCandela,
+          beamAngleV: activeTelemetry.beamAngle.v,
+          beamAngleH: activeTelemetry.beamAngle.h,
+          fieldAngleV: activeTelemetry.fieldAngle.v,
+          fieldAngleH: activeTelemetry.fieldAngle.h,
+          workingPlaneEMax: activeTelemetry.workingPlaneEMax,
+        },
+      }),
+    )
+  }
 
   const handleVariantFileChange = (variantKey: LightVariantKey, file: File | null) => {
     setResults((current) => current.filter((entry) => entry.key !== variantKey))
@@ -118,12 +159,13 @@ export function DarkroomTelemetryWorkspace() {
     setResults([])
     setSelectedFiles(VARIANT_ORDER.map((variant) => ({ ...variant, file: null })))
     setActiveVariantKey("white")
+    onSummaryChange?.(null)
   }
 
   const handleUploadParse = async () => {
     const filesToParse = selectedFiles.filter((variant) => variant.file)
-    if (filesToParse.length !== VARIANT_ORDER.length) {
-      toast.error("请一次选择白光、暖光、中性光三份暗房 PDF 报告")
+    if (filesToParse.length === 0) {
+      toast.error("请至少选择一份暗房 PDF 报告")
       return
     }
 
@@ -143,7 +185,9 @@ export function DarkroomTelemetryWorkspace() {
       }
 
       setResults(payloads)
-      setActiveVariantKey(payloads[0]?.key ?? "white")
+      const nextActiveKey = payloads[0]?.key ?? "white"
+      setActiveVariantKey(nextActiveKey)
+      publishSummary(payloads, nextActiveKey)
       toast.success(`暗房 PDF 解析完成：已接入 ${payloads.length} 份报告`)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "暗房 PDF 解析失败")

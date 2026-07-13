@@ -1,21 +1,26 @@
-import { anomalyIndex, type Sample } from "./batch-data"
+import { anomalyIndex, hasFailingEvidence, hasWatchEvidence, type Sample } from "./batch-data"
+import { FLICKER_COMPLIANCE_RULES } from "../laboratory/flicker-rules"
 
 const SCALE_MAX = 10
-const NO_RISK = 1
-const LOW_RISK = 8
+const NO_RISK = FLICKER_COMPLIANCE_RULES.flickerPercent.noRiskMax
+const LOW_RISK = FLICKER_COMPLIANCE_RULES.flickerPercent.lowRiskMax
 
 const pct = (v: number) => `${(v / SCALE_MAX) * 100}%`
 
 export function Adjudication({ samples }: { samples: Sample[] }) {
   const worstIndex = anomalyIndex(samples)
   const worstSample = worstIndex >= 0 ? samples[worstIndex] : null
-  const worst = worstSample?.f ?? 0
-  const fail = worst > LOW_RISK
+  const flickerSamples = samples.filter((sample) => sample.f != null)
+  const worst = Math.max(...flickerSamples.map((sample) => sample.f ?? 0), 0)
+  const fail = samples.some(hasFailingEvidence)
+  const watch = !fail && samples.some(hasWatchEvidence)
+  const pstSample = samples.find((sample) => sample.pst != null)
+  const svmSample = samples.find((sample) => sample.svm != null)
 
   return (
     <div className="rounded-xl border border-t border-white/[0.04] border-t-cyan-400/20 bg-[#070c14]/30 p-6 shadow-2xl backdrop-blur-3xl">
       <h2 className="mb-4 text-xs font-semibold tracking-[0.12em] text-[#00F3FF]">
-        最坏情况合规裁定
+        PDF 结论合规裁定
       </h2>
 
       <div>
@@ -23,7 +28,12 @@ export function Adjudication({ samples }: { samples: Sample[] }) {
           {fail ? "裁定：不合格" : "裁定：合格"}
         </p>
         <p className="mt-2 text-sm tracking-[0.04em] text-slate-400">
-          最差样本 {worstSample?.id || "--"}（<span className="text-white">{worst.toFixed(3)}%</span>）
+          最差频闪 {worstSample?.id || "--"}（<span className="text-white">{worst.toFixed(3)}%</span>）
+        </p>
+        <p className="mt-2 text-xs leading-6 tracking-[0.03em] text-slate-500">
+          Pst {pstSample?.pst == null ? "--" : pstSample.pst.toFixed(3)}
+          {pstSample?.result ? ` / ${pstSample.result}` : ""} · SVM {svmSample?.svm == null ? "--" : svmSample.svm.toFixed(3)}
+          {svmSample?.erp ? ` / ERP ${svmSample.erp}` : ""}
         </p>
       </div>
 
@@ -53,8 +63,10 @@ export function Adjudication({ samples }: { samples: Sample[] }) {
 
       <p className={`mt-6 text-sm leading-7 tracking-[0.03em] ${fail ? "text-[#FF003C] drop-shadow-[0_0_6px_rgba(255,0,60,0.5)]" : "text-cyan-400"}`}>
         {fail
-          ? "检测到驱动物料差异超出控制范围，最大偏差超过预警阈值，建议立即复核关键元件与批次一致性。"
-          : "当前批次波动处于控制范围内，整体状态正常，可按现有结论继续推进。"}
+          ? "检测到 PDF 结论或频闪指标超出控制范围，建议立即复核报告与关键元件一致性。"
+          : watch
+            ? "PDF 结论可接受，频闪率处于低风险观察区间，可按实验室结论继续推进并保留关注。"
+            : "PDF 结论可接受，当前频闪、Pst 与 SVM 状态正常，可按现有结论继续推进。"}
       </p>
     </div>
   )

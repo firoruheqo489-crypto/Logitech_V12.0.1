@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   AlertOctagon,
@@ -24,6 +24,10 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import {
+  buildEmcModuleSummary,
+  type LaboratoryModuleSummary,
+} from "./laboratory/laboratory-contract";
 import {
   buildEmcPeakRecords,
   DEFAULT_EMC_LIMITS,
@@ -592,7 +596,13 @@ function SpectrumChart({
   );
 }
 
-export default function EmcRadiationWorkspace() {
+export default function EmcRadiationWorkspace({
+  nodeId,
+  onSummaryChange,
+}: {
+  nodeId?: number;
+  onSummaryChange?: (summary: LaboratoryModuleSummary | null) => void;
+}) {
   const [channels, setChannels] = useState<EmcChannelData[]>([]);
   const [limits, setLimits] = useState<EmcLimits>(DEFAULT_EMC_LIMITS);
   const [enabled, setEnabled] = useState<Record<EmcChannelId, boolean>>({ L: true, N: true, F: true });
@@ -663,6 +673,41 @@ export default function EmcRadiationWorkspace() {
       },
     };
   }, [allRecords]);
+
+  useEffect(() => {
+    if (!nodeId || !onSummaryChange) return;
+    if (channels.length === 0) {
+      onSummaryChange(null);
+      return;
+    }
+
+    const nextVerdict = allRecords.length > 0 ? overallEmcVerdict(allRecords) : "PASS";
+    onSummaryChange(
+      buildEmcModuleSummary(nodeId, {
+        sourceFiles: channels.map((channel) => channel.fileName),
+        verdict: nextVerdict,
+        channelCount: channels.length,
+        pointCount: channels.reduce((sum, channel) => sum + channel.points.length, 0),
+        worstRecord: allRecords[0]
+          ? {
+              channel: allRecords[0].channel,
+              band: allRecords[0].band,
+              detector: allRecords[0].detector,
+              freq: allRecords[0].freq,
+              reading: allRecords[0].reading,
+              limit: allRecords[0].limit,
+              margin: allRecords[0].margin,
+            }
+          : null,
+        counts: {
+          high: allRecords.filter((record) => record.level === "high").length,
+          mid: allRecords.filter((record) => record.level === "mid").length,
+          safe: allRecords.filter((record) => record.level === "safe").length,
+          overLimit: allRecords.filter((record) => record.margin < 0).length,
+        },
+      }),
+    );
+  }, [allRecords, channels, nodeId]);
 
   async function handleUpload(expectedChannel: EmcChannelId, file: File) {
     if (file.name.toLowerCase().endsWith(".emc")) {

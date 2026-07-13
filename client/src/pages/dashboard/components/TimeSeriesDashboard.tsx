@@ -39,6 +39,10 @@ import { toast } from "sonner";
 import CyberConfirmDialog from "@/components/ui/CyberConfirmDialog";
 import CyberPromptDialog from "@/components/ui/CyberPromptDialog";
 import { cn } from "@/lib/utils";
+import {
+  buildTimeSeriesModuleSummary,
+  type LaboratoryModuleSummary,
+} from "./laboratory/laboratory-contract";
 
 import "./time-series-dashboard.css";
 import {
@@ -417,10 +421,14 @@ function HeaderBar({
   range,
   onRangeChange,
   clock,
+  titleZh,
+  titleEn,
 }: {
   range: RangeKey;
   onRangeChange: (range: RangeKey) => void;
   clock: string;
+  titleZh: string;
+  titleEn: string;
 }) {
   return (
     <header className="glass glow-border relative z-20 flex flex-col gap-3 rounded-xl px-4 py-3 lg:flex-row lg:items-center lg:justify-between lg:px-5">
@@ -437,9 +445,9 @@ function HeaderBar({
             </span>
           </div>
           <p className="text-[11px] font-medium leading-tight text-secondary-foreground">
-            <span className="bi-zh">动态时间序列工作台</span>
+            <span className="bi-zh">{titleZh}</span>
             <span className="ml-1.5 font-mono text-[9px] tracking-[0.18em] text-muted-foreground">
-              FLEX TIME SERIES WORKSPACE
+              {titleEn}
             </span>
           </p>
         </div>
@@ -1636,7 +1644,19 @@ function InlineAxisLegend({ columns }: { columns: TimeSeriesColumn[] }) {
   );
 }
 
-export default function TimeSeriesDashboard() {
+type TimeSeriesDashboardProps = {
+  titleZh?: string;
+  titleEn?: string;
+  nodeId?: number;
+  onSummaryChange?: (summary: LaboratoryModuleSummary | null) => void;
+};
+
+export default function TimeSeriesDashboard({
+  titleZh = "动态时间序列工作台",
+  titleEn = "FLEX TIME SERIES WORKSPACE",
+  nodeId,
+  onSummaryChange,
+}: TimeSeriesDashboardProps = {}) {
   const [range, setRange] = useState<RangeKey>("1W");
   const [brushRange, setBrushRange] = useState<[number, number]>([0, 100]);
   const [clock, setClock] = useState("--:--:--");
@@ -1868,12 +1888,44 @@ export default function TimeSeriesDashboard() {
     [dataset.rows, visibleColumns],
   );
 
+  useEffect(() => {
+    if (!nodeId || !onSummaryChange) return;
+
+    const visibleValues = dataset.rows.flatMap((row) =>
+      visibleColumns.map((column) => row.values[column.id] ?? 0),
+    );
+    const rowSpreads = dataset.rows.map((row) =>
+      spreadOf(visibleColumns.map((column) => row.values[column.id] ?? 0)),
+    );
+
+    onSummaryChange(
+      buildTimeSeriesModuleSummary(nodeId, {
+        sourceName: dataset.sourceName,
+        updatedAt: dataset.updatedAt,
+        timeHeader: dataset.timeHeader,
+        rowCount: dataset.rows.length,
+        columnCount: dataset.columns.length,
+        visibleColumnLabels: visibleColumns.map((column) => column.label),
+        minValue: visibleValues.length ? Math.min(...visibleValues) : Number.NaN,
+        maxValue: visibleValues.length ? Math.max(...visibleValues) : Number.NaN,
+        averageValue: averageOf(visibleValues),
+        maxSpread: rowSpreads.length ? Math.max(...rowSpreads) : Number.NaN,
+      }),
+    );
+  }, [dataset, nodeId, onSummaryChange, visibleColumns]);
+
   return (
     <div className="time-series-dashboard overflow-hidden rounded-[28px] border border-cyan/15 bg-background shadow-[0_24px_80px_rgba(0,0,0,0.45)]">
       <div className="grid-bg">
         <div className="scanlines">
           <div className="mx-auto flex min-h-[920px] w-full max-w-[1800px] flex-col gap-3 p-3 lg:p-4">
-            <HeaderBar range={range} onRangeChange={setRange} clock={clock} />
+      <HeaderBar
+        range={range}
+        onRangeChange={setRange}
+        clock={clock}
+        titleZh={titleZh}
+        titleEn={titleEn}
+      />
 
             <MetricsRow rows={dataset.rows} visibleColumns={visibleColumns} />
 

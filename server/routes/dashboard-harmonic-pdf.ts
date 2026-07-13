@@ -19,12 +19,30 @@ const upload = multer({
 
 type HarmonicRow = {
   order: number;
+  avg_ma: number | null;
+  max_ma: number | null;
+  limit_100_ma: number | null;
+  limit_150_ma: number | null;
+  ratio_percent: number | null;
   avg_percent: number;
-  max_percent: number;
-  limit_100_percent: number;
-  limit_150_percent: number;
-  avg_limit_percent: number;
-  max_limit_percent: number;
+  limit_percent: number | null;
+  max_percent: number | null;
+  max_limit_percent: number | null;
+  status: string;
+};
+
+type PhaseCheck = {
+  checkpoint: string;
+  measured_deg: number;
+  limit_expression: string;
+  status: string;
+};
+
+type StructuralCheck = {
+  code: string;
+  value: number | null;
+  limit: number | null;
+  unit: string | null;
   status: string;
 };
 
@@ -45,6 +63,8 @@ type HarmonicParseResult = {
   pohc_limit_ma: number | null;
   distortion_factor: number | null;
   process_metrics: Record<string, number | null>;
+  phase_checks: PhaseCheck[];
+  structural_checks: StructuralCheck[];
   harmonics: HarmonicRow[];
   raw_text: string;
 };
@@ -74,7 +94,9 @@ function sendHarmonicRouteError(
 }
 
 function readErrorMessage(error: unknown): string {
-  return typeof error === 'string' && error.trim() ? error : 'Unknown error';
+  if (typeof error === 'string' && error.trim()) return error;
+  if (error instanceof Error && error.message.trim()) return error.message;
+  return 'Unknown error';
 }
 
 function isLikelyMojibakeFileName(fileName: string): boolean {
@@ -121,6 +143,25 @@ async function runHarmonicPdfParser(pdfPath: string): Promise<HarmonicParseResul
   return JSON.parse(payloadText) as HarmonicParseResult;
 }
 
+function validateHarmonicEvidence(result: HarmonicParseResult): string | null {
+  const hasVerdict = typeof result.verdict === 'string' && result.verdict.trim().length > 0;
+  const hasHarmonics = Array.isArray(result.harmonics) && result.harmonics.length > 0;
+  const hasChecks =
+    (Array.isArray(result.phase_checks) && result.phase_checks.length > 0) ||
+    (Array.isArray(result.structural_checks) && result.structural_checks.length > 0);
+  const hasProcessMetric = Object.values(result.process_metrics || {}).some((value) => typeof value === 'number');
+
+  if (!hasVerdict && !hasHarmonics && !hasChecks && !hasProcessMetric) {
+    return 'No harmonic report evidence was found in this PDF';
+  }
+
+  if (!hasHarmonics) {
+    return 'Harmonic limit table was not found in this PDF';
+  }
+
+  return null;
+}
+
 async function handleHarmonicPdfUpload(req: Request, res: Response): Promise<void> {
   const file = req.file;
   if (!file?.buffer?.length) {
@@ -130,7 +171,7 @@ async function handleHarmonicPdfUpload(req: Request, res: Response): Promise<voi
 
   const resolvedFileName = decodeUploadedFileName(file.originalname);
 
-  if (!isPdfFileName(resolvedFileName) && file.mimetype !== 'application/pdf') {
+  if (!isPdfFileName(resolvedFileName) || file.mimetype !== 'application/pdf') {
     sendHarmonicRouteError(res, 415, 'INVALID_FILE_TYPE');
     return;
   }
@@ -140,6 +181,11 @@ async function handleHarmonicPdfUpload(req: Request, res: Response): Promise<voi
   try {
     await writeFile(tempFilePath, file.buffer);
     const result = await runHarmonicPdfParser(tempFilePath);
+    const evidenceError = validateHarmonicEvidence(result);
+    if (evidenceError) {
+      sendHarmonicRouteError(res, 422, 'HARMONIC_PDF_PARSE_FAILED', evidenceError);
+      return;
+    }
     res.status(200).json({
       ok: true,
       sourceType: 'upload',
