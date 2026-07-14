@@ -37,12 +37,13 @@ describe("parseFinalSampleReportMatrix", () => {
     expect(overall.riskCount).toBe(12)
   })
 
-  it("extracts appendix tables from the real workbook", () => {
+  it("does not parse appendix tables because appendix layouts are not stable", () => {
     const rows = loadWorkbookRows()
     const parsed = parseFinalSampleReportMatrix(rows)
 
-    expect(parsed.appendixTemperature.rows[0]).toEqual(["Q1", "69.28", "82.83", "74.07"])
-    expect(parsed.appendixPhotometric.rows[1]).toEqual(["TL3006-GLR-12W", "40", "12.4", "998.53", "92.1", "2746"])
-    expect(parsed.appendixDimension.rows[2]).toEqual(["TL3006-GLR-16W", "210", "327.48 × 25.46 × 27.33"])
+    expect(parsed.appendixTemperature.rows).toEqual([])
+    expect(parsed.appendixPhotometric.rows).toEqual([])
+    expect(parsed.appendixDimension.rows).toEqual([])
+    expect(parsed.appendixTemperature.caption).toBe("附件不参与解析")
   })
 })

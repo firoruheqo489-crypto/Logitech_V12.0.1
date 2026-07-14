@@ -3455,6 +3455,7 @@ async function hydrateLedgerDisplayFieldsIfMissing(
     (record) =>
       !(record.category || '').trim() ||
       needsLedgerImageHydration(record.imageUrl) ||
+      !(record.testDate || '').trim() ||
       !(record.sampleType || '').trim() ||
       !(record.reportStatus || '').trim(),
   );
@@ -3471,18 +3472,19 @@ async function hydrateLedgerDisplayFieldsIfMissing(
           record.id,
           findArchiveMetaValue(snapshot.state.businessMeta, ['产品类别', '报关中文品名', '报关中文名']),
           resolveArchivePreviewImageUrl(snapshot.state),
+          String(snapshot.state.inspectionTestProject?.sampleDeliveryDate || snapshot.state.productInfo?.testDate || '').trim(),
           String(snapshot.state.inspectionTestProject?.testType || '').trim(),
           String(snapshot.state.oaInfo?.reportStatus || '').trim(),
         ] as const;
       } catch {
-        return [record.id, '', '', '', ''] as const;
+        return [record.id, '', '', '', '', ''] as const;
       }
     }),
   );
 
   const displayFieldById = new Map(
     resolvedFields
-      .filter((entry) => Boolean(entry[1]) || Boolean(entry[2]) || Boolean(entry[3]) || Boolean(entry[4]))
+      .filter((entry) => Boolean(entry[1]) || Boolean(entry[2]) || Boolean(entry[3]) || Boolean(entry[4]) || Boolean(entry[5]))
       .map(
         (entry) =>
           [
@@ -3490,8 +3492,9 @@ async function hydrateLedgerDisplayFieldsIfMissing(
             {
               category: entry[1],
               imageUrl: entry[2],
-              sampleType: entry[3],
-              reportStatus: entry[4],
+              testDate: entry[3],
+              sampleType: entry[4],
+              reportStatus: entry[5],
             },
           ] as const,
       ),
@@ -3505,6 +3508,7 @@ async function hydrateLedgerDisplayFieldsIfMissing(
     return {
       ...record,
       category: (record.category || '').trim() || resolved.category,
+      testDate: resolved.testDate || (record.testDate || '').trim(),
       sampleType: (record.sampleType || '').trim() || resolved.sampleType || undefined,
       reportStatus: (record.reportStatus || '').trim() || resolved.reportStatus,
       imageUrl: needsLedgerImageHydration(record.imageUrl)

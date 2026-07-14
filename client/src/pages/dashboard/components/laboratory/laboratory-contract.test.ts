@@ -152,6 +152,50 @@ describe("laboratory module contract", () => {
     expect(summary.warnings).toEqual([]);
   });
 
+  it("adds darkroom batch consistency watch evidence without failing the PDF conclusion", () => {
+    const summary = buildDarkroomModuleSummary(16, {
+      sourceFiles: ["报告 1:HL222-1.pdf", "报告 2:HL222-2.pdf"],
+      activeVariantLabel: "报告 1",
+      parsedCount: 2,
+      expectedCount: 2,
+      activeMetrics: {
+        name: "HL222C",
+        testDate: "2026-07-13",
+        ratedFlux: 26682.0,
+        testedPower: 191.8,
+        efficacy: 139.11,
+        maxCandela: 14829.7,
+        beamAngleV: 82.0,
+        beamAngleH: 81.1,
+        fieldAngleV: 123.9,
+        fieldAngleH: 125.4,
+        workingPlaneEMax: 1646.99,
+      },
+      batchConsistency: {
+        sampleCount: 2,
+        worstMetric: "IRF",
+        worstSpread: "3.23 pp",
+        watchCount: 1,
+        driftCount: 0,
+      },
+    });
+
+    expect(summary).toMatchObject({
+      nodeId: 16,
+      type: "DARKROOM",
+      status: "watch",
+      verdict: "WATCH",
+    });
+    expect(summary.keyMetrics).toEqual(
+      expect.arrayContaining([
+        { label: "批次报告数", value: "2" },
+        { label: "最大复测偏差", value: "IRF / 3.23 pp" },
+        { label: "复测观察项", value: "1 WATCH / 0 DRIFT" },
+      ]),
+    );
+    expect(summary.warnings).toContain("暗房复测一致性存在 1 项 WATCH，建议结合样品状态和测试设定复核。");
+  });
+
   it("builds a flicker summary with worst-sample adjudication", () => {
     const summary = buildFlickerModuleSummary(5, {
       sourceFiles: ["a.pdf", "b.pdf"],

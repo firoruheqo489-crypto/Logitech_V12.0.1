@@ -41,7 +41,9 @@ type DarkroomParseResult = {
   field_angle_v_deg: number | null;
   field_angle_h_deg: number | null;
   erp_phiuse_lm: number | null;
+  erp_phiuse_angle_deg: number | null;
   irf_percent: number | null;
+  mounting_height_m: number | null;
   plane_max_illuminance_lx: number | null;
   plane_max_position_h: number | null;
   plane_max_position_v: number | null;
@@ -54,6 +56,10 @@ type DarkroomParseResult = {
     centerLux: number;
     averageLux: number;
     diameter: number;
+  }>;
+  candela_plane?: Array<{
+    theta: number;
+    cd: number;
   }>;
   raw_pages: string[];
 };
@@ -84,6 +90,28 @@ function sendDarkroomRouteError(
 
 function readErrorMessage(error: unknown): string {
   return typeof error === 'string' && error.trim() ? error : 'Unknown error';
+}
+
+function hasPositiveNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0;
+}
+
+function validateDarkroomParserPayload(result: DarkroomParseResult): void {
+  const hasIdentity = Boolean(result.name || result.filename || result.test_date);
+  const hasCorePhotometry =
+    hasPositiveNumber(result.luminaire_flux_lm) ||
+    hasPositiveNumber(result.rated_flux_lm) ||
+    hasPositiveNumber(result.max_candela_cd);
+  const hasOpticalEvidence =
+    hasPositiveNumber(result.beam_lumens_lm) ||
+    hasPositiveNumber(result.field_lumens_lm) ||
+    hasPositiveNumber(result.erp_phiuse_lm) ||
+    Boolean(result.attenuation_slots?.length) ||
+    Boolean(result.candela_plane?.length);
+
+  if (!hasIdentity || !hasCorePhotometry || !hasOpticalEvidence) {
+    throw 'Darkroom PDF parser could not extract supported photometric evidence';
+  }
 }
 
 function isLikelyMojibakeFileName(fileName: string): boolean {
@@ -124,10 +152,12 @@ async function runDarkroomPdfParser(pdfPath: string): Promise<DarkroomParseResul
 
   const payloadText = stdout.trim();
   if (!payloadText) {
-    throw new Error(stderr.trim() || 'Parser returned empty output');
+    throw stderr.trim() || 'Parser returned empty output';
   }
 
-  return JSON.parse(payloadText) as DarkroomParseResult;
+  const result = JSON.parse(payloadText) as DarkroomParseResult;
+  validateDarkroomParserPayload(result);
+  return result;
 }
 
 async function handleDarkroomPdfUpload(req: Request, res: Response): Promise<void> {
@@ -139,7 +169,7 @@ async function handleDarkroomPdfUpload(req: Request, res: Response): Promise<voi
 
   const resolvedFileName = decodeUploadedFileName(file.originalname);
 
-  if (!isPdfFileName(resolvedFileName) && file.mimetype !== 'application/pdf') {
+  if (!isPdfFileName(resolvedFileName) || file.mimetype !== 'application/pdf') {
     sendDarkroomRouteError(res, 415, 'INVALID_FILE_TYPE');
     return;
   }

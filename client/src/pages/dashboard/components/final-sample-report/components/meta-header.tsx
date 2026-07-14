@@ -2,6 +2,7 @@ import { useRef, useState } from "react"
 import {
   Calendar,
   Cpu,
+  FileSpreadsheet,
   FlaskConical,
   Hash,
   LoaderCircle,
@@ -48,7 +49,7 @@ export function MetaHeader() {
   }
 
   const sourceStatusLabel =
-    sourceKind === "uploaded" ? "已接入真实 Excel" : sourceKind === "empty" ? "等待载入 Excel" : "当前为内置样例"
+    sourceKind === "uploaded" ? "已接入真实 Excel" : sourceKind === "empty" ? "等待载入 Excel" : "内置样例，待替换"
 
   return (
     <header className="space-y-4">
@@ -96,13 +97,24 @@ export function MetaHeader() {
             type="button"
             onClick={() => fileInputRef.current?.click()}
             disabled={isLoading}
-            className="flex w-full items-center justify-start gap-2.5 rounded-xl border border-border/70 bg-background/20 px-4 py-2.5 text-left transition hover:border-primary/35 hover:bg-primary/[0.04] disabled:cursor-not-allowed disabled:opacity-60"
+            className="flex w-full items-center justify-between gap-4 rounded-xl border border-primary/25 bg-primary/[0.055] px-4 py-3 text-left transition hover:border-primary/45 hover:bg-primary/[0.08] disabled:cursor-not-allowed disabled:opacity-60"
           >
-            <div className="flex size-9 shrink-0 items-center justify-center rounded-xl border border-primary/25 bg-primary/10 text-primary">
-              {isLoading ? <LoaderCircle className="size-4 animate-spin" /> : <Upload className="size-4" />}
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-primary/25 bg-primary/10 text-primary">
+                {isLoading ? <LoaderCircle className="size-4 animate-spin" /> : <FileSpreadsheet className="size-4" />}
+              </div>
+              <span className="min-w-0">
+                <span className="block truncate text-[15px] font-semibold text-foreground">
+                  选择终样报告 Excel 并解析
+                </span>
+                <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+                  支持 .xlsx / .xls，也可以把文件拖到这里
+                </span>
+              </span>
             </div>
-            <span className="text-[15px] font-semibold text-foreground">
-              解析入口
+            <span className="hidden shrink-0 items-center gap-1.5 rounded-lg border border-primary/25 bg-background/30 px-3 py-1.5 font-mono text-[11px] text-primary md:inline-flex">
+              <Upload className="size-3" />
+              上传解析
             </span>
           </button>
 
@@ -162,7 +174,7 @@ export function MetaHeader() {
               </div>
               <p className="mt-0.5 text-xs text-muted-foreground">{meta.subtitle}</p>
               <p className="mt-1 font-mono text-[11px] text-primary/80">
-                数据源：{sourceName} · 推荐直接选择桌面上的“终样测试报告.xlsx”
+                数据源：{sourceName} · {sourceKind === "uploaded" ? "当前数据来自用户上传文件" : "请上传真实终样报告 Excel 后再进入归档"}
               </p>
             </div>
           </div>

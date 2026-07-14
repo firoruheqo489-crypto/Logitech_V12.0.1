@@ -324,48 +324,32 @@ function parseMeta(rows: string[][]): ReportMeta {
   }
 }
 
-function parseTemperatureAppendix(rows: string[][]): TemperatureAppendix {
+function createEmptyTemperatureAppendix(): TemperatureAppendix {
   return {
     title: "附件 1 · 温度测试数据",
-    ambient: cleanCell(rows[102]?.[0]).split(":").pop()?.trim() || "--",
-    voltage: cleanCell(rows[102]?.[4]).split("：").pop()?.trim() || "--",
+    ambient: "--",
+    voltage: "--",
     columns: ["温度点", "6W (℃)", "12W (℃)", "16W (℃)"],
-    rows: [107, 108, 109, 110, 111].map((index) => {
-      const row = rows[index] ?? []
-      return [cleanCell(row[0]), cleanCell(row[5]), cleanCell(row[7]), cleanCell(row[9])]
-    }),
-    caption: "源表附录1 · 温升记录",
+    rows: [],
+    caption: "附件不参与解析",
   }
 }
 
-function parsePhotometricAppendix(rows: string[][]): ReportTable {
+function createEmptyPhotometricAppendix(): ReportTable {
   return {
     title: "附件 2 · 光色电数据记录",
-    caption: cleanCell(rows[122]?.[0]) || "源表附录2 · 光色电数据记录",
+    caption: "附件不参与解析",
     columns: ["样品型号", "电压(DC)", "功率(W)", "光通量(lm)", "显色指数(Ra)", "色温(K)"],
-    rows: [115, 116, 117].map((index) => {
-      const row = rows[index] ?? []
-      return [
-        cleanCell(row[0]),
-        cleanCell(row[3]),
-        cleanCell(row[5]),
-        cleanCell(row[8]),
-        cleanCell(row[11]),
-        cleanCell(row[13]),
-      ]
-    }),
+    rows: [],
   }
 }
 
-function parseDimensionAppendix(rows: string[][]): ReportTable {
+function createEmptyDimensionAppendix(): ReportTable {
   return {
     title: "附件 3 · 尺寸重量数据记录",
-    caption: "源表附录4 · 整灯尺寸重量数据记录",
+    caption: "附件不参与解析",
     columns: ["样品型号", "整灯重量(g)", "整灯尺寸(mm)"],
-    rows: [133, 134, 135].map((index) => {
-      const row = rows[index] ?? []
-      return [cleanCell(row[0]), cleanCell(row[5]), cleanCell(row[11]).replaceAll("*", " × ")]
-    }),
+    rows: [],
   }
 }
 
@@ -377,9 +361,9 @@ export function parseFinalSampleReportMatrix(rows: string[][]): FinalSampleRepor
   return {
     meta: parseMeta(rows),
     modules: MODULE_DEFS.map((def) => modules[def.key]),
-    appendixTemperature: parseTemperatureAppendix(rows),
-    appendixPhotometric: parsePhotometricAppendix(rows),
-    appendixDimension: parseDimensionAppendix(rows),
+    appendixTemperature: createEmptyTemperatureAppendix(),
+    appendixPhotometric: createEmptyPhotometricAppendix(),
+    appendixDimension: createEmptyDimensionAppendix(),
   }
 }
 

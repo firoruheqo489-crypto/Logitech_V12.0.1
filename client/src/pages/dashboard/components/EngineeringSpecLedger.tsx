@@ -100,12 +100,12 @@ const columns: LedgerColumn[] = [
     render: (record) => <span className="font-semibold text-slate-100">{record.sampleQty}</span>,
   },
   {
-    key: 'createdAt',
+    key: 'sampleDeliveryDate',
     title: '送样日期',
     width: '12%',
     headerClassName: 'text-center',
     cellClassName: 'text-center',
-    render: (record) => <LedgerDateCell value={record.createdAt} />,
+    render: (record) => <LedgerDateCell value={record.testDate} />,
   },
   {
     key: 'report',
@@ -346,13 +346,15 @@ function formatLedgerSampleType(value?: string): string {
 
 function formatLedgerCellDate(value: string): string {
   if (!value) return '';
+  const trimmed = value.trim();
+  const dateOnlyMatch = trimmed.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
+  if (dateOnlyMatch) {
+    const [, year, month, day] = dateOnlyMatch;
+    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+  }
+
   const normalized = formatLedgerDateTime(value);
   if (normalized) return normalized;
-
-  const trimmed = value.trim();
-  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
-    return `${trimmed} 00:00`;
-  }
 
   return trimmed;
 }

@@ -983,7 +983,7 @@ export default function DashboardHome() {
 
         {selectedTab === 'laboratory-pdf-parser' && (
           <LazyWorkspace>
-            <LaboratoryPdfParserDashboard />
+            <LaboratoryPdfParserDashboard projectName={activeModule || ''} />
           </LazyWorkspace>
         )}
 

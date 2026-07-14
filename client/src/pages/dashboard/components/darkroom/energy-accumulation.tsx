@@ -1,44 +1,126 @@
-import type { DarkroomTelemetry } from "./photometric"
+import { formatDarkroomNumber, type DarkroomTelemetry, type EnergyZone } from "./photometric"
+
+function sourceBadge(source: "pdf" | "reconstructed" | "missing") {
+  if (source === "pdf") return "PDF 原文"
+  if (source === "reconstructed") return "重建"
+  return "源报告未给出"
+}
+
+function zoneName(zone: EnergyZone) {
+  const label = zone.label.toLowerCase()
+  if (label.includes("beam")) return "光束区"
+  if (label.includes("field")) return "场角区"
+  if (label.includes("erp")) return "ErP 有效光通"
+  if (label.includes("total")) return "总光通"
+  return zone.label
+}
+
+function zoneDescription(zone: EnergyZone) {
+  const label = zone.label.toLowerCase()
+  if (label.includes("beam")) return zone.sub || "50% Imax"
+  if (label.includes("field")) return zone.sub || "10% Imax"
+  if (label.includes("erp")) return zone.sub || "Useful flux"
+  if (label.includes("total")) return "Luminary Flux"
+  return zone.sub
+}
+
+function FeaturedZone({ zone }: { zone: EnergyZone }) {
+  return (
+    <div className="border-b border-white/[0.04] py-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold text-slate-100">{zoneName(zone)}</p>
+          <p className="mt-1 truncate text-xs text-slate-500">{zoneDescription(zone)}</p>
+        </div>
+        <span className="shrink-0 rounded bg-cyan-400/[0.08] px-2 py-1 text-[11px] text-cyan-200">
+          {sourceBadge(zone.source)}
+        </span>
+      </div>
+      <div className="mt-5 flex items-end justify-between gap-4">
+        <p className="whitespace-nowrap font-mono text-2xl font-semibold text-slate-100">
+          {formatDarkroomNumber(zone.lumens, 1, "lm")}
+        </p>
+        <p className="whitespace-nowrap font-mono text-xl text-cyan-300">
+          {formatDarkroomNumber(zone.percent, 1, "%")}
+        </p>
+      </div>
+      <div className="mt-4 h-1.5 rounded-full bg-white/[0.06]">
+        <div
+          className="h-full rounded-full bg-cyan-300 shadow-[0_0_18px_rgba(103,232,249,0.48)]"
+          style={{ width: `${Math.min(100, Math.max(zone.percent ?? 0, zone.source === "missing" ? 0 : 1))}%` }}
+        />
+      </div>
+    </div>
+  )
+}
+
+function CompactZone({ zone }: { zone: EnergyZone }) {
+  const percent = zone.percent ?? 0
+  const isMissing = zone.source === "missing"
+
+  return (
+    <div className="border-b border-white/[0.035] py-3.5">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-sm text-slate-200">{zoneName(zone)}</p>
+          <p className="mt-0.5 truncate text-xs text-slate-500">{zoneDescription(zone)}</p>
+        </div>
+        <span
+          className={`shrink-0 rounded px-2 py-0.5 text-[11px] ${
+            isMissing ? "bg-amber-400/[0.08] text-amber-200/75" : "bg-cyan-400/[0.08] text-cyan-200"
+          }`}
+        >
+          {sourceBadge(zone.source)}
+        </span>
+      </div>
+      <div className="mt-3 flex items-center justify-between gap-3">
+        <div className="h-1.5 min-w-0 flex-1 rounded-full bg-white/[0.05]">
+          <div
+            className={`h-full rounded-full ${isMissing ? "bg-slate-700" : "bg-cyan-300"}`}
+            style={{ width: `${Math.min(100, Math.max(percent, isMissing ? 0 : 1))}%` }}
+          />
+        </div>
+        <p className={`whitespace-nowrap font-mono text-sm ${isMissing ? "text-slate-500" : "text-cyan-200"}`}>
+          {formatDarkroomNumber(zone.lumens, 1, "lm")} / {formatDarkroomNumber(zone.percent, 1, "%")}
+        </p>
+      </div>
+    </div>
+  )
+}
 
 export function EnergyAccumulation({ telemetry }: { telemetry: DarkroomTelemetry }) {
+  const featured = telemetry.energyZones.filter((zone) => {
+    const label = zone.label.toLowerCase()
+    return label.includes("erp") || label.includes("total")
+  })
+  const supporting = telemetry.energyZones.filter((zone) => !featured.includes(zone))
+
   return (
-    <section className="flex flex-col rounded-xl border border-white/[0.04] border-t border-cyan-400/20 bg-[#070c14]/40 p-5 shadow-2xl backdrop-blur-3xl">
-      <h3 className="mb-4 border-b border-white/5 pb-2 font-mono text-[10px] uppercase tracking-[0.2em] text-slate-500">
-        {"// 区域光通累积 ENERGY ACCUMULATION"}
-      </h3>
+    <section className="flex min-h-[640px] flex-col border-b border-white/[0.035] p-6 xl:border-b-0">
+      <div className="mb-3 border-b border-white/[0.035] pb-4">
+        <h3 className="truncate text-sm font-semibold text-slate-100">区域光通累积</h3>
+        <p className="mt-1 text-xs text-slate-500">Energy accumulation</p>
+      </div>
 
-      <div className="flex flex-1 flex-col justify-center gap-7">
-        {telemetry.energyZones.map((zone) => (
-          <div key={zone.label} className="space-y-2.5">
-            <div className="flex items-end justify-between">
-              <span className="flex items-baseline gap-2 text-[10px] tracking-widest text-slate-400">
-                {zone.label}
-                <span className="text-[8px] tracking-normal text-slate-600">{zone.sub}</span>
-              </span>
-              <span className="tabular-nums">
-                <span className="font-mono text-gray-200">{zone.lumens.toFixed(1)} lm</span>
-                <span className="mx-1 text-slate-600">|</span>
-                <span className="font-mono text-cyan-400">{zone.percent.toFixed(1)}%</span>
-              </span>
-            </div>
-
-            <div className="mt-2 h-[3px] w-full rounded-full bg-white/[0.03]">
-              <div
-                className="relative h-full rounded-full bg-gradient-to-r from-cyan-900/50 to-cyan-400 shadow-[0_0_8px_rgba(0,243,255,0.6)]"
-                style={{ width: `${Math.min(100, Math.max(zone.percent, 0.5))}%` }}
-              >
-                <div className="absolute right-0 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-white shadow-[0_0_5px_#fff]" />
-              </div>
-            </div>
-          </div>
+      <div className="grid">
+        {featured.map((zone) => (
+          <FeaturedZone key={zone.label} zone={zone} />
         ))}
       </div>
 
-      <div className="mt-6 border-t border-white/5 pt-4">
-        <p className="flex items-center justify-between font-mono text-[10px] uppercase tracking-[0.15em] text-slate-500">
-          <span>上射光通比 UPWARD FLUX RATIO</span>
-          <span className="font-mono text-cyan-400">{telemetry.upwardFluxRatio.toFixed(1)}%</span>
-        </p>
+      <div className="mt-2 grid">
+        {supporting.map((zone) => (
+          <CompactZone key={zone.label} zone={zone} />
+        ))}
+      </div>
+
+      <div className="mt-auto border-t border-white/[0.035] pt-4">
+        <div className="flex items-center justify-between gap-4 px-1 py-2.5">
+          <span className="text-xs text-slate-500">IRF PDF report value</span>
+          <span className="whitespace-nowrap font-mono text-sm text-cyan-200">
+            {formatDarkroomNumber(telemetry.irfPercent, 1, "%")}
+          </span>
+        </div>
       </div>
     </section>
   )

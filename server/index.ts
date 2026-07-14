@@ -81,6 +81,12 @@ import {
   updateDashboardEngineeringSpecArchive,
 } from "./routes/dashboard-engineering-spec-archive.js";
 import {
+  createDashboardLaboratoryArchive,
+  deleteDashboardLaboratoryArchive,
+  getDashboardLaboratoryArchiveDocument,
+  listDashboardLaboratoryArchives,
+} from "./routes/dashboard-laboratory-archive.js";
+import {
   ensureDashboardEngineeringSpecWorkspaceTable,
   getDashboardEngineeringSpecWorkspaceState,
   upsertDashboardEngineeringSpecWorkspaceState,
@@ -504,6 +510,10 @@ async function startServer() {
   app.patch("/api/dashboard/engineering-spec-archives", updateDashboardEngineeringSpecArchive);
   app.delete("/api/dashboard/engineering-spec-archives", deleteDashboardEngineeringSpecArchive);
   app.get("/api/dashboard/engineering-spec-archives/document", getDashboardEngineeringSpecArchiveDocument);
+  app.get("/api/dashboard/laboratory-archives", listDashboardLaboratoryArchives);
+  app.post("/api/dashboard/laboratory-archives", createDashboardLaboratoryArchive);
+  app.delete("/api/dashboard/laboratory-archives", deleteDashboardLaboratoryArchive);
+  app.get("/api/dashboard/laboratory-archives/document", getDashboardLaboratoryArchiveDocument);
   app.get("/api/dashboard/engineering-spec-workspace-state", getDashboardEngineeringSpecWorkspaceState);
   app.put("/api/dashboard/engineering-spec-workspace-state", upsertDashboardEngineeringSpecWorkspaceState);
   app.post("/api/dashboard/laboratory-pdf/parse-upload", parseDashboardLaboratoryPdfUpload);

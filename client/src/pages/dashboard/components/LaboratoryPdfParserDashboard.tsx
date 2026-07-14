@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   CheckCircle2,
   Circle,
+  Archive,
   Download,
   FileText,
   Loader2,
@@ -21,12 +22,25 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { apiFetch } from "@/lib/api"
+import {
+  getEngineeringSpecArchiveDocumentState,
+  listEngineeringSpecArchives,
+  type EngineeringSpecArchiveState,
+  type EngineeringSpecLedgerRecord,
+} from "@/lib/engineering-spec-ledger-api"
+import { sanitizeEngineeringSpecLedgerRecords } from "@/lib/engineering-spec-ledger-clean"
 import { DarkroomTelemetryWorkspace } from "./DarkroomTelemetryWorkspace"
 import EmcRadiationWorkspace from "./EmcRadiationWorkspace"
 import { FlickerTelemetryWorkspace } from "./FlickerTelemetryWorkspace"
 import HarmonicTelemetryWorkspace from "./HarmonicTelemetryWorkspace"
 import BatteryCycleDashboard from "./battery-cycle/BatteryCycleDashboard"
+import "./final-sample-report/styles/final-sample-report.css"
+import { FinalSampleReportPage } from "./final-sample-report/source-page"
+import { FinalSampleReportDataProvider, useReportData } from "./final-sample-report/report-data-context"
+import { getOverallStats } from "./final-sample-report/report-data"
+import { LaboratoryArchivePanel } from "./laboratory/LaboratoryArchivePanel"
 import { LaboratoryPrintSurface } from "./laboratory/LaboratoryPrintSurface"
+import { ProductIllustrationGallery } from "./laboratory/ProductIllustrationGallery"
 import {
   LABORATORY_MODULES,
   buildIntegratingSphereModuleSummary,
@@ -78,6 +92,8 @@ type WorkspaceNode = {
   isConfirmed: boolean
 }
 
+type LaboratoryViewMode = "workspace" | "archive"
+
 const VARIANT_ORDER: Array<Omit<VariantSelection, "file">> = [
   { key: "white", label: "白光", accent: "cyan" },
   { key: "warm", label: "暖光", accent: "amber" },
@@ -97,6 +113,16 @@ const REPORT_META_FIELDS: Array<{ key: keyof LaboratoryReportMeta; label: string
 ]
 
 const LABORATORY_REPORT_META_STORAGE_KEY = "dashboard:laboratory-report-meta:v1"
+const LABORATORY_SELECTED_SPEC_STORAGE_KEY = "dashboard:laboratory-selected-spec:v1"
+const LABORATORY_PRODUCT_ILLUSTRATION_STORAGE_PREFIX = "dashboard:laboratory-product-illustrations:v1"
+
+type LaboratorySpecHeader = {
+  productManager: string
+  structuralEngineer: string
+  electronicEngineer: string
+  testType: string
+  sampleDeliveryDate: string
+}
 
 function getTodayDateValue() {
   const now = new Date()
@@ -139,6 +165,85 @@ function readInitialReportMeta(): LaboratoryReportMeta {
     )
   } catch {
     return fallback
+  }
+}
+
+function readInitialSelectedSpecId(): string {
+  if (typeof window === "undefined") return ""
+  try {
+    return window.localStorage.getItem(LABORATORY_SELECTED_SPEC_STORAGE_KEY) || ""
+  } catch {
+    return ""
+  }
+}
+
+function compactJoin(parts: Array<string | undefined>) {
+  return parts.map((part) => part?.trim()).filter(Boolean).join(" / ")
+}
+
+function formatSpecOptionLabel(record: EngineeringSpecLedgerRecord) {
+  return compactJoin([record.sku, record.spu]) || record.description || record.id
+}
+
+function findSpecMetaValue(
+  entries: Array<{ label: string; value: string }> | undefined,
+  labels: string[],
+) {
+  if (!entries?.length) return ""
+  const normalizedLabels = labels.map((label) => label.replace(/\s+/g, "").toLowerCase())
+  const match = entries.find((entry) =>
+    normalizedLabels.includes(String(entry.label || "").replace(/\s+/g, "").toLowerCase()),
+  )
+  return match?.value?.trim() || ""
+}
+
+function buildLaboratorySpecHeader(
+  record: EngineeringSpecLedgerRecord | null,
+  state: EngineeringSpecArchiveState | null,
+): LaboratorySpecHeader {
+  const businessMeta = state?.businessMeta
+  return {
+    productManager:
+      findSpecMetaValue(businessMeta, ["产品经理"]) ||
+      record?.productGroup?.trim() ||
+      "--",
+    structuralEngineer: findSpecMetaValue(businessMeta, ["结构工程师"]) || "--",
+    electronicEngineer: findSpecMetaValue(businessMeta, ["电子工程师"]) || "--",
+    testType:
+      state?.inspectionTestProject?.testType?.trim() ||
+      record?.sampleType?.trim() ||
+      "--",
+    sampleDeliveryDate:
+      state?.inspectionTestProject?.sampleDeliveryDate?.trim() ||
+      record?.testDate?.trim() ||
+      "--",
+  }
+}
+
+function buildReportMetaFromSpecRecord(
+  current: LaboratoryReportMeta,
+  record: EngineeringSpecLedgerRecord,
+  specHeader?: LaboratorySpecHeader,
+): LaboratoryReportMeta {
+  const projectName = record.spu?.trim() || record.type?.trim() || record.category?.trim()
+  const sampleName = record.description?.trim() || record.sku?.trim()
+  const sampleNo = record.sku?.trim() || current.sampleNo
+  const customer = compactJoin([record.department, record.productGroup])
+  const stage = specHeader?.testType !== "--" ? specHeader?.testType : record.sampleType?.trim() || current.stage
+  const testDate =
+    specHeader?.sampleDeliveryDate !== "--" ? specHeader?.sampleDeliveryDate : record.testDate?.trim() || current.testDate
+  const operator =
+    specHeader?.productManager !== "--" ? specHeader?.productManager : record.productGroup?.trim() || current.operator
+
+  return {
+    ...current,
+    projectName: projectName || current.projectName,
+    sampleName: sampleName || current.sampleName,
+    sampleNo,
+    customer: customer || current.customer,
+    stage: stage || current.stage,
+    testDate: testDate || current.testDate,
+    operator: operator || current.operator,
   }
 }
 
@@ -820,6 +925,10 @@ function renderTelemetryModule(
   type: TelemetryNodeType,
   nodeId: number,
   onSummaryChange: (summary: LaboratoryModuleSummary | null) => void,
+  context?: {
+    productIllustrationStorageKey: string
+    productIllustrationEntityId: string
+  },
 ) {
   switch (type) {
     case "INTEGRATING_SPHERE":
@@ -858,6 +967,24 @@ function renderTelemetryModule(
       return (
         <HarmonicTelemetryWorkspace
           key={`harmonic-${nodeId}`}
+          nodeId={nodeId}
+          onSummaryChange={onSummaryChange}
+        />
+      )
+    case "FINAL_SAMPLE_REPORT":
+      return (
+        <FinalSampleReportLaboratoryWorkspace
+          key={`final-sample-report-${nodeId}`}
+          nodeId={nodeId}
+          onSummaryChange={onSummaryChange}
+        />
+      )
+    case "PRODUCT_ILLUSTRATION":
+      return (
+        <ProductIllustrationGallery
+          key={`product-illustration-${nodeId}-${context?.productIllustrationStorageKey ?? "unbound"}`}
+          storageKey={context?.productIllustrationStorageKey ?? "dashboard:laboratory-product-illustrations:v1:unbound"}
+          entityId={context?.productIllustrationEntityId ?? "laboratory__unbound"}
           nodeId={nodeId}
           onSummaryChange={onSummaryChange}
         />
@@ -938,14 +1065,109 @@ function EmptyNodePortal({
   )
 }
 
+function FinalSampleReportSummaryBridge({
+  nodeId,
+  onSummaryChange,
+}: {
+  nodeId: number
+  onSummaryChange: (summary: LaboratoryModuleSummary | null) => void
+}) {
+  const { data, isLoading, error, sourceName } = useReportData()
+
+  useEffect(() => {
+    if (isLoading) {
+      onSummaryChange({
+        nodeId,
+        type: "FINAL_SAMPLE_REPORT",
+        label: "终样报告",
+        printTitle: "终样测试报告",
+        category: "综合",
+        status: "mounted",
+        verdict: "待解析",
+        sourceFiles: [],
+        keyMetrics: [{ label: "数据源", value: "读取中" }],
+        warnings: ["终样报告数据正在读取。"],
+      })
+      return
+    }
+
+    if (error) {
+      onSummaryChange({
+        nodeId,
+        type: "FINAL_SAMPLE_REPORT",
+        label: "终样报告",
+        printTitle: "终样测试报告",
+        category: "综合",
+        status: "fail",
+        verdict: "FAIL",
+        sourceFiles: [sourceName],
+        keyMetrics: [{ label: "读取状态", value: "失败" }],
+        warnings: [`终样报告读取失败：${error}`],
+      })
+      return
+    }
+
+    const stats = getOverallStats(data.modules)
+    const verdict = stats.fail > 0 ? "FAIL" : stats.untested > 0 || stats.riskCount > 0 ? "WATCH" : "PASS"
+
+    onSummaryChange({
+      nodeId,
+      type: "FINAL_SAMPLE_REPORT",
+      label: "终样报告",
+      printTitle: "终样测试报告",
+      category: "综合",
+      status: verdict === "FAIL" ? "fail" : verdict === "WATCH" ? "watch" : "parsed",
+      verdict,
+      sourceFiles: [sourceName],
+      keyMetrics: [
+        { label: "产品型号", value: data.meta.productModel || "--" },
+        { label: "执行覆盖", value: `${stats.coverage}%` },
+        { label: "模块通过", value: `${stats.modulePass}/${stats.moduleTotal}` },
+        { label: "失败项", value: String(stats.fail) },
+        { label: "未测项", value: String(stats.untested) },
+      ],
+      warnings: [
+        ...(stats.fail > 0 ? [`终样报告存在 ${stats.fail} 个失败项。`] : []),
+        ...(stats.untested > 0 ? [`终样报告存在 ${stats.untested} 个未测项。`] : []),
+        ...(stats.riskCount > 0 ? [`终样报告存在 ${stats.riskCount} 个风险标记项。`] : []),
+      ],
+    })
+  }, [data, error, isLoading, nodeId, onSummaryChange, sourceName])
+
+  return null
+}
+
+function FinalSampleReportLaboratoryWorkspace({
+  nodeId,
+  onSummaryChange,
+}: {
+  nodeId: number
+  onSummaryChange: (summary: LaboratoryModuleSummary | null) => void
+}) {
+  return (
+    <div className="overflow-hidden rounded-2xl border border-white/[0.05] bg-[#020406]">
+      <div className="final-sample-report-bleed final-sample-report-scope">
+        <FinalSampleReportDataProvider>
+          <FinalSampleReportSummaryBridge nodeId={nodeId} onSummaryChange={onSummaryChange} />
+          <FinalSampleReportPage />
+        </FinalSampleReportDataProvider>
+      </div>
+    </div>
+  )
+}
+
 function ActiveNodeShell({
   node,
   onRequestUnmount,
   onNodeSummaryChange,
+  productIllustrationStorageKey,
+  productIllustrationEntityId,
 }: {
   node: WorkspaceNode & { type: TelemetryNodeType }
   onRequestUnmount: () => void
   onNodeSummaryChange: (nodeId: number, summary: LaboratoryModuleSummary | null) => void
+  productIllustrationStorageKey: string
+  productIllustrationEntityId: string
 }) {
   const handleSummaryChange = useCallback(
     (summary: LaboratoryModuleSummary | null) => onNodeSummaryChange(node.id, summary),
@@ -964,20 +1186,42 @@ function ActiveNodeShell({
           删除模块
         </button>
       </div>
-      {renderTelemetryModule(node.type, node.id, handleSummaryChange)}
+      {renderTelemetryModule(node.type, node.id, handleSummaryChange, {
+        productIllustrationStorageKey,
+        productIllustrationEntityId,
+      })}
     </div>
   )
 }
 
-export default function LaboratoryPdfParserDashboard() {
+export default function LaboratoryPdfParserDashboard({ projectName = "" }: { projectName?: string }) {
   const [nodes, setNodes] = useState<WorkspaceNode[]>([{ id: 1, type: null, isConfirmed: false }])
   const [draftSelections, setDraftSelections] = useState<Record<number, TelemetryNodeType | "">>({ 1: "" })
+  const [activeLaboratoryView, setActiveLaboratoryView] = useState<LaboratoryViewMode>("workspace")
   const [pendingUnmountNodeId, setPendingUnmountNodeId] = useState<number | null>(null)
   const [isExportingWorkspace, setIsExportingWorkspace] = useState(false)
   const [nodeSummaries, setNodeSummaries] = useState<Record<number, LaboratoryModuleSummary>>({})
   const [reportMeta, setReportMeta] = useState<LaboratoryReportMeta>(() => readInitialReportMeta())
+  const [selectedSpecId, setSelectedSpecId] = useState(() => readInitialSelectedSpecId())
+  const [ledgerRecords, setLedgerRecords] = useState<EngineeringSpecLedgerRecord[]>([])
+  const [isLoadingLedger, setIsLoadingLedger] = useState(false)
+  const [selectedSpecState, setSelectedSpecState] = useState<EngineeringSpecArchiveState | null>(null)
+  const [isLoadingSpecDetail, setIsLoadingSpecDetail] = useState(false)
   const nextNodeIdRef = useRef(2)
   const printExportRef = useRef<HTMLDivElement | null>(null)
+  const projectId = projectName.trim() || "default-engineering-spec-workspace"
+  const sanitizedLedgerRecords = useMemo(
+    () => sanitizeEngineeringSpecLedgerRecords(ledgerRecords),
+    [ledgerRecords],
+  )
+  const selectedSpecRecord = useMemo(
+    () => sanitizedLedgerRecords.find((record) => record.id === selectedSpecId) ?? null,
+    [sanitizedLedgerRecords, selectedSpecId],
+  )
+  const specHeader = useMemo(
+    () => buildLaboratorySpecHeader(selectedSpecRecord, selectedSpecState),
+    [selectedSpecRecord, selectedSpecState],
+  )
 
   const hasEmptyNode = nodes.some((node) => !node.isConfirmed || !node.type)
   const confirmedNodeCount = nodes.filter((node) => node.isConfirmed && node.type).length
@@ -1004,6 +1248,22 @@ export default function LaboratoryPdfParserDashboard() {
     pendingUnmountNodeId == null ? null : nodes.find((node) => node.id === pendingUnmountNodeId) ?? null
   const pendingUnmountOption =
     pendingUnmountNode?.type == null ? null : getLaboratoryModuleDefinition(pendingUnmountNode.type)
+  const productIllustrationScope = selectedSpecId || selectedSpecRecord?.sku || "unbound"
+  const productIllustrationStorageKey = `${LABORATORY_PRODUCT_ILLUSTRATION_STORAGE_PREFIX}:${projectId}:${productIllustrationScope}`
+  const productIllustrationEntityId = `${projectId}__${productIllustrationScope}`
+  const laboratoryArchiveState = useMemo(
+    () => ({
+      reportMeta,
+      specHeader,
+      selectedSpecId: selectedSpecId || undefined,
+      selectedSpecLabel: selectedSpecRecord ? formatSpecOptionLabel(selectedSpecRecord) : undefined,
+      moduleSummaries,
+      overallAdjudication,
+      exportGate,
+    }),
+    [exportGate, moduleSummaries, overallAdjudication, reportMeta, selectedSpecId, selectedSpecRecord, specHeader],
+  )
+  const canArchiveLaboratoryReport = moduleSummaries.length > 0 && Boolean(reportMeta.reportNo.trim())
 
   useEffect(() => {
     try {
@@ -1013,8 +1273,81 @@ export default function LaboratoryPdfParserDashboard() {
     }
   }, [reportMeta])
 
-  const handleReportMetaChange = (key: keyof LaboratoryReportMeta, value: string) => {
-    setReportMeta((current) => ({ ...current, [key]: value }))
+  useEffect(() => {
+    let cancelled = false
+
+    const loadLedger = async () => {
+      setIsLoadingLedger(true)
+      try {
+        const documents = await listEngineeringSpecArchives(projectId)
+        if (!cancelled) {
+          setLedgerRecords(documents)
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setLedgerRecords([])
+          toast.error("规格书台账读取失败", {
+            description: error instanceof Error ? error.message : "请先确认产品规格书看板已有归档数据",
+          })
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoadingLedger(false)
+        }
+      }
+    }
+
+    void loadLedger()
+
+    return () => {
+      cancelled = true
+    }
+  }, [projectId])
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(LABORATORY_SELECTED_SPEC_STORAGE_KEY, selectedSpecId)
+    } catch {
+      // Selection persistence is best-effort.
+    }
+  }, [selectedSpecId])
+
+  const loadSpecDetail = useCallback(
+    async (record: EngineeringSpecLedgerRecord) => {
+      setIsLoadingSpecDetail(true)
+      try {
+        const snapshot = await getEngineeringSpecArchiveDocumentState({
+          projectId,
+          documentId: record.id,
+        })
+        const nextHeader = buildLaboratorySpecHeader(record, snapshot.state)
+        setSelectedSpecState(snapshot.state)
+        setReportMeta((current) => buildReportMetaFromSpecRecord(current, record, nextHeader))
+      } catch (error) {
+        setSelectedSpecState(null)
+        const fallbackHeader = buildLaboratorySpecHeader(record, null)
+        setReportMeta((current) => buildReportMetaFromSpecRecord(current, record, fallbackHeader))
+        toast.error("规格书详情读取失败", {
+          description: error instanceof Error ? error.message : "已使用台账摘要字段回填",
+        })
+      } finally {
+        setIsLoadingSpecDetail(false)
+      }
+    },
+    [projectId],
+  )
+
+  useEffect(() => {
+    if (!selectedSpecRecord) {
+      setSelectedSpecState(null)
+      return
+    }
+
+    void loadSpecDetail(selectedSpecRecord)
+  }, [loadSpecDetail, selectedSpecRecord])
+
+  const handleSpecRecordSelect = (recordId: string) => {
+    setSelectedSpecId(recordId)
   }
 
   const handleDraftChange = (nodeId: number, type: TelemetryNodeType) => {
@@ -1159,70 +1492,167 @@ export default function LaboratoryPdfParserDashboard() {
             </div>
           </div>
 
-          <div className="mt-5 grid gap-3 rounded-2xl border border-white/[0.05] bg-black/25 p-4 md:grid-cols-3 xl:grid-cols-9">
-            {REPORT_META_FIELDS.map((field) => (
-              <label key={field.key} className="block">
-                <span className="font-mono text-[9px] tracking-[0.16em] text-slate-500">{field.label}</span>
-                <input
-                  value={reportMeta[field.key]}
-                  onChange={(event) => handleReportMetaChange(field.key, event.target.value)}
-                  placeholder={field.placeholder}
-                  className="mt-2 h-9 w-full rounded-lg border border-white/[0.06] bg-white/[0.03] px-3 text-xs text-slate-100 outline-none transition placeholder:text-slate-600 focus:border-cyan-300/40 focus:bg-cyan-300/[0.04]"
-                />
-              </label>
-            ))}
+          <div className="mt-5 rounded-2xl border border-white/[0.05] bg-black/18 p-4">
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[320px_320px]">
+              <button
+                type="button"
+                onClick={() => setActiveLaboratoryView("workspace")}
+                className={`flex min-h-[86px] items-center gap-4 rounded-xl border px-4 text-left transition ${
+                  activeLaboratoryView === "workspace"
+                    ? "border-cyan-300/30 bg-cyan-300/[0.10] text-cyan-50 shadow-[0_0_0_1px_rgba(103,232,249,0.08)]"
+                    : "border-white/[0.06] bg-white/[0.025] text-slate-300 hover:border-cyan-300/20 hover:bg-white/[0.04]"
+                }`}
+              >
+                <span className={`rounded-xl border p-3 ${
+                  activeLaboratoryView === "workspace"
+                    ? "border-cyan-300/25 bg-cyan-300/15 text-cyan-200"
+                    : "border-white/[0.06] bg-black/20 text-slate-500"
+                }`}>
+                  <FileText className="h-5 w-5" />
+                </span>
+                <span>
+                  <span className="block text-base font-semibold">实验室工作区</span>
+                  <span className="mt-1 block text-xs text-slate-500">解析、展示与综合导出</span>
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveLaboratoryView("archive")}
+                className={`flex min-h-[86px] items-center gap-4 rounded-xl border px-4 text-left transition ${
+                  activeLaboratoryView === "archive"
+                    ? "border-cyan-300/30 bg-cyan-300/[0.10] text-cyan-50 shadow-[0_0_0_1px_rgba(103,232,249,0.08)]"
+                    : "border-white/[0.06] bg-white/[0.025] text-slate-300 hover:border-cyan-300/20 hover:bg-white/[0.04]"
+                }`}
+              >
+                <span className={`rounded-xl border p-3 ${
+                  activeLaboratoryView === "archive"
+                    ? "border-cyan-300/25 bg-cyan-300/15 text-cyan-200"
+                    : "border-white/[0.06] bg-black/20 text-slate-500"
+                }`}>
+                  <Archive className="h-5 w-5" />
+                </span>
+                <span>
+                  <span className="block text-base font-semibold">归档区</span>
+                  <span className="mt-1 block text-xs text-slate-500">保存报告、查看归档台账</span>
+                </span>
+              </button>
+            </div>
           </div>
 
-          <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-            <div className="rounded-2xl border border-white/[0.05] bg-black/20 p-4">
-              <p className="font-mono text-[10px] tracking-[0.2em] text-slate-500">// 综合结论</p>
-              <p className="mt-2 text-sm leading-6 text-slate-300">{overallAdjudication.summary}</p>
-            </div>
-            <div className="rounded-2xl border border-white/[0.05] bg-black/20 p-4">
-              <p className="font-mono text-[10px] tracking-[0.2em] text-slate-500">// 门禁原因</p>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {exportGate.reasons.map((reason) => (
-                  <span
-                    key={reason}
-                    className="rounded-full border border-white/[0.06] bg-white/[0.03] px-3 py-1 text-xs text-slate-300"
-                  >
-                    {reason}
-                  </span>
-                ))}
+          {activeLaboratoryView === "workspace" ? (
+            <>
+              <div className="mt-5 rounded-2xl border border-white/[0.05] bg-black/18 p-4">
+                <div className="min-w-0">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="font-mono text-[9px] tracking-[0.16em] text-slate-500">规格书台账</span>
+                    <span className="shrink-0 text-[11px] text-slate-600">
+                      {isLoadingLedger ? "读取中" : isLoadingSpecDetail ? "映射中" : `${sanitizedLedgerRecords.length} 条`}
+                    </span>
+                  </div>
+                  <Select value={selectedSpecId} onValueChange={handleSpecRecordSelect} disabled={isLoadingLedger || sanitizedLedgerRecords.length === 0}>
+                    <SelectTrigger className="mt-2 h-11 max-w-xl rounded-lg border-white/[0.06] bg-white/[0.03] text-left text-slate-100 hover:border-cyan-300/30 focus:ring-cyan-300/20">
+                      <SelectValue placeholder={isLoadingLedger ? "正在读取规格书台账" : "选择规格书记录"} />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-80 rounded-xl border-cyan-400/20 bg-[#050911] text-slate-100 shadow-2xl">
+                      {sanitizedLedgerRecords.map((record) => (
+                        <SelectItem
+                          key={record.id}
+                          value={record.id}
+                          className="rounded-lg py-2.5 text-slate-100 data-[highlighted]:bg-cyan-400/10 data-[highlighted]:text-cyan-100"
+                        >
+                          <span className="block max-w-[520px] truncate text-sm">{formatSpecOptionLabel(record)}</span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  <dl className="mt-5 grid gap-3 md:grid-cols-5">
+                    <div className="min-h-[76px] rounded-lg bg-white/[0.025] px-4 py-3">
+                      <dt className="text-xs text-slate-600">产品经理</dt>
+                      <dd className="mt-2 break-words text-base font-semibold text-slate-100">{specHeader.productManager}</dd>
+                    </div>
+                    <div className="min-h-[76px] rounded-lg bg-white/[0.025] px-4 py-3">
+                      <dt className="text-xs text-slate-600">结构工程师</dt>
+                      <dd className="mt-2 break-words text-base font-semibold text-slate-100">{specHeader.structuralEngineer}</dd>
+                    </div>
+                    <div className="min-h-[76px] rounded-lg bg-white/[0.025] px-4 py-3">
+                      <dt className="text-xs text-slate-600">电子工程师</dt>
+                      <dd className="mt-2 break-words text-base font-semibold text-slate-100">{specHeader.electronicEngineer}</dd>
+                    </div>
+                    <div className="min-h-[76px] rounded-lg bg-white/[0.025] px-4 py-3">
+                      <dt className="text-xs text-slate-600">测试类型</dt>
+                      <dd className="mt-2 break-words text-base font-semibold text-cyan-100">{specHeader.testType}</dd>
+                    </div>
+                    <div className="min-h-[76px] rounded-lg bg-white/[0.025] px-4 py-3">
+                      <dt className="text-xs text-slate-600">送样日期</dt>
+                      <dd className="mt-2 break-words font-mono text-base font-semibold text-cyan-100">{specHeader.sampleDeliveryDate}</dd>
+                    </div>
+                  </dl>
+                </div>
               </div>
+
+              <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+                <div className="rounded-2xl border border-white/[0.05] bg-black/20 p-4">
+                  <p className="font-mono text-[10px] tracking-[0.2em] text-slate-500">// 综合结论</p>
+                  <p className="mt-2 text-sm leading-6 text-slate-300">{overallAdjudication.summary}</p>
+                </div>
+                <div className="rounded-2xl border border-white/[0.05] bg-black/20 p-4">
+                  <p className="font-mono text-[10px] tracking-[0.2em] text-slate-500">// 门禁原因</p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {exportGate.reasons.map((reason) => (
+                      <span
+                        key={reason}
+                        className="rounded-full border border-white/[0.06] bg-white/[0.03] px-3 py-1 text-xs text-slate-300"
+                      >
+                        {reason}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </>
+          ) : null}
+        </div>
+
+        {activeLaboratoryView === "archive" ? (
+          <LaboratoryArchivePanel
+            projectId={projectId}
+            archiveState={laboratoryArchiveState}
+            canArchive={canArchiveLaboratoryReport}
+          />
+        ) : (
+          <div className="flex flex-col gap-8">
+            {nodes.map((node) => (
+              <section key={node.id} className="w-full">
+                {!node.isConfirmed || !node.type ? (
+                  <EmptyNodePortal
+                    value={draftSelections[node.id] ?? ""}
+                    onValueChange={(value) => handleDraftChange(node.id, value)}
+                    onConfirm={() => handleMountNode(node.id)}
+                  />
+                ) : (
+                  <ActiveNodeShell
+                    node={{ ...node, type: node.type }}
+                    onRequestUnmount={() => setPendingUnmountNodeId(node.id)}
+                    onNodeSummaryChange={handleNodeSummaryChange}
+                    productIllustrationStorageKey={productIllustrationStorageKey}
+                    productIllustrationEntityId={productIllustrationEntityId}
+                  />
+                )}
+              </section>
+            ))}
+
+            <div
+              onClick={handleAddNode}
+              className="flex w-full cursor-pointer justify-center rounded-xl border-2 border-dashed border-white/10 py-6 transition-all hover:border-cyan-500/50 hover:bg-cyan-400/[0.03]"
+            >
+              <span className="inline-flex items-center gap-3 font-mono tracking-[0.08em] text-white">
+                <Plus className="h-4 w-4" />
+                添加测试模块
+              </span>
             </div>
           </div>
-        </div>
-
-        <div className="flex flex-col gap-8">
-          {nodes.map((node) => (
-            <section key={node.id} className="w-full">
-              {!node.isConfirmed || !node.type ? (
-                <EmptyNodePortal
-                  value={draftSelections[node.id] ?? ""}
-                  onValueChange={(value) => handleDraftChange(node.id, value)}
-                  onConfirm={() => handleMountNode(node.id)}
-                />
-              ) : (
-                <ActiveNodeShell
-                  node={{ ...node, type: node.type }}
-                  onRequestUnmount={() => setPendingUnmountNodeId(node.id)}
-                  onNodeSummaryChange={handleNodeSummaryChange}
-                />
-              )}
-            </section>
-          ))}
-
-          <div
-            onClick={handleAddNode}
-            className="flex w-full cursor-pointer justify-center rounded-xl border-2 border-dashed border-white/10 py-6 transition-all hover:border-cyan-500/50 hover:bg-cyan-400/[0.03]"
-          >
-            <span className="inline-flex items-center gap-3 font-mono tracking-[0.08em] text-white">
-              <Plus className="h-4 w-4" />
-              添加测试模块
-            </span>
-          </div>
-        </div>
+        )}
       </div>
 
       <div className="fixed left-[-100000px] top-0" aria-hidden="true">

@@ -435,6 +435,17 @@ function selectLedgerImageUrl(state: EngineeringSpecArchiveState): string {
   return normalizeText(firstEvidenceImage?.url, 4000);
 }
 
+function selectLedgerTestDate(
+  state: EngineeringSpecArchiveState,
+  fallback = ""
+): string {
+  return (
+    normalizeText(state?.inspectionTestProject?.sampleDeliveryDate, 64) ||
+    normalizeText(state?.productInfo?.testDate, 64) ||
+    normalizeText(fallback, 64)
+  );
+}
+
 async function hydrateManifestDocuments(
   projectId: string,
   documents: EngineeringSpecLedgerRecord[]
@@ -459,6 +470,7 @@ async function hydrateManifestDocuments(
           selectLedgerImageUrl(snapshot.state) ||
           undefined,
         productGroup: extractProductManager(snapshot.state.businessMeta),
+        testDate: selectLedgerTestDate(snapshot.state, document.testDate),
         sampleType:
           normalizeText(document.sampleType, 32) ||
           normalizeText(snapshot.state.inspectionTestProject?.testType, 32) ||
@@ -648,6 +660,7 @@ export async function listDashboardEngineeringSpecArchives(
             existing.contentFingerprint !== document.contentFingerprint ||
             existing.imageUrl !== document.imageUrl ||
             existing.productGroup !== document.productGroup ||
+            existing.testDate !== document.testDate ||
             existing.sampleType !== document.sampleType ||
             existing.reportStatus !== document.reportStatus)
         );
@@ -822,7 +835,7 @@ export async function createDashboardEngineeringSpecArchive(
       department: normalizeText(normalizedState?.productInfo?.department, 255),
       productGroup: extractProductManager(normalizedState?.businessMeta),
       sampleQty: normalizeText(normalizedState?.productInfo?.sampleQty, 64),
-      testDate: normalizeText(normalizedState?.productInfo?.testDate, 64),
+      testDate: selectLedgerTestDate(normalizedState),
       sampleType: normalizeText(normalizedState?.inspectionTestProject?.testType, 32) || undefined,
       reportStatus: normalizeText(normalizedState?.oaInfo?.reportStatus, 64) || undefined,
       result: failCount > 0 || pendingCount > 0 ? "待完善" : "合格",
@@ -996,11 +1009,7 @@ export async function updateDashboardEngineeringSpecArchive(
         64,
         existingSnapshot.document.sampleQty
       ),
-      testDate: normalizeText(
-        normalizedState?.productInfo?.testDate,
-        64,
-        existingSnapshot.document.testDate
-      ),
+      testDate: selectLedgerTestDate(normalizedState, existingSnapshot.document.testDate),
       sampleType:
         normalizeText(normalizedState?.inspectionTestProject?.testType, 32) ||
         existingSnapshot.document.sampleType,

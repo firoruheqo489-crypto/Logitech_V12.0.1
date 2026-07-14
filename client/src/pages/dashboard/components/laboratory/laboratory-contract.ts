@@ -6,6 +6,8 @@ export type TelemetryNodeType =
   | "FLICKER"
   | "EMISSION"
   | "HARMONIC"
+  | "FINAL_SAMPLE_REPORT"
+  | "PRODUCT_ILLUSTRATION"
   | "RELIABILITY_LIFE"
   | "TIME_SERIES"
   | "BATTERY_CYCLE";
@@ -16,7 +18,7 @@ export type LaboratoryModuleDefinition = {
   type: TelemetryNodeType;
   label: string;
   printTitle: string;
-  category: "光学" | "电性能" | "可靠性" | "热测试";
+  category: "光学" | "电性能" | "可靠性" | "热测试" | "综合";
   uploadMode: "single-pdf" | "three-variant-pdf" | "multi-pdf" | "single-excel" | "manual";
   supportsPrint: boolean;
   parserEndpoint?: string;
@@ -121,6 +123,22 @@ export const LABORATORY_MODULES: LaboratoryModuleDefinition[] = [
     uploadMode: "single-pdf",
     supportsPrint: true,
     parserEndpoint: "/api/dashboard/harmonic-pdf/parse-upload",
+  },
+  {
+    type: "FINAL_SAMPLE_REPORT",
+    label: "终样报告",
+    printTitle: "终样测试报告",
+    category: "综合",
+    uploadMode: "single-excel",
+    supportsPrint: true,
+  },
+  {
+    type: "PRODUCT_ILLUSTRATION",
+    label: "产品图示区",
+    printTitle: "产品图示资料",
+    category: "综合",
+    uploadMode: "manual",
+    supportsPrint: false,
   },
   {
     type: "RELIABILITY_LIFE",
@@ -234,15 +252,22 @@ export function buildDarkroomModuleSummary(
     activeMetrics: {
       name: string;
       testDate: string;
-      ratedFlux: number;
-      testedPower: number;
-      efficacy: number;
-      maxCandela: number;
-      beamAngleV: number;
-      beamAngleH: number;
-      fieldAngleV: number;
-      fieldAngleH: number;
-      workingPlaneEMax: number;
+      ratedFlux: number | null;
+      testedPower: number | null;
+      efficacy: number | null;
+      maxCandela: number | null;
+      beamAngleV: number | null;
+      beamAngleH: number | null;
+      fieldAngleV: number | null;
+      fieldAngleH: number | null;
+      workingPlaneEMax: number | null;
+    };
+    batchConsistency?: {
+      sampleCount: number;
+      worstMetric: string;
+      worstSpread: string;
+      watchCount: number;
+      driftCount: number;
     };
   },
 ): LaboratoryModuleSummary {
@@ -253,7 +278,18 @@ export function buildDarkroomModuleSummary(
     payload.activeMetrics.testedPower,
     payload.activeMetrics.efficacy,
     payload.activeMetrics.maxCandela,
-  ].every((value) => Number.isFinite(value) && value > 0);
+  ].every((value) => typeof value === "number" && Number.isFinite(value) && value > 0);
+  const formatDarkroomMetric = (value: number | null, digits: number, unit: string) =>
+    value == null || !Number.isFinite(value) ? "--" : `${value.toFixed(digits)} ${unit}`;
+  const formatAnglePair = (v: number | null, h: number | null) =>
+    v == null || h == null || !Number.isFinite(v) || !Number.isFinite(h)
+      ? "--"
+      : `${v.toFixed(1)}° / ${h.toFixed(1)}°`;
+  const hasBatchWatch = Boolean(
+    payload.batchConsistency &&
+      payload.batchConsistency.sampleCount > 1 &&
+      (payload.batchConsistency.watchCount > 0 || payload.batchConsistency.driftCount > 0),
+  );
 
   return {
     nodeId,
@@ -261,24 +297,46 @@ export function buildDarkroomModuleSummary(
     label: definition?.label ?? "暗房解析",
     printTitle: definition?.printTitle ?? "暗房配光测试报告",
     category: definition?.category ?? "光学",
-    status: !hasCoreMetrics ? "fail" : isComplete ? "parsed" : "watch",
-    verdict: !hasCoreMetrics ? "FAIL" : isComplete ? "PASS" : "WATCH",
+    status: !hasCoreMetrics ? "fail" : hasBatchWatch || !isComplete ? "watch" : "parsed",
+    verdict: !hasCoreMetrics ? "FAIL" : hasBatchWatch || !isComplete ? "WATCH" : "PASS",
     sourceFiles: payload.sourceFiles,
     keyMetrics: [
       { label: "当前光色", value: payload.activeVariantLabel },
       { label: "样品名称", value: payload.activeMetrics.name },
       { label: "测试日期", value: payload.activeMetrics.testDate },
-      { label: "光通量", value: `${payload.activeMetrics.ratedFlux.toFixed(1)} lm` },
-      { label: "功率", value: `${payload.activeMetrics.testedPower.toFixed(2)} W` },
-      { label: "光效", value: `${payload.activeMetrics.efficacy.toFixed(2)} lm/W` },
-      { label: "最大光强", value: `${payload.activeMetrics.maxCandela.toFixed(1)} cd` },
-      { label: "光束角", value: `${payload.activeMetrics.beamAngleV.toFixed(1)}° / ${payload.activeMetrics.beamAngleH.toFixed(1)}°` },
-      { label: "场角", value: `${payload.activeMetrics.fieldAngleV.toFixed(1)}° / ${payload.activeMetrics.fieldAngleH.toFixed(1)}°` },
-      { label: "工作面最大照度", value: `${payload.activeMetrics.workingPlaneEMax.toFixed(2)} lx` },
+      { label: "光通量", value: formatDarkroomMetric(payload.activeMetrics.ratedFlux, 1, "lm") },
+      { label: "功率", value: formatDarkroomMetric(payload.activeMetrics.testedPower, 2, "W") },
+      { label: "光效", value: formatDarkroomMetric(payload.activeMetrics.efficacy, 2, "lm/W") },
+      { label: "最大光强", value: formatDarkroomMetric(payload.activeMetrics.maxCandela, 1, "cd") },
+      { label: "光束角", value: formatAnglePair(payload.activeMetrics.beamAngleV, payload.activeMetrics.beamAngleH) },
+      { label: "场角", value: formatAnglePair(payload.activeMetrics.fieldAngleV, payload.activeMetrics.fieldAngleH) },
+      { label: "工作面最大照度", value: formatDarkroomMetric(payload.activeMetrics.workingPlaneEMax, 2, "lx") },
+      ...(payload.batchConsistency
+        ? [
+            { label: "批次报告数", value: String(payload.batchConsistency.sampleCount) },
+            {
+              label: "最大复测偏差",
+              value:
+                payload.batchConsistency.worstMetric === "--"
+                  ? "--"
+                  : `${payload.batchConsistency.worstMetric} / ${payload.batchConsistency.worstSpread}`,
+            },
+            {
+              label: "复测观察项",
+              value: `${payload.batchConsistency.watchCount} WATCH / ${payload.batchConsistency.driftCount} DRIFT`,
+            },
+          ]
+        : []),
     ],
     warnings: [
       ...(isComplete ? [] : [`三色暗房报告未齐套：已解析 ${payload.parsedCount}/${payload.expectedCount}。`]),
       ...(hasCoreMetrics ? [] : ["暗房报告缺少核心配光指标，综合判定为 FAIL。"]),
+      ...(payload.batchConsistency?.watchCount
+        ? [`暗房复测一致性存在 ${payload.batchConsistency.watchCount} 项 WATCH，建议结合样品状态和测试设定复核。`]
+        : []),
+      ...(payload.batchConsistency?.driftCount
+        ? [`暗房复测一致性存在 ${payload.batchConsistency.driftCount} 项 DRIFT，建议优先复核 ${payload.batchConsistency.worstMetric}。`]
+        : []),
     ],
   };
 }
