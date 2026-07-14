@@ -98,6 +98,10 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks(id) {
+          if (id.includes("vite/preload-helper")) {
+            return "vendor-vite-preload";
+          }
+
           if (!id.includes("node_modules")) return;
 
           if (id.includes("/xlsx/")) {

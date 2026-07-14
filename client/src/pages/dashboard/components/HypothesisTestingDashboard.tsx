@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import html2canvas from "html2canvas";
 import { jStat } from "jstat";
 import { cn } from "@/lib/utils";
 import {
@@ -3553,6 +3552,7 @@ export default function HypothesisTestingDashboard({
 
     targetElement.classList.add("exporting-snapshot");
     try {
+      const { default: html2canvas } = await import("html2canvas");
       const canvas = await html2canvas(targetElement, {
         backgroundColor: "#050505",
         scale: 2,
