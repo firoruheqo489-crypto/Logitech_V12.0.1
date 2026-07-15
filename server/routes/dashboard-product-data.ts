@@ -78,6 +78,8 @@ const PRODUCT_DATA_ROUTE_ERROR_MESSAGES: Record<ProductDataRouteErrorCode, strin
 };
 
 let dashboardProductDataTableReady: Promise<void> | null = null;
+const PRODUCT_DATA_CACHE_TTL_MS = 60_000;
+let productDataListCache: { expiresAt: number; rows: ProductModuleRow[] } | null = null;
 
 function sendProductDataRouteError(res: Response, status: number, code: ProductDataRouteErrorCode): void {
   res.status(status).json({
@@ -196,6 +198,26 @@ function normalizeValue(value: unknown, maxLength: number): string | null {
   return text.slice(0, maxLength);
 }
 
+function readProductDataListCache(): ProductModuleRow[] | null {
+  if (!productDataListCache || productDataListCache.expiresAt <= Date.now()) {
+    productDataListCache = null;
+    return null;
+  }
+
+  return productDataListCache.rows;
+}
+
+function writeProductDataListCache(rows: ProductModuleRow[]): void {
+  productDataListCache = {
+    expiresAt: Date.now() + PRODUCT_DATA_CACHE_TTL_MS,
+    rows,
+  };
+}
+
+function invalidateProductDataListCache(): void {
+  productDataListCache = null;
+}
+
 export async function listDashboardProductData(_req: Request, res: Response): Promise<void> {
   if (!dbSql) {
     sendProductDataRouteError(res, 503, 'DATABASE_NOT_CONFIGURED');
@@ -204,6 +226,13 @@ export async function listDashboardProductData(_req: Request, res: Response): Pr
 
   try {
     await ensureDashboardProductDataTable();
+    const cachedRows = readProductDataListCache();
+    if (cachedRows) {
+      res.setHeader('X-Dashboard-Cache', 'hit');
+      res.status(200).json({ rows: cachedRows });
+      return;
+    }
+
     const rows = (await dbSql`
       SELECT
         mold_number,
@@ -239,6 +268,8 @@ export async function listDashboardProductData(_req: Request, res: Response): Pr
       ORDER BY mold_number ASC
     `) as ProductModuleRow[];
 
+    writeProductDataListCache(rows);
+    res.setHeader('X-Dashboard-Cache', 'miss');
     res.status(200).json({ rows });
   } catch (err) {
     console.error('GET /api/dashboard/product-data error:', err);
@@ -365,6 +396,7 @@ export async function batchUpsertDashboardProductData(req: Request, res: Respons
       affected += 1;
     }
 
+    invalidateProductDataListCache();
     res.status(200).json({ success: true, count: affected });
   } catch (err) {
     console.error('POST /api/dashboard/product-data/batch-upsert error:', err);

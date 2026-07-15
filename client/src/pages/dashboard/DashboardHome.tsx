@@ -289,6 +289,7 @@ export default function DashboardHome() {
   const [defectMaterial, setDefectMaterial] = useState<MaterialType>('PC/ABS');
   const [defectVDI, setDefectVDI] = useState<number>(24);
   const [productModuleRows, setProductModuleRows] = useState<ProductModuleRecord[]>([]);
+  const [hasLoadedProductModuleRows, setHasLoadedProductModuleRows] = useState(false);
   const [isProductAdminModalOpen, setIsProductAdminModalOpen] = useState(false);
   const isAdminMode = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('mode') === 'admin';
   const visibleTabs = isAdminMode ? DASHBOARD_TABS : PUBLIC_DASHBOARD_TABS;
@@ -373,14 +374,17 @@ export default function DashboardHome() {
         }))
         .filter((row) => row.moldNumber);
       setProductModuleRows(mappedRows);
+      setHasLoadedProductModuleRows(true);
     } catch {
       // Keep fallback display values if product module data is unavailable.
     }
   }, []);
 
   useEffect(() => {
+    if (hasLoadedProductModuleRows) return;
+    if (selectedTab !== 'product' && !isProductAdminModalOpen) return;
     void loadProductModuleRows();
-  }, [loadProductModuleRows]);
+  }, [hasLoadedProductModuleRows, isProductAdminModalOpen, loadProductModuleRows, selectedTab]);
 
   // Scroll restoration - use mobile-scroll on mobile, #root on PC
   useEffect(() => {

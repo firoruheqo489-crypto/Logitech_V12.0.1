@@ -8,6 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import type { NextFunction, Request, Response } from 'express';
+import { sendPdfParseBusy, tryEnterPdfParseGate } from '../lib/concurrency-gate.js';
 
 const execFileAsync = promisify(execFile);
 const upload = multer({
@@ -174,6 +175,12 @@ async function handleDarkroomPdfUpload(req: Request, res: Response): Promise<voi
     return;
   }
 
+  const releasePdfParse = tryEnterPdfParseGate();
+  if (!releasePdfParse) {
+    sendPdfParseBusy(res);
+    return;
+  }
+
   const tempFilePath = path.join(os.tmpdir(), `dashboard-darkroom-pdf-${randomUUID()}.pdf`);
 
   try {
@@ -189,6 +196,7 @@ async function handleDarkroomPdfUpload(req: Request, res: Response): Promise<voi
     console.error('POST /api/dashboard/darkroom-pdf/parse-upload error:', error);
     sendDarkroomRouteError(res, 422, 'DARKROOM_PDF_PARSE_FAILED', readErrorMessage(error));
   } finally {
+    releasePdfParse();
     await unlink(tempFilePath).catch(() => undefined);
   }
 }

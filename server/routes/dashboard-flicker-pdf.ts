@@ -6,6 +6,7 @@ import { copyFile, mkdir, readdir, rm, unlink, writeFile } from 'node:fs/promise
 import os from 'node:os';
 import path from 'node:path';
 import type { NextFunction, Request, Response } from 'express';
+import { sendPdfParseBusy, tryEnterPdfParseGate } from '../lib/concurrency-gate.js';
 
 function execFileAsync(
   file: string,
@@ -136,6 +137,7 @@ function isPdfFileName(fileName: string): boolean {
 export async function parseDashboardFlickerPdfFolder(_req: Request, res: Response): Promise<void> {
   const sourceFolder = DEFAULT_FLICKER_FOLDER;
   const tempDir = path.join(os.tmpdir(), `dashboard-flicker-pdf-${Date.now()}`);
+  let releasePdfParse: (() => void) | null = null;
 
   try {
     await mkdir(tempDir, { recursive: true });
@@ -147,6 +149,12 @@ export async function parseDashboardFlickerPdfFolder(_req: Request, res: Respons
 
     if (files.length === 0) {
       sendFlickerRouteError(res, 404, 'FLICKER_FOLDER_NOT_FOUND', `No PDFs found in ${sourceFolder}`);
+      return;
+    }
+
+    releasePdfParse = tryEnterPdfParseGate();
+    if (!releasePdfParse) {
+      sendPdfParseBusy(res);
       return;
     }
 
@@ -183,6 +191,7 @@ export async function parseDashboardFlickerPdfFolder(_req: Request, res: Respons
         : 'Flicker PDF parser could not extract supported evidence',
     );
   } finally {
+    releasePdfParse?.();
     await rm(tempDir, { recursive: true, force: true }).catch(() => undefined);
   }
 }
@@ -196,6 +205,12 @@ async function handleFlickerPdfUpload(req: Request, res: Response): Promise<void
 
   if (!isPdfFileName(file.originalname) && file.mimetype !== 'application/pdf') {
     sendFlickerRouteError(res, 415, 'INVALID_FILE_TYPE');
+    return;
+  }
+
+  const releasePdfParse = tryEnterPdfParseGate();
+  if (!releasePdfParse) {
+    sendPdfParseBusy(res);
     return;
   }
 
@@ -222,6 +237,7 @@ async function handleFlickerPdfUpload(req: Request, res: Response): Promise<void
       'Flicker PDF parser could not extract supported evidence',
     );
   } finally {
+    releasePdfParse();
     await unlink(tempFilePath).catch(() => undefined);
   }
 }

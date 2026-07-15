@@ -8,6 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import type { NextFunction, Request, Response } from 'express';
+import { sendPdfParseBusy, tryEnterPdfParseGate } from '../lib/concurrency-gate.js';
 
 const execFileAsync = promisify(execFile);
 const upload = multer({
@@ -170,6 +171,12 @@ async function handleHarmonicPdfUpload(req: Request, res: Response): Promise<voi
     return;
   }
 
+  const releasePdfParse = tryEnterPdfParseGate();
+  if (!releasePdfParse) {
+    sendPdfParseBusy(res);
+    return;
+  }
+
   const tempFilePath = path.join(os.tmpdir(), `dashboard-harmonic-pdf-${randomUUID()}.pdf`);
 
   try {
@@ -198,6 +205,7 @@ async function handleHarmonicPdfUpload(req: Request, res: Response): Promise<voi
       'Harmonic PDF parser could not extract supported evidence',
     );
   } finally {
+    releasePdfParse();
     await unlink(tempFilePath).catch(() => undefined);
   }
 }

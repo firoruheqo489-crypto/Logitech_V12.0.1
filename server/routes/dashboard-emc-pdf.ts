@@ -8,6 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import type { NextFunction, Request, Response } from 'express';
+import { sendPdfParseBusy, tryEnterPdfParseGate } from '../lib/concurrency-gate.js';
 
 const execFileAsync = promisify(execFile);
 const upload = multer({
@@ -134,6 +135,12 @@ async function handleEmcPdfUpload(req: Request, res: Response): Promise<void> {
     return;
   }
 
+  const releasePdfParse = tryEnterPdfParseGate();
+  if (!releasePdfParse) {
+    sendPdfParseBusy(res);
+    return;
+  }
+
   const tempFilePath = path.join(os.tmpdir(), `dashboard-emc-pdf-${randomUUID()}.pdf`);
 
   try {
@@ -152,6 +159,7 @@ async function handleEmcPdfUpload(req: Request, res: Response): Promise<void> {
     console.error('POST /api/dashboard/emc-pdf/parse-upload error:', error);
     sendEmcPdfRouteError(res, 422, 'EMC_PDF_PARSE_FAILED', readErrorMessage(error));
   } finally {
+    releasePdfParse();
     await unlink(tempFilePath).catch(() => undefined);
   }
 }

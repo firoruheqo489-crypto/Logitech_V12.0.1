@@ -8,6 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import type { NextFunction, Request, Response } from 'express';
+import { sendPdfParseBusy, tryEnterPdfParseGate } from '../lib/concurrency-gate.js';
 
 const execFileAsync = promisify(execFile);
 const upload = multer({
@@ -132,6 +133,12 @@ async function handleDashboardLaboratoryPdfUpload(req: Request, res: Response): 
     return;
   }
 
+  const releasePdfParse = tryEnterPdfParseGate();
+  if (!releasePdfParse) {
+    sendPdfParseBusy(res);
+    return;
+  }
+
   const tempFilePath = path.join(os.tmpdir(), `dashboard-laboratory-pdf-${randomUUID()}.pdf`);
 
   try {
@@ -147,6 +154,7 @@ async function handleDashboardLaboratoryPdfUpload(req: Request, res: Response): 
     console.error('POST /api/dashboard/laboratory-pdf/parse-upload error:', error);
     sendLaboratoryPdfRouteError(res, 422, 'LABORATORY_PDF_PARSE_FAILED', readErrorMessage(error));
   } finally {
+    releasePdfParse();
     await unlink(tempFilePath).catch(() => undefined);
   }
 }

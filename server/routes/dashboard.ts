@@ -11,6 +11,8 @@ import { asc } from 'drizzle-orm';
 import { db, sql as dbSql } from '../db.js';
 import { dashboardProjects } from '../../shared/schema.js';
 
+type DashboardProjectRow = typeof dashboardProjects.$inferSelect;
+
 type DashboardHealthReport = {
   checkedAt: string;
   totalRows: number;
@@ -47,6 +49,8 @@ const DASHBOARD_ROUTE_ERROR_MESSAGES: Record<DashboardRouteErrorCode, string> = 
 
 let dashboardHealthTableReady: Promise<void> | null = null;
 let dashboardModuleOrderTableReady: Promise<void> | null = null;
+const DASHBOARD_PROJECTS_CACHE_TTL_MS = 30_000;
+let dashboardProjectsListCache: { expiresAt: number; rows: DashboardProjectRow[] } | null = null;
 const DASHBOARD_DB_RETRY_MAX = 3;
 const DASHBOARD_DB_RETRY_DELAY_MS = 600;
 
@@ -129,6 +133,26 @@ async function withDashboardDbRetry<T>(label: string, run: () => Promise<T>): Pr
 
 function normalizeModuleName(value: unknown): string {
   return String(value ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function readDashboardProjectsListCache(): DashboardProjectRow[] | null {
+  if (!dashboardProjectsListCache || dashboardProjectsListCache.expiresAt <= Date.now()) {
+    dashboardProjectsListCache = null;
+    return null;
+  }
+
+  return dashboardProjectsListCache.rows;
+}
+
+function writeDashboardProjectsListCache(rows: DashboardProjectRow[]): void {
+  dashboardProjectsListCache = {
+    expiresAt: Date.now() + DASHBOARD_PROJECTS_CACHE_TTL_MS,
+    rows,
+  };
+}
+
+function invalidateDashboardProjectsListCache(): void {
+  dashboardProjectsListCache = null;
 }
 
 function extractOrderedModuleNames(items: Array<Record<string, unknown>>): string[] {
@@ -305,18 +329,32 @@ export async function listDashboardProjects(_req: Request, res: Response): Promi
   if (!db) { sendDashboardRouteError(res, 503, 'DATABASE_NOT_CONFIGURED'); return; }
   const dashboardDb = db;
   try {
+    const cachedRows = readDashboardProjectsListCache();
+    if (cachedRows) {
+      res.setHeader('X-Dashboard-Cache', 'hit');
+      res.json(cachedRows);
+      return;
+    }
+
     const rows = await withDashboardDbRetry('list dashboard projects', () =>
       dashboardDb.select().from(dashboardProjects).orderBy(asc(dashboardProjects.id)),
     );
-    const moduleOrderMap = await withDashboardDbRetry('sync dashboard module order', () =>
-      syncDashboardModuleOrder(rows as Array<Record<string, unknown>>),
+    const moduleOrderRows = await withDashboardDbRetry('read dashboard module order', () =>
+      readDashboardModuleOrder(),
     );
+    const orderedModuleNames = buildNextModuleOrder(
+      extractOrderedModuleNames(rows as Array<Record<string, unknown>>),
+      moduleOrderRows.map((row) => row.project_name),
+    );
+    const moduleOrderMap = new Map(orderedModuleNames.map((moduleName, index) => [normalizeModuleName(moduleName), index]));
     const sortedRows = [...rows].sort((left, right) => {
       const leftOrder = moduleOrderMap.get(normalizeModuleName(left.projectName)) ?? Number.MAX_SAFE_INTEGER;
       const rightOrder = moduleOrderMap.get(normalizeModuleName(right.projectName)) ?? Number.MAX_SAFE_INTEGER;
       if (leftOrder !== rightOrder) return leftOrder - rightOrder;
       return left.id - right.id;
     });
+    writeDashboardProjectsListCache(sortedRows);
+    res.setHeader('X-Dashboard-Cache', 'miss');
     res.json(sortedRows);
   } catch (err) {
     console.error('GET /api/dashboard/projects error:', err);
@@ -381,6 +419,7 @@ export async function batchReplaceDashboardProjects(req: Request, res: Response)
         }
       }),
     );
+    invalidateDashboardProjectsListCache();
     res.json({ success: true, count: normalizedItems.length });
   } catch (err) {
     console.error('POST /api/dashboard/projects/batch-replace error:', err);
@@ -394,6 +433,7 @@ export async function clearDashboardProjects(_req: Request, res: Response): Prom
   const dashboardDb = db;
   try {
     await withDashboardDbRetry('clear dashboard projects', () => dashboardDb.delete(dashboardProjects));
+    invalidateDashboardProjectsListCache();
     res.json({ success: true });
   } catch (err) {
     console.error('DELETE /api/dashboard/projects error:', err);
