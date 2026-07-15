@@ -3186,6 +3186,17 @@ async function buildFileFingerprint(file: File): Promise<string> {
     .join('');
 }
 
+function stripGenericUploadFileNameRemainder(value: string): string {
+  return value
+    .replace(/^[\s\-_.()[\]{}]+/u, '')
+    .replace(
+      /^(?:\u4ea7\u54c1\u89c4\u683c\u4e66|\u4ea7\u54c1\u89c4\u683c\u8d44\u6599|\u4ea7\u54c1\u89c4\u683c|\u89c4\u683c\u4e66|\u89c4\u683c\u8d44\u6599|specification|spec)/iu,
+      '',
+    )
+    .replace(/^[\s\-_.()[\]{}]+/u, '')
+    .trim();
+}
+
 function extractUploadFileNameSkuCandidates(fileName: string): string[] {
   const baseName = fileName.replace(/\.[^.]+$/, '').trim();
   const candidates = new Set<string>();
@@ -3210,7 +3221,10 @@ function extractUploadFileNameSkuCandidates(fileName: string): string[] {
 
   const leadingAscii = baseName.match(/^[A-Za-z0-9]+(?:[A-Za-z0-9._-]*[A-Za-z0-9])?/);
   if (leadingAscii) {
-    pushCandidate(leadingAscii[0]);
+    const trailing = baseName.slice(leadingAscii[0].length);
+    if (!stripGenericUploadFileNameRemainder(trailing)) {
+      pushCandidate(leadingAscii[0]);
+    }
   }
 
   return [...candidates];
