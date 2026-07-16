@@ -43,6 +43,11 @@ def extract_pdf_text(pdf_path: Path) -> str:
     return "\n".join(pages)
 
 
+def extract_pdf_pages_text(pdf_path: Path) -> list[str]:
+    with fitz.open(pdf_path) as document:
+        return [page.get_text("text") for page in document]
+
+
 def normalize_extracted_text(text: str) -> str:
     normalized = text.replace("\u3000", " ")
     normalized = normalized.replace("\r\n", "\n").replace("\r", "\n")
@@ -130,9 +135,21 @@ def parse_laboratory_report_file(pdf_path: str | Path) -> dict[str, object]:
     if path.suffix.lower() != ".pdf":
         raise ValueError(f"Expected a PDF file, got: {path.name}")
 
-    text = extract_pdf_text(path)
-    result = parse_laboratory_report_text(text)
+    pages = extract_pdf_pages_text(path)
+    result = parse_laboratory_report_text("\n".join(pages))
     result["file_path"] = str(path)
+    page_results = []
+    for index, page_text in enumerate(pages):
+        page_result = parse_laboratory_report_text(page_text)
+        page_result["file_path"] = str(path)
+        page_result["page_index"] = index + 1
+        page_results.append(page_result)
+    valid_page_results = [
+        item for item in page_results
+        if item.get("cct_k") is not None or item.get("flux_lm") is not None or item.get("model")
+    ]
+    if len(valid_page_results) > 1:
+        result["results"] = valid_page_results
     return result
 
 

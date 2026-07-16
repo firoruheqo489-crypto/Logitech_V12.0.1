@@ -49,6 +49,7 @@ import {
 } from '@/pages/dashboard/lib/engineering-spec-workspace-state-api';
 import { EngineeringSpecAnalyticsDashboard } from './EngineeringSpecAnalyticsDashboard';
 import { EngineeringSpecLedger } from './EngineeringSpecLedger';
+import LaboratoryPdfParserDashboard from './LaboratoryPdfParserDashboard';
 import { CategoryBar } from './test-project-parser/category-sidebar';
 import { TestSection } from './test-project-parser/test-section';
 import {
@@ -58,7 +59,7 @@ import {
   type TestItem,
 } from './test-project-parser/test-data';
 
-type ViewKey = 'workspace' | 'analytics' | 'ledger';
+type ViewKey = 'workspace' | 'analytics' | 'ledger' | 'laboratory';
 type WorkspaceSyncState = 'idle' | 'loading' | 'restored' | 'saving' | 'saved' | 'error';
 type WorkspaceOriginState =
   | { mode: 'draft'; label: string; detail?: string }
@@ -203,6 +204,7 @@ const navItems: Array<{
   { key: 'workspace', label: '规格书工作区', sub: '解析、展示与归档', icon: FileSpreadsheet },
   { key: 'analytics', label: '统计看板', sub: '周报汇总与分布', icon: Layers3 },
   { key: 'ledger', label: '登记台账', sub: '点击恢复归档现场', icon: ClipboardList },
+  { key: 'laboratory', label: '实验室报告', sub: '解析、展示与综合导出', icon: Rows3 },
 ];
 
 const EVIDENCE_SLOT_COUNT = 4;
@@ -1238,7 +1240,7 @@ export default function ProductSpecExcelParserDashboard({
 
         <div className="space-y-4 p-4">
           <div className={`rounded-[18px] p-3 ${glassPanelClass}`}>
-            <div className="grid gap-2 md:grid-cols-3 xl:grid-cols-[220px_220px_220px]">
+            <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
               {navItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = view === item.key;
@@ -1271,7 +1273,9 @@ export default function ProductSpecExcelParserDashboard({
           </div>
 
           <main className="min-w-0">
-            {view === 'analytics' ? (
+            {view === 'laboratory' ? (
+              <LaboratoryPdfParserDashboard projectName={projectName} archiveOnly />
+            ) : view === 'analytics' ? (
               <EngineeringSpecAnalyticsDashboard archives={sanitizedLedgerRecords} />
             ) : view === 'ledger' ? (
               <EngineeringSpecLedger

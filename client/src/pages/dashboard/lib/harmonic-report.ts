@@ -215,8 +215,16 @@ export function evaluateHarmonicEvidence(result: HarmonicParseResult): HarmonicE
     contradictions.push("PDF总判定为 FAIL，但当前解析明细未找到失败项。");
   }
 
+  // Optional Q/structure sections are not present in every valid laboratory PDF.
+  // A report-level PASS remains PASS when no parsed detail actually fails;
+  // missing optional sections stay visible as MISSING evidence instead of
+  // turning a valid PDF into a false red failure.
   const verdict: HarmonicEvidenceAudit["verdict"] =
-    detailFails || reportVerdict === "FAIL" ? "FAIL" : missingItems.length || contradictions.length ? "WATCH" : "PASS";
+    detailFails || reportVerdict === "FAIL"
+      ? "FAIL"
+      : reportVerdict === "PASS"
+        ? "PASS"
+        : "WATCH";
 
   const worstMargin = buildMarginAudit(result)[0];
   const evidence: HarmonicEvidenceItem[] = [

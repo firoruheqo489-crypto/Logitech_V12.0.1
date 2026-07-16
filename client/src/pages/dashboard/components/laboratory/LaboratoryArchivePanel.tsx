@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { Archive, Eye, Loader2, Trash2 } from "lucide-react"
+import { Archive, Loader2, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 
 import CyberConfirmDialog from "@/components/ui/CyberConfirmDialog"
@@ -18,6 +18,7 @@ type LaboratoryArchivePanelProps = {
   projectId: string
   archiveState: LaboratoryArchiveState
   canArchive: boolean
+  onRestoreArchive?: (state: LaboratoryArchiveState) => void
 }
 
 function archiveVerdictTone(verdict: string) {
@@ -35,6 +36,7 @@ export function LaboratoryArchivePanel({
   projectId,
   archiveState,
   canArchive,
+  onRestoreArchive,
 }: LaboratoryArchivePanelProps) {
   const [archives, setArchives] = useState<LaboratoryArchiveRecord[]>([])
   const [selectedSnapshot, setSelectedSnapshot] = useState<LaboratoryArchiveSnapshot | null>(null)
@@ -66,6 +68,17 @@ export function LaboratoryArchivePanel({
     void reloadArchives()
   }, [reloadArchives])
 
+  useEffect(() => {
+    const handleArchiveUpdated = (event: Event) => {
+      const updatedProjectId = (event as CustomEvent<{ projectId?: string }>).detail?.projectId
+      if (!updatedProjectId || updatedProjectId === projectId) {
+        void reloadArchives()
+      }
+    }
+    window.addEventListener("laboratory-archive-updated", handleArchiveUpdated)
+    return () => window.removeEventListener("laboratory-archive-updated", handleArchiveUpdated)
+  }, [projectId, reloadArchives])
+
   const handleCreateArchive = async () => {
     if (!canArchive) {
       toast.error("当前没有可归档的实验室报告")
@@ -78,7 +91,13 @@ export function LaboratoryArchivePanel({
         projectId,
         state: archiveState,
       })
-      setArchives((current) => [document, ...current.filter((item) => item.id !== document.id)])
+      setArchives((current) => [
+        document,
+        ...current.filter(
+          (item) => item.id !== document.id && item.reportNo.trim().toLowerCase() !== document.reportNo.trim().toLowerCase(),
+        ),
+      ])
+      window.dispatchEvent(new CustomEvent("laboratory-archive-updated", { detail: { projectId } }))
       toast.success("实验室报告已归档", {
         description: `${document.reportNo} 已写入实验室归档台账。`,
       })
@@ -98,7 +117,11 @@ export function LaboratoryArchivePanel({
         projectId,
         documentId: record.id,
       })
-      setSelectedSnapshot(snapshot)
+      if (onRestoreArchive) {
+        onRestoreArchive(snapshot.state)
+      } else {
+        setSelectedSnapshot(snapshot)
+      }
     } catch (error) {
       toast.error("归档详情读取失败", {
         description: error instanceof Error ? error.message : "请稍后重试。",
@@ -162,8 +185,9 @@ export function LaboratoryArchivePanel({
       </div>
 
       <div className="mt-5 overflow-hidden rounded-2xl border border-white/[0.05] bg-black/20">
-        <div className="grid grid-cols-[72px_minmax(160px,1.2fr)_minmax(120px,0.8fr)_minmax(110px,0.7fr)_90px_130px] gap-3 border-b border-white/[0.06] px-4 py-3 text-xs text-slate-500">
+        <div className="grid grid-cols-[56px_72px_minmax(160px,1.2fr)_minmax(120px,0.8fr)_minmax(110px,0.7fr)_90px_130px] gap-3 border-b border-white/[0.06] px-4 py-3 text-xs text-slate-500">
           <span>序号</span>
+          <span>图片映射</span>
           <span>报告编号</span>
           <span>样品编号</span>
           <span>测试日期</span>
@@ -185,11 +209,24 @@ export function LaboratoryArchivePanel({
             {archives.map((record, index) => (
               <div
                 key={record.id}
-                className={`grid grid-cols-[72px_minmax(160px,1.2fr)_minmax(120px,0.8fr)_minmax(110px,0.7fr)_90px_130px] gap-3 px-4 py-3 text-sm transition ${
+                role="button"
+                tabIndex={0}
+                onClick={() => void handleViewArchive(record)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") void handleViewArchive(record)
+                }}
+                className={`grid cursor-pointer grid-cols-[56px_72px_minmax(160px,1.2fr)_minmax(120px,0.8fr)_minmax(110px,0.7fr)_90px_130px] gap-3 px-4 py-3 text-sm transition ${
                   selectedRecordId === record.id ? "bg-cyan-300/[0.06]" : "hover:bg-white/[0.025]"
                 }`}
               >
                 <span className="font-mono text-slate-500">{archives.length - index}</span>
+                <div className="flex h-12 w-14 items-center justify-center overflow-hidden rounded-lg border border-dashed border-white/[0.12] bg-white/[0.025] text-center text-[10px] leading-tight text-slate-600" title="产品图片映射">
+                  {record.imageUrl ? (
+                    <img src={record.imageUrl} alt="产品图片" className="h-full w-full object-cover" />
+                  ) : (
+                    <span>图片<br />映射</span>
+                  )}
+                </div>
                 <div className="min-w-0">
                   <p className="truncate font-semibold text-slate-100" title={record.reportNo}>
                     {record.reportNo}
@@ -208,18 +245,13 @@ export function LaboratoryArchivePanel({
                   </span>
                 </span>
                 <div className="flex items-center justify-center gap-2">
+                  {loadingDocumentId === record.id ? <Loader2 className="h-4 w-4 animate-spin text-cyan-200" /> : null}
                   <button
                     type="button"
-                    onClick={() => void handleViewArchive(record)}
-                    className="rounded-lg border border-white/[0.08] bg-white/[0.03] p-2 text-slate-300 transition hover:border-cyan-300/30 hover:text-cyan-100"
-                    aria-label="查看归档"
-                    title="查看归档"
-                  >
-                    {loadingDocumentId === record.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Eye className="h-4 w-4" />}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPendingDeleteRecord(record)}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      setPendingDeleteRecord(record)
+                    }}
                     className="rounded-lg border border-white/[0.08] bg-white/[0.03] p-2 text-slate-400 transition hover:border-rose-300/35 hover:text-rose-200"
                     aria-label="删除归档"
                     title="删除归档"
@@ -246,6 +278,15 @@ export function LaboratoryArchivePanel({
             <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${archiveVerdictTone(selectedSnapshot.document.verdict)}`}>
               {selectedSnapshot.document.verdict}
             </span>
+            {onRestoreArchive && selectedSnapshot.state.workspaceDraft ? (
+              <button
+                type="button"
+                onClick={() => onRestoreArchive(selectedSnapshot.state)}
+                className="rounded-lg border border-cyan-300/25 bg-cyan-300/10 px-3 py-2 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-300/20"
+              >
+                恢复到工作区
+              </button>
+            ) : null}
           </div>
 
           <div className="mt-4 grid gap-3 md:grid-cols-4">

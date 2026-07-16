@@ -23,6 +23,8 @@ type LaboratoryArchiveModuleSummary = {
   sourceFiles: string[];
   keyMetrics: Array<{ label: string; value: string }>;
   warnings: string[];
+  imageUrl?: string;
+  moduleData?: unknown;
 };
 
 type LaboratoryArchiveReportMeta = {
@@ -68,6 +70,12 @@ type LaboratoryArchiveState = {
     label: string;
     reasons: string[];
   };
+  workspaceDraft?: {
+    nodes: Array<{ id: number; type: string | null; isConfirmed: boolean }>;
+    draftSelections: Record<number, string>;
+    nodeSummaries: Record<string, LaboratoryArchiveModuleSummary>;
+  };
+  imageUrl?: string;
 };
 
 type LaboratoryArchiveRecord = {
@@ -85,6 +93,7 @@ type LaboratoryArchiveRecord = {
   selectedSpecLabel?: string;
   createdAt: string;
   ossUrl: string;
+  imageUrl?: string;
 };
 
 type LaboratoryArchiveManifest = {
@@ -123,6 +132,7 @@ const ROUTE_ERROR_MESSAGES: Record<LaboratoryArchiveRouteErrorCode, string> = {
 };
 
 const LABORATORY_ARCHIVE_OBJECT_PREFIX = "files/dashboard-laboratory-archives/v1";
+const ENGINEERING_SPEC_ARCHIVE_OBJECT_PREFIX = "files/dashboard-engineering-spec-archives/v1";
 const projectArchiveLocks = new Map<string, Promise<void>>();
 
 function applyNoStoreHeaders(res: Response): void {
@@ -200,6 +210,31 @@ function buildDocumentObjectKey(projectId: string, documentId: string): string {
   return `${buildBasePrefix(projectId)}/documents/${normalizeSegment(documentId)}.json`;
 }
 
+function buildEngineeringSpecDocumentObjectKey(projectId: string, documentId: string): string {
+  return `${ENGINEERING_SPEC_ARCHIVE_OBJECT_PREFIX}/${normalizeSegment(projectId)}/documents/${normalizeSegment(documentId)}.json`;
+}
+
+async function resolveEngineeringSpecImageUrl(projectId: string, documentId: string | undefined): Promise<string | undefined> {
+  if (!documentId) return undefined;
+  try {
+    const buffer = await getOssObjectBuffer(buildEngineeringSpecDocumentObjectKey(projectId, documentId));
+    const snapshot = JSON.parse(buffer.toString("utf8")) as Record<string, unknown>;
+    const document = snapshot.document && typeof snapshot.document === "object" ? snapshot.document as Record<string, unknown> : {};
+    const state = snapshot.state && typeof snapshot.state === "object" ? snapshot.state as Record<string, unknown> : {};
+    const directImage = normalizeText(document.imageUrl, 4000) || normalizeText(state.imageUrl, 4000);
+    if (directImage) return directImage;
+    const evidenceSlots = Array.isArray(state.evidenceSlots) ? state.evidenceSlots : [];
+    for (const slot of evidenceSlots) {
+      if (!slot || typeof slot !== "object") continue;
+      const imageUrl = normalizeText((slot as Record<string, unknown>).imageUrl, 4000);
+      if (imageUrl) return imageUrl;
+    }
+  } catch {
+    return undefined;
+  }
+  return undefined;
+}
+
 function readDocumentId(source: Request["query"] | Record<string, unknown>): string {
   return normalizeText(source.documentId, 120);
 }
@@ -239,6 +274,7 @@ function sanitizeRecord(
     selectedSpecLabel: normalizeText(record.selectedSpecLabel, 400) || undefined,
     createdAt: normalizeText(record.createdAt, 64, createdAtFallback),
     ossUrl,
+    imageUrl: normalizeText(record.imageUrl, 4000) || undefined,
   };
 }
 
@@ -339,6 +375,17 @@ function compactLedgerSequences(
   };
 }
 
+function compactDuplicateReportNumbers(documents: LaboratoryArchiveRecord[]): { documents: LaboratoryArchiveRecord[]; changed: boolean } {
+  const seen = new Set<string>();
+  const unique = documents.filter((document) => {
+    const key = `${document.projectId}::${document.reportNo.trim().toLowerCase()}`;
+    if (!document.reportNo.trim() || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  return { documents: unique, changed: unique.length !== documents.length };
+}
+
 export async function listDashboardLaboratoryArchives(
   req: Request,
   res: Response
@@ -354,8 +401,26 @@ export async function listDashboardLaboratoryArchives(
   try {
     const manifest = await readManifest(projectId);
     const compacted = compactLedgerSequences(manifest?.documents ?? []);
-    const documents = compacted.documents;
-    if (manifest && compacted.changed) {
+    const deduped = compactDuplicateReportNumbers(compacted.documents);
+    let imageHydrated = false;
+    const documents = await Promise.all(deduped.documents.map(async (document) => {
+      if (document.imageUrl) return document;
+      const snapshot = await readArchiveSnapshot(projectId, document.id);
+      const imageUrl = await resolveEngineeringSpecImageUrl(projectId, snapshot?.state.selectedSpecId);
+      if (!snapshot || !imageUrl) return document;
+
+      const hydratedDocument = { ...document, imageUrl };
+      snapshot.state.imageUrl = imageUrl;
+      await putOssObject({
+        objectKey: buildDocumentObjectKey(projectId, document.id),
+        body: Buffer.from(JSON.stringify({ ...snapshot, document: hydratedDocument }, null, 2), "utf8"),
+        mimeType: "application/json",
+        cacheControl: "no-cache",
+      });
+      imageHydrated = true;
+      return hydratedDocument;
+    }));
+    if (manifest && (compacted.changed || deduped.changed || imageHydrated)) {
       await writeManifest(projectId, documents);
     }
 
@@ -383,27 +448,36 @@ export async function createDashboardLaboratoryArchive(
     return;
   }
 
-  const state = (body.state || {}) as LaboratoryArchiveState;
+   const state = (body.state || {}) as LaboratoryArchiveState;
+   const reportNo = normalizeText(state.reportMeta?.reportNo, 160);
   const createdAt = new Date().toISOString();
-  const documentId = randomUUID();
-  const documentObjectKey = buildDocumentObjectKey(projectId, documentId);
+   const documentId = randomUUID();
 
   try {
     await withProjectArchiveLock(projectId, async () => {
       const existingDocuments = (await readManifest(projectId))?.documents ?? [];
+      const existingDocument = existingDocuments.find(
+        (document) => document.reportNo.trim().toLowerCase() === reportNo.trim().toLowerCase() && reportNo,
+      );
+      const targetDocumentId = existingDocument?.id ?? documentId;
+      const documentObjectKey = buildDocumentObjectKey(projectId, targetDocumentId);
       const sequence =
-        existingDocuments.reduce(
+        existingDocument?.sequence ?? existingDocuments.reduce(
           (maxSequence, document) => Math.max(maxSequence, Number(document.sequence) || 0),
           0
-        ) + 1;
+        ) + (existingDocument ? 0 : 1);
       const moduleSummaries = Array.isArray(state.moduleSummaries)
         ? state.moduleSummaries
         : [];
+      const resolvedImageUrl =
+        state.imageUrl ||
+        moduleSummaries.find((summary) => summary?.imageUrl)?.imageUrl ||
+        await resolveEngineeringSpecImageUrl(projectId, state.selectedSpecId);
       const provisionalRecord: LaboratoryArchiveRecord = {
-        id: documentId,
+        id: targetDocumentId,
         projectId,
         sequence,
-        reportNo: normalizeText(state.reportMeta?.reportNo, 160, `LAB-${sequence}`),
+         reportNo: reportNo || `LAB-${sequence}`,
         projectName: normalizeText(state.reportMeta?.projectName, 255),
         sampleName: normalizeText(state.reportMeta?.sampleName, 255),
         sampleNo: normalizeText(state.reportMeta?.sampleNo, 255),
@@ -414,6 +488,7 @@ export async function createDashboardLaboratoryArchive(
         selectedSpecLabel: normalizeText(state.selectedSpecLabel, 400) || undefined,
         createdAt,
         ossUrl: "",
+        imageUrl: resolvedImageUrl,
       };
 
       const upload = await putOssObject({
@@ -459,10 +534,10 @@ export async function createDashboardLaboratoryArchive(
         cacheControl: "no-cache",
       });
 
-      await writeManifest(projectId, [
-        storedRecord,
-        ...existingDocuments.filter(item => item.id !== documentId),
-      ]);
+       await writeManifest(projectId, [
+         storedRecord,
+         ...existingDocuments.filter(item => item.id !== targetDocumentId && item.reportNo.trim().toLowerCase() !== storedRecord.reportNo.trim().toLowerCase()),
+       ]);
 
       res.status(200).json({ document: storedRecord });
     });

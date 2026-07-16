@@ -22,6 +22,12 @@ export type LaboratoryArchiveState = {
   moduleSummaries: LaboratoryModuleSummary[]
   overallAdjudication?: LaboratoryOverallAdjudication
   exportGate?: LaboratoryExportGate
+  workspaceDraft?: {
+    nodes: Array<{ id: number; type: string | null; isConfirmed: boolean }>
+    draftSelections: Record<number, string>
+    nodeSummaries: Record<number, LaboratoryModuleSummary>
+  }
+  imageUrl?: string
 }
 
 export type LaboratoryArchiveRecord = {
@@ -39,6 +45,7 @@ export type LaboratoryArchiveRecord = {
   selectedSpecLabel?: string
   createdAt: string
   ossUrl: string
+  imageUrl?: string
 }
 
 export type LaboratoryArchiveSnapshot = {

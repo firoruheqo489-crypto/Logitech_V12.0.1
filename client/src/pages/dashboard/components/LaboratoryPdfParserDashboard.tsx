@@ -3,7 +3,6 @@ import {
   CheckCircle2,
   Circle,
   Archive,
-  Download,
   FileText,
   Loader2,
   Plus,
@@ -29,6 +28,7 @@ import {
   type EngineeringSpecLedgerRecord,
 } from "@/lib/engineering-spec-ledger-api"
 import { sanitizeEngineeringSpecLedgerRecords } from "@/lib/engineering-spec-ledger-clean"
+import { createLaboratoryArchive, type LaboratoryArchiveState } from "@/lib/laboratory-archive-api"
 import { DarkroomTelemetryWorkspace } from "./DarkroomTelemetryWorkspace"
 import EmcRadiationWorkspace from "./EmcRadiationWorkspace"
 import { FlickerTelemetryWorkspace } from "./FlickerTelemetryWorkspace"
@@ -68,6 +68,7 @@ type ParseResponse = {
   sourceType: "upload"
   fileName?: string
   result: IntegratingSphereParseResult
+  results?: IntegratingSphereParseResult[]
 }
 
 type LightVariantKey = "white" | "warm" | "neutral"
@@ -90,6 +91,35 @@ type WorkspaceNode = {
   id: number
   type: TelemetryNodeType | null
   isConfirmed: boolean
+}
+
+type LaboratoryWorkspaceDraft = {
+  nodes: WorkspaceNode[]
+  draftSelections: Record<number, TelemetryNodeType | "">
+  nodeSummaries: Record<number, LaboratoryModuleSummary>
+}
+
+const LABORATORY_WORKSPACE_DRAFT_PREFIX = "dashboard:laboratory-workspace-draft:v1"
+
+function readLaboratoryWorkspaceDraft(projectId: string): LaboratoryWorkspaceDraft | null {
+  if (typeof window === "undefined") return null
+  try {
+    const raw = window.localStorage.getItem(`${LABORATORY_WORKSPACE_DRAFT_PREFIX}:${projectId}`)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as Partial<LaboratoryWorkspaceDraft>
+    if (!Array.isArray(parsed.nodes) || !parsed.draftSelections || !parsed.nodeSummaries) return null
+    return parsed as LaboratoryWorkspaceDraft
+  } catch {
+    return null
+  }
+}
+
+function writeLaboratoryWorkspaceDraft(projectId: string, draft: LaboratoryWorkspaceDraft): void {
+  try {
+    window.localStorage.setItem(`${LABORATORY_WORKSPACE_DRAFT_PREFIX}:${projectId}`, JSON.stringify(draft))
+  } catch {
+    // Draft persistence is best-effort.
+  }
 }
 
 type LaboratoryViewMode = "workspace" | "archive"
@@ -302,6 +332,30 @@ async function parseByUpload(file: File): Promise<ParseResponse> {
   }
 
   return payload as ParseResponse
+}
+
+function expandConsolidatedSphereReport(
+  variant: VariantSelection,
+  payload: ParseResponse,
+): VariantParsePayload[] {
+  const reports = payload.results ?? []
+  if (reports.length < 2) {
+    return [{ key: variant.key, label: variant.label, fileName: payload.fileName || variant.file?.name || "--", result: payload.result }]
+  }
+
+  const orderedVariants = [...VARIANT_ORDER].sort((left, right) => {
+    const order: Record<LightVariantKey, number> = { warm: 0, neutral: 1, white: 2 }
+    return order[left.key] - order[right.key]
+  })
+  return [...reports]
+    .sort((left, right) => (left.cct_k ?? Number.MAX_SAFE_INTEGER) - (right.cct_k ?? Number.MAX_SAFE_INTEGER))
+    .slice(0, orderedVariants.length)
+    .map((result, index) => ({
+      key: orderedVariants[index].key,
+      label: orderedVariants[index].label,
+      fileName: `${payload.fileName || variant.file?.name || "--"} · 第${(result as IntegratingSphereParseResult & { page_index?: number }).page_index ?? index + 1}页`,
+      result,
+    }))
 }
 
 const UNSUPPORTED_COLOR_FUNCTION_RE = /\b(?:oklch|oklab|color)\(/i
@@ -680,16 +734,24 @@ function ModuleSection({
 function IntegratingSphereTool({
   nodeId,
   onSummaryChange,
+  initialSummary,
 }: {
   nodeId: number
   onSummaryChange: (summary: LaboratoryModuleSummary | null) => void
+  initialSummary?: LaboratoryModuleSummary
 }) {
   const [selectedFiles, setSelectedFiles] = useState<VariantSelection[]>(
     VARIANT_ORDER.map((variant) => ({ ...variant, file: null })),
   )
-  const [activeVariantKey, setActiveVariantKey] = useState<LightVariantKey>("white")
+  const persistedModuleData = initialSummary?.moduleData as
+    | { results?: VariantParsePayload[]; activeVariantKey?: LightVariantKey }
+    | undefined
+  const initialResults = Array.isArray(persistedModuleData?.results) ? persistedModuleData.results : []
+  const [activeVariantKey, setActiveVariantKey] = useState<LightVariantKey>(
+    persistedModuleData?.activeVariantKey ?? initialResults[0]?.key ?? "white",
+  )
   const [isParsing, setIsParsing] = useState(false)
-  const [results, setResults] = useState<VariantParsePayload[]>([])
+  const [results, setResults] = useState<VariantParsePayload[]>(initialResults)
 
   const activeVariantMeta = selectedFiles.find((variant) => variant.key === activeVariantKey) ?? selectedFiles[0]
   const activeResult = results.find((entry) => entry.key === activeVariantKey) ?? null
@@ -736,8 +798,8 @@ function IntegratingSphereTool({
       ? "PASS"
       : "FAIL"
 
-    onSummaryChange(
-      buildIntegratingSphereModuleSummary(nodeId, {
+    onSummaryChange({
+      ...buildIntegratingSphereModuleSummary(nodeId, {
         verdict,
         sourceFiles: nextResults.map((entry) => `${entry.label}:${entry.fileName}`),
         activeVariantLabel: activeEntry.label,
@@ -753,10 +815,28 @@ function IntegratingSphereTool({
           power: activeViewModel.electricalInput[2],
         },
       }),
-    )
+      moduleData: {
+        results: nextResults,
+        activeVariantKey: nextActiveKey,
+      },
+    })
   }
 
   const handleVariantFileChange = (variantKey: LightVariantKey, file: File | null) => {
+    if (file) {
+      const duplicate = selectedFiles.some(
+        (entry) =>
+          entry.key !== variantKey &&
+          entry.file &&
+          entry.file.name === file.name &&
+          entry.file.size === file.size &&
+          entry.file.lastModified === file.lastModified,
+      )
+      if (duplicate) {
+        toast.error("同一份积分球报告不能重复上传", { description: "请为不同光源选择不同报告，或直接上传三合一 PDF。" })
+        return
+      }
+    }
     setResults((current) => current.filter((entry) => entry.key !== variantKey))
     setSelectedFiles((current) =>
       current.map((entry) => (entry.key === variantKey ? { ...entry, file } : entry)),
@@ -785,12 +865,7 @@ function IntegratingSphereTool({
       for (const variant of selectedFiles) {
         if (!variant.file) continue
         const payload = await parseByUpload(variant.file)
-        payloads.push({
-          key: variant.key,
-          label: variant.label,
-          fileName: payload.fileName || variant.file.name,
-          result: payload.result,
-        })
+        payloads.push(...expandConsolidatedSphereReport(variant, payload))
       }
 
       setResults(payloads)
@@ -928,6 +1003,7 @@ function renderTelemetryModule(
   context?: {
     productIllustrationStorageKey: string
     productIllustrationEntityId: string
+    initialSummary?: LaboratoryModuleSummary
   },
 ) {
   switch (type) {
@@ -937,6 +1013,7 @@ function renderTelemetryModule(
           key={`integrating-sphere-${nodeId}`}
           nodeId={nodeId}
           onSummaryChange={onSummaryChange}
+          initialSummary={context?.initialSummary}
         />
       )
     case "DARKROOM":
@@ -1162,12 +1239,14 @@ function ActiveNodeShell({
   onNodeSummaryChange,
   productIllustrationStorageKey,
   productIllustrationEntityId,
+  initialSummary,
 }: {
   node: WorkspaceNode & { type: TelemetryNodeType }
   onRequestUnmount: () => void
   onNodeSummaryChange: (nodeId: number, summary: LaboratoryModuleSummary | null) => void
   productIllustrationStorageKey: string
   productIllustrationEntityId: string
+  initialSummary?: LaboratoryModuleSummary
 }) {
   const handleSummaryChange = useCallback(
     (summary: LaboratoryModuleSummary | null) => onNodeSummaryChange(node.id, summary),
@@ -1189,17 +1268,30 @@ function ActiveNodeShell({
       {renderTelemetryModule(node.type, node.id, handleSummaryChange, {
         productIllustrationStorageKey,
         productIllustrationEntityId,
+        initialSummary,
       })}
     </div>
   )
 }
 
-export default function LaboratoryPdfParserDashboard({ projectName = "" }: { projectName?: string }) {
+export default function LaboratoryPdfParserDashboard({
+  projectName = "",
+  archiveOnly = false,
+}: {
+  projectName?: string;
+  archiveOnly?: boolean;
+}) {
+  const projectId = projectName.trim() || "default-engineering-spec-workspace"
+  const hydratedDraftRef = useRef(false)
+  const [archiveOnlyMode, setArchiveOnlyMode] = useState(archiveOnly)
   const [nodes, setNodes] = useState<WorkspaceNode[]>([{ id: 1, type: null, isConfirmed: false }])
   const [draftSelections, setDraftSelections] = useState<Record<number, TelemetryNodeType | "">>({ 1: "" })
-  const [activeLaboratoryView, setActiveLaboratoryView] = useState<LaboratoryViewMode>("workspace")
+  const [activeLaboratoryView, setActiveLaboratoryView] = useState<LaboratoryViewMode>(
+    archiveOnly ? "archive" : "workspace",
+  )
   const [pendingUnmountNodeId, setPendingUnmountNodeId] = useState<number | null>(null)
   const [isExportingWorkspace, setIsExportingWorkspace] = useState(false)
+  const [isArchivingLaboratoryReport, setIsArchivingLaboratoryReport] = useState(false)
   const [nodeSummaries, setNodeSummaries] = useState<Record<number, LaboratoryModuleSummary>>({})
   const [reportMeta, setReportMeta] = useState<LaboratoryReportMeta>(() => readInitialReportMeta())
   const [selectedSpecId, setSelectedSpecId] = useState(() => readInitialSelectedSpecId())
@@ -1209,7 +1301,6 @@ export default function LaboratoryPdfParserDashboard({ projectName = "" }: { pro
   const [isLoadingSpecDetail, setIsLoadingSpecDetail] = useState(false)
   const nextNodeIdRef = useRef(2)
   const printExportRef = useRef<HTMLDivElement | null>(null)
-  const projectId = projectName.trim() || "default-engineering-spec-workspace"
   const sanitizedLedgerRecords = useMemo(
     () => sanitizeEngineeringSpecLedgerRecords(ledgerRecords),
     [ledgerRecords],
@@ -1260,10 +1351,28 @@ export default function LaboratoryPdfParserDashboard({ projectName = "" }: { pro
       moduleSummaries,
       overallAdjudication,
       exportGate,
+      workspaceDraft: { nodes, draftSelections, nodeSummaries },
+      imageUrl: moduleSummaries.find((summary) => summary.imageUrl)?.imageUrl || selectedSpecRecord?.imageUrl,
     }),
-    [exportGate, moduleSummaries, overallAdjudication, reportMeta, selectedSpecId, selectedSpecRecord, specHeader],
+    [draftSelections, exportGate, moduleSummaries, nodeSummaries, nodes, overallAdjudication, reportMeta, selectedSpecId, selectedSpecRecord, specHeader],
   )
   const canArchiveLaboratoryReport = moduleSummaries.length > 0 && Boolean(reportMeta.reportNo.trim())
+
+  useEffect(() => {
+    const draft = readLaboratoryWorkspaceDraft(projectId)
+    if (draft) {
+      setNodes(draft.nodes)
+      setDraftSelections(draft.draftSelections)
+      setNodeSummaries(draft.nodeSummaries)
+      nextNodeIdRef.current = Math.max(1, ...draft.nodes.map((node) => node.id + 1))
+    }
+    hydratedDraftRef.current = true
+  }, [projectId])
+
+  useEffect(() => {
+    if (!hydratedDraftRef.current) return
+    writeLaboratoryWorkspaceDraft(projectId, { nodes, draftSelections, nodeSummaries })
+  }, [draftSelections, nodeSummaries, nodes, projectId])
 
   useEffect(() => {
     try {
@@ -1457,6 +1566,52 @@ export default function LaboratoryPdfParserDashboard({ projectName = "" }: { pro
     }
   }
 
+  const handleArchiveLaboratoryReport = async () => {
+    if (!canArchiveLaboratoryReport) {
+      toast.error("当前报告尚不可归档", { description: "请先填写报告编号并完成至少一个测试模块。" })
+      return
+    }
+
+    setIsArchivingLaboratoryReport(true)
+    try {
+      await createLaboratoryArchive({ projectId, state: laboratoryArchiveState })
+      window.dispatchEvent(new CustomEvent("laboratory-archive-updated", { detail: { projectId } }))
+      toast.success("实验室报告已归档", { description: "可前往归档区查看和检索。" })
+    } catch (error) {
+      toast.error("实验室报告归档失败", {
+        description: error instanceof Error ? error.message : "请稍后重试",
+      })
+    } finally {
+      setIsArchivingLaboratoryReport(false)
+    }
+  }
+
+  const handleRestoreLaboratoryArchive = (state: LaboratoryArchiveState) => {
+    const draft = state.workspaceDraft
+    if (draft) {
+      setNodes(draft.nodes as WorkspaceNode[])
+      setDraftSelections(draft.draftSelections as Record<number, TelemetryNodeType | "">)
+      setNodeSummaries(draft.nodeSummaries as Record<number, LaboratoryModuleSummary>)
+      nextNodeIdRef.current = Math.max(1, ...draft.nodes.map((node) => node.id + 1))
+    }
+    setReportMeta(state.reportMeta)
+    setSelectedSpecId(state.selectedSpecId || "")
+    setActiveLaboratoryView("workspace")
+    setArchiveOnlyMode(false)
+    toast.success("归档报告已恢复到工作区")
+  }
+
+  if (archiveOnlyMode) {
+    return (
+      <LaboratoryArchivePanel
+        projectId={projectId}
+        archiveState={laboratoryArchiveState}
+        canArchive={canArchiveLaboratoryReport}
+        onRestoreArchive={handleRestoreLaboratoryArchive}
+      />
+    )
+  }
+
   return (
     <main className="min-h-screen bg-[#020406] bg-[radial-gradient(circle_at_50%_20%,_rgba(0,243,255,0.06),_transparent_50%)] px-6 py-8 text-zinc-50 md:px-10 lg:px-14">
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-8">
@@ -1470,73 +1625,17 @@ export default function LaboratoryPdfParserDashboard({ projectName = "" }: { pro
               </p>
             </div>
 
-            <div className="grid min-w-[420px] gap-3 md:grid-cols-[150px_150px_1fr]">
-              <div className={`rounded-2xl border px-4 py-3 ${overallVerdictTone(overallAdjudication.verdict)}`}>
-                <p className="font-mono text-[9px] tracking-[0.18em] opacity-70">综合判定</p>
-                <p className="mt-1 font-mono text-sm font-bold">{overallAdjudication.verdict}</p>
-              </div>
-              <div className={`rounded-2xl border px-4 py-3 ${exportGateTone(exportGate)}`}>
-                <p className="font-mono text-[9px] tracking-[0.18em] opacity-70">导出门禁</p>
-                <p className="mt-1 font-mono text-sm font-bold">{exportGate.label}</p>
-              </div>
+            {!archiveOnlyMode ? <div>
               <Button
                 type="button"
-                onClick={handleExportWorkspacePdf}
-                disabled={isExportingWorkspace || !exportGate.canExport}
-                variant="outline"
-                className="h-full min-h-16 border-white/[0.08] bg-white/[0.03] text-white hover:bg-white/[0.06] disabled:cursor-not-allowed disabled:opacity-45"
+                onClick={() => void handleArchiveLaboratoryReport()}
+                disabled={isArchivingLaboratoryReport || !canArchiveLaboratoryReport}
+                className="min-h-16 min-w-[220px] border border-cyan-300/25 bg-cyan-300/10 px-6 text-cyan-100 hover:bg-cyan-300/20 disabled:cursor-not-allowed disabled:opacity-45"
               >
-                {isExportingWorkspace ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-                导出综合 PDF
+                {isArchivingLaboratoryReport ? <Loader2 className="h-4 w-4 animate-spin" /> : <Archive className="h-4 w-4" />}
+                {isArchivingLaboratoryReport ? "归档中..." : "保存 / 覆盖归档"}
               </Button>
-            </div>
-          </div>
-
-          <div className="mt-5 rounded-2xl border border-white/[0.05] bg-black/18 p-4">
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[320px_320px]">
-              <button
-                type="button"
-                onClick={() => setActiveLaboratoryView("workspace")}
-                className={`flex min-h-[86px] items-center gap-4 rounded-xl border px-4 text-left transition ${
-                  activeLaboratoryView === "workspace"
-                    ? "border-cyan-300/30 bg-cyan-300/[0.10] text-cyan-50 shadow-[0_0_0_1px_rgba(103,232,249,0.08)]"
-                    : "border-white/[0.06] bg-white/[0.025] text-slate-300 hover:border-cyan-300/20 hover:bg-white/[0.04]"
-                }`}
-              >
-                <span className={`rounded-xl border p-3 ${
-                  activeLaboratoryView === "workspace"
-                    ? "border-cyan-300/25 bg-cyan-300/15 text-cyan-200"
-                    : "border-white/[0.06] bg-black/20 text-slate-500"
-                }`}>
-                  <FileText className="h-5 w-5" />
-                </span>
-                <span>
-                  <span className="block text-base font-semibold">实验室工作区</span>
-                  <span className="mt-1 block text-xs text-slate-500">解析、展示与综合导出</span>
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveLaboratoryView("archive")}
-                className={`flex min-h-[86px] items-center gap-4 rounded-xl border px-4 text-left transition ${
-                  activeLaboratoryView === "archive"
-                    ? "border-cyan-300/30 bg-cyan-300/[0.10] text-cyan-50 shadow-[0_0_0_1px_rgba(103,232,249,0.08)]"
-                    : "border-white/[0.06] bg-white/[0.025] text-slate-300 hover:border-cyan-300/20 hover:bg-white/[0.04]"
-                }`}
-              >
-                <span className={`rounded-xl border p-3 ${
-                  activeLaboratoryView === "archive"
-                    ? "border-cyan-300/25 bg-cyan-300/15 text-cyan-200"
-                    : "border-white/[0.06] bg-black/20 text-slate-500"
-                }`}>
-                  <Archive className="h-5 w-5" />
-                </span>
-                <span>
-                  <span className="block text-base font-semibold">归档区</span>
-                  <span className="mt-1 block text-xs text-slate-500">保存报告、查看归档台账</span>
-                </span>
-              </button>
-            </div>
+            </div> : null}
           </div>
 
           {activeLaboratoryView === "workspace" ? (
@@ -1549,56 +1648,82 @@ export default function LaboratoryPdfParserDashboard({ projectName = "" }: { pro
                       {isLoadingLedger ? "读取中" : isLoadingSpecDetail ? "映射中" : `${sanitizedLedgerRecords.length} 条`}
                     </span>
                   </div>
-                  <Select value={selectedSpecId} onValueChange={handleSpecRecordSelect} disabled={isLoadingLedger || sanitizedLedgerRecords.length === 0}>
-                    <SelectTrigger className="mt-2 h-11 max-w-xl rounded-lg border-white/[0.06] bg-white/[0.03] text-left text-slate-100 hover:border-cyan-300/30 focus:ring-cyan-300/20">
-                      <SelectValue placeholder={isLoadingLedger ? "正在读取规格书台账" : "选择规格书记录"} />
-                    </SelectTrigger>
-                    <SelectContent className="max-h-80 rounded-xl border-cyan-400/20 bg-[#050911] text-slate-100 shadow-2xl">
-                      {sanitizedLedgerRecords.map((record) => (
-                        <SelectItem
-                          key={record.id}
-                          value={record.id}
-                          className="rounded-lg py-2.5 text-slate-100 data-[highlighted]:bg-cyan-400/10 data-[highlighted]:text-cyan-100"
-                        >
-                          <span className="block max-w-[520px] truncate text-sm">{formatSpecOptionLabel(record)}</span>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <div className="mt-3 grid gap-4 md:grid-cols-[180px_minmax(0,1fr)]">
+                    <div className="aspect-square w-full overflow-hidden rounded-xl border border-white/[0.08] bg-[#0b1012] shadow-[inset_0_0_24px_rgba(0,0,0,0.24)]">
+                      {selectedSpecRecord?.imageUrl ? (
+                        <img src={selectedSpecRecord.imageUrl} alt="产品图示" className="h-full w-full object-contain p-3" />
+                      ) : (
+                        <div className="flex h-full items-center justify-center text-center font-mono text-[11px] leading-5 text-slate-600">
+                          产品图示<br />图片映射区
+                        </div>
+                      )}
+                    </div>
 
-                  <dl className="mt-5 grid gap-3 md:grid-cols-5">
-                    <div className="min-h-[76px] rounded-lg bg-white/[0.025] px-4 py-3">
-                      <dt className="text-xs text-slate-600">产品经理</dt>
-                      <dd className="mt-2 break-words text-base font-semibold text-slate-100">{specHeader.productManager}</dd>
+                    <div className="grid min-w-0 gap-4 md:grid-cols-2 md:grid-rows-1">
+                      <div className="flex min-w-0 min-h-[132px] flex-col justify-center rounded-xl border border-white/[0.08] bg-white/[0.025] px-5 py-4">
+                        <p className="mb-2 font-mono text-[11px] font-medium tracking-[0.08em] text-slate-500">台账序号 · 可选择</p>
+                        <Select value={selectedSpecId} onValueChange={handleSpecRecordSelect} disabled={isLoadingLedger || sanitizedLedgerRecords.length === 0}>
+                          <SelectTrigger className="h-12 w-full rounded-lg border-cyan-300/20 bg-black/20 text-left font-mono text-lg font-semibold text-slate-100 hover:border-cyan-300/40 focus:ring-cyan-300/20">
+                            <SelectValue placeholder={isLoadingLedger ? "正在读取" : "选择序号"}>
+                              {selectedSpecRecord ? `#${selectedSpecRecord.sequence}` : undefined}
+                            </SelectValue>
+                          </SelectTrigger>
+                      <SelectContent className="max-h-80 rounded-xl border-cyan-400/20 bg-[#050911] text-slate-100 shadow-2xl">
+                        {sanitizedLedgerRecords.map((record) => (
+                          <SelectItem
+                            key={record.id}
+                            value={record.id}
+                            className="rounded-lg py-2.5 text-slate-100 data-[highlighted]:bg-cyan-400/10 data-[highlighted]:text-cyan-100"
+                          >
+                            <span className="block max-w-[520px] truncate font-mono text-sm">#{record.sequence}</span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="flex min-w-0 min-h-[132px] flex-col justify-center rounded-xl border border-white/[0.08] bg-white/[0.025] px-5 py-4">
+                        <p className="mb-2 font-mono text-[11px] font-medium tracking-[0.08em] text-slate-500">产品编号 · 自动映射</p>
+                        <div className="flex h-12 items-center rounded-lg border border-white/[0.08] bg-black/20 px-4 font-mono text-lg font-semibold text-slate-100">
+                          <span className="truncate" title={selectedSpecRecord?.sku || ""}>{selectedSpecRecord?.sku || "--"}</span>
+                        </div>
+                      </div>
                     </div>
-                    <div className="min-h-[76px] rounded-lg bg-white/[0.025] px-4 py-3">
-                      <dt className="text-xs text-slate-600">结构工程师</dt>
-                      <dd className="mt-2 break-words text-base font-semibold text-slate-100">{specHeader.structuralEngineer}</dd>
+                  </div>
+
+                  <dl className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                    <div className="flex min-h-[82px] flex-col justify-between rounded-lg border border-white/[0.05] bg-white/[0.025] px-4 py-3">
+                      <dt className="font-mono text-[11px] font-medium tracking-[0.08em] text-slate-500">产品经理</dt>
+                      <dd className="mt-3 truncate text-base font-semibold text-slate-100" title={specHeader.productManager}>{specHeader.productManager}</dd>
                     </div>
-                    <div className="min-h-[76px] rounded-lg bg-white/[0.025] px-4 py-3">
-                      <dt className="text-xs text-slate-600">电子工程师</dt>
-                      <dd className="mt-2 break-words text-base font-semibold text-slate-100">{specHeader.electronicEngineer}</dd>
+                    <div className="flex min-h-[82px] flex-col justify-between rounded-lg border border-white/[0.05] bg-white/[0.025] px-4 py-3">
+                      <dt className="font-mono text-[11px] font-medium tracking-[0.08em] text-slate-500">结构工程师</dt>
+                      <dd className="mt-3 truncate text-base font-semibold text-slate-100" title={specHeader.structuralEngineer}>{specHeader.structuralEngineer}</dd>
                     </div>
-                    <div className="min-h-[76px] rounded-lg bg-white/[0.025] px-4 py-3">
-                      <dt className="text-xs text-slate-600">测试类型</dt>
-                      <dd className="mt-2 break-words text-base font-semibold text-cyan-100">{specHeader.testType}</dd>
+                    <div className="flex min-h-[82px] flex-col justify-between rounded-lg border border-white/[0.05] bg-white/[0.025] px-4 py-3">
+                      <dt className="font-mono text-[11px] font-medium tracking-[0.08em] text-slate-500">电子工程师</dt>
+                      <dd className="mt-3 truncate text-base font-semibold text-slate-100" title={specHeader.electronicEngineer}>{specHeader.electronicEngineer}</dd>
                     </div>
-                    <div className="min-h-[76px] rounded-lg bg-white/[0.025] px-4 py-3">
-                      <dt className="text-xs text-slate-600">送样日期</dt>
-                      <dd className="mt-2 break-words font-mono text-base font-semibold text-cyan-100">{specHeader.sampleDeliveryDate}</dd>
+                    <div className="flex min-h-[82px] flex-col justify-between rounded-lg border border-cyan-300/[0.08] bg-cyan-300/[0.035] px-4 py-3">
+                      <dt className="font-mono text-[11px] font-medium tracking-[0.08em] text-slate-500">测试类型</dt>
+                      <dd className="mt-3 truncate text-base font-semibold text-cyan-100" title={specHeader.testType}>{specHeader.testType}</dd>
+                    </div>
+                    <div className="flex min-h-[82px] flex-col justify-between rounded-lg border border-cyan-300/[0.08] bg-cyan-300/[0.035] px-4 py-3">
+                      <dt className="font-mono text-[11px] font-medium tracking-[0.08em] text-slate-500">送样日期</dt>
+                      <dd className="mt-3 truncate font-mono text-base font-semibold text-cyan-100" title={specHeader.sampleDeliveryDate}>{specHeader.sampleDeliveryDate}</dd>
                     </div>
                   </dl>
                 </div>
               </div>
 
-              <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-                <div className="rounded-2xl border border-white/[0.05] bg-black/20 p-4">
-                  <p className="font-mono text-[10px] tracking-[0.2em] text-slate-500">// 综合结论</p>
-                  <p className="mt-2 text-sm leading-6 text-slate-300">{overallAdjudication.summary}</p>
+              <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                <div className="min-h-[132px] rounded-xl border border-white/[0.06] bg-black/20 p-4">
+                  <p className="font-mono text-[11px] font-medium tracking-[0.12em] text-slate-500">// 综合结论</p>
+                  <p className="mt-4 text-sm font-medium leading-6 text-slate-200">{overallAdjudication.summary}</p>
                 </div>
-                <div className="rounded-2xl border border-white/[0.05] bg-black/20 p-4">
-                  <p className="font-mono text-[10px] tracking-[0.2em] text-slate-500">// 门禁原因</p>
-                  <div className="mt-2 flex flex-wrap gap-2">
+                <div className="min-h-[132px] rounded-xl border border-white/[0.06] bg-black/20 p-4">
+                  <p className="font-mono text-[11px] font-medium tracking-[0.12em] text-slate-500">// 门禁原因</p>
+                  <div className="mt-4 flex flex-wrap content-start gap-2">
                     {exportGate.reasons.map((reason) => (
                       <span
                         key={reason}
@@ -1619,6 +1744,7 @@ export default function LaboratoryPdfParserDashboard({ projectName = "" }: { pro
             projectId={projectId}
             archiveState={laboratoryArchiveState}
             canArchive={canArchiveLaboratoryReport}
+            onRestoreArchive={handleRestoreLaboratoryArchive}
           />
         ) : (
           <div className="flex flex-col gap-8">
@@ -1637,6 +1763,7 @@ export default function LaboratoryPdfParserDashboard({ projectName = "" }: { pro
                     onNodeSummaryChange={handleNodeSummaryChange}
                     productIllustrationStorageKey={productIllustrationStorageKey}
                     productIllustrationEntityId={productIllustrationEntityId}
+                    initialSummary={nodeSummaries[node.id]}
                   />
                 )}
               </section>

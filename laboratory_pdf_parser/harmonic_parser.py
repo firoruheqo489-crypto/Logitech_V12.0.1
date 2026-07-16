@@ -181,6 +181,15 @@ def parse_harmonic_rows(text: str) -> list[dict[str, object]]:
 
         order = int(token)
         cursor = index + 1
+        # EVERFINE exports an empty even-order row before each populated odd-order row:
+        # 2, 3, avg, max, 100%Limit, 150%Limit, %Limit, %Limit, Pass.
+        if (
+            cursor < len(tokens)
+            and re.fullmatch(r"\d+", tokens[cursor])
+            and int(tokens[cursor]) == order + 1
+        ):
+            order = int(tokens[cursor])
+            cursor += 1
         numeric_values: list[float] = []
         while cursor < len(tokens) and re.fullmatch(r"[\d.]+", tokens[cursor]):
             numeric_values.append(float(tokens[cursor]))
@@ -208,9 +217,21 @@ def parse_harmonic_rows(text: str) -> list[dict[str, object]]:
             "status": status,
         }
 
-        # Current real format:
-        # order, avg_mA, limit100_mA, ratio_percent, harmonic_percent, limit_percent, status
-        if len(numeric_values) == 5:
+        # EVERFINE extracted order:
+        # avg mA/W, max mA/W, 100% limit mA/W, 150% limit mA/W,
+        # avg %Limit, max %Limit.
+        if len(numeric_values) == 6:
+            row["avg_ma"] = numeric_values[0]
+            row["max_ma"] = numeric_values[1]
+            row["limit_100_ma"] = numeric_values[2]
+            row["limit_150_ma"] = numeric_values[3]
+            row["ratio_percent"] = numeric_values[4]
+            row["avg_percent"] = numeric_values[4]
+            row["limit_percent"] = 100.0
+            row["max_percent"] = numeric_values[5]
+            row["max_limit_percent"] = 150.0
+        # Compact/legacy format without separate max mA/W and 150% limit columns.
+        elif len(numeric_values) == 5:
             row["avg_ma"] = numeric_values[0]
             row["limit_100_ma"] = numeric_values[1]
             row["ratio_percent"] = numeric_values[2]

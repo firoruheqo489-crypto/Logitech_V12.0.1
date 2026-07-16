@@ -42,6 +42,7 @@ export function EngineeringSpecAnalyticsDashboard({
   const volumeData = buildDailyVolumeData(recentArchives);
   const categoryData = buildCategoryBreakdown(orderedArchives);
   const categoryTotal = categoryData.reduce((sum, item) => sum + item.value, 0);
+  const sampleTypeData = buildSampleTypeBreakdown(orderedArchives);
 
   return (
     <div className="flex h-full flex-col">
@@ -57,7 +58,23 @@ export function EngineeringSpecAnalyticsDashboard({
         </div>
 
         <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-3">
-          <Panel title="每日处理量" sub="Recent 7 Days" className="lg:col-span-2">
+          <Panel
+            title="每日处理量"
+            sub="Recent 7 Days"
+            className="lg:col-span-2"
+            headerAside={
+              <div className="flex items-center gap-3 font-mono text-[11px]">
+                {sampleTypeData.map((item) => (
+                  <span key={item.type} className="whitespace-nowrap text-muted-foreground">
+                    <span className={item.type === "终样" ? "text-cyan-300" : "text-violet-300"}>
+                      {item.type}
+                    </span>{" "}
+                    {item.value} 个（{item.percentage}%）
+                  </span>
+                ))}
+              </div>
+            }
+          >
             <div className="h-[316px] w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={volumeData} margin={{ top: 8, right: 8, left: -16, bottom: 18 }}>
@@ -222,24 +239,37 @@ function Panel({
   sub,
   children,
   className,
+  headerAside,
 }: {
   title: string;
   sub: string;
   children: ReactNode;
   className?: string;
+  headerAside?: ReactNode;
 }) {
   return (
     <section className={cn("rounded-lg border border-white/[0.06] bg-white/[0.03] p-4", className)}>
-      <div className="mb-3 flex items-center gap-2">
-        <TrendingUp className="h-4 w-4 text-muted-foreground" />
-        <div className="leading-tight">
-          <h2 className="text-sm font-semibold">{title}</h2>
-          <p className="font-mono text-[10px] tracking-wider text-muted-foreground">{sub}</p>
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <TrendingUp className="h-4 w-4 text-muted-foreground" />
+          <div className="leading-tight">
+            <h2 className="text-sm font-semibold">{title}</h2>
+            <p className="font-mono text-[10px] tracking-wider text-muted-foreground">{sub}</p>
+          </div>
         </div>
+        {headerAside}
       </div>
       {children}
     </section>
   );
+}
+
+function buildSampleTypeBreakdown(archives: EngineeringSpecLedgerRecord[]) {
+  const total = archives.length;
+  return ["终样", "样品"].map((type) => {
+    const value = archives.filter((archive) => formatAnalyticsSampleType(archive.sampleType) === type).length;
+    return { type, value, percentage: total === 0 ? 0 : ((value / total) * 100).toFixed(0) };
+  });
 }
 
 function orderArchivesBySequence(archives: EngineeringSpecLedgerRecord[]): EngineeringSpecLedgerRecord[] {

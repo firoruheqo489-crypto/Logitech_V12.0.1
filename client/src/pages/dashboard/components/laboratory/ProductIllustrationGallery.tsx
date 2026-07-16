@@ -42,8 +42,14 @@ const MAX_PRODUCT_IMAGE_SIZE_BYTES = 500 * 1024
 function buildProductIllustrationSlots(): ProductIllustrationSlot[] {
   return Array.from({ length: PRODUCT_ILLUSTRATION_SLOT_COUNT }, (_, index) => ({
     id: `product-illustration-slot-${index + 1}`,
-    label: `产品图示 ${index + 1} / IMAGE ${index + 1}`,
+    label: "",
   }))
+}
+
+function normalizeSlotLabel(value: unknown): string {
+  if (typeof value !== "string") return ""
+  const label = value.trim()
+  return /^产品图示\s*\d+\s*\/\s*IMAGE\s*\d+$/i.test(label) ? "" : label
 }
 
 function normalizeImageUrl(value: unknown): string | undefined {
@@ -74,6 +80,7 @@ function normalizeGalleryState(value: unknown): ProductIllustrationState {
         : {}
     return {
       ...slot,
+      label: normalizeSlotLabel(inputRecord.label) || slot.label,
       imageUrl: normalizeImageUrl(inputRecord.imageUrl),
     }
   })
@@ -257,8 +264,9 @@ export function ProductIllustrationGallery({
         { label: "图示记录", value: hasSavedNote ? "已保存" : "未填写" },
       ],
       warnings: [],
+      imageUrl: galleryItems[0]?.imageUrl,
     })
-  }, [hasSavedNote, imageCount, nodeId, onSummaryChange])
+  }, [galleryItems, hasSavedNote, imageCount, nodeId, onSummaryChange])
 
   useEffect(() => {
     if (!isDropActive) return
@@ -615,6 +623,22 @@ export function ProductIllustrationGallery({
                     </span>
                   </button>
                 </div>
+              </div>
+              <div className="border-t border-rose-500/20 bg-rose-950/10 px-2 py-2">
+                <label htmlFor={`${slot.id}-label`} className="sr-only">图片说明</label>
+                <input
+                  id={`${slot.id}-label`}
+                  type="text"
+                  value={slot.label}
+                  onChange={(event) => {
+                    const nextSlots = galleryState.slots.map((currentSlot) =>
+                      currentSlot.id === slot.id ? { ...currentSlot, label: event.target.value } : currentSlot,
+                    )
+                    commitGalleryState({ ...galleryState, slots: nextSlots })
+                  }}
+                  placeholder="输入图片说明"
+                  className="h-8 w-full rounded-md border border-rose-400/30 bg-black/25 px-2 text-center text-xs font-bold text-rose-400 outline-none placeholder:text-rose-400/45 focus:border-rose-300 focus:ring-1 focus:ring-rose-300/30"
+                />
               </div>
             </div>
           </div>

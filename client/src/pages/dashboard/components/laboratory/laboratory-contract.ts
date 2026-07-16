@@ -35,6 +35,8 @@ export type LaboratoryModuleSummary = {
   sourceFiles: string[];
   keyMetrics: Array<{ label: string; value: string }>;
   warnings: string[];
+  imageUrl?: string;
+  moduleData?: unknown;
 };
 
 export type LaboratoryReportMeta = {
