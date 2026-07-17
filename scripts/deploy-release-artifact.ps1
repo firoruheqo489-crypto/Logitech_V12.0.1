@@ -421,7 +421,7 @@ $remoteDeployScript = @(
   'mkdir -p "$ASSET_ARCHIVE_ROOT/$RELEASE_ID"',
   'rm -rf "$ASSET_ARCHIVE_ROOT/$RELEASE_ID"',
   'mkdir -p "$ASSET_ARCHIVE_ROOT/$RELEASE_ID"',
-  'cp -a "$REMOTE_DIR/dist.new/public/assets/." "$ASSET_ARCHIVE_ROOT/$RELEASE_ID/"',
+  'if [ -d "$REMOTE_DIR/dist.new/public/assets" ]; then cp -a "$REMOTE_DIR/dist.new/public/assets/." "$ASSET_ARCHIVE_ROOT/$RELEASE_ID/"; fi',
   'prune_index=0; for snapshot in $(find "$ASSET_ARCHIVE_ROOT" -mindepth 1 -maxdepth 1 -type d | sort -r); do prune_index=$((prune_index + 1)); if [ "$prune_index" -gt "$ASSET_ARCHIVE_KEEP" ]; then rm -rf "$snapshot"; fi; done',
   'rm -rf "$REMOTE_DIR/dist.prev"',
   'if [ -d "$REMOTE_DIR/dist" ]; then mv "$REMOTE_DIR/dist" "$REMOTE_DIR/dist.prev"; fi',
