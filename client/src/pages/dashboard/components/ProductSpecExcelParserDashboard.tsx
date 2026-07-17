@@ -123,7 +123,7 @@ type WorkspaceMeta = {
 type InspectionTestProjectState = {
   testType: '送样测试' | '终样测试' | null;
   sampleDeliveryDate: string;
-  testItemCount: string;
+  completionDate: string;
   remark: string;
 };
 
@@ -154,7 +154,7 @@ type EvidenceSlot = {
 const DEFAULT_INSPECTION_TEST_PROJECT_STATE: InspectionTestProjectState = {
   testType: null,
   sampleDeliveryDate: '',
-  testItemCount: '1',
+  completionDate: '',
   remark: '',
 };
 
@@ -1561,6 +1561,7 @@ function HeaderCard({
 }) {
   void stats;
   const sampleDeliveryDateInputRef = useRef<HTMLInputElement>(null);
+  const completionDateInputRef = useRef<HTMLInputElement>(null);
   const hsCodeField = findMetaField(model.businessMeta, '海关编码');
   const customsNameField = findMetaField(model.businessMeta, '报关中文品名');
   const customerIdField = findMetaField(model.businessMeta, '客户编号');
@@ -1721,7 +1722,7 @@ function HeaderCard({
 
         <SectionRailTitle title="送检测试项目" />
 
-        <div className="grid min-w-0 gap-x-3 gap-y-4 md:grid-cols-[170px_178px_128px_minmax(380px,1fr)] md:grid-rows-[56px_56px]">
+        <div className="grid min-w-0 gap-x-4 gap-y-4 md:grid-cols-[170px_190px_190px_minmax(280px,1fr)] md:grid-rows-[56px_56px]">
             {(['送样测试', '终样测试'] as const).map((option, index) => {
               const isSelected = inspectionTestProject.testType === option;
               const isStruckThrough = inspectionTestProject.testType !== null && !isSelected;
@@ -1803,29 +1804,41 @@ function HeaderCard({
 
             <div className="min-w-0 border-b border-white/[0.05] px-1 py-1.5" style={{ gridColumn: 3, gridRow: 1 }}>
               <div className="flex h-full items-center justify-center">
-                <p className="truncate text-center text-[13px] font-semibold tracking-[0.02em] text-[#E2E8F0]">测试项目</p>
+                <p className="truncate text-center text-[13px] font-semibold tracking-[0.02em] text-[#E2E8F0]">完成日期</p>
               </div>
             </div>
 
             <div className="min-w-0 border-b border-white/[0.05] px-1 py-1.5" style={{ gridColumn: 3, gridRow: 2 }}>
-              <div className="flex h-full items-center">
-                <select
+              <div className="relative flex h-full items-center">
+                <button
+                  type="button"
                   disabled={!isEditMode}
-                  value={inspectionTestProject.testItemCount}
+                  onClick={() => {
+                    if (!isEditMode) return;
+                    const input = completionDateInputRef.current;
+                    if (!input) return;
+                    input.showPicker?.();
+                    input.focus();
+                  }}
+                  className={`absolute left-3 top-1/2 z-10 -translate-y-1/2 transition ${
+                    isEditMode ? 'text-[#E2E8F0] hover:text-cyan-100' : 'cursor-not-allowed text-white/35'
+                  }`}
+                >
+                  <CalendarDays className="h-4 w-4" />
+                </button>
+                <input
+                  ref={completionDateInputRef}
+                  type="date"
+                  disabled={!isEditMode}
+                  value={inspectionTestProject.completionDate}
                   onChange={(event) =>
                     onInspectionTestProjectChange({
                       ...inspectionTestProject,
-                      testItemCount: event.target.value,
+                      completionDate: event.target.value,
                     })
                   }
-                  className="w-full rounded-lg border border-white/[0.08] bg-black/20 px-2 py-2 text-center text-sm font-semibold text-[#E2E8F0] outline-none transition focus:border-cyan-400/35 focus:bg-black/30"
-                >
-                  {Array.from({ length: 10 }, (_, index) => String(index + 1)).map((value) => (
-                    <option key={value} value={value}>
-                      {value}
-                    </option>
-                  ))}
-                </select>
+                  className="w-full appearance-none rounded-lg border border-white/[0.08] bg-black/20 py-2 pl-10 pr-3 text-left text-sm font-semibold text-[#E2E8F0] outline-none transition focus:border-cyan-400/35 focus:bg-black/30"
+                />
               </div>
             </div>
 
@@ -2611,7 +2624,7 @@ function normalizeInspectionTestProjectState(
     | {
         testType?: string;
         sampleDeliveryDate?: string;
-        testItemCount?: string;
+        completionDate?: string;
         remark?: string;
       }
     | null
@@ -2619,12 +2632,10 @@ function normalizeInspectionTestProjectState(
 ): InspectionTestProjectState {
   const testType =
     value?.testType === '送样测试' || value?.testType === '终样测试' ? value.testType : null;
-  const testItemCount = String(value?.testItemCount || DEFAULT_INSPECTION_TEST_PROJECT_STATE.testItemCount).trim();
-
   return {
     testType,
     sampleDeliveryDate: String(value?.sampleDeliveryDate || '').trim(),
-    testItemCount: /^\d+$/.test(testItemCount) ? testItemCount : DEFAULT_INSPECTION_TEST_PROJECT_STATE.testItemCount,
+    completionDate: String(value?.completionDate || '').trim(),
     remark: String(value?.remark || ''),
   };
 }
@@ -2859,7 +2870,7 @@ function buildWorkspaceStatePayload(
     inspectionTestProject: {
       testType: inspectionTestProject.testType || undefined,
       sampleDeliveryDate: inspectionTestProject.sampleDeliveryDate || undefined,
-      testItemCount: inspectionTestProject.testItemCount || undefined,
+      completionDate: inspectionTestProject.completionDate || undefined,
       remark: inspectionTestProject.remark || undefined,
     },
     oaInfo: {
@@ -3352,7 +3363,7 @@ function buildArchiveStateFromModel(
     inspectionTestProject: {
       testType: inspectionTestProject.testType || undefined,
       sampleDeliveryDate: inspectionTestProject.sampleDeliveryDate || undefined,
-      testItemCount: inspectionTestProject.testItemCount || undefined,
+      completionDate: inspectionTestProject.completionDate || undefined,
       remark: inspectionTestProject.remark || undefined,
     },
     oaInfo: {

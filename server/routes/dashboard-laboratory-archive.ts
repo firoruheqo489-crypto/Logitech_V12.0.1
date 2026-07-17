@@ -86,6 +86,8 @@ type LaboratoryArchiveRecord = {
   projectName: string;
   sampleName: string;
   sampleNo: string;
+  sampleType?: string;
+  specSequence?: number;
   testDate: string;
   verdict: string;
   moduleCount: number;
@@ -214,25 +216,30 @@ function buildEngineeringSpecDocumentObjectKey(projectId: string, documentId: st
   return `${ENGINEERING_SPEC_ARCHIVE_OBJECT_PREFIX}/${normalizeSegment(projectId)}/documents/${normalizeSegment(documentId)}.json`;
 }
 
-async function resolveEngineeringSpecImageUrl(projectId: string, documentId: string | undefined): Promise<string | undefined> {
-  if (!documentId) return undefined;
+async function resolveEngineeringSpecMapping(
+  projectId: string,
+  documentId: string | undefined,
+): Promise<{ imageUrl?: string; sampleType?: string; specSequence?: number }> {
+  if (!documentId) return {};
   try {
     const buffer = await getOssObjectBuffer(buildEngineeringSpecDocumentObjectKey(projectId, documentId));
     const snapshot = JSON.parse(buffer.toString("utf8")) as Record<string, unknown>;
-    const document = snapshot.document && typeof snapshot.document === "object" ? snapshot.document as Record<string, unknown> : {};
+    const document = snapshot.document && typeof snapshot.document === "object"
+      ? snapshot.document as Record<string, unknown>
+      : {};
     const state = snapshot.state && typeof snapshot.state === "object" ? snapshot.state as Record<string, unknown> : {};
-    const directImage = normalizeText(document.imageUrl, 4000) || normalizeText(state.imageUrl, 4000);
-    if (directImage) return directImage;
-    const evidenceSlots = Array.isArray(state.evidenceSlots) ? state.evidenceSlots : [];
-    for (const slot of evidenceSlots) {
-      if (!slot || typeof slot !== "object") continue;
-      const imageUrl = normalizeText((slot as Record<string, unknown>).imageUrl, 4000);
-      if (imageUrl) return imageUrl;
-    }
+    const imageUrl = normalizeText(state.imageUrl, 400000) || undefined;
+    const sampleType = normalizeText(
+      state.inspectionTestProject && typeof state.inspectionTestProject === "object"
+        ? (state.inspectionTestProject as Record<string, unknown>).testType
+        : undefined,
+      120,
+    ) || undefined;
+    const specSequence = Number(document.sequence) || undefined;
+    return { imageUrl, sampleType, specSequence };
   } catch {
-    return undefined;
+    return {};
   }
-  return undefined;
 }
 
 function readDocumentId(source: Request["query"] | Record<string, unknown>): string {
@@ -267,6 +274,8 @@ function sanitizeRecord(
     projectName: normalizeText(record.projectName, 255),
     sampleName: normalizeText(record.sampleName, 255),
     sampleNo: normalizeText(record.sampleNo, 255),
+    sampleType: normalizeText(record.sampleType, 120) || undefined,
+    specSequence: Number(record.specSequence) || undefined,
     testDate: normalizeText(record.testDate, 64),
     verdict: normalizeText(record.verdict, 32, "待完成"),
     moduleCount: Number(record.moduleCount) || 0,
@@ -274,7 +283,7 @@ function sanitizeRecord(
     selectedSpecLabel: normalizeText(record.selectedSpecLabel, 400) || undefined,
     createdAt: normalizeText(record.createdAt, 64, createdAtFallback),
     ossUrl,
-    imageUrl: normalizeText(record.imageUrl, 4000) || undefined,
+    imageUrl: normalizeText(record.imageUrl, 400000) || undefined,
   };
 }
 
@@ -402,14 +411,22 @@ export async function listDashboardLaboratoryArchives(
     const manifest = await readManifest(projectId);
     const compacted = compactLedgerSequences(manifest?.documents ?? []);
     const deduped = compactDuplicateReportNumbers(compacted.documents);
-    let imageHydrated = false;
+    let recordsHydrated = false;
     const documents = await Promise.all(deduped.documents.map(async (document) => {
-      if (document.imageUrl) return document;
       const snapshot = await readArchiveSnapshot(projectId, document.id);
-      const imageUrl = await resolveEngineeringSpecImageUrl(projectId, snapshot?.state.selectedSpecId);
-      if (!snapshot || !imageUrl) return document;
+      const mapping = await resolveEngineeringSpecMapping(projectId, snapshot?.state.selectedSpecId);
+      const imageUrl = mapping.imageUrl;
+      if (!snapshot) return document;
 
-      const hydratedDocument = { ...document, imageUrl };
+      const sampleType = mapping.sampleType || undefined;
+      const specSequence = mapping.specSequence;
+      const requiresUpdate =
+        document.imageUrl !== imageUrl ||
+        document.sampleType !== sampleType ||
+        document.specSequence !== specSequence;
+      if (!requiresUpdate) return document;
+
+      const hydratedDocument = { ...document, imageUrl, sampleType, specSequence };
       snapshot.state.imageUrl = imageUrl;
       await putOssObject({
         objectKey: buildDocumentObjectKey(projectId, document.id),
@@ -417,10 +434,10 @@ export async function listDashboardLaboratoryArchives(
         mimeType: "application/json",
         cacheControl: "no-cache",
       });
-      imageHydrated = true;
+      recordsHydrated = true;
       return hydratedDocument;
     }));
-    if (manifest && (compacted.changed || deduped.changed || imageHydrated)) {
+    if (manifest && (compacted.changed || deduped.changed || recordsHydrated)) {
       await writeManifest(projectId, documents);
     }
 
@@ -469,10 +486,8 @@ export async function createDashboardLaboratoryArchive(
       const moduleSummaries = Array.isArray(state.moduleSummaries)
         ? state.moduleSummaries
         : [];
-      const resolvedImageUrl =
-        state.imageUrl ||
-        moduleSummaries.find((summary) => summary?.imageUrl)?.imageUrl ||
-        await resolveEngineeringSpecImageUrl(projectId, state.selectedSpecId);
+      const resolvedMapping = await resolveEngineeringSpecMapping(projectId, state.selectedSpecId);
+      const resolvedImageUrl = resolvedMapping.imageUrl;
       const provisionalRecord: LaboratoryArchiveRecord = {
         id: targetDocumentId,
         projectId,
@@ -481,6 +496,8 @@ export async function createDashboardLaboratoryArchive(
         projectName: normalizeText(state.reportMeta?.projectName, 255),
         sampleName: normalizeText(state.reportMeta?.sampleName, 255),
         sampleNo: normalizeText(state.reportMeta?.sampleNo, 255),
+        sampleType: resolvedMapping.sampleType || normalizeText(state.specHeader?.testType, 120) || undefined,
+        specSequence: resolvedMapping.specSequence,
         testDate: normalizeText(state.reportMeta?.testDate, 64),
         verdict: normalizeText(state.overallAdjudication?.verdict, 32, "待完成"),
         moduleCount: moduleSummaries.length,

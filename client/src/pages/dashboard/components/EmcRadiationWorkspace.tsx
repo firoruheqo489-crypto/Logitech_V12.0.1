@@ -599,15 +599,20 @@ function SpectrumChart({
 export default function EmcRadiationWorkspace({
   nodeId,
   onSummaryChange,
+  initialSummary,
 }: {
   nodeId?: number;
   onSummaryChange?: (summary: LaboratoryModuleSummary | null) => void;
+  initialSummary?: LaboratoryModuleSummary;
 }) {
-  const [channels, setChannels] = useState<EmcChannelData[]>([]);
-  const [limits, setLimits] = useState<EmcLimits>(DEFAULT_EMC_LIMITS);
-  const [enabled, setEnabled] = useState<Record<EmcChannelId, boolean>>({ L: true, N: true, F: true });
-  const [detector, setDetector] = useState<EmcDetector>("QP");
-  const [band, setBand] = useState<EmcBand>("conducted");
+  const persistedData = initialSummary?.moduleData as
+    | { channels?: EmcChannelData[]; limits?: EmcLimits; enabled?: Record<EmcChannelId, boolean>; detector?: EmcDetector; band?: EmcBand }
+    | undefined;
+  const [channels, setChannels] = useState<EmcChannelData[]>(Array.isArray(persistedData?.channels) ? persistedData.channels : []);
+  const [limits, setLimits] = useState<EmcLimits>(persistedData?.limits ?? DEFAULT_EMC_LIMITS);
+  const [enabled, setEnabled] = useState<Record<EmcChannelId, boolean>>(persistedData?.enabled ?? { L: true, N: true, F: true });
+  const [detector, setDetector] = useState<EmcDetector>(persistedData?.detector ?? "QP");
+  const [band, setBand] = useState<EmcBand>(persistedData?.band ?? "conducted");
   const [selected, setSelected] = useState<EmcPeakRecord | null>(null);
 
   const bandChannels = useMemo(
@@ -682,8 +687,8 @@ export default function EmcRadiationWorkspace({
     }
 
     const nextVerdict = allRecords.length > 0 ? overallEmcVerdict(allRecords) : "PASS";
-    onSummaryChange(
-      buildEmcModuleSummary(nodeId, {
+    onSummaryChange({
+      ...buildEmcModuleSummary(nodeId, {
         sourceFiles: channels.map((channel) => channel.fileName),
         verdict: nextVerdict,
         channelCount: channels.length,
@@ -706,8 +711,9 @@ export default function EmcRadiationWorkspace({
           overLimit: allRecords.filter((record) => record.margin < 0).length,
         },
       }),
-    );
-  }, [allRecords, channels, nodeId]);
+      moduleData: { channels, limits, enabled, detector, band },
+    });
+  }, [allRecords, band, channels, detector, enabled, limits, nodeId, onSummaryChange]);
 
   async function handleUpload(expectedChannel: EmcChannelId, file: File) {
     if (file.name.toLowerCase().endsWith(".emc")) {

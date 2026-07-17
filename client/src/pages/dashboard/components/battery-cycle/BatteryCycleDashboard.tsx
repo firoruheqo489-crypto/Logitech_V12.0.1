@@ -33,6 +33,7 @@ import "./battery-dashboard.css";
 type BatteryCycleDashboardProps = {
   nodeId?: number;
   onSummaryChange?: (summary: LaboratoryModuleSummary | null) => void;
+  initialSummary?: LaboratoryModuleSummary;
 };
 
 const glassCard = "rounded-lg border border-white/[0.05] bg-white/[0.02] backdrop-blur-xl";
@@ -628,8 +629,10 @@ function BatteryDashboardContent({
 export default function BatteryCycleDashboard({
   nodeId,
   onSummaryChange,
+  initialSummary,
 }: BatteryCycleDashboardProps = {}) {
-  const [dataset, setDataset] = useState<BatteryDataset | null>(null);
+  const archivedDataset = (initialSummary?.moduleData as { dataset?: BatteryDataset } | undefined)?.dataset ?? null;
+  const [dataset, setDataset] = useState<BatteryDataset | null>(() => archivedDataset);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isParsingUpload, setIsParsingUpload] = useState(false);
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
@@ -646,8 +649,8 @@ export default function BatteryCycleDashboard({
     const failedRuleNames = adjudication.rules.filter((rule) => rule.level === "Fail").map((rule) => rule.name);
     const watchRuleNames = adjudication.rules.filter((rule) => rule.level === "Watch").map((rule) => rule.name);
 
-    onSummaryChange(
-      buildBatteryCycleModuleSummary(nodeId, {
+    onSummaryChange({
+      ...buildBatteryCycleModuleSummary(nodeId, {
         sourceFile: dataset.parseSummary.sourceFile,
         deviceLabel: dataset.meta.deviceLabel,
         overallLevel: adjudication.overallLevel,
@@ -665,11 +668,14 @@ export default function BatteryCycleDashboard({
         failedRuleNames,
         watchRuleNames,
       }),
-    );
+      moduleData: { dataset },
+    });
   }, [dataset, nodeId, onSummaryChange]);
 
   useEffect(() => {
     let cancelled = false;
+
+    if (archivedDataset) return;
 
     loadBatteryDataset()
       .then((nextDataset) => {
@@ -686,7 +692,7 @@ export default function BatteryCycleDashboard({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [initialSummary]);
 
   const handleUploadClick = () => {
     uploadInputRef.current?.click();

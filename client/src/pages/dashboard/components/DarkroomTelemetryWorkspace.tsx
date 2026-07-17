@@ -360,16 +360,22 @@ async function parseByUpload(file: File): Promise<ParseResponse> {
 export function DarkroomTelemetryWorkspace({
   nodeId,
   onSummaryChange,
+  initialSummary,
 }: {
   nodeId?: number
   onSummaryChange?: (summary: LaboratoryModuleSummary | null) => void
+  initialSummary?: LaboratoryModuleSummary
 }) {
+  const persistedData = initialSummary?.moduleData as
+    | { results?: VariantParsePayload[]; activeVariantKey?: LightVariantKey }
+    | undefined
+  const initialResults = Array.isArray(persistedData?.results) ? persistedData.results : []
   const [selectedFiles, setSelectedFiles] = useState<VariantSelection[]>(
     INITIAL_REPORT_SLOTS.map((variant) => ({ ...variant, file: null })),
   )
-  const [activeVariantKey, setActiveVariantKey] = useState<LightVariantKey>("report-1")
+  const [activeVariantKey, setActiveVariantKey] = useState<LightVariantKey>(persistedData?.activeVariantKey ?? initialResults[0]?.key ?? "report-1")
   const [isParsing, setIsParsing] = useState(false)
-  const [results, setResults] = useState<VariantParsePayload[]>([])
+  const [results, setResults] = useState<VariantParsePayload[]>(initialResults)
 
   const activeVariantMeta = selectedFiles.find((variant) => variant.key === activeVariantKey) ?? selectedFiles[0]
   const activeResult = results.find((entry) => entry.key === activeVariantKey) ?? null
@@ -391,8 +397,8 @@ export function DarkroomTelemetryWorkspace({
 
     const activeEntry = nextResults.find((entry) => entry.key === nextActiveKey) ?? nextResults[0]
     const activeTelemetry = buildDarkroomTelemetry(activeEntry.result)
-    onSummaryChange(
-      buildDarkroomModuleSummary(nodeId, {
+    onSummaryChange({
+      ...buildDarkroomModuleSummary(nodeId, {
         sourceFiles: nextResults.map((entry) => `${entry.label}:${entry.fileName}`),
         activeVariantLabel: activeEntry.label,
         parsedCount: nextResults.length,
@@ -412,7 +418,8 @@ export function DarkroomTelemetryWorkspace({
         },
         batchConsistency: buildBatchConsistencySummary(nextResults),
       }),
-    )
+      moduleData: { results: nextResults, activeVariantKey: nextActiveKey },
+    })
   }
 
   const handleVariantFileChange = (variantKey: LightVariantKey, file: File | null) => {

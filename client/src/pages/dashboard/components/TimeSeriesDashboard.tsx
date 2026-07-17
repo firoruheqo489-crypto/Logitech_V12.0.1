@@ -1649,6 +1649,7 @@ type TimeSeriesDashboardProps = {
   titleEn?: string;
   nodeId?: number;
   onSummaryChange?: (summary: LaboratoryModuleSummary | null) => void;
+  initialSummary?: LaboratoryModuleSummary;
 };
 
 export default function TimeSeriesDashboard({
@@ -1656,22 +1657,31 @@ export default function TimeSeriesDashboard({
   titleEn = "FLEX TIME SERIES WORKSPACE",
   nodeId,
   onSummaryChange,
+  initialSummary,
 }: TimeSeriesDashboardProps = {}) {
-  const [range, setRange] = useState<RangeKey>("1W");
-  const [brushRange, setBrushRange] = useState<[number, number]>([0, 100]);
+  const archivedState = initialSummary?.moduleData as Partial<{
+    dataset: TimeSeriesDataset;
+    controls: ControlState;
+    range: RangeKey;
+    brushRange: [number, number];
+    selectedRowId: string | null;
+  }> | undefined;
+  const [range, setRange] = useState<RangeKey>(() => archivedState?.range ?? "1W");
+  const [brushRange, setBrushRange] = useState<[number, number]>(() => archivedState?.brushRange ?? [0, 100]);
   const [clock, setClock] = useState("--:--:--");
-  const [dataset, setDataset] = useState<TimeSeriesDataset>(() => createDefaultDataset());
+  const [dataset, setDataset] = useState<TimeSeriesDataset>(() => archivedState?.dataset ?? createDefaultDataset());
   const [archives, setArchives] = useState<TimeSeriesArchiveRecord[]>([]);
   const [isStateHydrated, setIsStateHydrated] = useState(false);
   const [isChartExpanded, setIsChartExpanded] = useState(false);
   const [controls, setControls] = useState<ControlState>(() => {
-    const initial = createDefaultDataset();
+    if (archivedState?.controls) return archivedState.controls;
+    const initial = archivedState?.dataset ?? createDefaultDataset();
     return {
       ...INITIAL_CONTROLS,
       visibleColumnIds: initial.columns.slice(0, 3).map((column) => column.id),
     };
   });
-  const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
+  const [selectedRowId, setSelectedRowId] = useState<string | null>(() => archivedState?.selectedRowId ?? null);
   const [pendingDeleteArchive, setPendingDeleteArchive] = useState<TimeSeriesArchiveRecord | null>(null);
   const [pendingRenameArchive, setPendingRenameArchive] = useState<TimeSeriesArchiveRecord | null>(null);
   const lastSavedSnapshotRef = useRef("");
@@ -1749,7 +1759,7 @@ export default function TimeSeriesDashboard({
         ]);
         if (cancelled) return;
 
-        if (remoteState?.dataset) {
+        if (!archivedState?.dataset && remoteState?.dataset) {
           setDataset(remoteState.dataset);
           setSelectedRowId(remoteState.selectedRowId);
           lastSavedSnapshotRef.current = JSON.stringify({
@@ -1773,7 +1783,7 @@ export default function TimeSeriesDashboard({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [initialSummary]);
 
   useEffect(() => {
     const tick = () => {
@@ -1898,8 +1908,8 @@ export default function TimeSeriesDashboard({
       spreadOf(visibleColumns.map((column) => row.values[column.id] ?? 0)),
     );
 
-    onSummaryChange(
-      buildTimeSeriesModuleSummary(nodeId, {
+    onSummaryChange({
+      ...buildTimeSeriesModuleSummary(nodeId, {
         sourceName: dataset.sourceName,
         updatedAt: dataset.updatedAt,
         timeHeader: dataset.timeHeader,
@@ -1911,8 +1921,9 @@ export default function TimeSeriesDashboard({
         averageValue: averageOf(visibleValues),
         maxSpread: rowSpreads.length ? Math.max(...rowSpreads) : Number.NaN,
       }),
-    );
-  }, [dataset, nodeId, onSummaryChange, visibleColumns]);
+      moduleData: { dataset, controls, range, brushRange, selectedRowId },
+    });
+  }, [brushRange, controls, dataset, nodeId, onSummaryChange, range, selectedRowId, visibleColumns]);
 
   return (
     <div className="time-series-dashboard overflow-hidden rounded-[28px] border border-cyan/15 bg-background shadow-[0_24px_80px_rgba(0,0,0,0.45)]">

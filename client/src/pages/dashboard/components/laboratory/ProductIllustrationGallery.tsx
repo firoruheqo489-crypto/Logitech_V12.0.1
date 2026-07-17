@@ -34,6 +34,7 @@ type ProductIllustrationGalleryProps = {
   entityId: string
   nodeId?: number
   onSummaryChange?: (summary: LaboratoryModuleSummary | null) => void
+  initialSummary?: LaboratoryModuleSummary
 }
 
 const PRODUCT_ILLUSTRATION_SLOT_COUNT = 8
@@ -187,11 +188,15 @@ export function ProductIllustrationGallery({
   entityId,
   nodeId,
   onSummaryChange,
+  initialSummary,
 }: ProductIllustrationGalleryProps) {
   const inputRef = useRef<HTMLInputElement | null>(null)
   const dropDepthRef = useRef(0)
   const stateRef = useRef<ProductIllustrationState>(normalizeGalleryState(null))
-  const [galleryState, setGalleryState] = useState<ProductIllustrationState>(() => readGalleryState(storageKey))
+  const archivedGalleryState = initialSummary?.moduleData
+    ? normalizeGalleryState(initialSummary.moduleData)
+    : null
+  const [galleryState, setGalleryState] = useState<ProductIllustrationState>(() => archivedGalleryState ?? readGalleryState(storageKey))
   const [noteDraft, setNoteDraft] = useState(() => galleryState.groupNote)
   const [pendingUploadSlotId, setPendingUploadSlotId] = useState<string | null>(null)
   const [pendingDeleteSlotId, setPendingDeleteSlotId] = useState<string | null>(null)
@@ -231,10 +236,11 @@ export function ProductIllustrationGallery({
   )
 
   useEffect(() => {
-    const nextState = readGalleryState(storageKey)
+    const nextState = archivedGalleryState ?? readGalleryState(storageKey)
     stateRef.current = nextState
     setGalleryState(nextState)
     setNoteDraft(nextState.groupNote)
+    if (archivedGalleryState) writeGalleryState(storageKey, archivedGalleryState)
     setPendingUploadSlotId(null)
     setPendingDeleteSlotId(null)
     setShowDeleteNoteConfirm(false)
@@ -265,8 +271,9 @@ export function ProductIllustrationGallery({
       ],
       warnings: [],
       imageUrl: galleryItems[0]?.imageUrl,
+      moduleData: galleryState,
     })
-  }, [galleryItems, hasSavedNote, imageCount, nodeId, onSummaryChange])
+  }, [galleryItems, galleryState, hasSavedNote, imageCount, nodeId, onSummaryChange])
 
   useEffect(() => {
     if (!isDropActive) return

@@ -104,13 +104,16 @@ function HarmonicPhasePanel({ result }: { result: HarmonicParseResult | null }) 
 export default function HarmonicTelemetryWorkspace({
   nodeId,
   onSummaryChange,
+  initialSummary,
 }: {
   nodeId?: number;
   onSummaryChange?: (summary: LaboratoryModuleSummary | null) => void;
+  initialSummary?: LaboratoryModuleSummary;
 }) {
+  const persistedData = initialSummary?.moduleData as { result?: HarmonicParseResult; fileName?: string } | undefined;
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isParsing, setIsParsing] = useState(false);
-  const [result, setResult] = useState<HarmonicParseResult | null>(null);
+  const [result, setResult] = useState<HarmonicParseResult | null>(persistedData?.result ?? null);
 
   const waveform = useMemo(() => (result ? buildHarmonicWaveform(result) : []), [result]);
   const spectrum = useMemo(() => (result ? buildHarmonicSpectrum(result) : []), [result]);
@@ -127,8 +130,8 @@ export default function HarmonicTelemetryWorkspace({
     const nextMargins = buildMarginAudit(nextResult);
     const nextAudit = evaluateHarmonicEvidence(nextResult);
 
-    onSummaryChange(
-      buildHarmonicModuleSummary(nodeId, {
+    onSummaryChange({
+      ...buildHarmonicModuleSummary(nodeId, {
         sourceFile: fileName,
         verdict: nextAudit.verdict,
         productName: nextResult.product_name || "--",
@@ -145,7 +148,8 @@ export default function HarmonicTelemetryWorkspace({
         structuralFailCount: nextAudit.structuralFailCount,
         observationCount: nextAudit.observations.filter((item) => item.status === "WATCH").length,
       }),
-    );
+      moduleData: { result: nextResult, fileName },
+    });
   };
 
   const handleUploadParse = async () => {

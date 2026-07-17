@@ -71,8 +71,8 @@ function sanitizeWorkspaceState(value: unknown, workspaceKeyFallback: string) {
             testType: normalizeText((record.inspectionTestProject as Record<string, unknown>).testType, 32) || undefined,
             sampleDeliveryDate:
               normalizeText((record.inspectionTestProject as Record<string, unknown>).sampleDeliveryDate, 64) || undefined,
-            testItemCount:
-              normalizeText((record.inspectionTestProject as Record<string, unknown>).testItemCount, 32) || undefined,
+            completionDate:
+              normalizeText((record.inspectionTestProject as Record<string, unknown>).completionDate, 64) || undefined,
             remark: normalizeText((record.inspectionTestProject as Record<string, unknown>).remark, 4000) || undefined,
           }
         : undefined,

@@ -47,12 +47,16 @@ async function parseUpload(file: File): Promise<ParseResponse> {
 export function FlickerTelemetryWorkspace({
   nodeId,
   onSummaryChange,
+  initialSummary,
 }: {
   nodeId?: number
   onSummaryChange?: (summary: LaboratoryModuleSummary | null) => void
+  initialSummary?: LaboratoryModuleSummary
 }) {
+  const persistedData = initialSummary?.moduleData as { payload?: ParseResponse[] } | undefined
+  const initialPayload = Array.isArray(persistedData?.payload) ? persistedData.payload : []
   const [selectedFiles, setSelectedFiles] = useState<File[]>([])
-  const [payload, setPayload] = useState<ParseResponse[]>([])
+  const [payload, setPayload] = useState<ParseResponse[]>(initialPayload)
   const [isLoading, setIsLoading] = useState(false)
 
   const samples = useMemo(() => toSamples(payload.map((entry) => entry.result)), [payload])
@@ -67,7 +71,7 @@ export function FlickerTelemetryWorkspace({
     [samples],
   )
 
-  const publishSummary = (nextSamples: Sample[]) => {
+  const publishSummary = (nextSamples: Sample[], nextPayload: ParseResponse[] = payload) => {
     if (!nodeId || !onSummaryChange || nextSamples.length === 0) {
       onSummaryChange?.(null)
       return
@@ -79,8 +83,8 @@ export function FlickerTelemetryWorkspace({
     const svmSample = nextSamples.find((sample) => sample.svm != null)
     const flickerSample = nextSamples.find((sample) => sample.reportType === "flicker")
     const hasMixedReportTypes = new Set(nextSamples.map((sample) => sample.reportType)).size > 1
-    onSummaryChange(
-      buildFlickerModuleSummary(nodeId, {
+    onSummaryChange({
+      ...buildFlickerModuleSummary(nodeId, {
         sourceFiles: nextSamples.map((sample) => sample.fileName),
         sampleCount: nextSamples.length,
         worstSample: worstSample?.id ?? "--",
@@ -99,7 +103,8 @@ export function FlickerTelemetryWorkspace({
         svmStandard: svmSample?.standard ?? null,
         flickerStandard: flickerSample?.standard ?? null,
       }),
-    )
+      moduleData: { payload: nextPayload },
+    })
   }
 
   const handleLoad = async () => {
@@ -107,7 +112,7 @@ export function FlickerTelemetryWorkspace({
     try {
       const parsed = await Promise.all(selectedFiles.map((file) => parseUpload(file)))
       setPayload(parsed)
-      publishSummary(toSamples(parsed.map((entry) => entry.result)))
+      publishSummary(toSamples(parsed.map((entry) => entry.result)), parsed)
       toast.success(`已载入 ${parsed.length} 份频闪报告`)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "频闪 PDF 解析失败")

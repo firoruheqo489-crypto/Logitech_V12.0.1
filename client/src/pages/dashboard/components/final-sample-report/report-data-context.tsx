@@ -11,7 +11,7 @@ const STORAGE_KEY = "dashboard.final-sample-report.source.v1"
 
 export type ReportSourceKind = "embedded" | "uploaded" | "empty"
 
-interface PersistedReportSource {
+export interface PersistedReportSource {
   version: 1
   data: FinalSampleReportData
   sourceName: string
@@ -108,13 +108,19 @@ function clearPersistedSource() {
   window.localStorage.removeItem(STORAGE_KEY)
 }
 
-export function FinalSampleReportDataProvider({ children }: { children: ReactNode }) {
-  const [data, setData] = useState(INITIAL_REPORT_DATA)
+export function FinalSampleReportDataProvider({
+  children,
+  initialSource,
+}: {
+  children: ReactNode
+  initialSource?: PersistedReportSource | null
+}) {
+  const [data, setData] = useState(() => initialSource?.data ?? INITIAL_REPORT_DATA)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [sourceName, setSourceName] = useState(EMBEDDED_SOURCE_NAME)
-  const [sourceKind, setSourceKind] = useState<ReportSourceKind>("embedded")
-  const [syncedAt, setSyncedAt] = useState<string | null>(null)
+  const [sourceName, setSourceName] = useState(() => initialSource?.sourceName ?? EMBEDDED_SOURCE_NAME)
+  const [sourceKind, setSourceKind] = useState<ReportSourceKind>(() => initialSource?.sourceKind ?? "embedded")
+  const [syncedAt, setSyncedAt] = useState<string | null>(() => initialSource?.syncedAt ?? null)
 
   const applySource = (
     nextData: FinalSampleReportData,
@@ -197,6 +203,14 @@ export function FinalSampleReportDataProvider({ children }: { children: ReactNod
       try {
         setIsLoading(true)
         setError(null)
+        if (initialSource && isFinalSampleReportData(initialSource.data)) {
+          if (!cancelled) {
+            applySource(initialSource.data, initialSource.sourceName, initialSource.sourceKind, initialSource.syncedAt)
+            persistSource(initialSource)
+          }
+          return
+        }
+
         const persisted = readPersistedSource()
 
         if (persisted) {
@@ -226,7 +240,7 @@ export function FinalSampleReportDataProvider({ children }: { children: ReactNod
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [initialSource])
 
   const value = useMemo(
     () => ({

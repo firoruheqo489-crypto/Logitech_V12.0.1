@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { Archive, Loader2, Trash2 } from "lucide-react"
+import { Loader2, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 
 import CyberConfirmDialog from "@/components/ui/CyberConfirmDialog"
 import {
-  createLaboratoryArchive,
   deleteLaboratoryArchive,
   formatLaboratoryArchiveDateTime,
   getLaboratoryArchiveDocument,
@@ -16,8 +15,6 @@ import {
 
 type LaboratoryArchivePanelProps = {
   projectId: string
-  archiveState: LaboratoryArchiveState
-  canArchive: boolean
   onRestoreArchive?: (state: LaboratoryArchiveState) => void
 }
 
@@ -34,15 +31,12 @@ function formatArchiveDisplayDate(value: string) {
 
 export function LaboratoryArchivePanel({
   projectId,
-  archiveState,
-  canArchive,
   onRestoreArchive,
 }: LaboratoryArchivePanelProps) {
   const [archives, setArchives] = useState<LaboratoryArchiveRecord[]>([])
   const [selectedSnapshot, setSelectedSnapshot] = useState<LaboratoryArchiveSnapshot | null>(null)
   const [pendingDeleteRecord, setPendingDeleteRecord] = useState<LaboratoryArchiveRecord | null>(null)
   const [isLoading, setIsLoading] = useState(false)
-  const [isArchiving, setIsArchiving] = useState(false)
   const [loadingDocumentId, setLoadingDocumentId] = useState("")
 
   const selectedRecordId = selectedSnapshot?.document.id ?? ""
@@ -78,37 +72,6 @@ export function LaboratoryArchivePanel({
     window.addEventListener("laboratory-archive-updated", handleArchiveUpdated)
     return () => window.removeEventListener("laboratory-archive-updated", handleArchiveUpdated)
   }, [projectId, reloadArchives])
-
-  const handleCreateArchive = async () => {
-    if (!canArchive) {
-      toast.error("当前没有可归档的实验室报告")
-      return
-    }
-
-    setIsArchiving(true)
-    try {
-      const document = await createLaboratoryArchive({
-        projectId,
-        state: archiveState,
-      })
-      setArchives((current) => [
-        document,
-        ...current.filter(
-          (item) => item.id !== document.id && item.reportNo.trim().toLowerCase() !== document.reportNo.trim().toLowerCase(),
-        ),
-      ])
-      window.dispatchEvent(new CustomEvent("laboratory-archive-updated", { detail: { projectId } }))
-      toast.success("实验室报告已归档", {
-        description: `${document.reportNo} 已写入实验室归档台账。`,
-      })
-    } catch (error) {
-      toast.error("实验室报告归档失败", {
-        description: error instanceof Error ? error.message : "请稍后重试。",
-      })
-    } finally {
-      setIsArchiving(false)
-    }
-  }
 
   const handleViewArchive = async (record: LaboratoryArchiveRecord) => {
     setLoadingDocumentId(record.id)
@@ -172,26 +135,17 @@ export function LaboratoryArchivePanel({
             <p className="font-mono text-[9px] tracking-[0.18em] text-slate-500">归档数量</p>
             <p className="mt-1 text-sm font-semibold text-slate-100">{isLoading ? "读取中" : archiveCountLabel}</p>
           </div>
-          <button
-            type="button"
-            onClick={handleCreateArchive}
-            disabled={isArchiving || !canArchive}
-            className="inline-flex min-h-14 items-center justify-center gap-2 rounded-2xl border border-cyan-300/25 bg-cyan-300/12 px-5 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-300/18 disabled:cursor-not-allowed disabled:opacity-45"
-          >
-            {isArchiving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Archive className="h-4 w-4" />}
-            {isArchiving ? "归档中..." : "归档当前报告"}
-          </button>
         </div>
       </div>
 
       <div className="mt-5 overflow-hidden rounded-2xl border border-white/[0.05] bg-black/20">
-        <div className="grid grid-cols-[56px_72px_minmax(160px,1.2fr)_minmax(120px,0.8fr)_minmax(110px,0.7fr)_90px_130px] gap-3 border-b border-white/[0.06] px-4 py-3 text-xs text-slate-500">
-          <span>序号</span>
-          <span>图片映射</span>
-          <span>报告编号</span>
-          <span>样品编号</span>
-          <span>测试日期</span>
-          <span>判定</span>
+        <div className="grid min-h-14 grid-cols-[90px_96px_minmax(210px,1.25fr)_minmax(130px,0.8fr)_minmax(120px,0.75fr)_100px_88px] items-center gap-5 border-b border-white/[0.06] px-5 text-xs text-slate-500">
+          <span className="text-center">台账序号</span>
+          <span className="text-center">实物图</span>
+          <span className="text-center">样品编号</span>
+          <span className="text-center">样品类型</span>
+          <span className="text-center">测试日期</span>
+          <span className="text-center">判定</span>
           <span className="text-center">操作</span>
         </div>
 
@@ -202,11 +156,11 @@ export function LaboratoryArchivePanel({
           </div>
         ) : archives.length === 0 ? (
           <div className="px-4 py-8 text-center text-sm text-slate-500">
-            暂无实验室归档，点击“归档当前报告”后会生成台账记录。
+            暂无实验室归档，请前往独立实验室工作区新建报告并归档。
           </div>
         ) : (
           <div className="divide-y divide-white/[0.04]">
-            {archives.map((record, index) => (
+            {archives.map((record) => (
               <div
                 key={record.id}
                 role="button"
@@ -215,31 +169,28 @@ export function LaboratoryArchivePanel({
                 onKeyDown={(event) => {
                   if (event.key === "Enter" || event.key === " ") void handleViewArchive(record)
                 }}
-                className={`grid cursor-pointer grid-cols-[56px_72px_minmax(160px,1.2fr)_minmax(120px,0.8fr)_minmax(110px,0.7fr)_90px_130px] gap-3 px-4 py-3 text-sm transition ${
+                className={`grid min-h-[104px] cursor-pointer grid-cols-[90px_96px_minmax(210px,1.25fr)_minmax(130px,0.8fr)_minmax(120px,0.75fr)_100px_88px] items-center gap-5 px-5 text-sm transition ${
                   selectedRecordId === record.id ? "bg-cyan-300/[0.06]" : "hover:bg-white/[0.025]"
                 }`}
               >
-                <span className="font-mono text-slate-500">{archives.length - index}</span>
-                <div className="flex h-12 w-14 items-center justify-center overflow-hidden rounded-lg border border-dashed border-white/[0.12] bg-white/[0.025] text-center text-[10px] leading-tight text-slate-600" title="产品图片映射">
+                <span className="text-center font-mono text-base font-semibold text-slate-300">
+                  {record.specSequence ?? "--"}
+                </span>
+                <div className="mx-auto flex h-14 w-16 items-center justify-center overflow-hidden rounded-lg border border-dashed border-white/[0.12] bg-white/[0.025] text-center text-[10px] leading-tight text-slate-600" title="规格书实物图">
                   {record.imageUrl ? (
-                    <img src={record.imageUrl} alt="产品图片" className="h-full w-full object-cover" />
+                    <img src={record.imageUrl} alt="规格书实物图" className="h-full w-full object-contain p-1" />
                   ) : (
-                    <span>图片<br />映射</span>
+                    <span>暂无<br />实物图</span>
                   )}
                 </div>
-                <div className="min-w-0">
-                  <p className="truncate font-semibold text-slate-100" title={record.reportNo}>
-                    {record.reportNo}
-                  </p>
-                  <p className="mt-1 truncate text-xs text-slate-600" title={record.selectedSpecLabel || record.sampleName}>
-                    {record.selectedSpecLabel || record.sampleName || "--"}
-                  </p>
-                </div>
-                <span className="truncate text-slate-300" title={record.sampleNo}>
+                <span className="truncate text-center font-semibold text-slate-100" title={record.sampleNo}>
                   {record.sampleNo || "--"}
                 </span>
-                <span className="font-mono text-slate-300">{record.testDate || "--"}</span>
-                <span>
+                <span className="truncate text-center text-slate-300" title={record.sampleType || ""}>
+                  {record.sampleType || "--"}
+                </span>
+                <span className="text-center font-mono text-slate-300">{record.testDate || "--"}</span>
+                <span className="text-center">
                   <span className={`inline-flex rounded-full border px-2 py-1 text-[11px] font-semibold ${archiveVerdictTone(record.verdict)}`}>
                     {record.verdict}
                   </span>

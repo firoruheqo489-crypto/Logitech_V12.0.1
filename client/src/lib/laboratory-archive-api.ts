@@ -38,6 +38,8 @@ export type LaboratoryArchiveRecord = {
   projectName: string
   sampleName: string
   sampleNo: string
+  sampleType?: string
+  specSequence?: number
   testDate: string
   verdict: string
   moduleCount: number

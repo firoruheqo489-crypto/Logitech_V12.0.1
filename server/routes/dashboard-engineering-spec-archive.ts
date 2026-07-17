@@ -33,7 +33,7 @@ type EngineeringSpecArchiveState = {
   inspectionTestProject?: {
     testType?: string;
     sampleDeliveryDate?: string;
-    testItemCount?: string;
+    completionDate?: string;
     remark?: string;
   };
   oaInfo?: {

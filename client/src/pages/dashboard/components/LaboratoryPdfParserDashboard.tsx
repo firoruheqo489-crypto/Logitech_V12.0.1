@@ -3,6 +3,7 @@ import {
   CheckCircle2,
   Circle,
   Archive,
+  ArrowLeft,
   FileText,
   Loader2,
   Plus,
@@ -97,9 +98,12 @@ type LaboratoryWorkspaceDraft = {
   nodes: WorkspaceNode[]
   draftSelections: Record<number, TelemetryNodeType | "">
   nodeSummaries: Record<number, LaboratoryModuleSummary>
+  reportMeta?: LaboratoryReportMeta
+  selectedSpecId?: string
 }
 
-const LABORATORY_WORKSPACE_DRAFT_PREFIX = "dashboard:laboratory-workspace-draft:v1"
+const LABORATORY_WORKSPACE_DRAFT_PREFIX = "dashboard:laboratory-workspace-draft:v2"
+const LEGACY_LABORATORY_WORKSPACE_DRAFT_PREFIX = "dashboard:laboratory-workspace-draft:v1"
 
 function readLaboratoryWorkspaceDraft(projectId: string): LaboratoryWorkspaceDraft | null {
   if (typeof window === "undefined") return null
@@ -119,6 +123,18 @@ function writeLaboratoryWorkspaceDraft(projectId: string, draft: LaboratoryWorks
     window.localStorage.setItem(`${LABORATORY_WORKSPACE_DRAFT_PREFIX}:${projectId}`, JSON.stringify(draft))
   } catch {
     // Draft persistence is best-effort.
+  }
+}
+
+function clearLaboratoryWorkspaceDraft(projectId: string): void {
+  if (typeof window === "undefined") return
+  try {
+    window.localStorage.removeItem(`${LABORATORY_WORKSPACE_DRAFT_PREFIX}:${projectId}`)
+    window.localStorage.removeItem(`${LEGACY_LABORATORY_WORKSPACE_DRAFT_PREFIX}:${projectId}`)
+    window.localStorage.removeItem(LABORATORY_REPORT_META_STORAGE_KEY)
+    window.localStorage.removeItem(LABORATORY_SELECTED_SPEC_STORAGE_KEY)
+  } catch {
+    // Draft cleanup is best-effort.
   }
 }
 
@@ -174,36 +190,6 @@ function createInitialReportMeta(): LaboratoryReportMeta {
     testDate: today,
     operator: "",
     reviewer: "",
-  }
-}
-
-function readInitialReportMeta(): LaboratoryReportMeta {
-  const fallback = createInitialReportMeta()
-  if (typeof window === "undefined") return fallback
-
-  try {
-    const raw = window.localStorage.getItem(LABORATORY_REPORT_META_STORAGE_KEY)
-    if (!raw) return fallback
-    const parsed = JSON.parse(raw) as Partial<Record<keyof LaboratoryReportMeta, unknown>>
-
-    return REPORT_META_FIELDS.reduce<LaboratoryReportMeta>(
-      (meta, field) => ({
-        ...meta,
-        [field.key]: typeof parsed[field.key] === "string" ? parsed[field.key] : meta[field.key],
-      }),
-      fallback,
-    )
-  } catch {
-    return fallback
-  }
-}
-
-function readInitialSelectedSpecId(): string {
-  if (typeof window === "undefined") return ""
-  try {
-    return window.localStorage.getItem(LABORATORY_SELECTED_SPEC_STORAGE_KEY) || ""
-  } catch {
-    return ""
   }
 }
 
@@ -1022,6 +1008,7 @@ function renderTelemetryModule(
           key={`darkroom-${nodeId}`}
           nodeId={nodeId}
           onSummaryChange={onSummaryChange}
+          initialSummary={context?.initialSummary}
         />
       )
     case "FLICKER":
@@ -1030,6 +1017,7 @@ function renderTelemetryModule(
           key={`flicker-${nodeId}`}
           nodeId={nodeId}
           onSummaryChange={onSummaryChange}
+          initialSummary={context?.initialSummary}
         />
       )
     case "EMISSION":
@@ -1038,6 +1026,7 @@ function renderTelemetryModule(
           key={`emission-${nodeId}`}
           nodeId={nodeId}
           onSummaryChange={onSummaryChange}
+          initialSummary={context?.initialSummary}
         />
       )
     case "HARMONIC":
@@ -1046,6 +1035,7 @@ function renderTelemetryModule(
           key={`harmonic-${nodeId}`}
           nodeId={nodeId}
           onSummaryChange={onSummaryChange}
+          initialSummary={context?.initialSummary}
         />
       )
     case "FINAL_SAMPLE_REPORT":
@@ -1054,6 +1044,7 @@ function renderTelemetryModule(
           key={`final-sample-report-${nodeId}`}
           nodeId={nodeId}
           onSummaryChange={onSummaryChange}
+          initialSummary={context?.initialSummary}
         />
       )
     case "PRODUCT_ILLUSTRATION":
@@ -1064,6 +1055,7 @@ function renderTelemetryModule(
           entityId={context?.productIllustrationEntityId ?? "laboratory__unbound"}
           nodeId={nodeId}
           onSummaryChange={onSummaryChange}
+          initialSummary={context?.initialSummary}
         />
       )
     case "RELIABILITY_LIFE":
@@ -1072,6 +1064,7 @@ function renderTelemetryModule(
           key={`reliability-life-${nodeId}`}
           nodeId={nodeId}
           onSummaryChange={onSummaryChange}
+          initialSummary={context?.initialSummary}
         />
       )
     case "TIME_SERIES":
@@ -1080,6 +1073,7 @@ function renderTelemetryModule(
           key={`time-series-${nodeId}`}
           nodeId={nodeId}
           onSummaryChange={onSummaryChange}
+          initialSummary={context?.initialSummary}
           titleZh="温升测试"
           titleEn="TEMPERATURE RISE TEST"
         />
@@ -1090,6 +1084,7 @@ function renderTelemetryModule(
           key={`battery-cycle-${nodeId}`}
           nodeId={nodeId}
           onSummaryChange={onSummaryChange}
+          initialSummary={context?.initialSummary}
         />
       )
     default:
@@ -1149,7 +1144,7 @@ function FinalSampleReportSummaryBridge({
   nodeId: number
   onSummaryChange: (summary: LaboratoryModuleSummary | null) => void
 }) {
-  const { data, isLoading, error, sourceName } = useReportData()
+  const { data, isLoading, error, sourceName, sourceKind, syncedAt } = useReportData()
 
   useEffect(() => {
     if (isLoading) {
@@ -1208,8 +1203,15 @@ function FinalSampleReportSummaryBridge({
         ...(stats.untested > 0 ? [`终样报告存在 ${stats.untested} 个未测项。`] : []),
         ...(stats.riskCount > 0 ? [`终样报告存在 ${stats.riskCount} 个风险标记项。`] : []),
       ],
+      moduleData: {
+        version: 1,
+        data,
+        sourceName,
+        sourceKind,
+        syncedAt,
+      },
     })
-  }, [data, error, isLoading, nodeId, onSummaryChange, sourceName])
+  }, [data, error, isLoading, nodeId, onSummaryChange, sourceKind, sourceName, syncedAt])
 
   return null
 }
@@ -1217,14 +1219,20 @@ function FinalSampleReportSummaryBridge({
 function FinalSampleReportLaboratoryWorkspace({
   nodeId,
   onSummaryChange,
+  initialSummary,
 }: {
   nodeId: number
   onSummaryChange: (summary: LaboratoryModuleSummary | null) => void
+  initialSummary?: LaboratoryModuleSummary
 }) {
+  const initialSource = initialSummary?.moduleData as
+    | import("./final-sample-report/report-data-context").PersistedReportSource
+    | undefined
+
   return (
     <div className="overflow-hidden rounded-2xl border border-white/[0.05] bg-[#020406]">
       <div className="final-sample-report-bleed final-sample-report-scope">
-        <FinalSampleReportDataProvider>
+        <FinalSampleReportDataProvider initialSource={initialSource}>
           <FinalSampleReportSummaryBridge nodeId={nodeId} onSummaryChange={onSummaryChange} />
           <FinalSampleReportPage />
         </FinalSampleReportDataProvider>
@@ -1283,6 +1291,7 @@ export default function LaboratoryPdfParserDashboard({
 }) {
   const projectId = projectName.trim() || "default-engineering-spec-workspace"
   const hydratedDraftRef = useRef(false)
+  const clearDraftAfterArchiveRef = useRef(false)
   const [archiveOnlyMode, setArchiveOnlyMode] = useState(archiveOnly)
   const [nodes, setNodes] = useState<WorkspaceNode[]>([{ id: 1, type: null, isConfirmed: false }])
   const [draftSelections, setDraftSelections] = useState<Record<number, TelemetryNodeType | "">>({ 1: "" })
@@ -1292,9 +1301,11 @@ export default function LaboratoryPdfParserDashboard({
   const [pendingUnmountNodeId, setPendingUnmountNodeId] = useState<number | null>(null)
   const [isExportingWorkspace, setIsExportingWorkspace] = useState(false)
   const [isArchivingLaboratoryReport, setIsArchivingLaboratoryReport] = useState(false)
+  const [isEditingArchivedReport, setIsEditingArchivedReport] = useState(false)
+  const [restoredArchiveReportNo, setRestoredArchiveReportNo] = useState("")
   const [nodeSummaries, setNodeSummaries] = useState<Record<number, LaboratoryModuleSummary>>({})
-  const [reportMeta, setReportMeta] = useState<LaboratoryReportMeta>(() => readInitialReportMeta())
-  const [selectedSpecId, setSelectedSpecId] = useState(() => readInitialSelectedSpecId())
+  const [reportMeta, setReportMeta] = useState<LaboratoryReportMeta>(() => createInitialReportMeta())
+  const [selectedSpecId, setSelectedSpecId] = useState("")
   const [ledgerRecords, setLedgerRecords] = useState<EngineeringSpecLedgerRecord[]>([])
   const [isLoadingLedger, setIsLoadingLedger] = useState(false)
   const [selectedSpecState, setSelectedSpecState] = useState<EngineeringSpecArchiveState | null>(null)
@@ -1352,18 +1363,27 @@ export default function LaboratoryPdfParserDashboard({
       overallAdjudication,
       exportGate,
       workspaceDraft: { nodes, draftSelections, nodeSummaries },
-      imageUrl: moduleSummaries.find((summary) => summary.imageUrl)?.imageUrl || selectedSpecRecord?.imageUrl,
+      imageUrl: selectedSpecRecord?.imageUrl,
     }),
     [draftSelections, exportGate, moduleSummaries, nodeSummaries, nodes, overallAdjudication, reportMeta, selectedSpecId, selectedSpecRecord, specHeader],
   )
   const canArchiveLaboratoryReport = moduleSummaries.length > 0 && Boolean(reportMeta.reportNo.trim())
 
   useEffect(() => {
+    try {
+      window.localStorage.removeItem(`${LEGACY_LABORATORY_WORKSPACE_DRAFT_PREFIX}:${projectId}`)
+      window.localStorage.removeItem(LABORATORY_REPORT_META_STORAGE_KEY)
+      window.localStorage.removeItem(LABORATORY_SELECTED_SPEC_STORAGE_KEY)
+    } catch {
+      // Legacy cleanup is best-effort.
+    }
     const draft = readLaboratoryWorkspaceDraft(projectId)
     if (draft) {
       setNodes(draft.nodes)
       setDraftSelections(draft.draftSelections)
       setNodeSummaries(draft.nodeSummaries)
+      if (draft.reportMeta) setReportMeta(draft.reportMeta)
+      if (typeof draft.selectedSpecId === "string") setSelectedSpecId(draft.selectedSpecId)
       nextNodeIdRef.current = Math.max(1, ...draft.nodes.map((node) => node.id + 1))
     }
     hydratedDraftRef.current = true
@@ -1371,16 +1391,13 @@ export default function LaboratoryPdfParserDashboard({
 
   useEffect(() => {
     if (!hydratedDraftRef.current) return
-    writeLaboratoryWorkspaceDraft(projectId, { nodes, draftSelections, nodeSummaries })
-  }, [draftSelections, nodeSummaries, nodes, projectId])
-
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(LABORATORY_REPORT_META_STORAGE_KEY, JSON.stringify(reportMeta))
-    } catch {
-      // Local persistence is a convenience only; export should continue if storage is unavailable.
+    if (clearDraftAfterArchiveRef.current) {
+      clearDraftAfterArchiveRef.current = false
+      clearLaboratoryWorkspaceDraft(projectId)
+      return
     }
-  }, [reportMeta])
+    writeLaboratoryWorkspaceDraft(projectId, { nodes, draftSelections, nodeSummaries, reportMeta, selectedSpecId })
+  }, [draftSelections, nodeSummaries, nodes, projectId, reportMeta, selectedSpecId])
 
   useEffect(() => {
     let cancelled = false
@@ -1412,14 +1429,6 @@ export default function LaboratoryPdfParserDashboard({
       cancelled = true
     }
   }, [projectId])
-
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(LABORATORY_SELECTED_SPEC_STORAGE_KEY, selectedSpecId)
-    } catch {
-      // Selection persistence is best-effort.
-    }
-  }, [selectedSpecId])
 
   const loadSpecDetail = useCallback(
     async (record: EngineeringSpecLedgerRecord) => {
@@ -1574,9 +1583,35 @@ export default function LaboratoryPdfParserDashboard({
 
     setIsArchivingLaboratoryReport(true)
     try {
-      await createLaboratoryArchive({ projectId, state: laboratoryArchiveState })
+      const wasEditingArchivedReport = isEditingArchivedReport
+      const stateToArchive = isEditingArchivedReport && restoredArchiveReportNo
+        ? {
+            ...laboratoryArchiveState,
+            reportMeta: { ...laboratoryArchiveState.reportMeta, reportNo: restoredArchiveReportNo },
+          }
+        : laboratoryArchiveState
+      await createLaboratoryArchive({ projectId, state: stateToArchive })
+      clearDraftAfterArchiveRef.current = true
+      clearLaboratoryWorkspaceDraft(projectId)
+      try {
+        window.localStorage.removeItem(productIllustrationStorageKey)
+      } catch {
+        // Module draft cleanup is best-effort.
+      }
+      setNodes([{ id: 1, type: null, isConfirmed: false }])
+      setDraftSelections({ 1: "" })
+      setNodeSummaries({})
+      setReportMeta(createInitialReportMeta())
+      setSelectedSpecId("")
+      setSelectedSpecState(null)
+      setIsEditingArchivedReport(false)
+      setRestoredArchiveReportNo("")
+      if (wasEditingArchivedReport) {
+        setActiveLaboratoryView("archive")
+        setArchiveOnlyMode(archiveOnly)
+      }
       window.dispatchEvent(new CustomEvent("laboratory-archive-updated", { detail: { projectId } }))
-      toast.success("实验室报告已归档", { description: "可前往归档区查看和检索。" })
+      toast.success(isEditingArchivedReport ? "归档报告已覆盖更新" : "实验室报告已新建归档")
     } catch (error) {
       toast.error("实验室报告归档失败", {
         description: error instanceof Error ? error.message : "请稍后重试",
@@ -1595,18 +1630,38 @@ export default function LaboratoryPdfParserDashboard({
       nextNodeIdRef.current = Math.max(1, ...draft.nodes.map((node) => node.id + 1))
     }
     setReportMeta(state.reportMeta)
+    setRestoredArchiveReportNo(state.reportMeta.reportNo)
+    setIsEditingArchivedReport(true)
     setSelectedSpecId(state.selectedSpecId || "")
     setActiveLaboratoryView("workspace")
     setArchiveOnlyMode(false)
     toast.success("归档报告已恢复到工作区")
   }
 
+  const handleReturnToArchiveLedger = () => {
+    clearDraftAfterArchiveRef.current = true
+    clearLaboratoryWorkspaceDraft(projectId)
+    try {
+      window.localStorage.removeItem(productIllustrationStorageKey)
+    } catch {
+      // Restored module cleanup is best-effort.
+    }
+    setNodes([{ id: 1, type: null, isConfirmed: false }])
+    setDraftSelections({ 1: "" })
+    setNodeSummaries({})
+    setReportMeta(createInitialReportMeta())
+    setSelectedSpecId("")
+    setSelectedSpecState(null)
+    setIsEditingArchivedReport(false)
+    setRestoredArchiveReportNo("")
+    setActiveLaboratoryView("archive")
+    setArchiveOnlyMode(archiveOnly)
+  }
+
   if (archiveOnlyMode) {
     return (
       <LaboratoryArchivePanel
         projectId={projectId}
-        archiveState={laboratoryArchiveState}
-        canArchive={canArchiveLaboratoryReport}
         onRestoreArchive={handleRestoreLaboratoryArchive}
       />
     )
@@ -1625,7 +1680,18 @@ export default function LaboratoryPdfParserDashboard({
               </p>
             </div>
 
-            {!archiveOnlyMode ? <div>
+            {!archiveOnlyMode ? <div className="flex flex-wrap items-center justify-end gap-3">
+              {isEditingArchivedReport ? (
+                <Button
+                  type="button"
+                  onClick={handleReturnToArchiveLedger}
+                  variant="outline"
+                  className="min-h-16 min-w-[190px] border-white/[0.1] bg-white/[0.025] px-6 text-slate-200 hover:bg-white/[0.06] hover:text-white"
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                  返回实验室报告台账
+                </Button>
+              ) : null}
               <Button
                 type="button"
                 onClick={() => void handleArchiveLaboratoryReport()}
@@ -1633,7 +1699,11 @@ export default function LaboratoryPdfParserDashboard({
                 className="min-h-16 min-w-[220px] border border-cyan-300/25 bg-cyan-300/10 px-6 text-cyan-100 hover:bg-cyan-300/20 disabled:cursor-not-allowed disabled:opacity-45"
               >
                 {isArchivingLaboratoryReport ? <Loader2 className="h-4 w-4 animate-spin" /> : <Archive className="h-4 w-4" />}
-                {isArchivingLaboratoryReport ? "归档中..." : "保存 / 覆盖归档"}
+                {isArchivingLaboratoryReport
+                  ? "归档中..."
+                  : isEditingArchivedReport
+                    ? "覆盖更新归档"
+                    : "新建归档"}
               </Button>
             </div> : null}
           </div>
@@ -1742,8 +1812,6 @@ export default function LaboratoryPdfParserDashboard({
         {activeLaboratoryView === "archive" ? (
           <LaboratoryArchivePanel
             projectId={projectId}
-            archiveState={laboratoryArchiveState}
-            canArchive={canArchiveLaboratoryReport}
             onRestoreArchive={handleRestoreLaboratoryArchive}
           />
         ) : (

@@ -28,7 +28,7 @@ import {
   buildReliabilityLifeModuleSummary,
   type LaboratoryModuleSummary,
 } from "./laboratory/laboratory-contract";
-import { ARRHENIUS_BOLTZMANN_K, ARRHENIUS_KELVIN_OFFSET, HOURS_PER_YEAR, ROOM_TEMP, useArrheniusStore } from "./useArrheniusStore";
+import { ARRHENIUS_BOLTZMANN_K, ARRHENIUS_KELVIN_OFFSET, HOURS_PER_YEAR, ROOM_TEMP, calculateArrhenius, useArrheniusStore } from "./useArrheniusStore";
 
 import "./reliability-calculator.css";
 
@@ -892,12 +892,39 @@ function AuditTrail() {
 type ReliabilityCalculatorDashboardProps = {
   nodeId?: number;
   onSummaryChange?: (summary: LaboratoryModuleSummary | null) => void;
+  initialSummary?: LaboratoryModuleSummary;
 };
 
 export default function ReliabilityCalculatorDashboard({
   nodeId,
   onSummaryChange,
+  initialSummary,
 }: ReliabilityCalculatorDashboardProps = {}) {
+  const archivedInputs = initialSummary?.moduleData as Partial<{
+    tUse: number;
+    tOven: number;
+    ea: number;
+    duration: number;
+    targetYears: number;
+    dailyHours: number;
+  }> | undefined;
+
+  useEffect(() => {
+    if (!archivedInputs) return;
+    useArrheniusStore.setState((state) => ({
+      ...state,
+      ...archivedInputs,
+      ...calculateArrhenius({
+        tUse: archivedInputs.tUse ?? state.tUse,
+        tOven: archivedInputs.tOven ?? state.tOven,
+        ea: archivedInputs.ea ?? state.ea,
+        duration: archivedInputs.duration ?? state.duration,
+        targetYears: archivedInputs.targetYears ?? state.targetYears,
+        dailyHours: archivedInputs.dailyHours ?? state.dailyHours,
+        k: state.k,
+      }),
+    }));
+  }, [initialSummary]);
   const tUse = useArrheniusStore((state) => state.tUse);
   const tOven = useArrheniusStore((state) => state.tOven);
   const ea = useArrheniusStore((state) => state.ea);
@@ -914,8 +941,8 @@ export default function ReliabilityCalculatorDashboard({
   useEffect(() => {
     if (!nodeId || !onSummaryChange) return;
 
-    onSummaryChange(
-      buildReliabilityLifeModuleSummary(nodeId, {
+    onSummaryChange({
+      ...buildReliabilityLifeModuleSummary(nodeId, {
         tUse,
         tOven,
         ea,
@@ -929,7 +956,8 @@ export default function ReliabilityCalculatorDashboard({
         requiredTestHours,
         valid,
       }),
-    );
+      moduleData: { tUse, tOven, ea, duration, targetYears, dailyHours },
+    });
   }, [
     af,
     dailyHours,

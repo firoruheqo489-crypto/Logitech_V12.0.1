@@ -33,7 +33,7 @@ export type EngineeringSpecWorkspaceEvidenceSlot = {
 export type EngineeringSpecWorkspaceInspectionTestProject = {
   testType?: string;
   sampleDeliveryDate?: string;
-  testItemCount?: string;
+  completionDate?: string;
   remark?: string;
 };
 
