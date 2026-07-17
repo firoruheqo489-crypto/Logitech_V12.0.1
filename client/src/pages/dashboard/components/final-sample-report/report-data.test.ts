@@ -23,18 +23,18 @@ describe("parseFinalSampleReportMatrix", () => {
     const parsed = parseFinalSampleReportMatrix(rows)
     const overall = getOverallStats(parsed.modules)
 
-    expect(parsed.meta.oaNumber).toBe("CPCESRZ-202606263269")
-    expect(parsed.meta.productModel).toContain("TL3006-GLR-16W")
+    expect(parsed.meta.oaNumber).toBe("CPCESRZ-202606223244")
+    expect(parsed.meta.productModel).toContain("SEN071-Beacon-CCT-G1")
     expect(parsed.meta.environment.temp).toBe("25℃")
     expect(parsed.meta.environment.humidity).toBe("55%RH")
 
     expect(parsed.modules.map((module) => module.items.length)).toEqual([22, 5, 9, 17])
-    expect(parsed.modules.map((module) => module.summaryStatus)).toEqual(["F", "P", "F", "F"])
+    expect(parsed.modules.map((module) => module.summaryStatus)).toEqual(["F", "P", "P", "P"])
 
     expect(overall.total).toBe(53)
-    expect(overall.executed).toBe(1)
+    expect(overall.executed).toBe(14)
     expect(overall.fail).toBe(1)
-    expect(overall.riskCount).toBe(12)
+    expect(overall.riskCount).toBe(13)
   })
 
   it("does not parse appendix tables because appendix layouts are not stable", () => {

@@ -5,6 +5,8 @@ import {
   ChevronLeft,
   ChevronRight,
   ImageIcon,
+  Plus,
+  Minus,
   RotateCcw,
   RotateCw,
   Trash2,
@@ -38,6 +40,7 @@ type ProductIllustrationGalleryProps = {
 }
 
 const PRODUCT_ILLUSTRATION_SLOT_COUNT = 8
+const MIN_PRODUCT_ILLUSTRATION_SLOT_COUNT = 4
 const MAX_PRODUCT_IMAGE_SIZE_BYTES = 500 * 1024
 
 function buildProductIllustrationSlots(): ProductIllustrationSlot[] {
@@ -66,13 +69,20 @@ function normalizeRecordedAt(value: unknown): string | null {
 }
 
 function normalizeGalleryState(value: unknown): ProductIllustrationState {
-  const baseSlots = buildProductIllustrationSlots()
+  const baseSlots = Array.from({ length: MIN_PRODUCT_ILLUSTRATION_SLOT_COUNT }, (_, index) => ({
+    id: `product-illustration-slot-${index + 1}`,
+    label: "",
+  }))
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return { slots: baseSlots, groupNote: "", recordedAt: null }
   }
 
   const record = value as Record<string, unknown>
   const inputSlots = Array.isArray(record.slots) ? record.slots : []
+  while (baseSlots.length < Math.max(MIN_PRODUCT_ILLUSTRATION_SLOT_COUNT, inputSlots.length)) {
+    const index = baseSlots.length
+    baseSlots.push({ id: `product-illustration-slot-${index + 1}`, label: "" })
+  }
   const slots = baseSlots.map((slot, index) => {
     const inputSlot = inputSlots[index]
     const inputRecord =
@@ -197,10 +207,9 @@ export function ProductIllustrationGallery({
     ? normalizeGalleryState(initialSummary.moduleData)
     : null
   const [galleryState, setGalleryState] = useState<ProductIllustrationState>(() => archivedGalleryState ?? readGalleryState(storageKey))
-  const [noteDraft, setNoteDraft] = useState(() => galleryState.groupNote)
   const [pendingUploadSlotId, setPendingUploadSlotId] = useState<string | null>(null)
   const [pendingDeleteSlotId, setPendingDeleteSlotId] = useState<string | null>(null)
-  const [showDeleteNoteConfirm, setShowDeleteNoteConfirm] = useState(false)
+  const [showDeleteRowConfirm, setShowDeleteRowConfirm] = useState(false)
   const [isDropActive, setIsDropActive] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
   const [lightboxItemId, setLightboxItemId] = useState("")
@@ -222,7 +231,6 @@ export function ProductIllustrationGallery({
     0,
     galleryItems.findIndex((item) => item.id === lightboxItemId || item.imageUrl === lightboxUrl),
   )
-  const hasSavedNote = galleryState.groupNote.trim().length > 0 && Boolean(galleryState.recordedAt)
   const imageCount = galleryItems.length
 
   const commitGalleryState = useCallback(
@@ -239,11 +247,9 @@ export function ProductIllustrationGallery({
     const nextState = archivedGalleryState ?? readGalleryState(storageKey)
     stateRef.current = nextState
     setGalleryState(nextState)
-    setNoteDraft(nextState.groupNote)
     if (archivedGalleryState) writeGalleryState(storageKey, archivedGalleryState)
     setPendingUploadSlotId(null)
     setPendingDeleteSlotId(null)
-    setShowDeleteNoteConfirm(false)
     setLightboxItemId("")
     setLightboxUrl("")
     setLightboxRotation(0)
@@ -266,14 +272,13 @@ export function ProductIllustrationGallery({
       verdict: "PASS",
       sourceFiles: [],
       keyMetrics: [
-        { label: "图片数量", value: `${imageCount}/8` },
-        { label: "图示记录", value: hasSavedNote ? "已保存" : "未填写" },
+        { label: "图片数量", value: `${imageCount}/${galleryState.slots.length}` },
       ],
       warnings: [],
       imageUrl: galleryItems[0]?.imageUrl,
       moduleData: galleryState,
     })
-  }, [galleryItems, galleryState, hasSavedNote, imageCount, nodeId, onSummaryChange])
+  }, [galleryItems, galleryState, imageCount, nodeId, onSummaryChange])
 
   useEffect(() => {
     if (!isDropActive) return
@@ -509,37 +514,24 @@ export function ProductIllustrationGallery({
     setPendingUploadSlotId(null)
   }
 
-  const handleSaveNote = () => {
-    const normalizedNote = noteDraft.trim()
-    if (!normalizedNote) {
-      window.alert("请输入产品图示记录内容")
-      return
-    }
-
-    commitGalleryState({
-      ...stateRef.current,
-      groupNote: normalizedNote,
-      recordedAt: new Date().toISOString(),
-    })
-    setNoteDraft(normalizedNote)
-    toast.success(hasSavedNote ? "记录已更新" : "记录已保存", {
-      description: hasSavedNote ? "产品图示记录修改成功。" : "产品图示记录新增成功。",
-      position: "bottom-right",
-    })
+  const handleAddImageRow = () => {
+    const nextIndex = stateRef.current.slots.length
+    const additionalSlots = Array.from({ length: 4 }, (_, index) => ({
+      id: `product-illustration-slot-${nextIndex + index + 1}`,
+      label: "",
+    }))
+    commitGalleryState({ ...stateRef.current, slots: [...stateRef.current.slots, ...additionalSlots] })
   }
 
-  const handleDeleteNote = () => {
-    commitGalleryState({
-      ...stateRef.current,
-      groupNote: "",
-      recordedAt: null,
-    })
-    setNoteDraft("")
-    setShowDeleteNoteConfirm(false)
-    toast.success("记录已删除", {
-      description: "产品图示记录已清空。",
-      position: "bottom-right",
-    })
+  const handleDeleteImageRow = () => {
+    if (stateRef.current.slots.length <= MIN_PRODUCT_ILLUSTRATION_SLOT_COUNT) return
+    const removedSlots = stateRef.current.slots.slice(-4)
+    const nextSlots = stateRef.current.slots.slice(0, -4)
+    commitGalleryState({ ...stateRef.current, slots: nextSlots })
+    setShowDeleteRowConfirm(false)
+    const removedUrls = removedSlots.map((slot) => slot.imageUrl).filter(Boolean) as string[]
+    for (const url of removedUrls) void deleteAssetViaServer(url).catch(() => undefined)
+    toast.success("图片行已删除", { description: "最后一排图片位已移除。", position: "bottom-right" })
   }
 
   return (
@@ -568,10 +560,17 @@ export function ProductIllustrationGallery({
           <h2 className="text-xs font-bold uppercase tracking-[0.14em] text-slate-200">
             产品图示区 / PRODUCT IMAGE GALLERY
           </h2>
-          <p className="mt-1 text-xs text-slate-500">
-            支持拖拽多张图片到这里，或点击空位多选上传，最多补满 8 张。
-          </p>
+          <p className="mt-1 text-xs text-slate-500">支持拖拽多张图片到这里，或点击空位多选上传。</p>
         </div>
+      </div>
+
+      <div className="mt-4 grid grid-cols-2 gap-3">
+        <button type="button" onClick={handleAddImageRow} className="flex items-center justify-center gap-2 rounded-xl border border-dashed border-cyan-500/50 bg-cyan-950/25 py-3 text-sm font-bold text-cyan-300 transition hover:border-cyan-300 hover:bg-cyan-900/40" aria-label="新增一排图片">
+          <Plus className="h-5 w-5" /> 新增一排图片
+        </button>
+        <button type="button" onClick={() => setShowDeleteRowConfirm(true)} disabled={galleryState.slots.length <= MIN_PRODUCT_ILLUSTRATION_SLOT_COUNT} className="flex items-center justify-center gap-2 rounded-xl border border-dashed border-rose-500/40 bg-rose-950/20 py-3 text-sm font-bold text-rose-300 transition hover:border-rose-300 hover:bg-rose-900/35 disabled:cursor-not-allowed disabled:opacity-40" aria-label="删除一排图片">
+          <Minus className="h-5 w-5" /> 删除一排图片
+        </button>
       </div>
 
       <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -652,48 +651,6 @@ export function ProductIllustrationGallery({
         ))}
       </div>
 
-      <div className="mt-5 rounded-xl border border-slate-800 bg-slate-950/40 p-4">
-        <label
-          htmlFor="product-illustration-group-note"
-          className="text-[11px] font-bold uppercase tracking-wider text-slate-500"
-        >
-          图示总记录 / GROUP NOTE
-        </label>
-        <textarea
-          id="product-illustration-group-note"
-          className="mt-2 h-24 w-full resize-y rounded-xl border border-cyan-900/40 bg-slate-950/80 px-3 py-2 text-sm leading-relaxed text-slate-100 outline-none transition-colors placeholder:text-slate-600 focus:border-cyan-500/70"
-          placeholder="在这里记录产品图示说明、样品位置、外观特征或关键观察信息。"
-          value={noteDraft}
-          onChange={(event) => setNoteDraft(event.target.value)}
-        />
-        <div className="mt-4 flex flex-wrap items-end justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handleSaveNote}
-              className="rounded-lg border border-cyan-700/50 bg-cyan-950/40 px-4 py-2 text-xs font-bold uppercase tracking-wider text-cyan-300 transition-colors hover:bg-cyan-900/50 hover:text-cyan-100"
-            >
-              保存记录 / SAVE
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowDeleteNoteConfirm(true)}
-              disabled={!hasSavedNote && !noteDraft}
-              className={`rounded-lg border px-4 py-2 text-xs font-bold uppercase tracking-wider transition-colors ${
-                hasSavedNote || noteDraft
-                  ? "border-rose-700/50 bg-rose-950/35 text-rose-300 hover:bg-rose-900/50 hover:text-rose-100"
-                  : "cursor-not-allowed border-slate-800 bg-slate-900/60 text-slate-600"
-              }`}
-            >
-              删除记录 / DELETE
-            </button>
-          </div>
-          <span className="text-xs font-mono uppercase tracking-wider text-slate-500">
-            记录时间 / RECORDED AT: {formatRecordedAt(galleryState.recordedAt)}
-          </span>
-        </div>
-      </div>
-
       <input
         type="file"
         accept="image/*"
@@ -722,11 +679,11 @@ export function ProductIllustrationGallery({
         cancelText="取消"
       />
       <CyberConfirmDialog
-        open={showDeleteNoteConfirm}
-        title="删除记录确认"
-        message="确定要删除当前图示总记录吗？删除后内容和记录时间都会清空，此操作不可撤销。"
-        onCancel={() => setShowDeleteNoteConfirm(false)}
-        onConfirm={handleDeleteNote}
+        open={showDeleteRowConfirm}
+        title="删除图片行确认"
+        message="确定要删除最后一排图片位吗？该排中的图片及图片说明也会被移除，此操作不可撤销。"
+        onCancel={() => setShowDeleteRowConfirm(false)}
+        onConfirm={handleDeleteImageRow}
         confirmText="确认删除"
         cancelText="取消"
       />

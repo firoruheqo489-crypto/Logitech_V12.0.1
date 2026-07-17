@@ -51,6 +51,7 @@ type LaboratoryArchiveState = {
   reportMeta: LaboratoryArchiveReportMeta;
   specHeader?: LaboratoryArchiveSpecHeader;
   selectedSpecId?: string;
+  selectedSpecSequence?: number;
   selectedSpecLabel?: string;
   moduleSummaries: LaboratoryArchiveModuleSummary[];
   overallAdjudication?: {
@@ -384,11 +385,15 @@ function compactLedgerSequences(
   };
 }
 
-function compactDuplicateReportNumbers(documents: LaboratoryArchiveRecord[]): { documents: LaboratoryArchiveRecord[]; changed: boolean } {
+function compactDuplicateLedgerNumbers(documents: LaboratoryArchiveRecord[]): { documents: LaboratoryArchiveRecord[]; changed: boolean } {
   const seen = new Set<string>();
   const unique = documents.filter((document) => {
-    const key = `${document.projectId}::${document.reportNo.trim().toLowerCase()}`;
-    if (!document.reportNo.trim() || seen.has(key)) return false;
+    // 台账编号是实验室归档的业务唯一标识；报告编号可能因模板默认值重复，不能作为唯一键。
+    const ledgerKey = Number.isFinite(Number(document.specSequence)) && Number(document.specSequence) > 0
+      ? `ledger:${Number(document.specSequence)}`
+      : `report:${document.reportNo.trim().toLowerCase()}`;
+    const key = `${document.projectId}::${ledgerKey}`;
+    if ((!document.specSequence && !document.reportNo.trim()) || seen.has(key)) return false;
     seen.add(key);
     return true;
   });
@@ -410,7 +415,7 @@ export async function listDashboardLaboratoryArchives(
   try {
     const manifest = await readManifest(projectId);
     const compacted = compactLedgerSequences(manifest?.documents ?? []);
-    const deduped = compactDuplicateReportNumbers(compacted.documents);
+    const deduped = compactDuplicateLedgerNumbers(compacted.documents);
     let recordsHydrated = false;
     const documents = await Promise.all(deduped.documents.map(async (document) => {
       const snapshot = await readArchiveSnapshot(projectId, document.id);
@@ -419,7 +424,8 @@ export async function listDashboardLaboratoryArchives(
       if (!snapshot) return document;
 
       const sampleType = mapping.sampleType || undefined;
-      const specSequence = mapping.specSequence;
+      // 已归档记录中的台账编号是提交时的权威值，不能被 OSS 反查结果覆盖。
+      const specSequence = document.specSequence ?? mapping.specSequence;
       const requiresUpdate =
         document.imageUrl !== imageUrl ||
         document.sampleType !== sampleType ||
@@ -473,8 +479,15 @@ export async function createDashboardLaboratoryArchive(
   try {
     await withProjectArchiveLock(projectId, async () => {
       const existingDocuments = (await readManifest(projectId))?.documents ?? [];
+      const moduleSummaries = Array.isArray(state.moduleSummaries)
+        ? state.moduleSummaries
+        : [];
+      const resolvedMapping = await resolveEngineeringSpecMapping(projectId, state.selectedSpecId);
+      const ledgerSequence = Number(state.selectedSpecSequence) > 0
+        ? Number(state.selectedSpecSequence)
+        : resolvedMapping.specSequence;
       const existingDocument = existingDocuments.find(
-        (document) => document.reportNo.trim().toLowerCase() === reportNo.trim().toLowerCase() && reportNo,
+        (document) => ledgerSequence !== undefined && document.specSequence === ledgerSequence,
       );
       const targetDocumentId = existingDocument?.id ?? documentId;
       const documentObjectKey = buildDocumentObjectKey(projectId, targetDocumentId);
@@ -483,10 +496,6 @@ export async function createDashboardLaboratoryArchive(
           (maxSequence, document) => Math.max(maxSequence, Number(document.sequence) || 0),
           0
         ) + (existingDocument ? 0 : 1);
-      const moduleSummaries = Array.isArray(state.moduleSummaries)
-        ? state.moduleSummaries
-        : [];
-      const resolvedMapping = await resolveEngineeringSpecMapping(projectId, state.selectedSpecId);
       const resolvedImageUrl = resolvedMapping.imageUrl;
       const provisionalRecord: LaboratoryArchiveRecord = {
         id: targetDocumentId,
@@ -497,7 +506,7 @@ export async function createDashboardLaboratoryArchive(
         sampleName: normalizeText(state.reportMeta?.sampleName, 255),
         sampleNo: normalizeText(state.reportMeta?.sampleNo, 255),
         sampleType: resolvedMapping.sampleType || normalizeText(state.specHeader?.testType, 120) || undefined,
-        specSequence: resolvedMapping.specSequence,
+        specSequence: ledgerSequence,
         testDate: normalizeText(state.reportMeta?.testDate, 64),
         verdict: normalizeText(state.overallAdjudication?.verdict, 32, "待完成"),
         moduleCount: moduleSummaries.length,
@@ -553,7 +562,11 @@ export async function createDashboardLaboratoryArchive(
 
        await writeManifest(projectId, [
          storedRecord,
-         ...existingDocuments.filter(item => item.id !== targetDocumentId && item.reportNo.trim().toLowerCase() !== storedRecord.reportNo.trim().toLowerCase()),
+         ...existingDocuments.filter(item => {
+           if (item.id === targetDocumentId) return false;
+           if (storedRecord.specSequence !== undefined) return item.specSequence !== storedRecord.specSequence;
+           return item.reportNo.trim().toLowerCase() !== storedRecord.reportNo.trim().toLowerCase();
+         }),
        ]);
 
       res.status(200).json({ document: storedRecord });

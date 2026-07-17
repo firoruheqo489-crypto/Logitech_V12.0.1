@@ -18,6 +18,7 @@ export type LaboratoryArchiveState = {
   reportMeta: LaboratoryReportMeta
   specHeader?: LaboratoryArchiveSpecHeader
   selectedSpecId?: string
+  selectedSpecSequence?: number
   selectedSpecLabel?: string
   moduleSummaries: LaboratoryModuleSummary[]
   overallAdjudication?: LaboratoryOverallAdjudication

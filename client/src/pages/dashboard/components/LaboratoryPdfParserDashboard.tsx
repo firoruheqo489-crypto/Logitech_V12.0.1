@@ -1358,6 +1358,7 @@ export default function LaboratoryPdfParserDashboard({
       reportMeta,
       specHeader,
       selectedSpecId: selectedSpecId || undefined,
+      selectedSpecSequence: selectedSpecRecord?.sequence,
       selectedSpecLabel: selectedSpecRecord ? formatSpecOptionLabel(selectedSpecRecord) : undefined,
       moduleSummaries,
       overallAdjudication,
