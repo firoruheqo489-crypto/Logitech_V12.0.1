@@ -6,6 +6,7 @@ const defaultPythonExecutable = path.join(
   process.platform === 'win32' ? 'Scripts' : 'bin',
   process.platform === 'win32' ? 'python.exe' : 'python',
 );
+const parserRoot = __dirname;
 
 module.exports = {
   apps: [
@@ -24,11 +25,17 @@ module.exports = {
         NODE_ENV: 'production',
         PORT: '3000',
         PYTHON_EXECUTABLE: process.env.PYTHON_EXECUTABLE || defaultPythonExecutable,
+        PYTHONPATH: process.env.PYTHONPATH
+          ? `${parserRoot}${path.delimiter}${process.env.PYTHONPATH}`
+          : parserRoot,
       },
       env_production: {
         NODE_ENV: 'production',
         PORT: '3000',
         PYTHON_EXECUTABLE: process.env.PYTHON_EXECUTABLE || defaultPythonExecutable,
+        PYTHONPATH: process.env.PYTHONPATH
+          ? `${parserRoot}${path.delimiter}${process.env.PYTHONPATH}`
+          : parserRoot,
       },
     },
   ],
