@@ -1,6 +1,7 @@
 import type {
   LaboratoryModuleSummary,
   LaboratoryOverallAdjudication,
+  LaboratoryFinalVerdict,
   LaboratoryOverallVerdict,
   LaboratoryReportMeta,
 } from "./laboratory-contract";
@@ -89,11 +90,13 @@ export function LaboratoryPrintSurface({
   meta,
   overall,
   manualConclusion = "",
+  finalVerdict,
 }: {
   summaries: LaboratoryModuleSummary[];
   meta: LaboratoryReportMeta;
   overall: LaboratoryOverallAdjudication;
   manualConclusion?: string;
+  finalVerdict: LaboratoryFinalVerdict;
 }) {
   const generatedAt = new Date().toLocaleString("zh-CN");
   const passCount = summaries.filter((summary) => summary.verdict === "PASS").length;
@@ -119,8 +122,8 @@ export function LaboratoryPrintSurface({
           <div>
             <h1 className="text-3xl font-bold text-slate-50">实验室综合测试报告</h1>
             <p className="mt-2 text-sm text-slate-500">生成时间：{generatedAt}</p>
-            <p className={`mt-3 font-mono text-sm tracking-[0.16em] ${overallTone(overall.verdict)}`}>
-              综合判定：{overall.verdict}
+            <p className={`mt-3 font-mono text-sm tracking-[0.16em] ${overallTone(finalVerdict)}`}>
+              最终判定：{finalVerdict}
             </p>
           </div>
           <div className="grid grid-cols-4 gap-3 font-mono text-xs">
@@ -135,7 +138,7 @@ export function LaboratoryPrintSurface({
       <section className="mt-6 rounded-[20px] border border-white/[0.08] bg-white/[0.025] p-5">
         <div className="mb-4 flex items-center justify-between border-b border-white/[0.06] pb-3">
           <h2 className="font-mono text-xs tracking-[0.2em] text-slate-300">// 报告元信息</h2>
-          <span className={`font-mono text-xs ${overallTone(overall.verdict)}`}>{overall.verdict}</span>
+          <span className={`font-mono text-xs ${overallTone(finalVerdict)}`}>{finalVerdict}</span>
         </div>
         <div className="grid grid-cols-3 gap-3">
           {metaRows.map((item) => (

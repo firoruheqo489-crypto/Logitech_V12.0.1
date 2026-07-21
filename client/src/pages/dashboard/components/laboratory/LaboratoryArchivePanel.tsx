@@ -10,12 +10,11 @@ import {
   listLaboratoryArchives,
   type LaboratoryArchiveRecord,
   type LaboratoryArchiveSnapshot,
-  type LaboratoryArchiveState,
 } from "@/lib/laboratory-archive-api"
 
 type LaboratoryArchivePanelProps = {
   projectId: string
-  onRestoreArchive?: (state: LaboratoryArchiveState) => void
+  onRestoreArchive?: (snapshot: LaboratoryArchiveSnapshot) => void
 }
 
 function archiveVerdictTone(verdict: string) {
@@ -81,7 +80,7 @@ export function LaboratoryArchivePanel({
         documentId: record.id,
       })
       if (onRestoreArchive) {
-        onRestoreArchive(snapshot.state)
+        onRestoreArchive(snapshot)
       } else {
         setSelectedSnapshot(snapshot)
       }
@@ -232,7 +231,7 @@ export function LaboratoryArchivePanel({
             {onRestoreArchive && selectedSnapshot.state.workspaceDraft ? (
               <button
                 type="button"
-                onClick={() => onRestoreArchive(selectedSnapshot.state)}
+                onClick={() => onRestoreArchive(selectedSnapshot)}
                 className="rounded-lg border border-cyan-300/25 bg-cyan-300/10 px-3 py-2 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-300/20"
               >
                 恢复到工作区

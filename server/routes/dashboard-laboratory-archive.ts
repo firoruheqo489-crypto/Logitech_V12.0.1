@@ -65,6 +65,7 @@ type LaboratoryArchiveState = {
     watchModules: string[];
     pendingModules: string[];
   };
+  finalVerdict?: "PASS" | "FAIL";
   exportGate?: {
     canExport: boolean;
     level: string;
@@ -121,6 +122,7 @@ type LaboratoryArchiveRouteErrorCode =
   | "LABORATORY_ARCHIVE_DOCUMENT_NOT_FOUND"
   | "LABORATORY_ARCHIVE_LIST_FAILED"
   | "INVALID_LABORATORY_ARCHIVE_DOCUMENT_ID"
+  | "INVALID_LABORATORY_ARCHIVE_FINAL_VERDICT"
   | "INVALID_LABORATORY_ARCHIVE_PROJECT_ID"
   | "UPLOADS_NOT_CONFIGURED";
 
@@ -131,6 +133,7 @@ const ROUTE_ERROR_MESSAGES: Record<LaboratoryArchiveRouteErrorCode, string> = {
   LABORATORY_ARCHIVE_DOCUMENT_NOT_FOUND: "Laboratory archive not found",
   LABORATORY_ARCHIVE_LIST_FAILED: "Failed to list laboratory archives",
   INVALID_LABORATORY_ARCHIVE_DOCUMENT_ID: "documentId is required",
+  INVALID_LABORATORY_ARCHIVE_FINAL_VERDICT: "finalVerdict must be PASS or FAIL",
   INVALID_LABORATORY_ARCHIVE_PROJECT_ID: "projectId is required",
   UPLOADS_NOT_CONFIGURED: "Aliyun OSS is not configured",
 };
@@ -251,9 +254,18 @@ function readDocumentId(source: Request["query"] | Record<string, unknown>): str
 function sortDocumentsDescending(
   documents: LaboratoryArchiveRecord[]
 ): LaboratoryArchiveRecord[] {
-  return [...documents].sort((left, right) =>
-    right.createdAt.localeCompare(left.createdAt)
-  );
+  return [...documents].sort((left, right) => {
+    const leftSequence = Number(left.specSequence);
+    const rightSequence = Number(right.specSequence);
+    const hasLeftSequence = Number.isFinite(leftSequence) && leftSequence > 0;
+    const hasRightSequence = Number.isFinite(rightSequence) && rightSequence > 0;
+
+    if (hasLeftSequence && hasRightSequence && leftSequence !== rightSequence) {
+      return rightSequence - leftSequence;
+    }
+    if (hasLeftSequence !== hasRightSequence) return hasLeftSequence ? -1 : 1;
+    return right.createdAt.localeCompare(left.createdAt);
+  });
 }
 
 function sanitizeRecord(
@@ -427,13 +439,19 @@ export async function listDashboardLaboratoryArchives(
       const sampleType = mapping.sampleType || undefined;
       // 已归档记录中的台账编号是提交时的权威值，不能被 OSS 反查结果覆盖。
       const specSequence = document.specSequence ?? mapping.specSequence;
+      // 人工勾选的最终判定是归档台账“判定”列的唯一权威来源。
+      const finalVerdict = snapshot.state.finalVerdict === "PASS" || snapshot.state.finalVerdict === "FAIL"
+        ? snapshot.state.finalVerdict
+        : undefined;
+      const verdict = finalVerdict ?? document.verdict;
       const requiresUpdate =
         document.imageUrl !== imageUrl ||
         document.sampleType !== sampleType ||
-        document.specSequence !== specSequence;
+        document.specSequence !== specSequence ||
+        document.verdict !== verdict;
       if (!requiresUpdate) return document;
 
-      const hydratedDocument = { ...document, imageUrl, sampleType, specSequence };
+      const hydratedDocument = { ...document, imageUrl, sampleType, specSequence, verdict };
       snapshot.state.imageUrl = imageUrl;
       await putOssObject({
         objectKey: buildDocumentObjectKey(projectId, document.id),
@@ -472,32 +490,73 @@ export async function createDashboardLaboratoryArchive(
     return;
   }
 
-   const state = (body.state || {}) as LaboratoryArchiveState;
-   const reportNo = normalizeText(state.reportMeta?.reportNo, 160);
+  const submittedState = (body.state || {}) as LaboratoryArchiveState;
+  if (submittedState.finalVerdict !== "PASS" && submittedState.finalVerdict !== "FAIL") {
+    sendRouteError(res, 400, "INVALID_LABORATORY_ARCHIVE_FINAL_VERDICT");
+    return;
+  }
+  const finalVerdict = submittedState.finalVerdict;
+  const requestedDocumentId = normalizeText(body.documentId, 255);
   const createdAt = new Date().toISOString();
-   const documentId = randomUUID();
+  const newDocumentId = randomUUID();
 
   try {
     await withProjectArchiveLock(projectId, async () => {
       const existingDocuments = (await readManifest(projectId))?.documents ?? [];
+      const requestedDocument = requestedDocumentId
+        ? existingDocuments.find((document) => document.id === requestedDocumentId)
+        : undefined;
+      if (requestedDocumentId && !requestedDocument) {
+        sendRouteError(res, 404, "LABORATORY_ARCHIVE_DOCUMENT_NOT_FOUND");
+        return;
+      }
+
+      const requestedSnapshot = requestedDocument
+        ? await readArchiveSnapshot(projectId, requestedDocument.id)
+        : null;
+      if (requestedDocument && !requestedSnapshot) {
+        sendRouteError(res, 404, "LABORATORY_ARCHIVE_DOCUMENT_NOT_FOUND");
+        return;
+      }
+
+      // 归档报告恢复编辑时，表头和规格书序号以原归档快照为唯一权威值。
+      // 客户端即使提交了不同序号，也只能更新模块内容与结论，不能改写归档表头。
+      const state: LaboratoryArchiveState = requestedSnapshot
+        ? {
+            ...submittedState,
+            reportMeta: requestedSnapshot.state.reportMeta,
+            specHeader: requestedSnapshot.state.specHeader,
+            selectedSpecId: requestedSnapshot.state.selectedSpecId,
+            selectedSpecSequence:
+              requestedSnapshot.state.selectedSpecSequence ?? requestedSnapshot.document.specSequence,
+            selectedSpecLabel:
+              requestedSnapshot.state.selectedSpecLabel ?? requestedSnapshot.document.selectedSpecLabel,
+            imageUrl: requestedSnapshot.state.imageUrl ?? requestedSnapshot.document.imageUrl,
+          }
+        : submittedState;
+      const reportNo = normalizeText(state.reportMeta?.reportNo, 160);
       const moduleSummaries = Array.isArray(state.moduleSummaries)
         ? state.moduleSummaries
         : [];
-      const resolvedMapping = await resolveEngineeringSpecMapping(projectId, state.selectedSpecId);
-      const ledgerSequence = Number(state.selectedSpecSequence) > 0
-        ? Number(state.selectedSpecSequence)
-        : resolvedMapping.specSequence;
-      const existingDocument = existingDocuments.find(
+      const resolvedMapping = requestedSnapshot
+        ? null
+        : await resolveEngineeringSpecMapping(projectId, state.selectedSpecId);
+      const ledgerSequence = requestedSnapshot?.document.specSequence ?? (
+        Number(state.selectedSpecSequence) > 0
+          ? Number(state.selectedSpecSequence)
+          : resolvedMapping?.specSequence
+      );
+      const existingDocument = requestedDocument ?? existingDocuments.find(
         (document) => ledgerSequence !== undefined && document.specSequence === ledgerSequence,
       );
-      const targetDocumentId = existingDocument?.id ?? documentId;
+      const targetDocumentId = existingDocument?.id ?? newDocumentId;
       const documentObjectKey = buildDocumentObjectKey(projectId, targetDocumentId);
       const sequence =
         existingDocument?.sequence ?? existingDocuments.reduce(
           (maxSequence, document) => Math.max(maxSequence, Number(document.sequence) || 0),
           0
         ) + (existingDocument ? 0 : 1);
-      const resolvedImageUrl = resolvedMapping.imageUrl;
+      const resolvedImageUrl = requestedSnapshot?.document.imageUrl ?? resolvedMapping?.imageUrl;
       const provisionalRecord: LaboratoryArchiveRecord = {
         id: targetDocumentId,
         projectId,
@@ -506,10 +565,10 @@ export async function createDashboardLaboratoryArchive(
         projectName: normalizeText(state.reportMeta?.projectName, 255),
         sampleName: normalizeText(state.reportMeta?.sampleName, 255),
         sampleNo: normalizeText(state.reportMeta?.sampleNo, 255),
-        sampleType: resolvedMapping.sampleType || normalizeText(state.specHeader?.testType, 120) || undefined,
+        sampleType: requestedSnapshot?.document.sampleType || resolvedMapping?.sampleType || normalizeText(state.specHeader?.testType, 120) || undefined,
         specSequence: ledgerSequence,
         testDate: normalizeText(state.reportMeta?.testDate, 64),
-        verdict: normalizeText(state.overallAdjudication?.verdict, 32, "待完成"),
+        verdict: finalVerdict,
         moduleCount: moduleSummaries.length,
         printableModuleCount: moduleSummaries.filter((summary) => summary?.type !== "PRODUCT_ILLUSTRATION").length,
         selectedSpecLabel: normalizeText(state.selectedSpecLabel, 400) || undefined,

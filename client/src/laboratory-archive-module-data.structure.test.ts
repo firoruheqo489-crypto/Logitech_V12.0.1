@@ -55,8 +55,8 @@ describe("laboratory archive module data restoration", () => {
     const panelSource = await loadSource("./pages/dashboard/components/laboratory/LaboratoryArchivePanel.tsx");
     const serverSource = await loadSource("../../server/routes/dashboard-laboratory-archive.ts");
 
-    expect(dashboardSource).toContain("imageUrl: selectedSpecRecord?.imageUrl");
-    expect(serverSource).toContain("const resolvedMapping = await resolveEngineeringSpecMapping");
+    expect(dashboardSource).toContain("imageUrl: displayedSpecImageUrl");
+    expect(serverSource).toContain("await resolveEngineeringSpecMapping(projectId, state.selectedSpecId)");
     expect(serverSource).toContain("const imageUrl = normalizeText(state.imageUrl, 400000) || undefined");
     expect(serverSource).toContain("state.inspectionTestProject")
     expect(panelSource).toContain('className="text-center">实物图</span>');
@@ -65,6 +65,41 @@ describe("laboratory archive module data restoration", () => {
     expect(panelSource).toContain("台账序号");
     expect(panelSource).toContain('record.specSequence ?? "--"');
     expect(serverSource).toContain("const specSequence = Number(document.sequence) || undefined");
+  });
+
+  it("locks archived report headers and ledger sequences in both UI and API updates", async () => {
+    const dashboardSource = await loadSource("./pages/dashboard/components/LaboratoryPdfParserDashboard.tsx");
+    const panelSource = await loadSource("./pages/dashboard/components/laboratory/LaboratoryArchivePanel.tsx");
+    const archiveApiSource = await loadSource("./lib/laboratory-archive-api.ts");
+    const serverSource = await loadSource("../../server/routes/dashboard-laboratory-archive.ts");
+
+    expect(dashboardSource).toContain('台账序号 · {isArchiveHeaderLocked ? "归档锁定" : "可选择"}');
+    expect(dashboardSource).toContain("已归档报告的台账序号和映射表头不可修改");
+    expect(dashboardSource).toContain("if (isArchiveHeaderLocked) return");
+    expect(dashboardSource).toContain("documentId: wasEditingArchivedReport ? restoredArchiveDocumentId : undefined");
+    expect(panelSource).toContain("onRestoreArchive(snapshot)");
+    expect(archiveApiSource).toContain("documentId: documentId?.trim() || undefined");
+    expect(serverSource).toContain("reportMeta: requestedSnapshot.state.reportMeta");
+    expect(serverSource).toContain("requestedSnapshot.state.selectedSpecSequence ?? requestedSnapshot.document.specSequence");
+  });
+
+  it("maps the manual PASS or FAIL decision into archives and printed reports", async () => {
+    const dashboardSource = await loadSource("./pages/dashboard/components/LaboratoryPdfParserDashboard.tsx");
+    const printSource = await loadSource("./pages/dashboard/components/laboratory/LaboratoryPrintSurface.tsx");
+    const archiveApiSource = await loadSource("./lib/laboratory-archive-api.ts");
+    const serverSource = await loadSource("../../server/routes/dashboard-laboratory-archive.ts");
+
+    expect(dashboardSource).toContain("useState<LaboratoryFinalVerdict | null>(null)");
+    expect(dashboardSource).toContain('onClick={() => setFinalVerdict("PASS")}');
+    expect(dashboardSource).toContain('onClick={() => setFinalVerdict("FAIL")}');
+    expect(dashboardSource).toContain('toast.error("请先选择最终判定"');
+    expect(dashboardSource).toContain('finalVerdict={finalVerdict ?? "FAIL"}');
+    expect(printSource).toContain("最终判定：{finalVerdict}");
+    expect(archiveApiSource).toContain("finalVerdict?: LaboratoryFinalVerdict");
+    expect(serverSource).toContain('INVALID_LABORATORY_ARCHIVE_FINAL_VERDICT');
+    expect(serverSource).toContain("verdict: finalVerdict");
+    expect(serverSource).toContain('snapshot.state.finalVerdict === "PASS" || snapshot.state.finalVerdict === "FAIL"');
+    expect(serverSource).toContain("document.verdict !== verdict");
   });
 
   it("persists matching delivery and completion date fields in the specification workspace", async () => {

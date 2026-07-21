@@ -19,7 +19,7 @@ import CyberConfirmDialog from "@/components/ui/CyberConfirmDialog"
 import { deleteAssetViaServer, uploadAssetViaServer } from "@/lib/ossUpload"
 import type { LaboratoryModuleSummary } from "./laboratory-contract"
 
-type ProductIllustrationSlot = {
+export type ProductIllustrationSlot = {
   id: string
   label: string
   imageUrl?: string
@@ -132,19 +132,15 @@ function formatRecordedAt(value: string | null): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
-function compactSlotsAfterDelete(slots: ProductIllustrationSlot[], deletedIndex: number): ProductIllustrationSlot[] {
-  const nextSlots = slots.map((slot) => ({ ...slot }))
-  for (let index = deletedIndex; index < nextSlots.length - 1; index += 1) {
-    nextSlots[index] = {
-      ...nextSlots[index],
-      imageUrl: nextSlots[index + 1]?.imageUrl,
-    }
-  }
-  nextSlots[nextSlots.length - 1] = {
-    ...nextSlots[nextSlots.length - 1],
-    imageUrl: undefined,
-  }
-  return nextSlots
+export function clearProductIllustrationSlotImage(
+  slots: ProductIllustrationSlot[],
+  slotId: string,
+): ProductIllustrationSlot[] {
+  return slots.map((slot) => (
+    slot.id === slotId
+      ? { ...slot, imageUrl: undefined }
+      : { ...slot }
+  ))
 }
 
 async function compressProductImage(file: File): Promise<File> {
@@ -458,7 +454,7 @@ export function ProductIllustrationGallery({
     const deletedIndex = slots.findIndex((slot) => slot.id === slotId)
     if (deletedIndex < 0) return
     const deletedUrl = slots[deletedIndex]?.imageUrl
-    const nextSlots = compactSlotsAfterDelete(slots, deletedIndex)
+    const nextSlots = clearProductIllustrationSlotImage(slots, slotId)
     commitGalleryState({
       ...stateRef.current,
       slots: nextSlots,
@@ -469,18 +465,11 @@ export function ProductIllustrationGallery({
     }
 
     if (lightboxUrl === deletedUrl) {
-      const replacementUrl = nextSlots[deletedIndex]?.imageUrl
-      if (replacementUrl) {
-        setLightboxItemId(nextSlots[deletedIndex].id)
-        setLightboxUrl(replacementUrl)
-        setLightboxRotation(0)
-      } else {
-        closeLightbox()
-      }
+      closeLightbox()
     }
 
     toast.success("图片已删除", {
-      description: "产品图示已移除。",
+      description: `第 ${deletedIndex + 1} 个图片位已清空，其他图片位置保持不变。`,
       position: "bottom-right",
     })
   }

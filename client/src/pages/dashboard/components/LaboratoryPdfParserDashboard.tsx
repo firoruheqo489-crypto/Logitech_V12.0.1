@@ -2,9 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   CheckCircle2,
   Circle,
+  CircleX,
   Archive,
   ArrowLeft,
   FileText,
+  LockKeyhole,
   Loader2,
   Plus,
   Upload,
@@ -29,7 +31,11 @@ import {
   type EngineeringSpecLedgerRecord,
 } from "@/lib/engineering-spec-ledger-api"
 import { sanitizeEngineeringSpecLedgerRecords } from "@/lib/engineering-spec-ledger-clean"
-import { createLaboratoryArchive, type LaboratoryArchiveState } from "@/lib/laboratory-archive-api"
+import {
+  createLaboratoryArchive,
+  type LaboratoryArchiveSnapshot,
+  type LaboratoryArchiveState,
+} from "@/lib/laboratory-archive-api"
 import { DarkroomTelemetryWorkspace } from "./DarkroomTelemetryWorkspace"
 import EmcRadiationWorkspace from "./EmcRadiationWorkspace"
 import { FlickerTelemetryWorkspace } from "./FlickerTelemetryWorkspace"
@@ -50,6 +56,7 @@ import {
   buildMountedModuleSummary,
   getLaboratoryModuleDefinition,
   type LaboratoryExportGate,
+  type LaboratoryFinalVerdict,
   type LaboratoryModuleSummary,
   type LaboratoryOverallVerdict,
   type LaboratoryReportMeta,
@@ -101,6 +108,10 @@ type LaboratoryWorkspaceDraft = {
   reportMeta?: LaboratoryReportMeta
   selectedSpecId?: string
   manualConclusion?: string
+  finalVerdict?: LaboratoryFinalVerdict
+  restoredArchiveDocumentId?: string
+  restoredArchiveReportNo?: string
+  lockedArchiveSpecBinding?: LockedArchiveSpecBinding
 }
 
 const LABORATORY_WORKSPACE_DRAFT_PREFIX = "dashboard:laboratory-workspace-draft:v2"
@@ -171,6 +182,14 @@ type LaboratorySpecHeader = {
   sampleDeliveryDate: string
 }
 
+type LockedArchiveSpecBinding = {
+  selectedSpecId?: string
+  selectedSpecSequence?: number
+  selectedSpecLabel?: string
+  specHeader?: LaboratorySpecHeader
+  imageUrl?: string
+}
+
 function getTodayDateValue() {
   const now = new Date()
   const year = now.getFullYear()
@@ -234,6 +253,16 @@ function buildLaboratorySpecHeader(
       state?.inspectionTestProject?.sampleDeliveryDate?.trim() ||
       record?.testDate?.trim() ||
       "--",
+  }
+}
+
+function buildLockedArchiveSpecHeader(state: LaboratoryArchiveState): LaboratorySpecHeader {
+  return state.specHeader ?? {
+    productManager: state.reportMeta.operator?.trim() || "--",
+    structuralEngineer: "--",
+    electronicEngineer: "--",
+    testType: state.reportMeta.stage?.trim() || "--",
+    sampleDeliveryDate: state.reportMeta.testDate?.trim() || "--",
   }
 }
 
@@ -1303,10 +1332,13 @@ export default function LaboratoryPdfParserDashboard({
   const [isExportingWorkspace, setIsExportingWorkspace] = useState(false)
   const [isArchivingLaboratoryReport, setIsArchivingLaboratoryReport] = useState(false)
   const [isEditingArchivedReport, setIsEditingArchivedReport] = useState(false)
+  const [restoredArchiveDocumentId, setRestoredArchiveDocumentId] = useState("")
   const [restoredArchiveReportNo, setRestoredArchiveReportNo] = useState("")
+  const [lockedArchiveSpecBinding, setLockedArchiveSpecBinding] = useState<LockedArchiveSpecBinding | null>(null)
   const [nodeSummaries, setNodeSummaries] = useState<Record<number, LaboratoryModuleSummary>>({})
   const [reportMeta, setReportMeta] = useState<LaboratoryReportMeta>(() => createInitialReportMeta())
   const [manualConclusion, setManualConclusion] = useState("")
+  const [finalVerdict, setFinalVerdict] = useState<LaboratoryFinalVerdict | null>(null)
   const [selectedSpecId, setSelectedSpecId] = useState("")
   const [ledgerRecords, setLedgerRecords] = useState<EngineeringSpecLedgerRecord[]>([])
   const [isLoadingLedger, setIsLoadingLedger] = useState(false)
@@ -1322,10 +1354,28 @@ export default function LaboratoryPdfParserDashboard({
     () => sanitizedLedgerRecords.find((record) => record.id === selectedSpecId) ?? null,
     [sanitizedLedgerRecords, selectedSpecId],
   )
-  const specHeader = useMemo(
-    () => buildLaboratorySpecHeader(selectedSpecRecord, selectedSpecState),
-    [selectedSpecRecord, selectedSpecState],
-  )
+  const isArchiveHeaderLocked = isEditingArchivedReport && lockedArchiveSpecBinding !== null
+  const specHeader = useMemo(() => {
+    if (isArchiveHeaderLocked) {
+      return lockedArchiveSpecBinding?.specHeader ?? {
+        productManager: reportMeta.operator?.trim() || "--",
+        structuralEngineer: "--",
+        electronicEngineer: "--",
+        testType: reportMeta.stage?.trim() || "--",
+        sampleDeliveryDate: reportMeta.testDate?.trim() || "--",
+      }
+    }
+    return buildLaboratorySpecHeader(selectedSpecRecord, selectedSpecState)
+  }, [isArchiveHeaderLocked, lockedArchiveSpecBinding, reportMeta.operator, reportMeta.stage, reportMeta.testDate, selectedSpecRecord, selectedSpecState])
+  const displayedSpecSequence = isArchiveHeaderLocked
+    ? lockedArchiveSpecBinding?.selectedSpecSequence
+    : selectedSpecRecord?.sequence
+  const displayedSpecImageUrl = isArchiveHeaderLocked
+    ? lockedArchiveSpecBinding?.imageUrl
+    : selectedSpecRecord?.imageUrl
+  const displayedSpecSampleNo = isArchiveHeaderLocked
+    ? reportMeta.sampleNo
+    : selectedSpecRecord?.sku
 
   const hasEmptyNode = nodes.some((node) => !node.isConfirmed || !node.type)
   const confirmedNodeCount = nodes.filter((node) => node.isConfirmed && node.type).length
@@ -1359,19 +1409,24 @@ export default function LaboratoryPdfParserDashboard({
     () => ({
       reportMeta,
       specHeader,
-      selectedSpecId: selectedSpecId || undefined,
-      selectedSpecSequence: selectedSpecRecord?.sequence,
-      selectedSpecLabel: selectedSpecRecord ? formatSpecOptionLabel(selectedSpecRecord) : undefined,
+      selectedSpecId: isArchiveHeaderLocked
+        ? lockedArchiveSpecBinding?.selectedSpecId
+        : selectedSpecId || undefined,
+      selectedSpecSequence: displayedSpecSequence,
+      selectedSpecLabel: isArchiveHeaderLocked
+        ? lockedArchiveSpecBinding?.selectedSpecLabel
+        : selectedSpecRecord ? formatSpecOptionLabel(selectedSpecRecord) : undefined,
       moduleSummaries,
       overallAdjudication,
+      finalVerdict: finalVerdict ?? undefined,
       exportGate,
       manualConclusion,
       workspaceDraft: { nodes, draftSelections, nodeSummaries },
-      imageUrl: selectedSpecRecord?.imageUrl,
+      imageUrl: displayedSpecImageUrl,
     }),
-    [draftSelections, exportGate, manualConclusion, moduleSummaries, nodeSummaries, nodes, overallAdjudication, reportMeta, selectedSpecId, selectedSpecRecord, specHeader],
+    [displayedSpecImageUrl, displayedSpecSequence, draftSelections, exportGate, finalVerdict, isArchiveHeaderLocked, lockedArchiveSpecBinding, manualConclusion, moduleSummaries, nodeSummaries, nodes, overallAdjudication, reportMeta, selectedSpecId, selectedSpecRecord, specHeader],
   )
-  const canArchiveLaboratoryReport = moduleSummaries.length > 0 && Boolean(reportMeta.reportNo.trim())
+  const canArchiveLaboratoryReport = moduleSummaries.length > 0 && Boolean(reportMeta.reportNo.trim()) && finalVerdict !== null
 
   useEffect(() => {
     try {
@@ -1389,6 +1444,22 @@ export default function LaboratoryPdfParserDashboard({
       if (draft.reportMeta) setReportMeta(draft.reportMeta)
       if (typeof draft.selectedSpecId === "string") setSelectedSpecId(draft.selectedSpecId)
       if (typeof draft.manualConclusion === "string") setManualConclusion(draft.manualConclusion)
+      setFinalVerdict(draft.finalVerdict === "PASS" || draft.finalVerdict === "FAIL" ? draft.finalVerdict : null)
+      if (typeof draft.restoredArchiveDocumentId === "string" && draft.restoredArchiveDocumentId) {
+        setRestoredArchiveDocumentId(draft.restoredArchiveDocumentId)
+        setRestoredArchiveReportNo(draft.restoredArchiveReportNo || draft.reportMeta?.reportNo || "")
+        setLockedArchiveSpecBinding(draft.lockedArchiveSpecBinding ?? {
+          selectedSpecId: draft.selectedSpecId,
+          specHeader: {
+            productManager: draft.reportMeta?.operator?.trim() || "--",
+            structuralEngineer: "--",
+            electronicEngineer: "--",
+            testType: draft.reportMeta?.stage?.trim() || "--",
+            sampleDeliveryDate: draft.reportMeta?.testDate?.trim() || "--",
+          },
+        })
+        setIsEditingArchivedReport(true)
+      }
       nextNodeIdRef.current = Math.max(1, ...draft.nodes.map((node) => node.id + 1))
     }
     hydratedDraftRef.current = true
@@ -1401,8 +1472,19 @@ export default function LaboratoryPdfParserDashboard({
       clearLaboratoryWorkspaceDraft(projectId)
       return
     }
-    writeLaboratoryWorkspaceDraft(projectId, { nodes, draftSelections, nodeSummaries, reportMeta, selectedSpecId, manualConclusion })
-  }, [draftSelections, manualConclusion, nodeSummaries, nodes, projectId, reportMeta, selectedSpecId])
+    writeLaboratoryWorkspaceDraft(projectId, {
+      nodes,
+      draftSelections,
+      nodeSummaries,
+      reportMeta,
+      selectedSpecId,
+      manualConclusion,
+      finalVerdict: finalVerdict ?? undefined,
+      restoredArchiveDocumentId: isEditingArchivedReport ? restoredArchiveDocumentId : undefined,
+      restoredArchiveReportNo: isEditingArchivedReport ? restoredArchiveReportNo : undefined,
+      lockedArchiveSpecBinding: isEditingArchivedReport ? lockedArchiveSpecBinding ?? undefined : undefined,
+    })
+  }, [draftSelections, finalVerdict, isEditingArchivedReport, lockedArchiveSpecBinding, manualConclusion, nodeSummaries, nodes, projectId, reportMeta, restoredArchiveDocumentId, restoredArchiveReportNo, selectedSpecId])
 
   useEffect(() => {
     let cancelled = false
@@ -1461,15 +1543,21 @@ export default function LaboratoryPdfParserDashboard({
   )
 
   useEffect(() => {
+    if (isArchiveHeaderLocked) return
+
     if (!selectedSpecRecord) {
       setSelectedSpecState(null)
       return
     }
 
     void loadSpecDetail(selectedSpecRecord)
-  }, [loadSpecDetail, selectedSpecRecord])
+  }, [isArchiveHeaderLocked, loadSpecDetail, selectedSpecRecord])
 
   const handleSpecRecordSelect = (recordId: string) => {
+    if (isArchiveHeaderLocked) {
+      toast.info("归档报告表头已锁定", { description: "已归档的台账序号不能再修改。" })
+      return
+    }
     setSelectedSpecId(recordId)
   }
 
@@ -1560,6 +1648,10 @@ export default function LaboratoryPdfParserDashboard({
       toast.error("当前没有可导出的测试模块")
       return
     }
+    if (!finalVerdict) {
+      toast.error("请先选择最终判定", { description: "最终判定只能选择 PASS 或 FAIL。" })
+      return
+    }
     if (!exportGate.canExport) {
       toast.error(exportGate.reasons[0] ?? "导出门禁未通过")
       return
@@ -1581,6 +1673,10 @@ export default function LaboratoryPdfParserDashboard({
   }
 
   const handleArchiveLaboratoryReport = async () => {
+    if (!finalVerdict) {
+      toast.error("请先选择最终判定", { description: "最终判定只能选择 PASS 或 FAIL。" })
+      return
+    }
     if (!canArchiveLaboratoryReport) {
       toast.error("当前报告尚不可归档", { description: "请先填写报告编号并完成至少一个测试模块。" })
       return
@@ -1595,7 +1691,11 @@ export default function LaboratoryPdfParserDashboard({
             reportMeta: { ...laboratoryArchiveState.reportMeta, reportNo: restoredArchiveReportNo },
           }
         : laboratoryArchiveState
-      await createLaboratoryArchive({ projectId, state: stateToArchive })
+      await createLaboratoryArchive({
+        projectId,
+        state: stateToArchive,
+        documentId: wasEditingArchivedReport ? restoredArchiveDocumentId : undefined,
+      })
       clearDraftAfterArchiveRef.current = true
       clearLaboratoryWorkspaceDraft(projectId)
       try {
@@ -1608,10 +1708,13 @@ export default function LaboratoryPdfParserDashboard({
       setNodeSummaries({})
       setReportMeta(createInitialReportMeta())
       setManualConclusion("")
+      setFinalVerdict(null)
       setSelectedSpecId("")
       setSelectedSpecState(null)
       setIsEditingArchivedReport(false)
+      setRestoredArchiveDocumentId("")
       setRestoredArchiveReportNo("")
+      setLockedArchiveSpecBinding(null)
       if (wasEditingArchivedReport) {
         setActiveLaboratoryView("archive")
         setArchiveOnlyMode(archiveOnly)
@@ -1627,7 +1730,8 @@ export default function LaboratoryPdfParserDashboard({
     }
   }
 
-  const handleRestoreLaboratoryArchive = (state: LaboratoryArchiveState) => {
+  const handleRestoreLaboratoryArchive = (snapshot: LaboratoryArchiveSnapshot) => {
+    const { document, state } = snapshot
     const draft = state.workspaceDraft
     if (draft) {
       setNodes(draft.nodes as WorkspaceNode[])
@@ -1637,9 +1741,19 @@ export default function LaboratoryPdfParserDashboard({
     }
     setReportMeta(state.reportMeta)
     setManualConclusion(state.manualConclusion || "")
+    setFinalVerdict(state.finalVerdict === "PASS" || document.verdict === "PASS" ? "PASS" : "FAIL")
+    setRestoredArchiveDocumentId(document.id)
     setRestoredArchiveReportNo(state.reportMeta.reportNo)
+    setLockedArchiveSpecBinding({
+      selectedSpecId: state.selectedSpecId,
+      selectedSpecSequence: state.selectedSpecSequence ?? document.specSequence,
+      selectedSpecLabel: state.selectedSpecLabel ?? document.selectedSpecLabel,
+      specHeader: buildLockedArchiveSpecHeader(state),
+      imageUrl: state.imageUrl ?? document.imageUrl,
+    })
     setIsEditingArchivedReport(true)
     setSelectedSpecId(state.selectedSpecId || "")
+    setSelectedSpecState(null)
     setActiveLaboratoryView("workspace")
     setArchiveOnlyMode(false)
     toast.success("归档报告已恢复到工作区")
@@ -1658,10 +1772,13 @@ export default function LaboratoryPdfParserDashboard({
     setNodeSummaries({})
     setReportMeta(createInitialReportMeta())
     setManualConclusion("")
+    setFinalVerdict(null)
     setSelectedSpecId("")
     setSelectedSpecState(null)
     setIsEditingArchivedReport(false)
+    setRestoredArchiveDocumentId("")
     setRestoredArchiveReportNo("")
+    setLockedArchiveSpecBinding(null)
     setActiveLaboratoryView("archive")
     setArchiveOnlyMode(archiveOnly)
   }
@@ -1728,8 +1845,8 @@ export default function LaboratoryPdfParserDashboard({
                   </div>
                   <div className="mt-3 grid gap-4 md:grid-cols-[180px_minmax(0,1fr)]">
                     <div className="aspect-square w-full overflow-hidden rounded-xl border border-white/[0.08] bg-[#0b1012] shadow-[inset_0_0_24px_rgba(0,0,0,0.24)]">
-                      {selectedSpecRecord?.imageUrl ? (
-                        <img src={selectedSpecRecord.imageUrl} alt="产品图示" className="h-full w-full object-contain p-3" />
+                      {displayedSpecImageUrl ? (
+                        <img src={displayedSpecImageUrl} alt="产品图示" className="h-full w-full object-contain p-3" />
                       ) : (
                         <div className="flex h-full items-center justify-center text-center font-mono text-[11px] leading-5 text-slate-600">
                           产品图示<br />图片映射区
@@ -1739,31 +1856,43 @@ export default function LaboratoryPdfParserDashboard({
 
                     <div className="grid min-w-0 gap-4 md:grid-cols-2 md:grid-rows-1">
                       <div className="flex min-w-0 min-h-[132px] flex-col justify-center rounded-xl border border-white/[0.08] bg-white/[0.025] px-5 py-4">
-                        <p className="mb-2 font-mono text-[11px] font-medium tracking-[0.08em] text-slate-500">台账序号 · 可选择</p>
-                        <Select value={selectedSpecId} onValueChange={handleSpecRecordSelect} disabled={isLoadingLedger || sanitizedLedgerRecords.length === 0}>
-                          <SelectTrigger className="h-12 w-full rounded-lg border-cyan-300/20 bg-black/20 text-left font-mono text-lg font-semibold text-slate-100 hover:border-cyan-300/40 focus:ring-cyan-300/20">
-                            <SelectValue placeholder={isLoadingLedger ? "正在读取" : "选择序号"}>
-                              {selectedSpecRecord ? `#${selectedSpecRecord.sequence}` : undefined}
-                            </SelectValue>
-                          </SelectTrigger>
-                      <SelectContent className="max-h-80 rounded-xl border-cyan-400/20 bg-[#050911] text-slate-100 shadow-2xl">
-                        {sanitizedLedgerRecords.map((record) => (
-                          <SelectItem
-                            key={record.id}
-                            value={record.id}
-                            className="rounded-lg py-2.5 text-slate-100 data-[highlighted]:bg-cyan-400/10 data-[highlighted]:text-cyan-100"
+                        <p className="mb-2 font-mono text-[11px] font-medium tracking-[0.08em] text-slate-500">
+                          台账序号 · {isArchiveHeaderLocked ? "归档锁定" : "可选择"}
+                        </p>
+                        {isArchiveHeaderLocked ? (
+                          <div
+                            className="flex h-12 w-full items-center justify-between rounded-lg border border-amber-300/20 bg-amber-300/[0.05] px-4 font-mono text-lg font-semibold text-slate-100"
+                            title="已归档报告的台账序号和映射表头不可修改"
                           >
-                            <span className="block max-w-[520px] truncate font-mono text-sm">#{record.sequence}</span>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                        </Select>
+                            <span>{displayedSpecSequence ? `#${displayedSpecSequence}` : "--"}</span>
+                            <LockKeyhole className="h-4 w-4 text-amber-200" />
+                          </div>
+                        ) : (
+                          <Select value={selectedSpecId} onValueChange={handleSpecRecordSelect} disabled={isLoadingLedger || sanitizedLedgerRecords.length === 0}>
+                            <SelectTrigger className="h-12 w-full rounded-lg border-cyan-300/20 bg-black/20 text-left font-mono text-lg font-semibold text-slate-100 hover:border-cyan-300/40 focus:ring-cyan-300/20">
+                              <SelectValue placeholder={isLoadingLedger ? "正在读取" : "选择序号"}>
+                                {selectedSpecRecord ? `#${selectedSpecRecord.sequence}` : undefined}
+                              </SelectValue>
+                            </SelectTrigger>
+                            <SelectContent className="max-h-80 rounded-xl border-cyan-400/20 bg-[#050911] text-slate-100 shadow-2xl">
+                              {sanitizedLedgerRecords.map((record) => (
+                                <SelectItem
+                                  key={record.id}
+                                  value={record.id}
+                                  className="rounded-lg py-2.5 text-slate-100 data-[highlighted]:bg-cyan-400/10 data-[highlighted]:text-cyan-100"
+                                >
+                                  <span className="block max-w-[520px] truncate font-mono text-sm">#{record.sequence}</span>
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )}
                       </div>
 
                       <div className="flex min-w-0 min-h-[132px] flex-col justify-center rounded-xl border border-white/[0.08] bg-white/[0.025] px-5 py-4">
                         <p className="mb-2 font-mono text-[11px] font-medium tracking-[0.08em] text-slate-500">产品编号 · 自动映射</p>
                         <div className="flex h-12 items-center rounded-lg border border-white/[0.08] bg-black/20 px-4 font-mono text-lg font-semibold text-slate-100">
-                          <span className="truncate" title={selectedSpecRecord?.sku || ""}>{selectedSpecRecord?.sku || "--"}</span>
+                          <span className="truncate" title={displayedSpecSampleNo || ""}>{displayedSpecSampleNo || "--"}</span>
                         </div>
                       </div>
                     </div>
@@ -1795,21 +1924,69 @@ export default function LaboratoryPdfParserDashboard({
               </div>
 
               <div className="mt-4 rounded-xl border border-white/[0.06] bg-black/20 p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="font-mono text-[11px] font-medium tracking-[0.12em] text-slate-500">// 实验室备注 / 结论</p>
-                    <p className="mt-1 text-[11px] text-slate-600">内容会自动保存，并随实验室报告归档和导出。</p>
+                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
+                  <div className="min-w-0">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="font-mono text-[11px] font-medium tracking-[0.12em] text-slate-500">// 实验室备注 / 结论</p>
+                        <p className="mt-1 text-[11px] text-slate-600">内容会自动保存，并随实验室报告归档和导出。</p>
+                      </div>
+                      <span className="shrink-0 font-mono text-[10px] text-slate-600">{manualConclusion.length} / 2000</span>
+                    </div>
+                    <textarea
+                      value={manualConclusion}
+                      onChange={(event) => setManualConclusion(event.target.value)}
+                      maxLength={2000}
+                      rows={5}
+                      placeholder="输入测试结论、异常说明、整改建议或其他实验室备注……"
+                      className="mt-4 min-h-[132px] w-full resize-y rounded-xl border border-white/[0.08] bg-[#070b0d] px-4 py-3 text-sm leading-6 text-slate-100 outline-none transition placeholder:text-slate-600 hover:border-white/[0.12] focus:border-cyan-300/30 focus:bg-cyan-300/[0.025] focus:ring-1 focus:ring-cyan-300/10"
+                    />
                   </div>
-                  <span className="shrink-0 font-mono text-[10px] text-slate-600">{manualConclusion.length} / 2000</span>
+
+                  <div className="rounded-xl border border-white/[0.08] bg-[#070b0d] p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="font-mono text-[11px] font-medium tracking-[0.12em] text-slate-500">// 最终判定</p>
+                        <p className="mt-1 text-[11px] text-slate-600">仅用于归档台账和报告映射</p>
+                      </div>
+                      {finalVerdict === "PASS" ? (
+                        <CheckCircle2 className="h-4 w-4 text-cyan-200" />
+                      ) : finalVerdict === "FAIL" ? (
+                        <CircleX className="h-4 w-4 text-rose-200" />
+                      ) : (
+                        <Circle className="h-4 w-4 text-slate-600" />
+                      )}
+                    </div>
+                    <div className="mt-4 grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        aria-pressed={finalVerdict === "PASS"}
+                        onClick={() => setFinalVerdict("PASS")}
+                        className={`flex min-h-14 items-center justify-center gap-2 rounded-lg border px-3 text-sm font-semibold transition ${
+                          finalVerdict === "PASS"
+                            ? "border-cyan-300/60 bg-cyan-300/15 text-cyan-100 shadow-[0_0_20px_rgba(34,211,238,0.12)]"
+                            : "border-white/[0.08] bg-white/[0.025] text-slate-500 hover:border-cyan-300/35 hover:text-cyan-100"
+                        }`}
+                      >
+                        <CheckCircle2 className="h-4 w-4" />
+                        PASS
+                      </button>
+                      <button
+                        type="button"
+                        aria-pressed={finalVerdict === "FAIL"}
+                        onClick={() => setFinalVerdict("FAIL")}
+                        className={`flex min-h-14 items-center justify-center gap-2 rounded-lg border px-3 text-sm font-semibold transition ${
+                          finalVerdict === "FAIL"
+                            ? "border-rose-300/60 bg-rose-300/15 text-rose-100 shadow-[0_0_20px_rgba(251,113,133,0.12)]"
+                            : "border-white/[0.08] bg-white/[0.025] text-slate-500 hover:border-rose-300/35 hover:text-rose-100"
+                        }`}
+                      >
+                        <CircleX className="h-4 w-4" />
+                        FAIL
+                      </button>
+                    </div>
+                  </div>
                 </div>
-                <textarea
-                  value={manualConclusion}
-                  onChange={(event) => setManualConclusion(event.target.value)}
-                  maxLength={2000}
-                  rows={5}
-                  placeholder="输入测试结论、异常说明、整改建议或其他实验室备注……"
-                  className="mt-4 min-h-[132px] w-full resize-y rounded-xl border border-white/[0.08] bg-[#070b0d] px-4 py-3 text-sm leading-6 text-slate-100 outline-none transition placeholder:text-slate-600 hover:border-white/[0.12] focus:border-cyan-300/30 focus:bg-cyan-300/[0.025] focus:ring-1 focus:ring-cyan-300/10"
-                />
               </div>
             </>
           ) : null}
@@ -1863,6 +2040,7 @@ export default function LaboratoryPdfParserDashboard({
             meta={reportMeta}
             overall={overallAdjudication}
             manualConclusion={manualConclusion}
+            finalVerdict={finalVerdict ?? "FAIL"}
           />
         </div>
       </div>

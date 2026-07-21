@@ -52,6 +52,7 @@ export type LaboratoryReportMeta = {
 };
 
 export type LaboratoryOverallVerdict = "待完成" | "PASS" | "WATCH" | "FAIL";
+export type LaboratoryFinalVerdict = "PASS" | "FAIL";
 
 export type LaboratoryOverallAdjudication = {
   verdict: LaboratoryOverallVerdict;

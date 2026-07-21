@@ -1,6 +1,7 @@
 import { apiFetch } from "@/lib/api"
 import type {
   LaboratoryExportGate,
+  LaboratoryFinalVerdict,
   LaboratoryModuleSummary,
   LaboratoryOverallAdjudication,
   LaboratoryReportMeta,
@@ -22,6 +23,7 @@ export type LaboratoryArchiveState = {
   selectedSpecLabel?: string
   moduleSummaries: LaboratoryModuleSummary[]
   overallAdjudication?: LaboratoryOverallAdjudication
+  finalVerdict?: LaboratoryFinalVerdict
   exportGate?: LaboratoryExportGate
   manualConclusion?: string
   workspaceDraft?: {
@@ -57,6 +59,23 @@ export type LaboratoryArchiveSnapshot = {
   state: LaboratoryArchiveState
 }
 
+export function sortLaboratoryArchivesBySpecSequenceDescending(
+  documents: LaboratoryArchiveRecord[],
+): LaboratoryArchiveRecord[] {
+  return [...documents].sort((left, right) => {
+    const leftSequence = Number(left.specSequence)
+    const rightSequence = Number(right.specSequence)
+    const hasLeftSequence = Number.isFinite(leftSequence) && leftSequence > 0
+    const hasRightSequence = Number.isFinite(rightSequence) && rightSequence > 0
+
+    if (hasLeftSequence && hasRightSequence && leftSequence !== rightSequence) {
+      return rightSequence - leftSequence
+    }
+    if (hasLeftSequence !== hasRightSequence) return hasLeftSequence ? -1 : 1
+    return String(right.createdAt || "").localeCompare(String(left.createdAt || ""))
+  })
+}
+
 function readErrorMessage(payload: unknown, fallback: string): string {
   if (!payload || typeof payload !== "object") return fallback
   const message = (payload as { error?: unknown }).error
@@ -89,15 +108,19 @@ export async function listLaboratoryArchives(projectId: string): Promise<Laborat
     throw new Error(readErrorMessage(payload, "Failed to load laboratory archives"))
   }
 
-  return Array.isArray(payload?.documents) ? payload.documents : []
+  return Array.isArray(payload?.documents)
+    ? sortLaboratoryArchivesBySpecSequenceDescending(payload.documents)
+    : []
 }
 
 export async function createLaboratoryArchive({
   projectId,
   state,
+  documentId,
 }: {
   projectId: string
   state: LaboratoryArchiveState
+  documentId?: string
 }): Promise<LaboratoryArchiveRecord> {
   const response = await apiFetch("/api/dashboard/laboratory-archives", {
     method: "POST",
@@ -106,6 +129,7 @@ export async function createLaboratoryArchive({
     },
     body: JSON.stringify({
       projectId: projectId.trim() || "default-laboratory-workspace",
+      documentId: documentId?.trim() || undefined,
       state,
     }),
   })
