@@ -25,7 +25,14 @@ import { toast } from 'sonner';
 import { FileSpreadsheet, Sparkles, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { DEMO_PROJECTS } from './lib/demoData';
-import { apiFetch } from '@/lib/api';
+import {
+  apiFetch,
+  ensureWriteAuthorization,
+  getWriteSessionStatus,
+  logoutWriteSession,
+  WRITE_SESSION_CHANGED_EVENT,
+  type WriteSessionStatus,
+} from '@/lib/api';
 import { getModuleTheme, getThemeGlowClass, orderModuleNamesForDisplay } from '@/lib/theme';
 import CyberConfirmDialog from '@/components/ui/CyberConfirmDialog';
 import ProjectLobby from '@/components/ProjectLobby';
@@ -62,9 +69,11 @@ const ProductDataDrawerWorkspace = lazy(() => import('./components/ProductDataDr
 const ProgressLogsDrawerWorkspace = lazy(() => import('./components/ProgressLogsDrawerWorkspace'));
 const ParetoQualityDashboard = lazy(() => import('./components/ParetoQualityDashboard'));
 const FinalSampleReportDashboard = lazy(() => import('./components/FinalSampleReportDashboard'));
+const PilotProductionDashboard = lazy(() => import('./components/pilot-production/PilotProductionDashboard'));
 const BatteryCycleDashboard = lazy(() => import('./components/battery-cycle/BatteryCycleDashboard'));
 const TestProjectParserDashboard = lazy(() => import('./components/TestProjectParserDashboard'));
 const ProductSpecExcelParserDashboard = lazy(() => import('./components/ProductSpecExcelParserDashboard'));
+const PqeProcessIssueDashboard = lazy(() => import('./components/PqeProcessIssueDashboard'));
 const LaboratoryPdfParserDashboard = lazy(() => import('./components/LaboratoryPdfParserDashboard'));
 const FishboneDiagramDashboard2 = lazy(() => import('./components/FishboneDiagramDashboard2'));
 const GrrWorkspace = lazy(() => import('./components/GrrWorkspace'));
@@ -187,9 +196,11 @@ const DASHBOARD_TABS = [
   'boxplot',
   'pareto-analysis',
   'final-sample-report',
+  'pilot-production',
   'battery-cycle-test',
   'test-project-parser',
   'product-spec-parser',
+  'pqe-process-issues',
   'laboratory-pdf-parser',
   'fishbone-diagram-2',
   'grr-analysis',
@@ -214,6 +225,7 @@ const PUBLIC_DASHBOARD_TAB_LIMIT =
 const EXTRA_PUBLIC_DASHBOARD_TABS: DashboardTab[] = [
   'spc-calculator',
   'mass-production-monitoring',
+  'pqe-process-issues',
 ];
 const PUBLIC_DASHBOARD_TABS: DashboardTab[] = [
   ...DASHBOARD_TABS.filter((tab, index) => (
@@ -291,7 +303,12 @@ export default function DashboardHome() {
   const [productModuleRows, setProductModuleRows] = useState<ProductModuleRecord[]>([]);
   const [hasLoadedProductModuleRows, setHasLoadedProductModuleRows] = useState(false);
   const [isProductAdminModalOpen, setIsProductAdminModalOpen] = useState(false);
-  const isAdminMode = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('mode') === 'admin';
+  const [writeSession, setWriteSession] = useState<WriteSessionStatus>({
+    authenticated: false,
+    configured: false,
+  });
+  const [isWriteSessionLoading, setIsWriteSessionLoading] = useState(true);
+  const isAdminMode = writeSession.authenticated;
   const visibleTabs = isAdminMode ? DASHBOARD_TABS : PUBLIC_DASHBOARD_TABS;
   const selectedTab = useMemo<DashboardTab>(() => {
     const currentTab = DASHBOARD_TABS.includes(activeTab as DashboardTab)
@@ -302,6 +319,39 @@ export default function DashboardHome() {
     }
     return currentTab;
   }, [activeTab, isAdminMode]);
+
+  const refreshWriteSession = useCallback(async () => {
+    const status = await getWriteSessionStatus();
+    setWriteSession(status);
+    setIsWriteSessionLoading(false);
+    return status;
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void getWriteSessionStatus().then((status) => {
+      if (cancelled) return;
+      setWriteSession(status);
+      setIsWriteSessionLoading(false);
+    });
+
+    const handleSessionChanged = (event: Event) => {
+      const detail = (event as CustomEvent<WriteSessionStatus>).detail;
+      if (detail && typeof detail.authenticated === 'boolean') {
+        setWriteSession(detail);
+        setIsWriteSessionLoading(false);
+        return;
+      }
+      void refreshWriteSession();
+    };
+    window.addEventListener(WRITE_SESSION_CHANGED_EVENT, handleSessionChanged);
+    window.addEventListener('focus', refreshWriteSession);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(WRITE_SESSION_CHANGED_EVENT, handleSessionChanged);
+      window.removeEventListener('focus', refreshWriteSession);
+    };
+  }, [refreshWriteSession]);
 
   const loadProjects = useCallback(async () => {
     setLoading(true);
@@ -701,6 +751,32 @@ export default function DashboardHome() {
     setIsAdminModalOpen(true);
   }, [selectedTab]);
 
+  const handleAdminLogin = useCallback(async () => {
+    setIsWriteSessionLoading(true);
+    try {
+      const authenticated = await ensureWriteAuthorization();
+      const status = await refreshWriteSession();
+      if (authenticated && status.authenticated) {
+        toast.success('管理员登录成功，服务器修改权限已开启。');
+      }
+    } finally {
+      setIsWriteSessionLoading(false);
+    }
+  }, [refreshWriteSession]);
+
+  const handleAdminLogout = useCallback(async () => {
+    setIsWriteSessionLoading(true);
+    try {
+      await logoutWriteSession();
+      setWriteSession((current) => ({ ...current, authenticated: false }));
+      setIsAdminModalOpen(false);
+      setIsProductAdminModalOpen(false);
+      toast.success('已退出管理员模式，服务器恢复只读。');
+    } finally {
+      setIsWriteSessionLoading(false);
+    }
+  }, []);
+
   const tabStripRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -755,26 +831,35 @@ export default function DashboardHome() {
     return latest ? formatDateTimeLabel(latest) : '-';
   }, [currentModuleMoldIds, productModuleDataByLookup, productModuleSequenceByMold]);
 
-  const adminControls = isAdminMode ? (
+  const adminControls = (
     <>
-      <AdminButton onClick={handleOpenAdmin} />
-      <Suspense fallback={null}>
-        <AdminModal
-          open={isAdminModalOpen}
-          onOpenChange={setIsAdminModalOpen}
-          onDataUpdate={handleDataUpdate}
-          onDataClear={handleClearData}
-          lastUpdated={new Date().toLocaleDateString('zh-CN')}
-        />
-        <ProductModuleAdminModal
-          open={isProductAdminModalOpen}
-          onOpenChange={setIsProductAdminModalOpen}
-          lastUpdated={productModuleLastUpdated}
-          onUploadSuccess={loadProductModuleRows}
-        />
-      </Suspense>
+      <AdminButton
+        authenticated={writeSession.authenticated}
+        configured={writeSession.configured}
+        loading={isWriteSessionLoading}
+        onLogin={() => void handleAdminLogin()}
+        onManage={handleOpenAdmin}
+        onLogout={() => void handleAdminLogout()}
+      />
+      {isAdminMode ? (
+        <Suspense fallback={null}>
+          <AdminModal
+            open={isAdminModalOpen}
+            onOpenChange={setIsAdminModalOpen}
+            onDataUpdate={handleDataUpdate}
+            onDataClear={handleClearData}
+            lastUpdated={new Date().toLocaleDateString('zh-CN')}
+          />
+          <ProductModuleAdminModal
+            open={isProductAdminModalOpen}
+            onOpenChange={setIsProductAdminModalOpen}
+            lastUpdated={productModuleLastUpdated}
+            onUploadSuccess={loadProductModuleRows}
+          />
+        </Suspense>
+      ) : null}
     </>
-  ) : null;
+  );
 
   const emptyDashboardView = (
     <>
@@ -881,10 +966,12 @@ export default function DashboardHome() {
               'overview': '项目总览',
               'pareto-analysis': '柏拉图分析',
               'final-sample-report': '终样报告',
+              'pilot-production': '试产',
               'battery-cycle-test': '电池充放电',
               'test-project-parser': '测试项目解析',
               'image-stitcher': '图片拼接',
               'product-spec-parser': '产品规格书看板',
+              'pqe-process-issues': 'PQE车间制程问题',
               'laboratory-pdf-parser': '实验室报告解析',
               'fishbone-diagram-2': '鱼骨图2',
               'grr-analysis': 'GRR量测分析',
@@ -961,6 +1048,12 @@ export default function DashboardHome() {
           </LazyWorkspace>
         )}
 
+        {selectedTab === 'pilot-production' && (
+          <LazyWorkspace>
+            <PilotProductionDashboard />
+          </LazyWorkspace>
+        )}
+
         {selectedTab === 'battery-cycle-test' && (
           <LazyWorkspace>
             <BatteryCycleDashboard />
@@ -982,6 +1075,12 @@ export default function DashboardHome() {
         {selectedTab === 'product-spec-parser' && (
           <LazyWorkspace>
             <ProductSpecExcelParserDashboard projectName={activeModule || ''} />
+          </LazyWorkspace>
+        )}
+
+        {selectedTab === 'pqe-process-issues' && (
+          <LazyWorkspace>
+            <PqeProcessIssueDashboard projectName={activeModule || ''} />
           </LazyWorkspace>
         )}
 

@@ -2,8 +2,12 @@ import { toast } from 'sonner';
 
 const API_KEY_STORAGE_KEY = 'dashboard_api_key';
 const WRITE_SESSION_ENDPOINT = '/api/auth/write-session';
+export const WRITE_SESSION_CHANGED_EVENT = 'dashboard-write-session-changed';
 
-export const DEFAULT_LOCAL_WRITE_PASSWORD = '476281307';
+export type WriteSessionStatus = {
+  authenticated: boolean;
+  configured: boolean;
+};
 
 let pendingWriteAuthorization: Promise<boolean> | null = null;
 
@@ -82,14 +86,19 @@ function buildRequestInit(init: RequestInit | undefined, method: string): Reques
   };
 }
 
-async function loginWriteSession(apiKey: string): Promise<boolean> {
+function notifyWriteSessionChanged(status: WriteSessionStatus): void {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent(WRITE_SESSION_CHANGED_EVENT, { detail: status }));
+}
+
+async function loginWriteSession(password: string): Promise<boolean> {
   const response = await fetch(WRITE_SESSION_ENDPOINT, {
     method: 'POST',
     credentials: 'same-origin',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ apiKey }),
+    body: JSON.stringify({ password }),
   });
 
   if (!response.ok) {
@@ -97,6 +106,7 @@ async function loginWriteSession(apiKey: string): Promise<boolean> {
   }
 
   forgetStoredApiKey();
+  notifyWriteSessionChanged({ authenticated: true, configured: true });
   return true;
 }
 
@@ -110,7 +120,7 @@ async function requestWriteAuthorization(): Promise<boolean> {
     fields: [
       {
         kind: 'password',
-        name: 'apiKey',
+        name: 'password',
         label: '管理员密码',
         placeholder: '请输入管理员密码',
         required: true,
@@ -123,10 +133,10 @@ async function requestWriteAuthorization(): Promise<boolean> {
   });
   if (!values) return false;
 
-  const apiKey = (values.apiKey ?? '').trim();
-  if (!apiKey) return false;
+  const password = (values.password ?? '').trim();
+  if (!password) return false;
 
-  const authenticated = await loginWriteSession(apiKey);
+  const authenticated = await loginWriteSession(password);
   if (!authenticated) {
     toast.error('管理员写入密码无效，请确认后重试。');
   }
@@ -144,23 +154,50 @@ async function requestWriteAuthorizationOnce(): Promise<boolean> {
   return pendingWriteAuthorization;
 }
 
-async function hasWriteSession(): Promise<boolean> {
-  if (typeof window === 'undefined') return false;
+export async function getWriteSessionStatus(): Promise<WriteSessionStatus> {
+  if (typeof window === 'undefined') {
+    return { authenticated: false, configured: false };
+  }
 
   const response = await fetch(WRITE_SESSION_ENDPOINT, {
     credentials: 'same-origin',
     cache: 'no-store',
   }).catch(() => null);
-  if (!response?.ok) return false;
+  if (!response?.ok) {
+    return { authenticated: false, configured: false };
+  }
 
-  const payload = (await response.json().catch(() => null)) as { authenticated?: unknown } | null;
-  return Boolean(payload?.authenticated);
+  const payload = (await response.json().catch(() => null)) as {
+    authenticated?: unknown;
+    configured?: unknown;
+  } | null;
+  return {
+    authenticated: Boolean(payload?.authenticated),
+    configured: Boolean(payload?.configured),
+  };
+}
+
+export async function logoutWriteSession(): Promise<void> {
+  if (typeof window === 'undefined') return;
+
+  await fetch(WRITE_SESSION_ENDPOINT, {
+    method: 'DELETE',
+    credentials: 'same-origin',
+  }).catch(() => null);
+  forgetStoredApiKey();
+  notifyWriteSessionChanged({ authenticated: false, configured: true });
 }
 
 export async function ensureWriteAuthorization(): Promise<boolean> {
-  if (await hasWriteSession()) {
+  const status = await getWriteSessionStatus();
+  if (status.authenticated) {
     forgetStoredApiKey();
     return true;
+  }
+
+  if (!status.configured) {
+    toast.error('服务器未配置管理员登录密码，当前只能只读访问。');
+    return false;
   }
 
   return requestWriteAuthorizationOnce();
@@ -199,10 +236,13 @@ export async function apiFetch(url: string, init?: RequestInit): Promise<Respons
     return response;
   }
 
-  const authenticated = await requestWriteAuthorizationOnce();
-  if (!authenticated) {
-    return response;
-  }
-
-  return fetch(url, buildRequestInit(init, method));
+  const status = await getWriteSessionStatus();
+  notifyWriteSessionChanged({ authenticated: false, configured: status.configured });
+  toast.error('当前为只读模式', {
+    id: 'dashboard-read-only-write-blocked',
+    description: status.configured
+      ? '请先点击右下角“管理员登录”，登录后再执行修改。'
+      : '服务器尚未配置管理员登录密码。',
+  });
+  return response;
 }

@@ -1,8 +1,8 @@
 /**
- * API Key 认证中间件 — 读写分离
+ * Dashboard 认证中间件 — 读写分离
  *
  * GET / HEAD / OPTIONS → 放行（公开只读）
- * POST / PUT / PATCH / DELETE → 强制校验 x-api-key
+ * POST / PUT / PATCH / DELETE → 强制校验机器 API Key 或管理员写会话
  */
 
 import type { NextFunction, Request, Response } from 'express';
@@ -10,7 +10,7 @@ import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 
 const API_KEY = process.env.API_SECRET_KEY || '';
 const DASHBOARD_WRITE_PASSWORD = process.env.DASHBOARD_WRITE_PASSWORD || '';
-const IS_DEV_API_MODE = process.env.DEV_API === '1';
+const IS_DEV_API_MODE = process.env.DEV_API === '1' && process.env.NODE_ENV !== 'production';
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1']);
 export const WRITE_SESSION_COOKIE_NAME = 'dashboard_write_session';
 export const WRITE_SESSION_TTL_SECONDS = 12 * 60 * 60;
@@ -92,7 +92,10 @@ function readCookieValue(req: Request, cookieName: string): string {
 }
 
 function signWriteSessionPayload(payload: string): string {
-  return createHmac('sha256', API_KEY).update(payload).digest('base64url');
+  const sessionSecret = DASHBOARD_WRITE_PASSWORD
+    ? `${API_KEY}\u0000${DASHBOARD_WRITE_PASSWORD}`
+    : API_KEY;
+  return createHmac('sha256', sessionSecret).update(payload).digest('base64url');
 }
 
 function safeEqual(left: string, right: string): boolean {
@@ -134,14 +137,17 @@ export function isWriteApiConfigured(): boolean {
   return Boolean(API_KEY);
 }
 
+export function isWriteLoginConfigured(): boolean {
+  return Boolean(API_KEY && DASHBOARD_WRITE_PASSWORD);
+}
+
 export function isValidWriteApiKey(value: unknown): boolean {
   return typeof value === 'string' && Boolean(API_KEY) && value === API_KEY;
 }
 
 export function isValidWriteLoginSecret(value: unknown): boolean {
-  if (typeof value !== 'string' || !API_KEY) return false;
-  if (value === API_KEY) return true;
-  return Boolean(DASHBOARD_WRITE_PASSWORD) && value === DASHBOARD_WRITE_PASSWORD;
+  if (typeof value !== 'string' || !isWriteLoginConfigured()) return false;
+  return safeEqual(value, DASHBOARD_WRITE_PASSWORD);
 }
 
 export function createWriteSessionToken(now = Date.now()): string {

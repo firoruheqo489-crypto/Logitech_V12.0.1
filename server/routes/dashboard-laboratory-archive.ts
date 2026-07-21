@@ -71,6 +71,7 @@ type LaboratoryArchiveState = {
     label: string;
     reasons: string[];
   };
+  manualConclusion?: string;
   workspaceDraft?: {
     nodes: Array<{ id: number; type: string | null; isConfirmed: boolean }>;
     draftSelections: Record<number, string>;

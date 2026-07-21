@@ -718,7 +718,11 @@ export default function EmcRadiationWorkspace({
   async function handleUpload(expectedChannel: EmcChannelId, file: File) {
     if (file.name.toLowerCase().endsWith(".emc")) {
       const parsed = parseEmcBinaryFile(file.name, await file.arrayBuffer());
-      const resolvedChannel = parsed.channel ?? expectedChannel;
+      const resolvedChannel = expectedChannel;
+
+      if (parsed.channel && parsed.channel !== expectedChannel) {
+        toast.warning(`文件名识别为 ${parsed.channel} 通道，已按当前 ${expectedChannel} 上传卡片载入`);
+      }
 
       setChannels((previous) => {
         const existing = previous.find((channel) => channel.channel === resolvedChannel);
@@ -743,7 +747,11 @@ export default function EmcRadiationWorkspace({
 
     const payload = await parseEmcPdfUpload(file);
     const parsed = payload.result;
-    const resolvedChannel = parsed.channel ?? expectedChannel;
+    const resolvedChannel = expectedChannel;
+
+    if (parsed.channel && parsed.channel !== expectedChannel) {
+      toast.warning(`报告识别为 ${parsed.channel} 通道，已按当前 ${expectedChannel} 上传卡片载入`);
+    }
     const pdfChannel = toChannelData({ ...parsed, channel: resolvedChannel }, payload.fileName || file.name);
 
     setChannels((previous) => {

@@ -23,6 +23,7 @@ export type LaboratoryArchiveState = {
   moduleSummaries: LaboratoryModuleSummary[]
   overallAdjudication?: LaboratoryOverallAdjudication
   exportGate?: LaboratoryExportGate
+  manualConclusion?: string
   workspaceDraft?: {
     nodes: Array<{ id: number; type: string | null; isConfirmed: boolean }>
     draftSelections: Record<number, string>

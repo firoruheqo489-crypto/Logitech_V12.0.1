@@ -96,20 +96,31 @@ export async function generateDiagnosticPDF(record: IssueRecord, filename: strin
     }
     const lh = size * 1.6;
     const topPad = size * 0.1;
-    const bh = lines.length * lh + topPad + size * 0.12;
-    cvs.width = Math.ceil(maxW * R) + 4;
-    cvs.height = Math.ceil(bh * R) + 4;
-    cx.setTransform(R, 0, 0, R, 0, 0);
-    cx.clearRect(0, 0, cvs.width, cvs.height);
-    cx.font = font;
-    cx.fillStyle = color;
-    cx.textBaseline = 'top';
-    lines.forEach((l, i) => cx.fillText(l, 0, topPad + i * lh));
-    checkPage(bh);
-    pdf.addImage(cvs.toDataURL('image/png'), 'PNG', offX, Y, maxW, bh);
-    if (advance) Y += bh;
+    const bottomPad = size * 0.12;
+    const maxLinesPerPage = Math.max(1, Math.floor((SAFE_BOTTOM - MT - topPad - bottomPad) / lh));
+    let renderedHeight = 0;
+
+    // Render in page-sized chunks. The old implementation created one very tall
+    // PNG and only checked the page boundary after it was already laid out.
+    for (let start = 0; start < lines.length; start += maxLinesPerPage) {
+      const chunk = lines.slice(start, start + maxLinesPerPage);
+      const bh = chunk.length * lh + topPad + bottomPad;
+      if (Y + bh > SAFE_BOTTOM && Y > MT) newPage();
+      cvs.width = Math.ceil(maxW * R) + 4;
+      cvs.height = Math.ceil(bh * R) + 4;
+      cx.setTransform(R, 0, 0, R, 0, 0);
+      cx.clearRect(0, 0, cvs.width, cvs.height);
+      cx.font = font;
+      cx.fillStyle = color;
+      cx.textBaseline = 'top';
+      chunk.forEach((l, i) => cx.fillText(l, 0, topPad + i * lh));
+      pdf.addImage(cvs.toDataURL('image/png'), 'PNG', offX, Y, maxW, bh);
+      Y += bh;
+      renderedHeight += bh;
+    }
+    if (!advance) Y -= renderedHeight;
     cx.setTransform(1, 0, 0, 1, 0, 0);
-    return bh;
+    return renderedHeight;
   };
 
   const enText = (t: string, s: number, c: string, w = W, x = ML, a = true) =>
@@ -363,7 +374,10 @@ export async function generateDiagnosticPDF(record: IssueRecord, filename: strin
           if (drawH > availH) { drawH = availH; drawW = drawH / aspect; }
           const dx = ix + cellPad + (availW - drawW) / 2;
           const dy = Y + cellPad + (availH - drawH) / 2;
-          pdf.addImage(img, 'JPEG', dx, dy, drawW, drawH);
+          const source = imgs[idx].preview.toLowerCase();
+          const format = source.startsWith('data:image/png') ? 'PNG'
+            : source.startsWith('data:image/webp') ? 'WEBP' : 'JPEG';
+          pdf.addImage(img, format, dx, dy, drawW, drawH);
         }
       }
 

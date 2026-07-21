@@ -3,7 +3,7 @@ import {
   createWriteSessionToken,
   hasValidWriteSession,
   isValidWriteLoginSecret,
-  isWriteApiConfigured,
+  isWriteLoginConfigured,
   WRITE_SESSION_COOKIE_NAME,
   WRITE_SESSION_TTL_SECONDS,
 } from '../middleware/auth.js';
@@ -24,10 +24,14 @@ function readSubmittedKey(req: Request): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
-function sendAuthError(res: Response, status: number, code: 'API_KEY_INVALID' | 'API_KEY_NOT_CONFIGURED'): void {
+function sendAuthError(
+  res: Response,
+  status: number,
+  code: 'API_KEY_INVALID' | 'WRITE_LOGIN_NOT_CONFIGURED',
+): void {
   res.status(status).json({
-    error: code === 'API_KEY_NOT_CONFIGURED'
-      ? 'Write API key is not configured on the server'
+    error: code === 'WRITE_LOGIN_NOT_CONFIGURED'
+      ? 'Dashboard admin password is not configured on the server'
       : 'api key missing or invalid',
     code,
   });
@@ -36,13 +40,13 @@ function sendAuthError(res: Response, status: number, code: 'API_KEY_INVALID' | 
 authSessionRouter.get('/write-session', (req: Request, res: Response) => {
   res.status(200).json({
     authenticated: hasValidWriteSession(req),
-    configured: isWriteApiConfigured(),
+    configured: isWriteLoginConfigured(),
   });
 });
 
 authSessionRouter.post('/write-session', (req: Request, res: Response) => {
-  if (!isWriteApiConfigured()) {
-    sendAuthError(res, 503, 'API_KEY_NOT_CONFIGURED');
+  if (!isWriteLoginConfigured()) {
+    sendAuthError(res, 503, 'WRITE_LOGIN_NOT_CONFIGURED');
     return;
   }
 

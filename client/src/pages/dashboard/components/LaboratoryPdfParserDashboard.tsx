@@ -100,6 +100,7 @@ type LaboratoryWorkspaceDraft = {
   nodeSummaries: Record<number, LaboratoryModuleSummary>
   reportMeta?: LaboratoryReportMeta
   selectedSpecId?: string
+  manualConclusion?: string
 }
 
 const LABORATORY_WORKSPACE_DRAFT_PREFIX = "dashboard:laboratory-workspace-draft:v2"
@@ -1305,6 +1306,7 @@ export default function LaboratoryPdfParserDashboard({
   const [restoredArchiveReportNo, setRestoredArchiveReportNo] = useState("")
   const [nodeSummaries, setNodeSummaries] = useState<Record<number, LaboratoryModuleSummary>>({})
   const [reportMeta, setReportMeta] = useState<LaboratoryReportMeta>(() => createInitialReportMeta())
+  const [manualConclusion, setManualConclusion] = useState("")
   const [selectedSpecId, setSelectedSpecId] = useState("")
   const [ledgerRecords, setLedgerRecords] = useState<EngineeringSpecLedgerRecord[]>([])
   const [isLoadingLedger, setIsLoadingLedger] = useState(false)
@@ -1363,10 +1365,11 @@ export default function LaboratoryPdfParserDashboard({
       moduleSummaries,
       overallAdjudication,
       exportGate,
+      manualConclusion,
       workspaceDraft: { nodes, draftSelections, nodeSummaries },
       imageUrl: selectedSpecRecord?.imageUrl,
     }),
-    [draftSelections, exportGate, moduleSummaries, nodeSummaries, nodes, overallAdjudication, reportMeta, selectedSpecId, selectedSpecRecord, specHeader],
+    [draftSelections, exportGate, manualConclusion, moduleSummaries, nodeSummaries, nodes, overallAdjudication, reportMeta, selectedSpecId, selectedSpecRecord, specHeader],
   )
   const canArchiveLaboratoryReport = moduleSummaries.length > 0 && Boolean(reportMeta.reportNo.trim())
 
@@ -1385,6 +1388,7 @@ export default function LaboratoryPdfParserDashboard({
       setNodeSummaries(draft.nodeSummaries)
       if (draft.reportMeta) setReportMeta(draft.reportMeta)
       if (typeof draft.selectedSpecId === "string") setSelectedSpecId(draft.selectedSpecId)
+      if (typeof draft.manualConclusion === "string") setManualConclusion(draft.manualConclusion)
       nextNodeIdRef.current = Math.max(1, ...draft.nodes.map((node) => node.id + 1))
     }
     hydratedDraftRef.current = true
@@ -1397,8 +1401,8 @@ export default function LaboratoryPdfParserDashboard({
       clearLaboratoryWorkspaceDraft(projectId)
       return
     }
-    writeLaboratoryWorkspaceDraft(projectId, { nodes, draftSelections, nodeSummaries, reportMeta, selectedSpecId })
-  }, [draftSelections, nodeSummaries, nodes, projectId, reportMeta, selectedSpecId])
+    writeLaboratoryWorkspaceDraft(projectId, { nodes, draftSelections, nodeSummaries, reportMeta, selectedSpecId, manualConclusion })
+  }, [draftSelections, manualConclusion, nodeSummaries, nodes, projectId, reportMeta, selectedSpecId])
 
   useEffect(() => {
     let cancelled = false
@@ -1603,6 +1607,7 @@ export default function LaboratoryPdfParserDashboard({
       setDraftSelections({ 1: "" })
       setNodeSummaries({})
       setReportMeta(createInitialReportMeta())
+      setManualConclusion("")
       setSelectedSpecId("")
       setSelectedSpecState(null)
       setIsEditingArchivedReport(false)
@@ -1631,6 +1636,7 @@ export default function LaboratoryPdfParserDashboard({
       nextNodeIdRef.current = Math.max(1, ...draft.nodes.map((node) => node.id + 1))
     }
     setReportMeta(state.reportMeta)
+    setManualConclusion(state.manualConclusion || "")
     setRestoredArchiveReportNo(state.reportMeta.reportNo)
     setIsEditingArchivedReport(true)
     setSelectedSpecId(state.selectedSpecId || "")
@@ -1651,6 +1657,7 @@ export default function LaboratoryPdfParserDashboard({
     setDraftSelections({ 1: "" })
     setNodeSummaries({})
     setReportMeta(createInitialReportMeta())
+    setManualConclusion("")
     setSelectedSpecId("")
     setSelectedSpecState(null)
     setIsEditingArchivedReport(false)
@@ -1787,24 +1794,22 @@ export default function LaboratoryPdfParserDashboard({
                 </div>
               </div>
 
-              <div className="mt-4 grid gap-3 lg:grid-cols-2">
-                <div className="min-h-[132px] rounded-xl border border-white/[0.06] bg-black/20 p-4">
-                  <p className="font-mono text-[11px] font-medium tracking-[0.12em] text-slate-500">// 综合结论</p>
-                  <p className="mt-4 text-sm font-medium leading-6 text-slate-200">{overallAdjudication.summary}</p>
-                </div>
-                <div className="min-h-[132px] rounded-xl border border-white/[0.06] bg-black/20 p-4">
-                  <p className="font-mono text-[11px] font-medium tracking-[0.12em] text-slate-500">// 门禁原因</p>
-                  <div className="mt-4 flex flex-wrap content-start gap-2">
-                    {exportGate.reasons.map((reason) => (
-                      <span
-                        key={reason}
-                        className="rounded-full border border-white/[0.06] bg-white/[0.03] px-3 py-1 text-xs text-slate-300"
-                      >
-                        {reason}
-                      </span>
-                    ))}
+              <div className="mt-4 rounded-xl border border-white/[0.06] bg-black/20 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="font-mono text-[11px] font-medium tracking-[0.12em] text-slate-500">// 实验室备注 / 结论</p>
+                    <p className="mt-1 text-[11px] text-slate-600">内容会自动保存，并随实验室报告归档和导出。</p>
                   </div>
+                  <span className="shrink-0 font-mono text-[10px] text-slate-600">{manualConclusion.length} / 2000</span>
                 </div>
+                <textarea
+                  value={manualConclusion}
+                  onChange={(event) => setManualConclusion(event.target.value)}
+                  maxLength={2000}
+                  rows={5}
+                  placeholder="输入测试结论、异常说明、整改建议或其他实验室备注……"
+                  className="mt-4 min-h-[132px] w-full resize-y rounded-xl border border-white/[0.08] bg-[#070b0d] px-4 py-3 text-sm leading-6 text-slate-100 outline-none transition placeholder:text-slate-600 hover:border-white/[0.12] focus:border-cyan-300/30 focus:bg-cyan-300/[0.025] focus:ring-1 focus:ring-cyan-300/10"
+                />
               </div>
             </>
           ) : null}
@@ -1857,6 +1862,7 @@ export default function LaboratoryPdfParserDashboard({
             summaries={moduleSummaries}
             meta={reportMeta}
             overall={overallAdjudication}
+            manualConclusion={manualConclusion}
           />
         </div>
       </div>

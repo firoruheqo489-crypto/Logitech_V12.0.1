@@ -228,6 +228,7 @@ describe('api access policy pipeline', () => {
   it('allows trusted browser writes in production with a valid write session cookie', async () => {
     const { apiKeyAuth, createWriteSessionToken, WRITE_SESSION_COOKIE_NAME } = await loadAuthModule({
       API_SECRET_KEY: 'expected-key',
+      DASHBOARD_WRITE_PASSWORD: 'admin-password',
       NODE_ENV: 'production',
     });
     const req = createMockRequest({

@@ -1,0 +1,490 @@
+﻿@reference "../../../../index.css";
+@theme inline {
+  --color-risk: #ed715b;
+  --color-success: #48c6a0;
+  --color-info: #79a9c4;
+  --color-primary: #eeb74d;
+}
+
+:root {
+  color-scheme: dark;
+  --background: #000;
+  --foreground: #f4f2ed;
+  --card: rgb(17 19 20/0.72);
+  --muted: #1b1d1e;
+  --muted-fg: #92989a;
+  --primary: #eeb74d;
+  --success: #48c6a0;
+  --risk: #ed715b;
+  --info: #79a9c4;
+  --border: rgb(244 242 237/0.12);
+}
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    scroll-behavior: smooth;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  button {
+    @apply cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring;
+  }
+}
+@layer components {
+  .shell {
+    @apply mx-auto w-full max-w-[1560px] px-4 px-8;
+  }
+  .command-header {
+    @apply sticky top-0 z-40 border-b border-border bg-background/85 backdrop-blur-2xl;
+  }
+  .brand-mark {
+    @apply flex size-10 items-center justify-center rounded-xl border border-[#eeb74d]/30 bg-[#eeb74d]/10 text-[#eeb74d];
+  }
+  .brand-mark svg,
+  .icon-button svg,
+  .product-switch svg {
+    @apply size-4;
+  }
+  .product-switch {
+    @apply items-center gap-3 rounded-lg border border-border bg-card px-4 py-2 text-xs backdrop-blur-xl;
+  }
+  .live {
+    @apply items-center gap-2 rounded-full border border-[#48c6a0]/20 bg-[#48c6a0]/5 px-3 py-1.5 font-mono text-[10px] text-[#48c6a0];
+  }
+  .live i {
+    @apply size-1.5 rounded-full bg-[#48c6a0];
+  }
+  .icon-button {
+    @apply flex size-9 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground backdrop-blur-xl transition hover:border-[#eeb74d]/40 hover:text-[#eeb74d];
+  }
+  .glass {
+    @apply border border-border bg-card backdrop-blur-2xl;
+    box-shadow:
+      inset 0 1px rgb(255 255 255/0.08),
+      0 24px 60px rgb(0 0 0/0.3);
+  }
+  .command-deck {
+    @apply relative grid overflow-hidden rounded-2xl border border-border p-5 p-8 grid-cols-[1fr_1.15fr] gap-10;
+    background:
+      radial-gradient(
+        circle at 22% 0%,
+        rgb(238 183 77/0.13),
+        transparent 32rem
+      ),
+      rgb(15 16 16/0.8);
+    box-shadow:
+      inset 0 1px rgb(255 255 255/0.1),
+      0 35px 90px rgb(0 0 0/0.4);
+  }
+  .deck-copy {
+    @apply flex flex-col items-start;
+  }
+  .kicker {
+    @apply flex items-center gap-2 font-mono text-[10px] tracking-[.15em] text-[#eeb74d];
+  }
+  .kicker svg {
+    @apply size-4;
+  }
+  .release-state {
+    @apply mt-7 flex items-center gap-2 text-xs text-[#48c6a0];
+  }
+  .release-state span {
+    @apply size-1.5 rounded-full bg-[#48c6a0];
+  }
+  .deck-copy h1 {
+    @apply mt-3 text-balance text-3xl font-semibold tracking-[-.04em] text-5xl;
+  }
+  .deck-copy h1 em {
+    @apply not-italic text-[#eeb74d];
+  }
+  .deck-copy > p:last-child {
+    @apply mt-5 max-w-xl text-sm leading-6 text-muted-foreground;
+  }
+  .deck-stats {
+    @apply mt-8 grid grid-cols-2 gap-2 mt-0 self-end;
+  }
+  .mini-stat {
+    @apply rounded-xl border border-border bg-background/40 p-4 backdrop-blur-xl;
+  }
+  .mini-stat p {
+    @apply text-[11px] text-muted-foreground;
+  }
+  .mini-stat strong {
+    @apply mt-2 block font-mono text-xl font-medium text-2xl;
+  }
+  .mini-stat span {
+    @apply mt-1 block text-[10px] text-muted-foreground;
+  }
+  .mini-stat.warn strong {
+    @apply text-[#eeb74d];
+  }
+  .mini-stat.risk strong {
+    @apply text-[#ed715b];
+  }
+  .mini-stat.good strong {
+    @apply text-[#48c6a0];
+  }
+  .section {
+    @apply py-8 py-10;
+  }
+  .section.last {
+    @apply pb-14;
+  }
+  .section-heading {
+    @apply flex items-center gap-3;
+  }
+  .section-heading > span {
+    @apply font-mono text-xs text-[#eeb74d];
+  }
+  .section-heading p {
+    @apply text-[10px] tracking-[.2em] text-muted-foreground;
+  }
+  .section-heading h2 {
+    @apply mt-1 text-xl font-semibold tracking-tight;
+  }
+  .team-chain {
+    @apply mt-5 grid grid-cols-2 overflow-hidden rounded-xl border border-border bg-card backdrop-blur-xl grid-cols-4 grid-cols-8;
+  }
+  .person {
+    @apply relative flex items-center gap-3 border-b border-r border-border p-3;
+  }
+  .person.lead {
+    @apply bg-[#eeb74d]/8;
+  }
+  .avatar {
+    @apply flex size-9 shrink-0 items-center justify-center rounded-lg border border-border bg-muted text-sm font-semibold;
+  }
+  .person strong {
+    @apply block text-sm;
+  }
+  .person p {
+    @apply truncate text-[10px] text-muted-foreground;
+  }
+  .todo {
+    @apply ml-auto flex size-5 items-center justify-center rounded-full bg-muted font-mono text-[9px] text-muted-foreground;
+  }
+  .todo.hot {
+    @apply bg-[#ed715b]/15 text-[#ed715b];
+  }
+  .profile-grid {
+    @apply mt-5 grid gap-3 grid-cols-[1.6fr_1fr];
+  }
+  .parameter-strip {
+    @apply grid overflow-hidden rounded-xl sm:grid-cols-4;
+  }
+  .parameter-strip > div {
+    @apply border-b border-r border-border p-5;
+  }
+  .parameter-strip span,
+  .risk-radar span {
+    @apply block text-[10px] text-muted-foreground;
+  }
+  .parameter-strip strong {
+    @apply mt-3 block font-mono text-sm;
+  }
+  .risk-radar {
+    @apply rounded-xl p-5;
+  }
+  .risk-radar > div:first-child {
+    @apply flex items-center justify-between;
+  }
+  .risk-radar > div strong {
+    @apply font-mono text-xs;
+  }
+  .risk-bar {
+    @apply mt-5 flex h-1.5 overflow-hidden rounded-full bg-muted;
+  }
+  .risk-bar i:nth-child(1) {
+    @apply w-[35%] bg-[#eeb74d];
+  }
+  .risk-bar i:nth-child(2) {
+    @apply w-[29%] bg-[#ed715b];
+  }
+  .risk-bar i:nth-child(3) {
+    @apply w-[24%] bg-[#48c6a0];
+  }
+  .risk-bar i:nth-child(4) {
+    @apply w-[12%] bg-info;
+  }
+  .risk-radar > p {
+    @apply mt-4 flex justify-between gap-2 text-[10px] text-muted-foreground;
+  }
+  .filters {
+    @apply mt-5 flex flex-wrap gap-2;
+  }
+  .filters button {
+    @apply rounded-full border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground transition;
+  }
+  .filters button.active {
+    @apply border-[#eeb74d] bg-[#eeb74d] text-black;
+  }
+  .issue-layout {
+    @apply mt-3 grid gap-3 grid-cols-[330px_1fr];
+  }
+  .issue-list {
+    @apply flex flex-col gap-1 rounded-xl p-2;
+  }
+  .issue {
+    @apply grid grid-cols-[1fr_auto] rounded-lg border border-transparent p-3 text-left transition;
+  }
+  .issue:hover {
+    @apply bg-muted/60;
+  }
+  .issue.active {
+    @apply border-[#eeb74d]/40 bg-[#eeb74d]/8;
+  }
+  .issue-code {
+    @apply font-mono text-[10px] text-muted-foreground;
+  }
+  .severity {
+    @apply text-[10px] text-muted-foreground;
+  }
+  .severity.高风险 {
+    @apply text-[#ed715b];
+  }
+  .issue strong {
+    @apply col-span-2 mt-2 text-sm;
+  }
+  .issue small {
+    @apply col-span-2 mt-3 text-[10px] text-muted-foreground;
+  }
+  .issue-detail {
+    @apply rounded-xl p-5 p-6;
+  }
+  .detail-head {
+    @apply flex items-start justify-between gap-4;
+  }
+  .detail-head span {
+    @apply font-mono text-[10px] text-[#eeb74d];
+  }
+  .detail-head h3 {
+    @apply mt-2 text-xl font-semibold;
+  }
+  .detail-head b {
+    @apply rounded-full border border-[#ed715b]/30 bg-[#ed715b]/10 px-3 py-1 text-[10px] text-[#ed715b];
+  }
+  .description {
+    @apply mt-5 max-w-4xl text-sm leading-6 text-muted-foreground;
+  }
+  .evidence-pair {
+    @apply grid gap-3 sm:grid-cols-2;
+  }
+  .issue-detail > .evidence-pair {
+    @apply mt-5;
+  }
+  .evidence {
+    @apply relative min-h-52 overflow-hidden rounded-xl border border-border bg-[#0a0b0b];
+  }
+  .evidence-head,
+  .evidence figcaption {
+    @apply absolute inset-x-0 z-10 flex justify-between px-3 font-mono text-[9px] text-muted-foreground;
+  }
+  .evidence-head {
+    @apply top-0 border-b border-border bg-black/40 py-2;
+  }
+  .evidence figcaption {
+    @apply bottom-0 border-t border-border bg-black/50 py-2;
+  }
+  .measure-grid {
+    @apply absolute inset-8;
+    background-image:
+      linear-gradient(rgb(255 255 255/0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgb(255 255 255/0.04) 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+  .thermal .measure-grid {
+    background-color: #101313;
+    background-image:
+      radial-gradient(
+        circle at 55% 48%,
+        rgb(238 183 77/0.9),
+        rgb(237 113 91/0.35) 12%,
+        transparent 34%
+      ),
+      linear-gradient(rgb(255 255 255/0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgb(255 255 255/0.04) 1px, transparent 1px);
+  }
+  .hotspot {
+    @apply absolute flex size-6 items-center justify-center rounded-full border border-white/50 font-mono text-[8px] not-italic;
+  }
+  .h1 {
+    @apply left-[50%] top-[42%];
+  }
+  .h2 {
+    @apply left-[68%] top-[62%];
+  }
+  .temp-scale {
+    @apply absolute right-2 top-2 flex h-[70%] flex-col justify-between border-r-2 border-[#eeb74d] pr-2 font-mono text-[8px];
+  }
+  .curve .measure-grid:after {
+    content: "";
+    @apply absolute inset-x-4 bottom-8 h-24;
+    border-top: 2px solid var(--success);
+    transform: skewY(-5deg);
+    border-radius: 50%;
+  }
+  .target-line {
+    @apply absolute inset-x-0 top-1/3 border-t border-dashed border-[#eeb74d];
+  }
+  .curve-label {
+    @apply absolute right-1 top-[25%] font-mono text-[8px] text-[#eeb74d];
+  }
+  .action-grid {
+    @apply mt-5 grid overflow-hidden rounded-xl border border-border grid-cols-[1fr_1fr_1.2fr_.65fr];
+  }
+  .action-grid > div {
+    @apply border-b border-r border-border p-4;
+  }
+  .action-grid span {
+    @apply font-mono text-[9px] text-[#eeb74d];
+  }
+  .action-grid p {
+    @apply mt-2 text-xs leading-5 text-muted-foreground;
+  }
+  .action-owner strong {
+    @apply mt-3 block text-base;
+  }
+  .action-owner p {
+    @apply mt-1;
+  }
+  .validation-grid {
+    @apply mt-5 grid gap-3 grid-cols-[.85fr_1.15fr];
+  }
+  .verdict {
+    @apply rounded-xl p-5;
+  }
+  .verdict-title {
+    @apply flex items-center gap-3;
+  }
+  .verdict-title > div {
+    @apply flex size-11 items-center justify-center rounded-full bg-[#48c6a0]/10 text-[#48c6a0];
+  }
+  .verdict-title svg {
+    @apply size-5;
+  }
+  .verdict-title span {
+    @apply flex flex-col;
+  }
+  .verdict-title small {
+    @apply mt-1 text-[10px] text-muted-foreground;
+  }
+  .delta-row {
+    @apply mt-6 grid grid-cols-3 gap-2;
+  }
+  .verdict ul {
+    @apply mt-5 flex flex-col gap-3;
+  }
+  .verdict li {
+    @apply flex items-center gap-2 text-xs;
+  }
+  .verdict li svg {
+    @apply size-4 text-[#48c6a0];
+  }
+  .conclusion {
+    @apply mt-5 flex items-center justify-between rounded-lg border border-[#48c6a0]/20 bg-[#48c6a0]/8 p-3 text-xs text-[#48c6a0];
+  }
+  .conclusion svg {
+    @apply size-4;
+  }
+  .knowledge-grid {
+    @apply mt-5 grid gap-3 grid-cols-3;
+  }
+  .knowledge {
+    @apply rounded-xl p-5;
+  }
+  .knowledge > div {
+    @apply flex justify-between text-[#eeb74d];
+  }
+  .knowledge svg {
+    @apply size-5;
+  }
+  .knowledge > div span {
+    @apply text-[9px] text-[#48c6a0];
+  }
+  .knowledge > p {
+    @apply mt-5 text-[9px] uppercase tracking-widest text-muted-foreground;
+  }
+  .knowledge h3 {
+    @apply mt-2 text-lg;
+  }
+  .knowledge > strong {
+    @apply mt-2 block text-xs font-normal text-foreground;
+  }
+  .knowledge footer {
+    @apply mt-6 flex items-center gap-3 border-t border-border pt-4 font-mono text-xs;
+  }
+  .knowledge footer svg {
+    @apply size-3;
+  }
+  .knowledge footer s {
+    @apply text-muted-foreground;
+  }
+  .knowledge footer b {
+    @apply text-[#48c6a0];
+  }
+  .knowledge-cta {
+    @apply mt-3 flex flex-col items-start justify-between gap-4 rounded-xl border border-border bg-card p-5 backdrop-blur-xl sm:flex-row sm:items-center;
+  }
+  .knowledge-cta > div {
+    @apply flex items-center gap-3;
+  }
+  .knowledge-cta svg {
+    @apply size-5 text-[#eeb74d];
+  }
+  .knowledge-cta span {
+    @apply flex flex-col;
+  }
+  .knowledge-cta small {
+    @apply mt-1 text-[10px] text-muted-foreground;
+  }
+  .knowledge-cta button {
+    @apply rounded-lg bg-[#eeb74d] px-4 py-2 text-xs font-semibold text-black;
+  }
+}
+
+.pilot-production-scope .glass,
+.pilot-production-scope .mini-stat,
+.pilot-production-scope .issue-list,
+.pilot-production-scope .issue-detail,
+.pilot-production-scope .verdict,
+.pilot-production-scope .knowledge,
+.pilot-production-scope .parameter-strip,
+.pilot-production-scope .risk-radar,
+.pilot-production-scope .team-chain {
+  background-color: rgb(17 19 20 / 72%) !important;
+  color: #f4f2ed;
+}
+.pilot-production-scope .command-deck {
+  background:
+    radial-gradient(circle at 22% 0%, rgb(238 183 77 / 13%), transparent 32rem),
+    rgb(15 16 16 / 80%) !important;
+}
+.pilot-production-scope .issue.active,
+.pilot-production-scope .person.lead {
+  background-color: rgb(238 183 77 / 8%) !important;
+}
+.pilot-production-scope .filters button {
+  background-color: rgb(17 19 20 / 72%);
+  color: #92989a;
+}
+.pilot-production-scope .filters button.active {
+  background-color: #eeb74d;
+  color: #000;
+}
+@media (max-width: 640px) {
+  .evidence {
+    @apply min-h-44;
+  }
+  .action-grid {
+    @apply grid-cols-1;
+  }
+  .risk-radar > p {
+    @apply grid grid-cols-2;
+  }
+  .deck-stats {
+    @apply grid-cols-1;
+  }
+}

@@ -109,6 +109,29 @@ describe('apiKeyAuth', () => {
     expect(state.statusCode).toBeNull();
   });
 
+  it('does not allow the local development bypass in production', async () => {
+    const { apiKeyAuth } = await loadAuthModule({
+      API_SECRET_KEY: 'expected-key',
+      DEV_API: '1',
+      NODE_ENV: 'production',
+    });
+    const req = createMockRequest({
+      method: 'POST',
+      headers: {
+        host: 'localhost:3001',
+        origin: 'http://localhost:3000',
+      },
+      hostname: 'localhost',
+    });
+    const { res, state } = createMockResponse();
+    const next = vi.fn<NextFunction>();
+
+    apiKeyAuth(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(state.statusCode).toBe(403);
+  });
+
   it('rejects same-origin-looking production writes without API key', async () => {
     const { apiKeyAuth } = await loadAuthModule({
       API_SECRET_KEY: 'expected-key',
@@ -195,17 +218,28 @@ describe('apiKeyAuth', () => {
     expect(state.statusCode).toBeNull();
   });
 
-  it('accepts an optional dashboard write password for session login without changing the legacy API key', async () => {
-    const { isValidWriteApiKey, isValidWriteLoginSecret } = await loadAuthModule({
+  it('requires the dedicated dashboard password for browser login without changing the legacy API key', async () => {
+    const { isValidWriteApiKey, isValidWriteLoginSecret, isWriteLoginConfigured } = await loadAuthModule({
       API_SECRET_KEY: 'expected-key',
       DASHBOARD_WRITE_PASSWORD: 'admin-password',
       NODE_ENV: 'production',
     });
 
+    expect(isWriteLoginConfigured()).toBe(true);
     expect(isValidWriteLoginSecret('admin-password')).toBe(true);
-    expect(isValidWriteLoginSecret('expected-key')).toBe(true);
+    expect(isValidWriteLoginSecret('expected-key')).toBe(false);
     expect(isValidWriteApiKey('admin-password')).toBe(false);
     expect(isValidWriteApiKey('expected-key')).toBe(true);
+  });
+
+  it('keeps browser administrator login disabled when no dedicated password is configured', async () => {
+    const { isValidWriteLoginSecret, isWriteLoginConfigured } = await loadAuthModule({
+      API_SECRET_KEY: 'expected-key',
+      NODE_ENV: 'production',
+    });
+
+    expect(isWriteLoginConfigured()).toBe(false);
+    expect(isValidWriteLoginSecret('expected-key')).toBe(false);
   });
 
   it('allows write requests with a valid HttpOnly session cookie', async () => {
@@ -253,6 +287,23 @@ describe('apiKeyAuth', () => {
       error: 'api key missing or invalid',
       code: 'API_KEY_INVALID',
     });
+  });
+
+  it('invalidates existing browser sessions when the administrator password changes', async () => {
+    const originalAuth = await loadAuthModule({
+      API_SECRET_KEY: 'expected-key',
+      DASHBOARD_WRITE_PASSWORD: 'old-admin-password',
+      NODE_ENV: 'production',
+    });
+    const token = originalAuth.createWriteSessionToken();
+    expect(originalAuth.isValidWriteSessionToken(token)).toBe(true);
+
+    const rotatedAuth = await loadAuthModule({
+      API_SECRET_KEY: 'expected-key',
+      DASHBOARD_WRITE_PASSWORD: 'new-admin-password',
+      NODE_ENV: 'production',
+    });
+    expect(rotatedAuth.isValidWriteSessionToken(token)).toBe(false);
   });
 
   it('allows the write-session login endpoint without an existing session', async () => {

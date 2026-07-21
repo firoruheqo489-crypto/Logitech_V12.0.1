@@ -88,10 +88,12 @@ export function LaboratoryPrintSurface({
   summaries,
   meta,
   overall,
+  manualConclusion = "",
 }: {
   summaries: LaboratoryModuleSummary[];
   meta: LaboratoryReportMeta;
   overall: LaboratoryOverallAdjudication;
+  manualConclusion?: string;
 }) {
   const generatedAt = new Date().toLocaleString("zh-CN");
   const passCount = summaries.filter((summary) => summary.verdict === "PASS").length;
@@ -140,8 +142,8 @@ export function LaboratoryPrintSurface({
             <PrintMetric key={item.label} label={item.label} value={item.value} />
           ))}
         </div>
-        <div className="mt-4 rounded-lg border border-cyan-300/10 bg-black/20 p-3 text-sm text-slate-300">
-          {overall.summary}
+        <div className="mt-4 whitespace-pre-wrap rounded-lg border border-cyan-300/10 bg-black/20 p-3 text-sm leading-6 text-slate-300">
+          {manualConclusion.trim() || overall.summary}
         </div>
       </section>
 

@@ -312,10 +312,23 @@ export function sampleEmcChannels(): EmcChannelData[] {
 }
 
 function guessChannelFromName(fileName: string): EmcChannelId | null {
-  const normalized = fileName.toLowerCase();
-  if (/(^|[^a-z])l([^a-z]|$)|live|火线|line/.test(normalized)) return "L";
-  if (/(^|[^a-z])n([^a-z]|$)|neutral|零线/.test(normalized)) return "N";
-  if (/(^|[^a-z])f([^a-z]|$)|frame|ground|gnd|地线/.test(normalized)) return "F";
+  const normalized = fileName.trim().toLowerCase();
+  const baseName = normalized.replace(/\.[^.]+$/, "").trim();
+  const suffixChannel = baseName.match(/(?:^|[\s._-])([lnf])$/i)?.[1]?.toUpperCase();
+  if (suffixChannel === "L" || suffixChannel === "N" || suffixChannel === "F") {
+    return suffixChannel;
+  }
+
+  if (/neutral|零线/.test(normalized)) return "N";
+  if (/frame|ground|gnd|地线/.test(normalized)) return "F";
+  if (/live|火线|line/.test(normalized)) return "L";
+
+  const tokenMatches = [...baseName.matchAll(/(?:^|[^a-z0-9])([lnf])(?=[^a-z0-9]|$)/gi)];
+  const tokenChannel = tokenMatches.at(-1)?.[1]?.toUpperCase();
+  if (tokenChannel === "L" || tokenChannel === "N" || tokenChannel === "F") {
+    return tokenChannel;
+  }
+
   return null;
 }
 
