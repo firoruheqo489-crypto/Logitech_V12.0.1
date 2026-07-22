@@ -33,6 +33,7 @@ import {
 import { sanitizeEngineeringSpecLedgerRecords } from "@/lib/engineering-spec-ledger-clean"
 import {
   createLaboratoryArchive,
+  getLaboratoryArchiveDocument,
   type LaboratoryArchiveSnapshot,
   type LaboratoryArchiveState,
 } from "@/lib/laboratory-archive-api"
@@ -184,6 +185,7 @@ type LaboratorySpecHeader = {
   electronicEngineer: string
   testType: string
   sampleDeliveryDate: string
+  completionDate: string
 }
 
 type LockedArchiveSpecBinding = {
@@ -257,16 +259,32 @@ function buildLaboratorySpecHeader(
       state?.inspectionTestProject?.sampleDeliveryDate?.trim() ||
       record?.testDate?.trim() ||
       "--",
+    completionDate:
+      state?.inspectionTestProject?.completionDate?.trim() ||
+      "--",
   }
 }
 
-function buildLockedArchiveSpecHeader(state: LaboratoryArchiveState): LaboratorySpecHeader {
-  return state.specHeader ?? {
+function buildLockedArchiveSpecHeader(
+  state: LaboratoryArchiveState,
+  completionDateFallback?: string,
+): LaboratorySpecHeader {
+  if (state.specHeader) {
+    return {
+      ...state.specHeader,
+      completionDate:
+        state.specHeader.completionDate?.trim() ||
+        completionDateFallback?.trim() ||
+        "--",
+    }
+  }
+  return {
     productManager: state.reportMeta.operator?.trim() || "--",
     structuralEngineer: "--",
     electronicEngineer: "--",
     testType: state.reportMeta.stage?.trim() || "--",
     sampleDeliveryDate: state.reportMeta.testDate?.trim() || "--",
+    completionDate: completionDateFallback?.trim() || "--",
   }
 }
 
@@ -1370,6 +1388,7 @@ export default function LaboratoryPdfParserDashboard({
         electronicEngineer: "--",
         testType: reportMeta.stage?.trim() || "--",
         sampleDeliveryDate: reportMeta.testDate?.trim() || "--",
+        completionDate: "--",
       }
     }
     return buildLaboratorySpecHeader(selectedSpecRecord, selectedSpecState)
@@ -1463,6 +1482,7 @@ export default function LaboratoryPdfParserDashboard({
             electronicEngineer: "--",
             testType: draft.reportMeta?.stage?.trim() || "--",
             sampleDeliveryDate: draft.reportMeta?.testDate?.trim() || "--",
+            completionDate: "--",
           },
         })
         setIsEditingArchivedReport(true)
@@ -1492,6 +1512,50 @@ export default function LaboratoryPdfParserDashboard({
       lockedArchiveSpecBinding: isEditingArchivedReport ? lockedArchiveSpecBinding ?? undefined : undefined,
     })
   }, [draftSelections, finalVerdict, isEditingArchivedReport, lockedArchiveSpecBinding, manualConclusion, nodeSummaries, nodes, projectId, reportMeta, restoredArchiveDocumentId, restoredArchiveReportNo, selectedSpecId])
+
+  useEffect(() => {
+    if (!isEditingArchivedReport || !restoredArchiveDocumentId) return
+
+    let cancelled = false
+
+    const refreshLockedArchiveBinding = async () => {
+      try {
+        const snapshot = await getLaboratoryArchiveDocument({
+          projectId,
+          documentId: restoredArchiveDocumentId,
+        })
+        let completionDate =
+          snapshot.state.specHeader?.completionDate?.trim() ||
+          snapshot.document.completionDate?.trim() ||
+          ""
+
+        if (!completionDate && snapshot.state.selectedSpecId) {
+          const specificationSnapshot = await getEngineeringSpecArchiveDocumentState({
+            projectId,
+            documentId: snapshot.state.selectedSpecId,
+          })
+          completionDate = specificationSnapshot.state.inspectionTestProject?.completionDate?.trim() || ""
+        }
+
+        if (cancelled) return
+        setLockedArchiveSpecBinding({
+          selectedSpecId: snapshot.state.selectedSpecId,
+          selectedSpecSequence: snapshot.state.selectedSpecSequence ?? snapshot.document.specSequence,
+          selectedSpecLabel: snapshot.state.selectedSpecLabel ?? snapshot.document.selectedSpecLabel,
+          specHeader: buildLockedArchiveSpecHeader(snapshot.state, completionDate),
+          imageUrl: snapshot.state.imageUrl ?? snapshot.document.imageUrl,
+        })
+      } catch {
+        // Keep the locally restored archive available when remote refresh is temporarily unavailable.
+      }
+    }
+
+    void refreshLockedArchiveBinding()
+
+    return () => {
+      cancelled = true
+    }
+  }, [isEditingArchivedReport, projectId, restoredArchiveDocumentId])
 
   useEffect(() => {
     let cancelled = false
@@ -1755,7 +1819,7 @@ export default function LaboratoryPdfParserDashboard({
       selectedSpecId: state.selectedSpecId,
       selectedSpecSequence: state.selectedSpecSequence ?? document.specSequence,
       selectedSpecLabel: state.selectedSpecLabel ?? document.selectedSpecLabel,
-      specHeader: buildLockedArchiveSpecHeader(state),
+      specHeader: buildLockedArchiveSpecHeader(state, document.completionDate),
       imageUrl: state.imageUrl ?? document.imageUrl,
     })
     setIsEditingArchivedReport(true)
@@ -1850,83 +1914,95 @@ export default function LaboratoryPdfParserDashboard({
                       {isLoadingLedger ? "读取中" : isLoadingSpecDetail ? "映射中" : `${sanitizedLedgerRecords.length} 条`}
                     </span>
                   </div>
-                  <div className="mt-3 grid gap-4 md:grid-cols-[180px_minmax(0,1fr)]">
-                    <div className="aspect-square w-full overflow-hidden rounded-xl border border-white/[0.08] bg-[#0b1012] shadow-[inset_0_0_24px_rgba(0,0,0,0.24)]">
+                  <div className="mt-4 grid gap-4 lg:grid-cols-[252px_minmax(0,1fr)] lg:items-stretch">
+                    <div className="relative aspect-square w-full overflow-hidden rounded-2xl border border-white/[0.08] bg-[#0b1012] shadow-[inset_0_0_30px_rgba(0,0,0,0.3)] lg:aspect-auto lg:min-h-[248px]">
                       {displayedSpecImageUrl ? (
-                        <img src={displayedSpecImageUrl} alt="产品图示" className="h-full w-full object-contain p-3" />
+                        <img src={displayedSpecImageUrl} alt="产品图示" className="h-full w-full object-contain p-4" />
                       ) : (
                         <div className="flex h-full items-center justify-center text-center font-mono text-[11px] leading-5 text-slate-600">
                           产品图示<br />图片映射区
                         </div>
                       )}
+                      <span className="absolute bottom-3 left-3 rounded-full border border-white/[0.08] bg-black/55 px-3 py-1 font-mono text-[9px] tracking-[0.14em] text-slate-400 backdrop-blur-sm">
+                        产品图示
+                      </span>
                     </div>
 
-                    <div className="grid min-w-0 gap-4 md:grid-cols-2 md:grid-rows-1">
-                      <div className="flex min-w-0 min-h-[132px] flex-col justify-center rounded-xl border border-white/[0.08] bg-white/[0.025] px-5 py-4">
-                        <p className="mb-2 font-mono text-[11px] font-medium tracking-[0.08em] text-slate-500">
-                          台账序号 · {isArchiveHeaderLocked ? "归档锁定" : "可选择"}
-                        </p>
-                        {isArchiveHeaderLocked ? (
-                          <div
-                            className="flex h-12 w-full items-center justify-between rounded-lg border border-amber-300/20 bg-amber-300/[0.05] px-4 font-mono text-lg font-semibold text-slate-100"
-                            title="已归档报告的台账序号和映射表头不可修改"
-                          >
-                            <span>{displayedSpecSequence ? `#${displayedSpecSequence}` : "--"}</span>
-                            <LockKeyhole className="h-4 w-4 text-amber-200" />
-                          </div>
-                        ) : (
-                          <Select value={selectedSpecId} onValueChange={handleSpecRecordSelect} disabled={isLoadingLedger || sanitizedLedgerRecords.length === 0}>
-                            <SelectTrigger className="h-12 w-full rounded-lg border-cyan-300/20 bg-black/20 text-left font-mono text-lg font-semibold text-slate-100 hover:border-cyan-300/40 focus:ring-cyan-300/20">
-                              <SelectValue placeholder={isLoadingLedger ? "正在读取" : "选择序号"}>
-                                {selectedSpecRecord ? `#${selectedSpecRecord.sequence}` : undefined}
-                              </SelectValue>
-                            </SelectTrigger>
-                            <SelectContent className="max-h-80 rounded-xl border-cyan-400/20 bg-[#050911] text-slate-100 shadow-2xl">
-                              {sanitizedLedgerRecords.map((record) => (
-                                <SelectItem
-                                  key={record.id}
-                                  value={record.id}
-                                  className="rounded-lg py-2.5 text-slate-100 data-[highlighted]:bg-cyan-400/10 data-[highlighted]:text-cyan-100"
-                                >
-                                  <span className="block max-w-[520px] truncate font-mono text-sm">#{record.sequence}</span>
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        )}
-                      </div>
+                    <div className="grid min-w-0 content-between gap-3.5">
+                      <div className="grid min-w-0 gap-3.5 md:grid-cols-2 xl:grid-cols-3">
+                        <div className="flex min-h-[136px] min-w-0 flex-col justify-center rounded-2xl border border-white/[0.08] bg-white/[0.025] px-5 py-4">
+                          <p className="mb-3 font-mono text-[10px] font-medium tracking-[0.12em] text-slate-500">
+                            台账序号 · {isArchiveHeaderLocked ? "归档锁定" : "可选择"}
+                          </p>
+                          {isArchiveHeaderLocked ? (
+                            <div
+                              className="flex h-12 w-full items-center justify-between rounded-xl border border-amber-300/20 bg-amber-300/[0.05] px-4 font-mono text-[19px] font-semibold text-slate-100"
+                              title="已归档报告的台账序号和映射表头不可修改"
+                            >
+                              <span>{displayedSpecSequence ? `#${displayedSpecSequence}` : "--"}</span>
+                              <LockKeyhole className="h-4 w-4 text-amber-200" />
+                            </div>
+                          ) : (
+                            <Select value={selectedSpecId} onValueChange={handleSpecRecordSelect} disabled={isLoadingLedger || sanitizedLedgerRecords.length === 0}>
+                              <SelectTrigger className="h-12 w-full rounded-xl border-cyan-300/20 bg-black/20 text-left font-mono text-[19px] font-semibold text-slate-100 hover:border-cyan-300/40 focus:ring-cyan-300/20">
+                                <SelectValue placeholder={isLoadingLedger ? "正在读取" : "选择序号"}>
+                                  {selectedSpecRecord ? `#${selectedSpecRecord.sequence}` : undefined}
+                                </SelectValue>
+                              </SelectTrigger>
+                              <SelectContent className="max-h-80 rounded-xl border-cyan-400/20 bg-[#050911] text-slate-100 shadow-2xl">
+                                {sanitizedLedgerRecords.map((record) => (
+                                  <SelectItem
+                                    key={record.id}
+                                    value={record.id}
+                                    className="rounded-lg py-2.5 text-slate-100 data-[highlighted]:bg-cyan-400/10 data-[highlighted]:text-cyan-100"
+                                  >
+                                    <span className="block max-w-[520px] truncate font-mono text-sm">#{record.sequence}</span>
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          )}
+                        </div>
 
-                      <div className="flex min-w-0 min-h-[132px] flex-col justify-center rounded-xl border border-white/[0.08] bg-white/[0.025] px-5 py-4">
-                        <p className="mb-2 font-mono text-[11px] font-medium tracking-[0.08em] text-slate-500">产品编号 · 自动映射</p>
-                        <div className="flex h-12 items-center rounded-lg border border-white/[0.08] bg-black/20 px-4 font-mono text-lg font-semibold text-slate-100">
-                          <span className="truncate" title={displayedSpecSampleNo || ""}>{displayedSpecSampleNo || "--"}</span>
+                        <div className="flex min-h-[136px] min-w-0 flex-col justify-center rounded-2xl border border-white/[0.08] bg-white/[0.025] px-5 py-4">
+                          <p className="mb-3 font-mono text-[10px] font-medium tracking-[0.12em] text-slate-500">产品编号 · 自动映射</p>
+                          <div className="flex h-12 items-center rounded-xl border border-white/[0.08] bg-black/20 px-4 font-mono text-[19px] font-semibold text-slate-100">
+                            <span className="truncate" title={displayedSpecSampleNo || ""}>{displayedSpecSampleNo || "--"}</span>
+                          </div>
+                        </div>
+
+                        <div className="flex min-h-[136px] min-w-0 flex-col justify-center rounded-2xl border border-cyan-300/[0.09] bg-cyan-300/[0.035] px-5 py-4">
+                          <p className="mb-3 font-mono text-[10px] font-medium tracking-[0.12em] text-slate-500">测试类型 · 自动映射</p>
+                          <div className="flex h-12 items-center rounded-xl border border-cyan-300/[0.1] bg-black/20 px-4 text-[19px] font-semibold text-cyan-100">
+                            <span className="truncate" title={specHeader.testType}>{specHeader.testType}</span>
+                          </div>
                         </div>
                       </div>
+
+                      <dl className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+                        <div className="flex min-h-[96px] min-w-0 flex-col justify-center rounded-xl border border-white/[0.055] bg-white/[0.022] px-4 py-3.5">
+                          <dt className="font-mono text-[10px] font-medium tracking-[0.12em] text-slate-500">产品经理</dt>
+                          <dd className="mt-2.5 truncate text-[15px] font-semibold leading-6 text-slate-100" title={specHeader.productManager}>{specHeader.productManager}</dd>
+                        </div>
+                        <div className="flex min-h-[96px] min-w-0 flex-col justify-center rounded-xl border border-white/[0.055] bg-white/[0.022] px-4 py-3.5">
+                          <dt className="font-mono text-[10px] font-medium tracking-[0.12em] text-slate-500">结构工程师</dt>
+                          <dd className="mt-2.5 truncate text-[15px] font-semibold leading-6 text-slate-100" title={specHeader.structuralEngineer}>{specHeader.structuralEngineer}</dd>
+                        </div>
+                        <div className="flex min-h-[96px] min-w-0 flex-col justify-center rounded-xl border border-white/[0.055] bg-white/[0.022] px-4 py-3.5">
+                          <dt className="font-mono text-[10px] font-medium tracking-[0.12em] text-slate-500">电子工程师</dt>
+                          <dd className="mt-2.5 truncate text-[15px] font-semibold leading-6 text-slate-100" title={specHeader.electronicEngineer}>{specHeader.electronicEngineer}</dd>
+                        </div>
+                        <div className="flex min-h-[96px] min-w-0 flex-col justify-center rounded-xl border border-cyan-300/[0.08] bg-cyan-300/[0.03] px-4 py-3.5">
+                          <dt className="font-mono text-[10px] font-medium tracking-[0.12em] text-slate-500">送样日期</dt>
+                          <dd className="mt-2.5 truncate font-mono text-[15px] font-semibold leading-6 text-cyan-100" title={specHeader.sampleDeliveryDate}>{specHeader.sampleDeliveryDate}</dd>
+                        </div>
+                        <div className="flex min-h-[96px] min-w-0 flex-col justify-center rounded-xl border border-cyan-300/[0.08] bg-cyan-300/[0.03] px-4 py-3.5">
+                          <dt className="font-mono text-[10px] font-medium tracking-[0.12em] text-slate-500">完成日期</dt>
+                          <dd className="mt-2.5 truncate font-mono text-[15px] font-semibold leading-6 text-cyan-100" title={specHeader.completionDate}>{specHeader.completionDate}</dd>
+                        </div>
+                      </dl>
                     </div>
                   </div>
-
-                  <dl className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-                    <div className="flex min-h-[82px] flex-col justify-between rounded-lg border border-white/[0.05] bg-white/[0.025] px-4 py-3">
-                      <dt className="font-mono text-[11px] font-medium tracking-[0.08em] text-slate-500">产品经理</dt>
-                      <dd className="mt-3 truncate text-base font-semibold text-slate-100" title={specHeader.productManager}>{specHeader.productManager}</dd>
-                    </div>
-                    <div className="flex min-h-[82px] flex-col justify-between rounded-lg border border-white/[0.05] bg-white/[0.025] px-4 py-3">
-                      <dt className="font-mono text-[11px] font-medium tracking-[0.08em] text-slate-500">结构工程师</dt>
-                      <dd className="mt-3 truncate text-base font-semibold text-slate-100" title={specHeader.structuralEngineer}>{specHeader.structuralEngineer}</dd>
-                    </div>
-                    <div className="flex min-h-[82px] flex-col justify-between rounded-lg border border-white/[0.05] bg-white/[0.025] px-4 py-3">
-                      <dt className="font-mono text-[11px] font-medium tracking-[0.08em] text-slate-500">电子工程师</dt>
-                      <dd className="mt-3 truncate text-base font-semibold text-slate-100" title={specHeader.electronicEngineer}>{specHeader.electronicEngineer}</dd>
-                    </div>
-                    <div className="flex min-h-[82px] flex-col justify-between rounded-lg border border-cyan-300/[0.08] bg-cyan-300/[0.035] px-4 py-3">
-                      <dt className="font-mono text-[11px] font-medium tracking-[0.08em] text-slate-500">测试类型</dt>
-                      <dd className="mt-3 truncate text-base font-semibold text-cyan-100" title={specHeader.testType}>{specHeader.testType}</dd>
-                    </div>
-                    <div className="flex min-h-[82px] flex-col justify-between rounded-lg border border-cyan-300/[0.08] bg-cyan-300/[0.035] px-4 py-3">
-                      <dt className="font-mono text-[11px] font-medium tracking-[0.08em] text-slate-500">送样日期</dt>
-                      <dd className="mt-3 truncate font-mono text-base font-semibold text-cyan-100" title={specHeader.sampleDeliveryDate}>{specHeader.sampleDeliveryDate}</dd>
-                    </div>
-                  </dl>
                 </div>
               </div>
 

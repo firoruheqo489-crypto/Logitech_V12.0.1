@@ -13,6 +13,7 @@ export type LaboratoryArchiveSpecHeader = {
   electronicEngineer: string
   testType: string
   sampleDeliveryDate: string
+  completionDate: string
 }
 
 export type LaboratoryArchiveState = {
@@ -44,6 +45,7 @@ export type LaboratoryArchiveRecord = {
   sampleNo: string
   sampleType?: string
   specSequence?: number
+  completionDate?: string
   testDate: string
   verdict: string
   moduleCount: number

@@ -125,4 +125,26 @@ describe("laboratory archive module data restoration", () => {
     expect(workspaceApi).toContain("completionDate?: string;");
     expect(archiveApi).toContain("completionDate?: string;");
   });
+
+  it("maps only the specification completion date into the laboratory archive ledger", async () => {
+    const dashboardSource = await loadSource("./pages/dashboard/components/LaboratoryPdfParserDashboard.tsx");
+    const panelSource = await loadSource("./pages/dashboard/components/laboratory/LaboratoryArchivePanel.tsx");
+    const archiveApiSource = await loadSource("./lib/laboratory-archive-api.ts");
+    const serverSource = await loadSource("../../server/routes/dashboard-laboratory-archive.ts");
+
+    expect(panelSource).toContain('className="text-center">完成日期</span>');
+    expect(panelSource).toContain('record.completionDate || "--"');
+    expect(panelSource).not.toContain('record.completionDate || record.testDate');
+    expect(dashboardSource).toMatch(/completionDate:\s*state\?\.inspectionTestProject\?\.completionDate\?\.trim\(\)\s*\|\|/);
+    expect(dashboardSource).not.toMatch(/completionDate:[\s\S]{0,100}record\?\.testDate/);
+    expect(dashboardSource).toContain("title={specHeader.completionDate}>{specHeader.completionDate}");
+    expect(dashboardSource).toContain("xl:grid-cols-3");
+    expect(dashboardSource).toContain("测试类型 · 自动映射");
+    expect(dashboardSource).toContain("getLaboratoryArchiveDocument({");
+    expect(dashboardSource).toContain("specificationSnapshot.state.inspectionTestProject?.completionDate?.trim()");
+    expect(dashboardSource).toContain("buildLockedArchiveSpecHeader(state, document.completionDate)");
+    expect(archiveApiSource).toContain("completionDate?: string");
+    expect(serverSource).toContain("const completionDate = normalizeText(inspectionTestProject.completionDate, 64) || undefined");
+    expect(serverSource).toContain("normalizeText(state.specHeader?.completionDate, 64)");
+  });
 });

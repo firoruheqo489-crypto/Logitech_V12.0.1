@@ -45,6 +45,7 @@ type LaboratoryArchiveSpecHeader = {
   electronicEngineer: string;
   testType: string;
   sampleDeliveryDate: string;
+  completionDate: string;
 };
 
 type LaboratoryArchiveState = {
@@ -91,6 +92,7 @@ type LaboratoryArchiveRecord = {
   sampleNo: string;
   sampleType?: string;
   specSequence?: number;
+  completionDate?: string;
   testDate: string;
   verdict: string;
   moduleCount: number;
@@ -224,7 +226,7 @@ function buildEngineeringSpecDocumentObjectKey(projectId: string, documentId: st
 async function resolveEngineeringSpecMapping(
   projectId: string,
   documentId: string | undefined,
-): Promise<{ imageUrl?: string; sampleType?: string; specSequence?: number }> {
+): Promise<{ imageUrl?: string; sampleType?: string; specSequence?: number; completionDate?: string }> {
   if (!documentId) return {};
   try {
     const buffer = await getOssObjectBuffer(buildEngineeringSpecDocumentObjectKey(projectId, documentId));
@@ -234,14 +236,13 @@ async function resolveEngineeringSpecMapping(
       : {};
     const state = snapshot.state && typeof snapshot.state === "object" ? snapshot.state as Record<string, unknown> : {};
     const imageUrl = normalizeText(state.imageUrl, 400000) || undefined;
-    const sampleType = normalizeText(
-      state.inspectionTestProject && typeof state.inspectionTestProject === "object"
-        ? (state.inspectionTestProject as Record<string, unknown>).testType
-        : undefined,
-      120,
-    ) || undefined;
+    const inspectionTestProject = state.inspectionTestProject && typeof state.inspectionTestProject === "object"
+      ? state.inspectionTestProject as Record<string, unknown>
+      : {};
+    const sampleType = normalizeText(inspectionTestProject.testType, 120) || undefined;
+    const completionDate = normalizeText(inspectionTestProject.completionDate, 64) || undefined;
     const specSequence = Number(document.sequence) || undefined;
-    return { imageUrl, sampleType, specSequence };
+    return { imageUrl, sampleType, specSequence, completionDate };
   } catch {
     return {};
   }
@@ -290,6 +291,7 @@ function sanitizeRecord(
     sampleNo: normalizeText(record.sampleNo, 255),
     sampleType: normalizeText(record.sampleType, 120) || undefined,
     specSequence: Number(record.specSequence) || undefined,
+    completionDate: normalizeText(record.completionDate, 64) || undefined,
     testDate: normalizeText(record.testDate, 64),
     verdict: normalizeText(record.verdict, 32, "待完成"),
     moduleCount: Number(record.moduleCount) || 0,
@@ -437,6 +439,12 @@ export async function listDashboardLaboratoryArchives(
       if (!snapshot) return document;
 
       const sampleType = mapping.sampleType || undefined;
+      const snapshotCompletionDate = normalizeText(snapshot.state.specHeader?.completionDate, 64);
+      const completionDate = (
+        snapshotCompletionDate && snapshotCompletionDate !== "--"
+          ? snapshotCompletionDate
+          : undefined
+      ) ?? mapping.completionDate ?? document.completionDate;
       // 已归档记录中的台账编号是提交时的权威值，不能被 OSS 反查结果覆盖。
       const specSequence = document.specSequence ?? mapping.specSequence;
       // 人工勾选的最终判定是归档台账“判定”列的唯一权威来源。
@@ -444,15 +452,21 @@ export async function listDashboardLaboratoryArchives(
         ? snapshot.state.finalVerdict
         : undefined;
       const verdict = finalVerdict ?? document.verdict;
+      const nextSpecHeader = snapshot.state.specHeader
+        ? { ...snapshot.state.specHeader, completionDate: completionDate || "--" }
+        : snapshot.state.specHeader;
       const requiresUpdate =
         document.imageUrl !== imageUrl ||
         document.sampleType !== sampleType ||
         document.specSequence !== specSequence ||
+        document.completionDate !== completionDate ||
+        snapshot.state.specHeader?.completionDate !== nextSpecHeader?.completionDate ||
         document.verdict !== verdict;
       if (!requiresUpdate) return document;
 
-      const hydratedDocument = { ...document, imageUrl, sampleType, specSequence, verdict };
+      const hydratedDocument = { ...document, imageUrl, sampleType, specSequence, completionDate, verdict };
       snapshot.state.imageUrl = imageUrl;
+      snapshot.state.specHeader = nextSpecHeader;
       await putOssObject({
         objectKey: buildDocumentObjectKey(projectId, document.id),
         body: Buffer.from(JSON.stringify({ ...snapshot, document: hydratedDocument }, null, 2), "utf8"),
@@ -567,6 +581,12 @@ export async function createDashboardLaboratoryArchive(
         sampleNo: normalizeText(state.reportMeta?.sampleNo, 255),
         sampleType: requestedSnapshot?.document.sampleType || resolvedMapping?.sampleType || normalizeText(state.specHeader?.testType, 120) || undefined,
         specSequence: ledgerSequence,
+        completionDate:
+          (normalizeText(state.specHeader?.completionDate, 64) !== "--"
+            ? normalizeText(state.specHeader?.completionDate, 64)
+            : "") ||
+          requestedSnapshot?.document.completionDate ||
+          resolvedMapping?.completionDate,
         testDate: normalizeText(state.reportMeta?.testDate, 64),
         verdict: finalVerdict,
         moduleCount: moduleSummaries.length,

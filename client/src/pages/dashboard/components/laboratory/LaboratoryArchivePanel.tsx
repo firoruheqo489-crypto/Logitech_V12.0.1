@@ -143,7 +143,7 @@ export function LaboratoryArchivePanel({
           <span className="text-center">实物图</span>
           <span className="text-center">样品编号</span>
           <span className="text-center">样品类型</span>
-          <span className="text-center">测试日期</span>
+          <span className="text-center">完成日期</span>
           <span className="text-center">判定</span>
           <span className="text-center">操作</span>
         </div>
@@ -188,7 +188,7 @@ export function LaboratoryArchivePanel({
                 <span className="truncate text-center text-slate-300" title={record.sampleType || ""}>
                   {record.sampleType || "--"}
                 </span>
-                <span className="text-center font-mono text-slate-300">{record.testDate || "--"}</span>
+                <span className="text-center font-mono text-slate-300">{record.completionDate || "--"}</span>
                 <span className="text-center">
                   <span className={`inline-flex rounded-full border px-2 py-1 text-[11px] font-semibold ${archiveVerdictTone(record.verdict)}`}>
                     {record.verdict}
@@ -239,7 +239,7 @@ export function LaboratoryArchivePanel({
             ) : null}
           </div>
 
-          <div className="mt-4 grid gap-3 md:grid-cols-4">
+          <div className="mt-4 grid gap-3 md:grid-cols-5">
             <div className="rounded-lg bg-white/[0.025] px-4 py-3">
               <p className="text-xs text-slate-600">项目 / 样品</p>
               <p className="mt-2 text-sm font-semibold text-slate-100">
@@ -253,6 +253,10 @@ export function LaboratoryArchivePanel({
             <div className="rounded-lg bg-white/[0.025] px-4 py-3">
               <p className="text-xs text-slate-600">送样日期</p>
               <p className="mt-2 font-mono text-sm font-semibold text-cyan-100">{selectedSnapshot.state.specHeader?.sampleDeliveryDate || "--"}</p>
+            </div>
+            <div className="rounded-lg bg-white/[0.025] px-4 py-3">
+              <p className="text-xs text-slate-600">完成日期</p>
+              <p className="mt-2 font-mono text-sm font-semibold text-cyan-100">{selectedSnapshot.state.specHeader?.completionDate || "--"}</p>
             </div>
             <div className="rounded-lg bg-white/[0.025] px-4 py-3">
               <p className="text-xs text-slate-600">模块数量</p>
