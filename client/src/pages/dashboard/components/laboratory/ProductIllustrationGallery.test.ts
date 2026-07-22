@@ -1,6 +1,12 @@
+import { readFile } from "node:fs/promises"
+import path from "node:path"
+import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 
 import { clearProductIllustrationSlotImage } from "./ProductIllustrationGallery"
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
 
 describe("product illustration gallery slots", () => {
   it("leaves the deleted slot empty without shifting later images forward", () => {
@@ -20,5 +26,14 @@ describe("product illustration gallery slots", () => {
       { id: "slot-4", label: "浪涌测试", imageUrl: "image-4" },
     ])
     expect(slots[1].imageUrl).toBe("image-2")
+  })
+
+  it("starts a newly mounted gallery empty instead of restoring browser-cached photos", async () => {
+    const source = await readFile(path.resolve(__dirname, "ProductIllustrationGallery.tsx"), "utf8")
+
+    expect(source).not.toContain("readGalleryState")
+    expect(source).not.toContain("writeGalleryState")
+    expect(source).not.toContain("window.localStorage")
+    expect(source).toContain("archivedGalleryState ?? normalizeGalleryState(null)")
   })
 })

@@ -43,7 +43,11 @@ import HarmonicTelemetryWorkspace from "./HarmonicTelemetryWorkspace"
 import BatteryCycleDashboard from "./battery-cycle/BatteryCycleDashboard"
 import "./final-sample-report/styles/final-sample-report.css"
 import { FinalSampleReportPage } from "./final-sample-report/source-page"
-import { FinalSampleReportDataProvider, useReportData } from "./final-sample-report/report-data-context"
+import {
+  FinalSampleReportDataProvider,
+  useReportData,
+  type PersistedReportSource,
+} from "./final-sample-report/report-data-context"
 import { getOverallStats } from "./final-sample-report/report-data"
 import { LaboratoryArchivePanel } from "./laboratory/LaboratoryArchivePanel"
 import { LaboratoryPrintSurface } from "./laboratory/LaboratoryPrintSurface"
@@ -1255,14 +1259,17 @@ function FinalSampleReportLaboratoryWorkspace({
   onSummaryChange: (summary: LaboratoryModuleSummary | null) => void
   initialSummary?: LaboratoryModuleSummary
 }) {
-  const initialSource = initialSummary?.moduleData as
-    | import("./final-sample-report/report-data-context").PersistedReportSource
-    | undefined
+  const [initialSource] = useState<PersistedReportSource | undefined>(() => (
+    initialSummary?.moduleData as PersistedReportSource | undefined
+  ))
 
   return (
     <div className="overflow-hidden rounded-2xl border border-white/[0.05] bg-[#020406]">
       <div className="final-sample-report-bleed final-sample-report-scope">
-        <FinalSampleReportDataProvider initialSource={initialSource}>
+        <FinalSampleReportDataProvider
+          initialSource={initialSource}
+          enableBrowserPersistence={false}
+        >
           <FinalSampleReportSummaryBridge nodeId={nodeId} onSummaryChange={onSummaryChange} />
           <FinalSampleReportPage />
         </FinalSampleReportDataProvider>

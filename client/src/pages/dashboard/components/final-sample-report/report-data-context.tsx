@@ -111,9 +111,11 @@ function clearPersistedSource() {
 export function FinalSampleReportDataProvider({
   children,
   initialSource,
+  enableBrowserPersistence = true,
 }: {
   children: ReactNode
   initialSource?: PersistedReportSource | null
+  enableBrowserPersistence?: boolean
 }) {
   const [data, setData] = useState(() => initialSource?.data ?? INITIAL_REPORT_DATA)
   const [isLoading, setIsLoading] = useState(true)
@@ -144,7 +146,7 @@ export function FinalSampleReportDataProvider({
     const buffer = await response.arrayBuffer()
     const parsed = await parseWorkbookBuffer(buffer)
     applySource(parsed, EMBEDDED_SOURCE_NAME, "embedded", null)
-    clearPersistedSource()
+    if (enableBrowserPersistence) clearPersistedSource()
   }
 
   const importWorkbook = async (file: File) => {
@@ -155,13 +157,15 @@ export function FinalSampleReportDataProvider({
       const parsed = await parseWorkbookBuffer(buffer)
       const nextSyncedAt = new Date().toISOString()
       applySource(parsed, file.name, "uploaded", nextSyncedAt)
-      persistSource({
-        version: 1,
-        data: parsed,
-        sourceName: file.name,
-        sourceKind: "uploaded",
-        syncedAt: nextSyncedAt,
-      })
+      if (enableBrowserPersistence) {
+        persistSource({
+          version: 1,
+          data: parsed,
+          sourceName: file.name,
+          sourceKind: "uploaded",
+          syncedAt: nextSyncedAt,
+        })
+      }
     } catch (loadError) {
       const message = loadError instanceof Error ? loadError.message : String(loadError)
       setError(message)
@@ -185,13 +189,15 @@ export function FinalSampleReportDataProvider({
 
   const clearReportData = () => {
     applySource(INITIAL_REPORT_DATA, EMPTY_SOURCE_NAME, "empty", null)
-    persistSource({
-      version: 1,
-      data: INITIAL_REPORT_DATA,
-      sourceName: EMPTY_SOURCE_NAME,
-      sourceKind: "empty",
-      syncedAt: null,
-    })
+    if (enableBrowserPersistence) {
+      persistSource({
+        version: 1,
+        data: INITIAL_REPORT_DATA,
+        sourceName: EMPTY_SOURCE_NAME,
+        sourceKind: "empty",
+        syncedAt: null,
+      })
+    }
     setError(null)
     setIsLoading(false)
   }
@@ -206,12 +212,12 @@ export function FinalSampleReportDataProvider({
         if (initialSource && isFinalSampleReportData(initialSource.data)) {
           if (!cancelled) {
             applySource(initialSource.data, initialSource.sourceName, initialSource.sourceKind, initialSource.syncedAt)
-            persistSource(initialSource)
+            if (enableBrowserPersistence) persistSource(initialSource)
           }
           return
         }
 
-        const persisted = readPersistedSource()
+        const persisted = enableBrowserPersistence ? readPersistedSource() : null
 
         if (persisted) {
           if (!cancelled) {
@@ -240,7 +246,7 @@ export function FinalSampleReportDataProvider({
     return () => {
       cancelled = true
     }
-  }, [initialSource])
+  }, [enableBrowserPersistence, initialSource])
 
   const value = useMemo(
     () => ({

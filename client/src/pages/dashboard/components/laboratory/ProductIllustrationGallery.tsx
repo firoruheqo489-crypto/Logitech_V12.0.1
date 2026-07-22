@@ -103,27 +103,6 @@ function normalizeGalleryState(value: unknown): ProductIllustrationState {
   }
 }
 
-function readGalleryState(storageKey: string): ProductIllustrationState {
-  if (typeof window === "undefined") {
-    return { slots: buildProductIllustrationSlots(), groupNote: "", recordedAt: null }
-  }
-
-  try {
-    const raw = window.localStorage.getItem(storageKey)
-    return raw ? normalizeGalleryState(JSON.parse(raw)) : normalizeGalleryState(null)
-  } catch {
-    return normalizeGalleryState(null)
-  }
-}
-
-function writeGalleryState(storageKey: string, state: ProductIllustrationState): void {
-  try {
-    window.localStorage.setItem(storageKey, JSON.stringify(state))
-  } catch {
-    // Local persistence is best-effort; uploaded images remain in OSS.
-  }
-}
-
 function formatRecordedAt(value: string | null): string {
   if (!value) return "--"
   const date = new Date(value)
@@ -199,10 +178,11 @@ export function ProductIllustrationGallery({
   const inputRef = useRef<HTMLInputElement | null>(null)
   const dropDepthRef = useRef(0)
   const stateRef = useRef<ProductIllustrationState>(normalizeGalleryState(null))
+  const activeStorageKeyRef = useRef(storageKey)
   const archivedGalleryState = initialSummary?.moduleData
     ? normalizeGalleryState(initialSummary.moduleData)
     : null
-  const [galleryState, setGalleryState] = useState<ProductIllustrationState>(() => archivedGalleryState ?? readGalleryState(storageKey))
+  const [galleryState, setGalleryState] = useState<ProductIllustrationState>(() => archivedGalleryState ?? normalizeGalleryState(null))
   const [pendingUploadSlotId, setPendingUploadSlotId] = useState<string | null>(null)
   const [pendingDeleteSlotId, setPendingDeleteSlotId] = useState<string | null>(null)
   const [showDeleteRowConfirm, setShowDeleteRowConfirm] = useState(false)
@@ -234,16 +214,16 @@ export function ProductIllustrationGallery({
       const normalizedState = normalizeGalleryState(nextState)
       stateRef.current = normalizedState
       setGalleryState(normalizedState)
-      writeGalleryState(storageKey, normalizedState)
     },
-    [storageKey],
+    [],
   )
 
   useEffect(() => {
-    const nextState = archivedGalleryState ?? readGalleryState(storageKey)
+    if (activeStorageKeyRef.current === storageKey) return
+    activeStorageKeyRef.current = storageKey
+    const nextState = normalizeGalleryState(null)
     stateRef.current = nextState
     setGalleryState(nextState)
-    if (archivedGalleryState) writeGalleryState(storageKey, archivedGalleryState)
     setPendingUploadSlotId(null)
     setPendingDeleteSlotId(null)
     setLightboxItemId("")

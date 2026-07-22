@@ -102,6 +102,17 @@ describe("laboratory archive module data restoration", () => {
     expect(serverSource).toContain("document.verdict !== verdict");
   });
 
+  it("keeps the laboratory final-sample initial source stable after uploads", async () => {
+    const dashboardSource = await loadSource("./pages/dashboard/components/LaboratoryPdfParserDashboard.tsx");
+    const contextSource = await loadSource("./pages/dashboard/components/final-sample-report/report-data-context.tsx");
+
+    expect(dashboardSource).toContain("useState<PersistedReportSource | undefined>(() => (");
+    expect(dashboardSource).toContain("enableBrowserPersistence={false}");
+    expect(contextSource).toContain("enableBrowserPersistence = true");
+    expect(contextSource).toContain("const persisted = enableBrowserPersistence ? readPersistedSource() : null");
+    expect(contextSource).toContain("[enableBrowserPersistence, initialSource]");
+  });
+
   it("persists matching delivery and completion date fields in the specification workspace", async () => {
     const source = await loadSource("./pages/dashboard/components/ProductSpecExcelParserDashboard.tsx");
     const workspaceApi = await loadSource("./pages/dashboard/lib/engineering-spec-workspace-state-api.ts");
