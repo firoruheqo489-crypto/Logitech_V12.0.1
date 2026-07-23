@@ -221,16 +221,9 @@ type DashboardTab = typeof DASHBOARD_TABS[number];
 const CAQ_UNSAVED_FLAG_KEY = "caq-audit:unsaved";
 
 const PUBLIC_DASHBOARD_TAB_LIMIT =
-  DASHBOARD_TABS.indexOf('measurement-intake') + 1;
-const EXTRA_PUBLIC_DASHBOARD_TABS: DashboardTab[] = [
-  'spc-calculator',
-  'mass-production-monitoring',
-  'pqe-process-issues',
-];
+  DASHBOARD_TABS.indexOf('laboratory-pdf-parser') + 1;
 const PUBLIC_DASHBOARD_TABS: DashboardTab[] = [
-  ...DASHBOARD_TABS.filter((tab, index) => (
-    index < PUBLIC_DASHBOARD_TAB_LIMIT || EXTRA_PUBLIC_DASHBOARD_TABS.includes(tab)
-  )),
+  ...DASHBOARD_TABS.slice(0, PUBLIC_DASHBOARD_TAB_LIMIT),
 ];
 const ADMIN_ONLY_DASHBOARD_TABS: DashboardTab[] = [
   ...DASHBOARD_TABS.filter((tab) => !PUBLIC_DASHBOARD_TABS.includes(tab)),
@@ -315,7 +308,7 @@ export default function DashboardHome() {
       ? (activeTab as DashboardTab)
       : 'overview';
     if (!isAdminMode && ADMIN_ONLY_DASHBOARD_TABS.includes(currentTab)) {
-      return 'mold-trial-database';
+      return 'laboratory-pdf-parser';
     }
     return currentTab;
   }, [activeTab, isAdminMode]);

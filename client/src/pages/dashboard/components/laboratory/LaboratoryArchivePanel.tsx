@@ -17,6 +17,8 @@ type LaboratoryArchivePanelProps = {
   onRestoreArchive?: (snapshot: LaboratoryArchiveSnapshot) => void
 }
 
+const LABORATORY_ARCHIVE_PAGE_SIZE = 10
+
 function archiveVerdictTone(verdict: string) {
   if (verdict === "FAIL") return "border-rose-300/25 bg-rose-400/[0.08] text-rose-200"
   if (verdict === "WATCH") return "border-amber-300/25 bg-amber-400/[0.08] text-amber-200"
@@ -37,15 +39,21 @@ export function LaboratoryArchivePanel({
   const [pendingDeleteRecord, setPendingDeleteRecord] = useState<LaboratoryArchiveRecord | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [loadingDocumentId, setLoadingDocumentId] = useState("")
+  const [page, setPage] = useState(1)
 
   const selectedRecordId = selectedSnapshot?.document.id ?? ""
   const archiveCountLabel = useMemo(() => `${archives.length} 条`, [archives.length])
+  const totalPages = Math.max(1, Math.ceil(archives.length / LABORATORY_ARCHIVE_PAGE_SIZE))
+  const currentPage = Math.min(page, totalPages)
+  const pageStart = (currentPage - 1) * LABORATORY_ARCHIVE_PAGE_SIZE
+  const pageArchives = archives.slice(pageStart, pageStart + LABORATORY_ARCHIVE_PAGE_SIZE)
 
   const reloadArchives = useCallback(async () => {
     setIsLoading(true)
     try {
       const documents = await listLaboratoryArchives(projectId)
       setArchives(documents)
+      setPage(1)
     } catch (error) {
       toast.error("实验室归档读取失败", {
         description: error instanceof Error ? error.message : "请确认 OSS 配置和网络状态。",
@@ -60,6 +68,10 @@ export function LaboratoryArchivePanel({
     setSelectedSnapshot(null)
     void reloadArchives()
   }, [reloadArchives])
+
+  useEffect(() => {
+    setPage((current) => Math.min(current, totalPages))
+  }, [totalPages])
 
   useEffect(() => {
     const handleArchiveUpdated = (event: Event) => {
@@ -159,7 +171,7 @@ export function LaboratoryArchivePanel({
           </div>
         ) : (
           <div className="divide-y divide-white/[0.04]">
-            {archives.map((record) => (
+            {pageArchives.map((record) => (
               <div
                 key={record.id}
                 role="button"
@@ -213,6 +225,40 @@ export function LaboratoryArchivePanel({
             ))}
           </div>
         )}
+
+        {archives.length > LABORATORY_ARCHIVE_PAGE_SIZE ? (
+          <div className="flex items-center justify-between gap-3 border-t border-white/[0.06] px-5 py-3">
+            <div className="text-xs font-semibold text-slate-400">
+              第 {currentPage} / {totalPages} 页
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setPage((current) => Math.max(1, current - 1))}
+                disabled={currentPage <= 1}
+                className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition ${
+                  currentPage <= 1
+                    ? "cursor-not-allowed border-white/[0.05] text-slate-600 opacity-60"
+                    : "border-white/[0.1] text-slate-300 hover:bg-white/[0.05]"
+                }`}
+              >
+                上一页
+              </button>
+              <button
+                type="button"
+                onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+                disabled={currentPage >= totalPages}
+                className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition ${
+                  currentPage >= totalPages
+                    ? "cursor-not-allowed border-white/[0.05] text-slate-600 opacity-60"
+                    : "border-white/[0.1] text-slate-300 hover:bg-white/[0.05]"
+                }`}
+              >
+                下一页
+              </button>
+            </div>
+          </div>
+        ) : null}
       </div>
 
       {selectedSnapshot ? (

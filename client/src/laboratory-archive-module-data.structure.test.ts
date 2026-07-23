@@ -147,4 +147,14 @@ describe("laboratory archive module data restoration", () => {
     expect(serverSource).toContain("const completionDate = normalizeText(inspectionTestProject.completionDate, 64) || undefined");
     expect(serverSource).toContain("normalizeText(state.specHeader?.completionDate, 64)");
   });
+
+  it("converges the laboratory archive ledger to ten rows per page", async () => {
+    const panelSource = await loadSource("./pages/dashboard/components/laboratory/LaboratoryArchivePanel.tsx");
+
+    expect(panelSource).toContain("const LABORATORY_ARCHIVE_PAGE_SIZE = 10");
+    expect(panelSource).toContain("archives.slice(pageStart, pageStart + LABORATORY_ARCHIVE_PAGE_SIZE)");
+    expect(panelSource).toContain("pageArchives.map((record)");
+    expect(panelSource).toContain("上一页");
+    expect(panelSource).toContain("下一页");
+  });
 });

@@ -112,8 +112,8 @@ type EngineeringSpecArchiveSnapshot = {
 
 type EngineeringSpecArchiveRouteErrorCode =
   | "ENGINEERING_SPEC_ARCHIVE_CREATE_FAILED"
-  | "ENGINEERING_SPEC_ARCHIVE_DUPLICATE_FILE"
-  | "ENGINEERING_SPEC_ARCHIVE_DUPLICATE_SKU"
+  | "ENGINEERING_SPEC_ARCHIVE_DUPLICATE_SKU_TEST_TYPE"
+  | "ENGINEERING_SPEC_ARCHIVE_INVALID_TEST_TYPE"
   | "ENGINEERING_SPEC_ARCHIVE_INVALID_SKU"
   | "ENGINEERING_SPEC_ARCHIVE_DELETE_FAILED"
   | "ENGINEERING_SPEC_ARCHIVE_DOCUMENT_LOAD_FAILED"
@@ -129,10 +129,10 @@ const ROUTE_ERROR_MESSAGES: Record<
 > = {
   ENGINEERING_SPEC_ARCHIVE_CREATE_FAILED:
     "Failed to create engineering spec archive",
-  ENGINEERING_SPEC_ARCHIVE_DUPLICATE_FILE:
-    "This engineering spec file has already been uploaded",
-  ENGINEERING_SPEC_ARCHIVE_DUPLICATE_SKU:
-    "This SKU already exists in the engineering spec ledger",
+  ENGINEERING_SPEC_ARCHIVE_DUPLICATE_SKU_TEST_TYPE:
+    "同一产品的该测试类别已归档，请改用覆盖更新归档",
+  ENGINEERING_SPEC_ARCHIVE_INVALID_TEST_TYPE:
+    "归档前必须选择送样测试或终样测试",
   ENGINEERING_SPEC_ARCHIVE_INVALID_SKU:
     "A valid SKU could not be parsed from the engineering spec file",
   ENGINEERING_SPEC_ARCHIVE_DELETE_FAILED:
@@ -363,31 +363,28 @@ function buildArchiveContentFingerprint(
   return createHash("sha256").update(JSON.stringify(payload)).digest("hex");
 }
 
-function hasDuplicateFileFingerprint(
-  documents: EngineeringSpecLedgerRecord[],
-  fileFingerprint: string
-): boolean {
-  const normalizedFingerprint = normalizeText(fileFingerprint, 128);
-  if (!normalizedFingerprint) return false;
-
-  return documents.some(
-    document => normalizeText(document.fileFingerprint, 128) === normalizedFingerprint
-  );
+function normalizeTestType(value: unknown): "送样测试" | "终样测试" | "" {
+  const normalized = normalizeText(value, 32);
+  return normalized === "送样测试" || normalized === "终样测试" ? normalized : "";
 }
 
-function hasDuplicateSku(
+function hasDuplicateSkuTestType(
   documents: EngineeringSpecLedgerRecord[],
-  sku: string
+  sku: string,
+  testType: "送样测试" | "终样测试",
+  excludeDocumentId?: string,
 ): boolean {
   const normalizedSku = normalizeEngineeringSpecComparable(sku);
   if (isInvalidEngineeringSpecSkuValue(sku)) return false;
 
   return documents.some((document) => {
+    if (excludeDocumentId && document.id === excludeDocumentId) return false;
     if (isInvalidEngineeringSpecSkuValue(document.sku || "")) {
       return false;
     }
     return (
-      normalizeEngineeringSpecComparable(document.sku || "") === normalizedSku
+      normalizeEngineeringSpecComparable(document.sku || "") === normalizedSku &&
+      normalizeTestType(document.sampleType) === testType
     );
   });
 }
@@ -758,6 +755,7 @@ export async function createDashboardEngineeringSpecArchive(
   const fileFingerprint = normalizeText(state.fileFingerprint, 128);
   const contentFingerprint = buildArchiveContentFingerprint(state);
   const sku = normalizeText(state?.productInfo?.sku, 160);
+  const testType = normalizeTestType(state?.inspectionTestProject?.testType);
   const normalizedState: EngineeringSpecArchiveState = {
     ...state,
     fileFingerprint: fileFingerprint || undefined,
@@ -770,25 +768,16 @@ export async function createDashboardEngineeringSpecArchive(
       0
     ) + 1;
 
-  if (fileFingerprint && hasDuplicateFileFingerprint(existingDocuments, fileFingerprint)) {
-    sendRouteError(res, 409, "ENGINEERING_SPEC_ARCHIVE_DUPLICATE_FILE");
-    return;
-  }
   if (isInvalidEngineeringSpecSkuValue(sku)) {
     sendRouteError(res, 409, "ENGINEERING_SPEC_ARCHIVE_INVALID_SKU");
     return;
   }
-  if (hasDuplicateSku(existingDocuments, sku)) {
-    sendRouteError(res, 409, "ENGINEERING_SPEC_ARCHIVE_DUPLICATE_SKU");
+  if (!testType) {
+    sendRouteError(res, 400, "ENGINEERING_SPEC_ARCHIVE_INVALID_TEST_TYPE");
     return;
   }
-  if (
-    hydratedDocuments.some(
-      document =>
-        normalizeText(document.contentFingerprint, 128) === contentFingerprint
-    )
-  ) {
-    sendRouteError(res, 409, "ENGINEERING_SPEC_ARCHIVE_DUPLICATE_FILE");
+  if (hasDuplicateSkuTestType(hydratedDocuments, sku, testType)) {
+    sendRouteError(res, 409, "ENGINEERING_SPEC_ARCHIVE_DUPLICATE_SKU_TEST_TYPE");
     return;
   }
 
@@ -836,7 +825,7 @@ export async function createDashboardEngineeringSpecArchive(
       productGroup: extractProductManager(normalizedState?.businessMeta),
       sampleQty: normalizeText(normalizedState?.productInfo?.sampleQty, 64),
       testDate: selectLedgerTestDate(normalizedState),
-      sampleType: normalizeText(normalizedState?.inspectionTestProject?.testType, 32) || undefined,
+      sampleType: testType,
       reportStatus: normalizeText(normalizedState?.oaInfo?.reportStatus, 64) || undefined,
       result: failCount > 0 || pendingCount > 0 ? "待完善" : "合格",
       pendingCount,
@@ -939,6 +928,28 @@ export async function updateDashboardEngineeringSpecArchive(
       existingSnapshot.document.fileFingerprint,
     contentFingerprint: buildArchiveContentFingerprint(state),
   };
+  const updatedSku = normalizeText(
+    normalizedState?.productInfo?.sku,
+    160,
+    existingSnapshot.document.sku
+  );
+  const updatedTestType =
+    normalizeTestType(normalizedState?.inspectionTestProject?.testType) ||
+    normalizeTestType(existingSnapshot.document.sampleType);
+  if (isInvalidEngineeringSpecSkuValue(updatedSku)) {
+    sendRouteError(res, 409, "ENGINEERING_SPEC_ARCHIVE_INVALID_SKU");
+    return;
+  }
+  if (!updatedTestType) {
+    sendRouteError(res, 400, "ENGINEERING_SPEC_ARCHIVE_INVALID_TEST_TYPE");
+    return;
+  }
+  const existingDocuments = (await readManifest(projectId))?.documents ?? [];
+  const hydratedDocuments = await hydrateManifestDocuments(projectId, existingDocuments);
+  if (hasDuplicateSkuTestType(hydratedDocuments, updatedSku, updatedTestType, documentId)) {
+    sendRouteError(res, 409, "ENGINEERING_SPEC_ARCHIVE_DUPLICATE_SKU_TEST_TYPE");
+    return;
+  }
 
   const pendingCount = (normalizedState.sections || []).reduce(
     (sectionTotal, section) =>
@@ -972,11 +983,7 @@ export async function updateDashboardEngineeringSpecArchive(
       ...existingSnapshot.document,
       fileFingerprint: normalizedState.fileFingerprint,
       contentFingerprint: normalizedState.contentFingerprint,
-      sku: normalizeText(
-        normalizedState?.productInfo?.sku,
-        160,
-        existingSnapshot.document.sku
-      ),
+      sku: updatedSku,
       spu: normalizeText(
         normalizedState?.productInfo?.spu,
         160,
@@ -1010,9 +1017,7 @@ export async function updateDashboardEngineeringSpecArchive(
         existingSnapshot.document.sampleQty
       ),
       testDate: selectLedgerTestDate(normalizedState, existingSnapshot.document.testDate),
-      sampleType:
-        normalizeText(normalizedState?.inspectionTestProject?.testType, 32) ||
-        existingSnapshot.document.sampleType,
+      sampleType: updatedTestType,
       reportStatus:
         normalizeText(normalizedState?.oaInfo?.reportStatus, 64) ||
         existingSnapshot.document.reportStatus,

@@ -685,32 +685,9 @@ export default function ProductSpecExcelParserDashboard({
       return;
     }
 
-    const duplicateByFileName = findDuplicateLedgerRecordByUploadFileName(file.name, sanitizedLedgerRecords);
-    if (duplicateByFileName) {
-      toast.warning('该产品编号已存在，已阻止上传', {
-        description: `SKU：${duplicateByFileName.sku}`,
-      });
-      return;
-    }
-
     setIsParsing(true);
     try {
       const fileFingerprint = await buildFileFingerprint(file);
-      const duplicateRecord = ledgerRecords.find(
-        (record) => record.fileFingerprint && record.fileFingerprint === fileFingerprint,
-      );
-      if (duplicateRecord) {
-        toast.warning('该文件已上传过，已阻止重复导入', {
-          description: duplicateRecord.sku
-            ? `台账记录：${duplicateRecord.sku}`
-            : '相同文件内容已存在于登记台账中。',
-        });
-        return;
-      }
-      if (currentFileFingerprint && currentFileFingerprint === fileFingerprint) {
-        toast.warning('当前工作区已加载这份文件，无需重复上传。');
-        return;
-      }
 
       const workbook = await parseProductSpecWorkbook(file);
       const cellTexts = Object.fromEntries(workbook.cells.map((cell) => [cell.id, cell.text])) as CellTextMap;
@@ -723,45 +700,12 @@ export default function ProductSpecExcelParserDashboard({
         return;
       }
       const nextSku = nextModel.header.sku.value.trim();
-      const normalizedNextSku = normalizeEngineeringSpecComparable(nextSku);
       if (isInvalidEngineeringSpecSkuValue(nextSku)) {
         toast.error('未识别到有效产品编号', {
           description: '当前上传的规格书未解析出有效 SKU，已阻止导入。请检查模板内容后重试。',
         });
         return;
       }
-      const duplicateBySku = sanitizedLedgerRecords.find(
-        (record) => normalizeEngineeringSpecComparable(record.sku || '') === normalizedNextSku,
-      );
-      if (duplicateBySku) {
-        toast.warning('该产品编号已存在，禁止重复上传', {
-          description: `SKU: ${duplicateBySku.sku}`,
-        });
-        return;
-      }
-      const previewState = await finalizeArchiveState(
-        buildArchiveStateFromModel(
-          nextModel,
-          createEmptyEvidenceSlots(),
-          '',
-          DEFAULT_INSPECTION_TEST_PROJECT_STATE,
-          DEFAULT_OA_INFO_STATE,
-          DEFAULT_TEST_PROJECT_SELECTION_STATE,
-          fileFingerprint,
-        ),
-      );
-      const duplicateByContent = ledgerRecords.find(
-        (record) => record.contentFingerprint && record.contentFingerprint === previewState.contentFingerprint,
-      );
-      if (duplicateByContent) {
-        toast.warning('该规格书内容已存在，已阻止重复导入', {
-          description: duplicateByContent.sku
-            ? `台账记录：${duplicateByContent.sku}`
-            : '相同解析结果已存在于登记台账中。',
-        });
-        return;
-      }
-
       setWorkspaceModel(nextModel);
       setWorkspaceMeta({
         rowCount: workbook.metadata.rowCount,
@@ -828,9 +772,6 @@ export default function ProductSpecExcelParserDashboard({
         testProjectSelection,
         currentFileFingerprint,
       );
-      const archiveState = await finalizeArchiveState(
-        await persistArchivePrimaryImageIfNeeded(archiveDraftState, projectId),
-      );
       const isUpdatingExistingArchive = mode === 'update' && Boolean(activeArchiveDocumentId);
       if (mode === 'update' && !activeArchiveDocumentId) {
         toast.warning('当前工作区不是已恢复归档', {
@@ -838,6 +779,30 @@ export default function ProductSpecExcelParserDashboard({
         });
         return;
       }
+      const testType = archiveDraftState.inspectionTestProject?.testType;
+      if (testType !== '送样测试' && testType !== '终样测试') {
+        toast.error('请先选择测试类别', {
+          description: '归档前必须选择“送样测试”或“终样测试”。',
+        });
+        return;
+      }
+      const archiveSku = normalizeEngineeringSpecComparable(archiveDraftState.productInfo?.sku || '');
+      const excludedDocumentId = isUpdatingExistingArchive ? activeArchiveDocumentId : null;
+      const duplicateStageRecord = sanitizedLedgerRecords.find(
+        (record) =>
+          record.id !== excludedDocumentId &&
+          normalizeEngineeringSpecComparable(record.sku || '') === archiveSku &&
+          String(record.sampleType || '').trim() === testType,
+      );
+      if (duplicateStageRecord) {
+        toast.error('同一测试类别已存在归档', {
+          description: `${duplicateStageRecord.sku} 已有${testType}记录，请改用“覆盖更新归档”。`,
+        });
+        return;
+      }
+      const archiveState = await finalizeArchiveState(
+        await persistArchivePrimaryImageIfNeeded(archiveDraftState, projectId),
+      );
 
       const document = isUpdatingExistingArchive
         ? await updateEngineeringSpecArchive({
@@ -3199,66 +3164,6 @@ async function buildFileFingerprint(file: File): Promise<string> {
   return Array.from(new Uint8Array(digest))
     .map((value) => value.toString(16).padStart(2, '0'))
     .join('');
-}
-
-function stripGenericUploadFileNameRemainder(value: string): string {
-  return value
-    .replace(/^[\s\-_.()[\]{}]+/u, '')
-    .replace(
-      /^(?:\u4ea7\u54c1\u89c4\u683c\u4e66|\u4ea7\u54c1\u89c4\u683c\u8d44\u6599|\u4ea7\u54c1\u89c4\u683c|\u89c4\u683c\u4e66|\u89c4\u683c\u8d44\u6599|specification|spec)/iu,
-      '',
-    )
-    .replace(/^[\s\-_.()[\]{}]+/u, '')
-    .trim();
-}
-
-function extractUploadFileNameSkuCandidates(fileName: string): string[] {
-  const baseName = fileName.replace(/\.[^.]+$/, '').trim();
-  const candidates = new Set<string>();
-
-  const pushCandidate = (value: string) => {
-    const normalized = normalizeEngineeringSpecComparable(value.trim());
-    if (!normalized || isInvalidEngineeringSpecSkuValue(value)) return;
-    candidates.add(normalized);
-  };
-
-  if (!baseName) return [];
-
-  pushCandidate(baseName);
-
-  const withoutCommonSuffix = baseName
-    .replace(/[-_\s]*(产品规格书|产品规格资料|产品规格|规格书|规格资料|specification|spec)$/i, '')
-    .trim();
-  pushCandidate(withoutCommonSuffix);
-
-  const beforeChinese = baseName.split(/[\u4e00-\u9fff]/)[0]?.replace(/[-_\s]+$/, '').trim() || '';
-  pushCandidate(beforeChinese);
-
-  const leadingAscii = baseName.match(/^[A-Za-z0-9]+(?:[A-Za-z0-9._-]*[A-Za-z0-9])?/);
-  if (leadingAscii) {
-    const trailing = baseName.slice(leadingAscii[0].length);
-    if (!stripGenericUploadFileNameRemainder(trailing)) {
-      pushCandidate(leadingAscii[0]);
-    }
-  }
-
-  return [...candidates];
-}
-
-function findDuplicateLedgerRecordByUploadFileName(
-  fileName: string,
-  records: EngineeringSpecLedgerRecord[],
-): EngineeringSpecLedgerRecord | null {
-  const candidates = extractUploadFileNameSkuCandidates(fileName);
-  if (candidates.length === 0) return null;
-
-  return (
-    records.find((record) => {
-      if (isInvalidEngineeringSpecSkuValue(record.sku || '')) return false;
-      const normalizedSku = normalizeEngineeringSpecComparable(record.sku || '');
-      return candidates.includes(normalizedSku);
-    }) || null
-  );
 }
 
 async function buildArchiveContentFingerprint(state: EngineeringSpecArchiveState): Promise<string> {
