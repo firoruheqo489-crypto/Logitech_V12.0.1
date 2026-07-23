@@ -36,4 +36,11 @@ describe("product illustration gallery slots", () => {
     expect(source).not.toContain("window.localStorage")
     expect(source).toContain("archivedGalleryState ?? normalizeGalleryState(null)")
   })
+
+  it("shows the complete image inside each fixed gallery slot", async () => {
+    const source = await readFile(path.resolve(__dirname, "ProductIllustrationGallery.tsx"), "utf8")
+
+    expect(source).toContain("object-contain p-2")
+    expect(source).not.toContain("rounded-lg object-cover")
+  })
 })

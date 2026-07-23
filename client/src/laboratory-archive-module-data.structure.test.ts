@@ -140,6 +140,8 @@ describe("laboratory archive module data restoration", () => {
     expect(dashboardSource).toContain("title={specHeader.completionDate}>{specHeader.completionDate}");
     expect(dashboardSource).toContain("xl:grid-cols-3");
     expect(dashboardSource).toContain("测试类型 · 自动映射");
+    expect(dashboardSource).toContain("h-[248px] min-h-[248px] max-h-[248px]");
+    expect(dashboardSource).toContain("max-h-full max-w-full object-contain");
     expect(dashboardSource).toContain("getLaboratoryArchiveDocument({");
     expect(dashboardSource).toContain("specificationSnapshot.state.inspectionTestProject?.completionDate?.trim()");
     expect(dashboardSource).toContain("buildLockedArchiveSpecHeader(state, document.completionDate)");
@@ -156,5 +158,18 @@ describe("laboratory archive module data restoration", () => {
     expect(panelSource).toContain("pageArchives.map((record)");
     expect(panelSource).toContain("上一页");
     expect(panelSource).toContain("下一页");
+  });
+
+  it("disables specification sequences that already have laboratory archives", async () => {
+    const dashboardSource = await loadSource("./pages/dashboard/components/LaboratoryPdfParserDashboard.tsx");
+    const serverSource = await loadSource("../../server/routes/dashboard-laboratory-archive.ts");
+
+    expect(dashboardSource).toContain("listLaboratoryArchives(projectId)");
+    expect(dashboardSource).toContain("archivedSpecSequences.has(record.sequence)");
+    expect(dashboardSource).toContain("disabled={isArchived}");
+    expect(dashboardSource).toContain("!isArchiveOccupancyReady");
+    expect(dashboardSource).toContain("已归档</span>");
+    expect(serverSource).toContain("LABORATORY_ARCHIVE_DUPLICATE_SPEC_SEQUENCE");
+    expect(serverSource).toContain("if (!requestedDocument && occupiedDocument)");
   });
 });

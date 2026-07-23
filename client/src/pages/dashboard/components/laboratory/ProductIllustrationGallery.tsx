@@ -556,7 +556,7 @@ export function ProductIllustrationGallery({
                   <img
                     src={slot.imageUrl}
                     alt={slot.label}
-                    className="absolute inset-1 h-[calc(100%-8px)] w-[calc(100%-8px)] rounded-lg object-cover"
+                    className="absolute inset-1 h-[calc(100%-8px)] w-[calc(100%-8px)] rounded-lg bg-[#0b1012] object-contain p-2"
                   />
                 ) : (
                   <UploadSlot

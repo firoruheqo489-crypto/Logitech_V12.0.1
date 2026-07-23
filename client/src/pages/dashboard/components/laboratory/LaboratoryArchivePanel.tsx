@@ -121,6 +121,7 @@ export function LaboratoryArchivePanel({
       toast.success("实验室归档已删除", {
         description: `${record.reportNo} 已从归档台账移除。`,
       })
+      window.dispatchEvent(new CustomEvent("laboratory-archive-updated", { detail: { projectId } }))
     } catch (error) {
       toast.error("实验室归档删除失败", {
         description: error instanceof Error ? error.message : "请稍后重试。",

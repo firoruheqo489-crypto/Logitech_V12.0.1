@@ -34,6 +34,7 @@ import { sanitizeEngineeringSpecLedgerRecords } from "@/lib/engineering-spec-led
 import {
   createLaboratoryArchive,
   getLaboratoryArchiveDocument,
+  listLaboratoryArchives,
   type LaboratoryArchiveSnapshot,
   type LaboratoryArchiveState,
 } from "@/lib/laboratory-archive-api"
@@ -1369,6 +1370,8 @@ export default function LaboratoryPdfParserDashboard({
   const [isLoadingLedger, setIsLoadingLedger] = useState(false)
   const [selectedSpecState, setSelectedSpecState] = useState<EngineeringSpecArchiveState | null>(null)
   const [isLoadingSpecDetail, setIsLoadingSpecDetail] = useState(false)
+  const [archivedSpecSequences, setArchivedSpecSequences] = useState<Set<number>>(() => new Set())
+  const [isArchiveOccupancyReady, setIsArchiveOccupancyReady] = useState(false)
   const nextNodeIdRef = useRef(2)
   const printExportRef = useRef<HTMLDivElement | null>(null)
   const sanitizedLedgerRecords = useMemo(
@@ -1588,6 +1591,37 @@ export default function LaboratoryPdfParserDashboard({
     }
   }, [projectId])
 
+  const refreshArchivedSpecSequences = useCallback(async () => {
+    setIsArchiveOccupancyReady(false)
+    try {
+      const documents = await listLaboratoryArchives(projectId)
+      setArchivedSpecSequences(new Set(
+        documents
+          .map((document) => Number(document.specSequence))
+          .filter((sequence) => Number.isFinite(sequence) && sequence > 0),
+      ))
+      setIsArchiveOccupancyReady(true)
+    } catch (error) {
+      setArchivedSpecSequences(new Set())
+      toast.error("实验室归档占用状态读取失败", {
+        description: error instanceof Error ? error.message : "请稍后重试。",
+      })
+    }
+  }, [projectId])
+
+  useEffect(() => {
+    void refreshArchivedSpecSequences()
+
+    const handleArchiveUpdated = (event: Event) => {
+      const updatedProjectId = (event as CustomEvent<{ projectId?: string }>).detail?.projectId
+      if (!updatedProjectId || updatedProjectId === projectId) {
+        void refreshArchivedSpecSequences()
+      }
+    }
+    window.addEventListener("laboratory-archive-updated", handleArchiveUpdated)
+    return () => window.removeEventListener("laboratory-archive-updated", handleArchiveUpdated)
+  }, [projectId, refreshArchivedSpecSequences])
+
   const loadSpecDetail = useCallback(
     async (record: EngineeringSpecLedgerRecord) => {
       setIsLoadingSpecDetail(true)
@@ -1629,8 +1663,24 @@ export default function LaboratoryPdfParserDashboard({
       toast.info("归档报告表头已锁定", { description: "已归档的台账序号不能再修改。" })
       return
     }
+    if (!isArchiveOccupancyReady) {
+      toast.info("正在核对归档状态", { description: "归档占用状态确认完成后才能选择台账序号。" })
+      return
+    }
+    const record = sanitizedLedgerRecords.find((item) => item.id === recordId)
+    if (record && archivedSpecSequences.has(record.sequence)) {
+      toast.info("该台账序号已归档", { description: `#${record.sequence} 已被实验室归档占用，不能重复选择。` })
+      return
+    }
     setSelectedSpecId(recordId)
   }
+
+  useEffect(() => {
+    if (isArchiveHeaderLocked || !selectedSpecRecord) return
+    if (!archivedSpecSequences.has(selectedSpecRecord.sequence)) return
+    setSelectedSpecId("")
+    setSelectedSpecState(null)
+  }, [archivedSpecSequences, isArchiveHeaderLocked, selectedSpecRecord])
 
   const handleDraftChange = (nodeId: number, type: TelemetryNodeType) => {
     setDraftSelections((current) => ({ ...current, [nodeId]: type }))
@@ -1914,10 +1964,14 @@ export default function LaboratoryPdfParserDashboard({
                       {isLoadingLedger ? "读取中" : isLoadingSpecDetail ? "映射中" : `${sanitizedLedgerRecords.length} 条`}
                     </span>
                   </div>
-                  <div className="mt-4 grid gap-4 lg:grid-cols-[252px_minmax(0,1fr)] lg:items-stretch">
-                    <div className="relative aspect-square w-full overflow-hidden rounded-2xl border border-white/[0.08] bg-[#0b1012] shadow-[inset_0_0_30px_rgba(0,0,0,0.3)] lg:aspect-auto lg:min-h-[248px]">
+                  <div className="mt-4 grid gap-4 lg:grid-cols-[252px_minmax(0,1fr)] lg:items-start">
+                    <div className="relative flex h-[248px] min-h-[248px] max-h-[248px] w-full items-center justify-center overflow-hidden rounded-2xl border border-white/[0.08] bg-[#0b1012] shadow-[inset_0_0_30px_rgba(0,0,0,0.3)]">
                       {displayedSpecImageUrl ? (
-                        <img src={displayedSpecImageUrl} alt="产品图示" className="h-full w-full object-contain p-4" />
+                        <img
+                          src={displayedSpecImageUrl}
+                          alt="产品图示"
+                          className="block max-h-full max-w-full object-contain p-4"
+                        />
                       ) : (
                         <div className="flex h-full items-center justify-center text-center font-mono text-[11px] leading-5 text-slate-600">
                           产品图示<br />图片映射区
@@ -1943,22 +1997,29 @@ export default function LaboratoryPdfParserDashboard({
                               <LockKeyhole className="h-4 w-4 text-amber-200" />
                             </div>
                           ) : (
-                            <Select value={selectedSpecId} onValueChange={handleSpecRecordSelect} disabled={isLoadingLedger || sanitizedLedgerRecords.length === 0}>
+                            <Select value={selectedSpecId} onValueChange={handleSpecRecordSelect} disabled={isLoadingLedger || !isArchiveOccupancyReady || sanitizedLedgerRecords.length === 0}>
                               <SelectTrigger className="h-12 w-full rounded-xl border-cyan-300/20 bg-black/20 text-left font-mono text-[19px] font-semibold text-slate-100 hover:border-cyan-300/40 focus:ring-cyan-300/20">
-                                <SelectValue placeholder={isLoadingLedger ? "正在读取" : "选择序号"}>
+                                <SelectValue placeholder={isLoadingLedger || !isArchiveOccupancyReady ? "正在核对" : "选择序号"}>
                                   {selectedSpecRecord ? `#${selectedSpecRecord.sequence}` : undefined}
                                 </SelectValue>
                               </SelectTrigger>
                               <SelectContent className="max-h-80 rounded-xl border-cyan-400/20 bg-[#050911] text-slate-100 shadow-2xl">
-                                {sanitizedLedgerRecords.map((record) => (
-                                  <SelectItem
-                                    key={record.id}
-                                    value={record.id}
-                                    className="rounded-lg py-2.5 text-slate-100 data-[highlighted]:bg-cyan-400/10 data-[highlighted]:text-cyan-100"
-                                  >
-                                    <span className="block max-w-[520px] truncate font-mono text-sm">#{record.sequence}</span>
-                                  </SelectItem>
-                                ))}
+                                {sanitizedLedgerRecords.map((record) => {
+                                  const isArchived = archivedSpecSequences.has(record.sequence)
+                                  return (
+                                    <SelectItem
+                                      key={record.id}
+                                      value={record.id}
+                                      disabled={isArchived}
+                                      className="rounded-lg py-2.5 text-slate-100 data-[highlighted]:bg-cyan-400/10 data-[highlighted]:text-cyan-100 data-[disabled]:cursor-not-allowed data-[disabled]:opacity-40"
+                                    >
+                                      <span className="flex max-w-[520px] items-center gap-2 truncate font-mono text-sm">
+                                        <span>#{record.sequence}</span>
+                                        {isArchived ? <span className="text-[10px] text-amber-300/80">已归档</span> : null}
+                                      </span>
+                                    </SelectItem>
+                                  )
+                                })}
                               </SelectContent>
                             </Select>
                           )}

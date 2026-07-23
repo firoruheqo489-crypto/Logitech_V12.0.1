@@ -122,6 +122,7 @@ type LaboratoryArchiveRouteErrorCode =
   | "LABORATORY_ARCHIVE_DELETE_FAILED"
   | "LABORATORY_ARCHIVE_DOCUMENT_LOAD_FAILED"
   | "LABORATORY_ARCHIVE_DOCUMENT_NOT_FOUND"
+  | "LABORATORY_ARCHIVE_DUPLICATE_SPEC_SEQUENCE"
   | "LABORATORY_ARCHIVE_LIST_FAILED"
   | "INVALID_LABORATORY_ARCHIVE_DOCUMENT_ID"
   | "INVALID_LABORATORY_ARCHIVE_FINAL_VERDICT"
@@ -133,6 +134,7 @@ const ROUTE_ERROR_MESSAGES: Record<LaboratoryArchiveRouteErrorCode, string> = {
   LABORATORY_ARCHIVE_DELETE_FAILED: "Failed to delete laboratory archive",
   LABORATORY_ARCHIVE_DOCUMENT_LOAD_FAILED: "Failed to load laboratory archive",
   LABORATORY_ARCHIVE_DOCUMENT_NOT_FOUND: "Laboratory archive not found",
+  LABORATORY_ARCHIVE_DUPLICATE_SPEC_SEQUENCE: "该台账序号已归档，不能重复新建实验室归档",
   LABORATORY_ARCHIVE_LIST_FAILED: "Failed to list laboratory archives",
   INVALID_LABORATORY_ARCHIVE_DOCUMENT_ID: "documentId is required",
   INVALID_LABORATORY_ARCHIVE_FINAL_VERDICT: "finalVerdict must be PASS or FAIL",
@@ -560,9 +562,14 @@ export async function createDashboardLaboratoryArchive(
           ? Number(state.selectedSpecSequence)
           : resolvedMapping?.specSequence
       );
-      const existingDocument = requestedDocument ?? existingDocuments.find(
+      const occupiedDocument = existingDocuments.find(
         (document) => ledgerSequence !== undefined && document.specSequence === ledgerSequence,
       );
+      if (!requestedDocument && occupiedDocument) {
+        sendRouteError(res, 409, "LABORATORY_ARCHIVE_DUPLICATE_SPEC_SEQUENCE");
+        return;
+      }
+      const existingDocument = requestedDocument;
       const targetDocumentId = existingDocument?.id ?? newDocumentId;
       const documentObjectKey = buildDocumentObjectKey(projectId, targetDocumentId);
       const sequence =
