@@ -21,6 +21,10 @@ const directConnectionString = process.env.DATABASE_URL_DIRECT;
 const poolerPinnedHostsRaw = process.env.DATABASE_URL_POOLER_IPS;
 const parsedPoolMax = Number.parseInt(process.env.DB_POOL_MAX || '2', 10);
 const poolMax = Number.isFinite(parsedPoolMax) ? Math.min(Math.max(parsedPoolMax, 1), 2) : 2;
+const parsedIdleTimeout = Number.parseInt(process.env.DB_IDLE_TIMEOUT_SECONDS || '600', 10);
+const idleTimeoutSeconds = Number.isFinite(parsedIdleTimeout)
+  ? Math.min(Math.max(parsedIdleTimeout, 30), 1_800)
+  : 600;
 const parsedConnectTimeout = Number.parseInt(process.env.DB_CONNECT_TIMEOUT_SECONDS || '10', 10);
 const connectTimeoutSeconds = Number.isFinite(parsedConnectTimeout)
   ? Math.min(Math.max(parsedConnectTimeout, 5), 30)
@@ -148,7 +152,7 @@ if (!connectionString && !isTestEnv) {
 const client = connectionString
   ? postgres(connectionString, {
       max: poolMax,         // Session mode 下收敛连接池，避免撞满数据库连接上限
-      idle_timeout: 20,     // Close idle connections after 20s
+      idle_timeout: idleTimeoutSeconds,
       connect_timeout: connectTimeoutSeconds,
       ssl:
         pinnedRuntimeHosts.length > 0

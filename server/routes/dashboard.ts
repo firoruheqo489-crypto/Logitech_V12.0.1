@@ -49,7 +49,13 @@ const DASHBOARD_ROUTE_ERROR_MESSAGES: Record<DashboardRouteErrorCode, string> = 
 
 let dashboardHealthTableReady: Promise<void> | null = null;
 let dashboardModuleOrderTableReady: Promise<void> | null = null;
-const DASHBOARD_PROJECTS_CACHE_TTL_MS = 30_000;
+const parsedDashboardProjectsCacheTtlMs = Number.parseInt(
+  process.env.DASHBOARD_PROJECTS_CACHE_TTL_MS || '300000',
+  10,
+);
+const DASHBOARD_PROJECTS_CACHE_TTL_MS = Number.isFinite(parsedDashboardProjectsCacheTtlMs)
+  ? Math.min(Math.max(parsedDashboardProjectsCacheTtlMs, 30_000), 30 * 60_000)
+  : 300_000;
 let dashboardProjectsListCache: { expiresAt: number; rows: DashboardProjectRow[] } | null = null;
 const DASHBOARD_DB_RETRY_MAX = 3;
 const DASHBOARD_DB_RETRY_DELAY_MS = 600;

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Clock, FolderKanban, Package } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import type { ModuleTheme } from "@/lib/theme";
@@ -9,9 +9,12 @@ import {
   isProjectStatusDone,
   normalizeProjectStatus,
 } from "@/lib/dashboardProjectState";
+import type { ProjectData } from "@/pages/dashboard/types/project";
 
 interface ProjectLobbyProps {
   onSelect: (projectName: string) => void;
+  projects?: readonly ProjectData[];
+  loading?: boolean;
 }
 
 interface DashboardProjectRow {
@@ -222,16 +225,40 @@ function ModuleCard({
   );
 }
 
-export default function ProjectLobby({ onSelect }: ProjectLobbyProps) {
+function mapProjectDataToLobbyRow(project: ProjectData): DashboardProjectRow {
+  return {
+    id: project.no,
+    projectName: project.identity.projectName,
+    productName: project.identity.productName,
+    moldId: project.identity.moldNumber,
+    progressDetails: project.details.detailProgress,
+    updateDate: project.details.detailDate,
+    moldLead: project.identity.projectEngineer,
+    pmName: project.identity.projectManager,
+    currentNode: project.milestones.currentNode,
+    estimatedCompletion: project.milestones.estimatedCompletion,
+  };
+}
+
+export default function ProjectLobby({ onSelect, projects, loading: controlledLoading = false }: ProjectLobbyProps) {
   const [modules, setModules] = useState<ProjectModule[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [remoteLoading, setRemoteLoading] = useState(projects === undefined);
   const [error, setError] = useState<string | null>(null);
+  const controlledModules = useMemo(
+    () => projects === undefined
+      ? null
+      : transformRowsToModules(projects.map(mapProjectDataToLobbyRow)),
+    [projects],
+  );
+  const resolvedModules = controlledModules ?? modules;
+  const loading = projects === undefined ? remoteLoading : controlledLoading;
 
   useEffect(() => {
+    if (projects !== undefined) return;
     let cancelled = false;
 
     async function loadModules() {
-      setLoading(true);
+      setRemoteLoading(true);
       setError(null);
 
       try {
@@ -253,7 +280,7 @@ export default function ProjectLobby({ onSelect }: ProjectLobbyProps) {
         setError("项目列表加载失败，请稍后重试");
       } finally {
         if (!cancelled) {
-          setLoading(false);
+          setRemoteLoading(false);
         }
       }
     }
@@ -263,15 +290,38 @@ export default function ProjectLobby({ onSelect }: ProjectLobbyProps) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [projects]);
 
   if (loading) {
     return (
-      <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-slate-950 px-6 py-10">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(14,165,233,0.18),_transparent_30%),radial-gradient(circle_at_bottom_right,_rgba(99,102,241,0.16),_transparent_28%)]" />
-        <div className="relative flex flex-col items-center gap-4">
-          <div className="h-8 w-8 animate-spin rounded-full border-2 border-cyan-400 border-t-transparent" />
-          <span className="text-sm text-slate-400">正在加载项目数据...</span>
+      <div className="relative min-h-screen overflow-hidden bg-slate-950 px-6 py-8">
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(6,182,212,0.16),_transparent_28%),radial-gradient(circle_at_top_right,_rgba(139,92,246,0.14),_transparent_24%),linear-gradient(180deg,_rgba(2,6,23,0.94)_0%,_rgba(2,6,23,1)_55%)]" />
+        <div className="relative mx-auto w-full max-w-7xl" aria-busy="true">
+          <div className="mb-8">
+            <h1 className="mb-2 text-3xl font-extrabold tracking-tight text-white">项目大厅</h1>
+            <div className="flex items-center gap-2 text-sm font-medium tracking-wide text-slate-400">
+              <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-cyan-400 border-t-transparent" />
+              正在加载项目数据…
+            </div>
+          </div>
+          <div className="grid justify-start gap-6" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 400px), 400px))" }}>
+            {Array.from({ length: 3 }, (_, index) => (
+              <div key={index} className="min-h-[294px] animate-pulse rounded-2xl border-2 border-slate-800 bg-slate-900/75 p-7">
+                <div className="mb-12 flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-xl bg-slate-800" />
+                  <div className="h-7 w-44 rounded-lg bg-slate-800" />
+                </div>
+                <div className="space-y-5">
+                  <div className="h-5 w-28 rounded bg-slate-800" />
+                  <div className="h-2 w-full rounded-full bg-slate-800" />
+                  <div className="flex justify-between">
+                    <div className="h-4 w-24 rounded bg-slate-800" />
+                    <div className="h-4 w-28 rounded bg-slate-800" />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     );
@@ -300,7 +350,7 @@ export default function ProjectLobby({ onSelect }: ProjectLobbyProps) {
           <p className="text-sm font-medium tracking-wide text-slate-400">选择一个模块以查看详细信息</p>
         </div>
 
-        {modules.length === 0 ? (
+        {resolvedModules.length === 0 ? (
           <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-8 text-center shadow-lg shadow-black/20 backdrop-blur">
             <p className="text-slate-400">暂无项目数据</p>
           </div>
@@ -311,7 +361,7 @@ export default function ProjectLobby({ onSelect }: ProjectLobbyProps) {
               gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 400px), 400px))",
             }}
           >
-            {modules.map((module) => (
+            {resolvedModules.map((module) => (
               <ModuleCard key={module.moduleId} module={module} onSelect={onSelect} />
             ))}
           </div>

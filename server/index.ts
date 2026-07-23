@@ -6,6 +6,7 @@ import './env.js';
 import { existsSync, readdirSync } from "node:fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import compression from "compression";
 import express from "express";
 import { createServer } from "http";
 import { registerApiAccessPolicy } from "./middleware/apiAccessPolicy.js";
@@ -369,6 +370,7 @@ async function startServer() {
   };
 
   app.use(express.json({ limit: '20mb' }));
+  app.use(compression({ threshold: 1_024 }));
 
   // ── 安全中间件 ──
   app.use(securityHeaders);

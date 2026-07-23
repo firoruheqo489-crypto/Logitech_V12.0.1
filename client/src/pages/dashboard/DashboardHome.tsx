@@ -884,7 +884,7 @@ export default function DashboardHome() {
     </>
   );
 
-  if (loading) {
+  if (loading && activeModule) {
     return (
       <div className="min-h-screen bg-[#000000] flex flex-col items-center justify-center gap-5">
         <h1 className="text-xl font-bold tracking-tight" style={{ fontFamily: 'var(--font-display)' }}>
@@ -900,13 +900,13 @@ export default function DashboardHome() {
 
   // Lobby gate: show the lobby when no module is selected.
   if (!activeModule) {
-    if (!hasAnyProjects) {
+    if (!loading && !hasAnyProjects) {
       return emptyDashboardView;
     }
 
     return (
       <>
-        <ProjectLobby onSelect={(name) => {
+        <ProjectLobby projects={allProjects} loading={loading} onSelect={(name) => {
           setActiveModule(name);
           setSearchProjectName('');
           setSearchMoldId('');

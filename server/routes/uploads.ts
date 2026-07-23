@@ -37,6 +37,9 @@ const UPLOADS_ROUTE_ERROR_MESSAGES: Record<UploadsRouteErrorCode, string> = {
 
 const UPLOADS_TEMP_DIR = path.resolve(process.cwd(), 'uploads_temp');
 const MAX_UPLOAD_FILE_SIZE_BYTES = 100 * 1024 * 1024;
+const MISSING_OSS_OBJECT_CACHE_TTL_MS = 60_000;
+const MISSING_OSS_OBJECT_CACHE_MAX_ENTRIES = 1_000;
+const missingOssObjectCache = new Map<string, number>();
 const STANDARD_DOCX_MIME_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 const STANDARD_JSON_MIME_TYPE = 'application/json';
 const STANDARD_XLSX_MIME_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
@@ -75,6 +78,30 @@ const ALLOWED_UPLOAD_RULES: Record<string, ReadonlySet<string>> = {
 };
 
 mkdirSync(UPLOADS_TEMP_DIR, { recursive: true });
+
+function isMissingOssObjectCached(objectKey: string): boolean {
+  const expiresAt = missingOssObjectCache.get(objectKey);
+  if (!expiresAt) return false;
+  if (expiresAt <= Date.now()) {
+    missingOssObjectCache.delete(objectKey);
+    return false;
+  }
+  return true;
+}
+
+function rememberMissingOssObject(objectKey: string): void {
+  const now = Date.now();
+  if (missingOssObjectCache.size >= MISSING_OSS_OBJECT_CACHE_MAX_ENTRIES) {
+    for (const [cachedKey, expiresAt] of missingOssObjectCache) {
+      if (expiresAt <= now) missingOssObjectCache.delete(cachedKey);
+    }
+  }
+  if (missingOssObjectCache.size >= MISSING_OSS_OBJECT_CACHE_MAX_ENTRIES) {
+    const oldestKey = missingOssObjectCache.keys().next().value;
+    if (typeof oldestKey === 'string') missingOssObjectCache.delete(oldestKey);
+  }
+  missingOssObjectCache.set(objectKey, now + MISSING_OSS_OBJECT_CACHE_TTL_MS);
+}
 
 const upload = multer({
   storage: multer.diskStorage({
@@ -291,6 +318,12 @@ uploadsRouter.get('/object', async (req: Request, res: Response) => {
     return;
   }
 
+  if (isMissingOssObjectCached(objectKey)) {
+    res.setHeader('Cache-Control', 'private, max-age=60');
+    sendUploadsRouteError(res, 404, 'ASSET_NOT_FOUND');
+    return;
+  }
+
   try {
     const rangeHeader = typeof req.headers.range === 'string' ? req.headers.range : undefined;
     const ossObject = await getOssObjectStream(objectKey, rangeHeader);
@@ -308,14 +341,20 @@ uploadsRouter.get('/object', async (req: Request, res: Response) => {
     await pipeline(ossObject.stream, res);
   } catch (error) {
     const details = String(error ?? '');
+    const isMissingObject = details.includes('NoSuchKey') || details.includes('Object not exists');
     const code =
-      details.includes('NoSuchKey')
+      isMissingObject
         ? 'ASSET_NOT_FOUND'
         : details.includes('ALIYUN_OSS_')
           ? 'UPLOADS_NOT_CONFIGURED'
           : 'ASSET_UPLOAD_FAILED';
 
-    console.error('GET /api/uploads/object error:', error);
+    if (isMissingObject) {
+      rememberMissingOssObject(objectKey);
+      console.warn(`GET /api/uploads/object missing object: ${objectKey}`);
+    } else {
+      console.error('GET /api/uploads/object error:', error);
+    }
     if (shouldAbortResponseWrite(res)) {
       return;
     }
