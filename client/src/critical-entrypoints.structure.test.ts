@@ -133,8 +133,11 @@ describe('critical local entrypoints', () => {
     expect(buildSource).not.toContain('Copy-Item -Force $grrSnapshotPath');
     expect(exporterSource).toContain("token === '--env-file'");
     expect(exporterSource).toContain("token === '--disable-pinned-hosts'");
+    expect(exporterSource).toContain('state_json::text AS state_json_text');
+    expect(exporterSource).toContain(').cursor(1)');
+    expect(deploySource).not.toContain('node scripts/import-dashboard-grr-state.mjs');
 
-    const exportIndex = deploySource.indexOf('node scripts/export-dashboard-grr-state.mjs');
+    const exportIndex = deploySource.indexOf('scripts/export-dashboard-grr-state.mjs --env-file');
     const replaceIndex = deploySource.indexOf('rm -rf \"$REMOTE_DIR/dist.new\"');
     expect(exportIndex).toBeGreaterThan(-1);
     expect(replaceIndex).toBeGreaterThan(exportIndex);

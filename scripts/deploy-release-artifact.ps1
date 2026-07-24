@@ -421,7 +421,7 @@ $remoteDeployScript = @(
   'mkdir -p "$REMOTE_DIR/scripts"',
   'cp "$EXTRACT_DIR/payload/scripts/export-dashboard-grr-state.mjs" "$REMOTE_DIR/scripts/export-dashboard-grr-state.mjs"',
   'cd "$REMOTE_DIR"',
-  'node scripts/export-dashboard-grr-state.mjs --env-file "$REMOTE_DIR/.env" --disable-pinned-hosts --out "$EXTRACT_DIR/dashboard-grr-state.snapshot.json"',
+  'node --max-old-space-size=512 scripts/export-dashboard-grr-state.mjs --env-file "$REMOTE_DIR/.env" --disable-pinned-hosts --out "$EXTRACT_DIR/dashboard-grr-state.snapshot.json"',
   'cp "$EXTRACT_DIR/dashboard-grr-state.snapshot.json" "$REMOTE_DIR/dashboard-grr-state.snapshot.json"',
   'rm -rf "$REMOTE_DIR/dist.new"',
   'cp -a "$EXTRACT_DIR/payload/dist" "$REMOTE_DIR/dist.new"',
@@ -450,7 +450,6 @@ $remoteDeployScript = @(
   'cd "$REMOTE_DIR"',
   '"$REMOTE_DIR/scripts/bootstrap-parser-runtime.sh" "$REMOTE_DIR"',
   'pnpm install --prod --reporter append-only --loglevel error',
-  'if [ -f "$REMOTE_DIR/dashboard-grr-state.snapshot.json" ]; then node scripts/import-dashboard-grr-state.mjs --file "$REMOTE_DIR/dashboard-grr-state.snapshot.json"; fi',
   'if pm2 describe logitech > /dev/null 2>&1; then PM2_APP_NAME=logitech pm2 startOrReload ecosystem.config.cjs --only logitech --env production --update-env; elif pm2 describe mold-gantt-v3 > /dev/null 2>&1; then PM2_APP_NAME=mold-gantt-v3 pm2 startOrReload ecosystem.config.cjs --only mold-gantt-v3 --env production --update-env; else PM2_APP_NAME=logitech pm2 start ecosystem.config.cjs --only logitech --env production && pm2 save; fi'
 ) -join "`n"
 

@@ -129,6 +129,66 @@ function resolveDatabase(envMap, disablePinnedHosts = false) {
   };
 }
 
+async function writeSnapshotRows(sql, outputPath) {
+  const temporaryPath = `${outputPath}.tmp-${process.pid}`;
+  fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+
+  let fileHandle;
+  try {
+    const countRows = await sql.unsafe(`
+      SELECT COUNT(*)::int AS row_count
+      FROM dashboard_grr_states_v1
+    `);
+    const expectedRowCount = Number(countRows[0]?.row_count ?? 0);
+
+    fileHandle = await fs.promises.open(temporaryPath, 'w');
+    await fileHandle.write(
+      `{"schemaVersion":1,"exportedAt":${JSON.stringify(new Date().toISOString())},"rowCount":${expectedRowCount},"rows":[`,
+    );
+
+    let writtenRowCount = 0;
+    const cursor = sql.unsafe(`
+      SELECT workspace_key, state_json::text AS state_json_text, updated_at
+      FROM dashboard_grr_states_v1
+      ORDER BY updated_at DESC, workspace_key ASC
+    `).cursor(1);
+
+    for await (const rows of cursor) {
+      const row = rows[0];
+      if (!row) continue;
+
+      if (writtenRowCount > 0) {
+        await fileHandle.write(',');
+      }
+      await fileHandle.write(`{"workspaceKey":${JSON.stringify(String(row.workspace_key || '').trim())},"state":`);
+      await fileHandle.write(row.state_json_text || 'null');
+      await fileHandle.write(
+        `,"updatedAt":${JSON.stringify(row.updated_at ? new Date(row.updated_at).toISOString() : null)}}`,
+      );
+      writtenRowCount += 1;
+    }
+
+    if (writtenRowCount !== expectedRowCount) {
+      throw new Error(
+        `Dashboard GRR snapshot row count changed during export. expected=${expectedRowCount} actual=${writtenRowCount}`,
+      );
+    }
+
+    await fileHandle.write(']}');
+    await fileHandle.sync();
+    await fileHandle.close();
+    fileHandle = undefined;
+    fs.renameSync(temporaryPath, outputPath);
+    return writtenRowCount;
+  } catch (error) {
+    if (fileHandle) {
+      await fileHandle.close().catch(() => undefined);
+    }
+    fs.rmSync(temporaryPath, { force: true });
+    throw error;
+  }
+}
+
 async function exportDashboardGrrState() {
   const args = parseArgs(process.argv.slice(2));
   const outputPath = resolveOutputPath(args.out);
@@ -151,34 +211,16 @@ async function exportDashboardGrrState() {
 
   let timeoutHandle;
   try {
-    const rows = await Promise.race([
-      sql.unsafe(`
-        SELECT workspace_key, state_json, updated_at
-        FROM dashboard_grr_states_v1
-        ORDER BY updated_at DESC, workspace_key ASC
-      `),
+    const rowCount = await Promise.race([
+      writeSnapshotRows(sql, outputPath),
       new Promise((_, reject) => {
         timeoutHandle = setTimeout(
-          () => reject(new Error('Dashboard GRR state export timed out after 60 seconds')),
-          60_000,
+          () => reject(new Error('Dashboard GRR state export timed out after 5 minutes')),
+          300_000,
         );
       }),
     ]);
-
-    const payload = {
-      schemaVersion: 1,
-      exportedAt: new Date().toISOString(),
-      rowCount: rows.length,
-      rows: rows.map((row) => ({
-        workspaceKey: String(row.workspace_key || '').trim(),
-        state: row.state_json ?? null,
-        updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : null,
-      })),
-    };
-
-    fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-    fs.writeFileSync(outputPath, JSON.stringify(payload, null, 2), 'utf8');
-    console.log(`[OK] Exported dashboard GRR state snapshot (${payload.rowCount} rows) -> ${outputPath}`);
+    console.log(`[OK] Exported dashboard GRR state snapshot (${rowCount} rows) -> ${outputPath}`);
   } finally {
     clearTimeout(timeoutHandle);
     await sql.end({ timeout: 5 });
