@@ -54,7 +54,7 @@ async function fileExists(relativePath: string): Promise<boolean> {
 async function collectServerSourceFiles(root: string): Promise<string[]> {
   const entries = await readdir(root, { withFileTypes: true });
   const files = await Promise.all(
-    entries.map(async (entry) => {
+    entries.map(async entry => {
       const fullPath = path.join(root, entry.name);
       if (entry.isDirectory()) {
         return collectServerSourceFiles(fullPath);
@@ -69,7 +69,7 @@ async function collectServerSourceFiles(root: string): Promise<string[]> {
       }
 
       return [fullPath];
-    }),
+    })
   );
 
   return files.flat();
@@ -82,7 +82,9 @@ async function loadPackageScripts(): Promise<PackageJsonScripts> {
 
   const scripts = packageJson.scripts ?? {};
   return Object.fromEntries(
-    Object.entries(scripts).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+    Object.entries(scripts).filter(
+      (entry): entry is [string, string] => typeof entry[1] === "string"
+    )
   );
 }
 
@@ -133,7 +135,7 @@ function createMockRequest(input: {
 
 async function withEnv<T>(
   overrides: Record<string, string | undefined>,
-  callback: () => Promise<T>,
+  callback: () => Promise<T>
 ): Promise<T> {
   const previous = new Map<string, string | undefined>();
 
@@ -159,7 +161,10 @@ async function withEnv<T>(
   }
 }
 
-async function runCheck(name: string, callback: () => Promise<void>): Promise<void> {
+async function runCheck(
+  name: string,
+  callback: () => Promise<void>
+): Promise<void> {
   await callback();
   console.log(`[release-guard] ${name}`);
 }
@@ -170,24 +175,39 @@ async function verifyServerIndexStructure(): Promise<void> {
   expectMatch(
     source,
     /import\s*\{\s*registerApiAccessPolicy\s*\}\s*from\s*["']\.\/middleware\/apiAccessPolicy\.js["'];/,
-    "server/index.ts must import registerApiAccessPolicy from the shared middleware module",
+    "server/index.ts must import registerApiAccessPolicy from the shared middleware module"
   );
   expectMatch(
     source,
     /import\s*\{\s*getReleaseInfoHandler\s*\}\s*from\s*["']\.\/release\.js["'];/,
-    "server/index.ts must import getReleaseInfoHandler from server/release.ts",
+    "server/index.ts must import getReleaseInfoHandler from server/release.ts"
   );
 
-  const securityHeadersIndex = findMatchIndex(source, /app\.use\(securityHeaders\);/);
-  const registerPolicyIndex = findMatchIndex(source, /registerApiAccessPolicy\(app\);/);
-  const firstApiRouteIndex = findMatchIndex(source, /app\.get\(["']\/api\/health["']/);
+  const securityHeadersIndex = findMatchIndex(
+    source,
+    /app\.use\(securityHeaders\);/
+  );
+  const registerPolicyIndex = findMatchIndex(
+    source,
+    /registerApiAccessPolicy\(app\);/
+  );
+  const firstApiRouteIndex = findMatchIndex(
+    source,
+    /app\.get\(["']\/api\/health["']/
+  );
 
   assert.ok(securityHeadersIndex >= 0, "securityHeaders must be registered");
-  assert.ok(registerPolicyIndex > securityHeadersIndex, "api access policy must be registered after security headers");
-  assert.ok(firstApiRouteIndex > registerPolicyIndex, "api access policy must be registered before API routes");
+  assert.ok(
+    registerPolicyIndex > securityHeadersIndex,
+    "api access policy must be registered after security headers"
+  );
+  assert.ok(
+    firstApiRouteIndex > registerPolicyIndex,
+    "api access policy must be registered before API routes"
+  );
   assert.ok(
     !/app\.use\(['"]\/api['"],\s*\(req,\s*res,\s*next\)\s*=>/.test(source),
-    "server/index.ts must not inline /api access policy middleware",
+    "server/index.ts must not inline /api access policy middleware"
   );
 
   for (const forbidden of [
@@ -198,53 +218,77 @@ async function verifyServerIndexStructure(): Promise<void> {
     "Access-Control-Allow-Credentials",
     "CORS origin denied",
   ]) {
-    assert.ok(!source.includes(forbidden), `server/index.ts must not contain ${forbidden}`);
+    assert.ok(
+      !source.includes(forbidden),
+      `server/index.ts must not contain ${forbidden}`
+    );
   }
 
   const releaseRouteIndex = findMatchIndex(
     source,
-    /app\.get\(["']\/api\/release["'],\s*getReleaseInfoHandler\);/,
+    /app\.get\(["']\/api\/release["'],\s*getReleaseInfoHandler\);/
   );
-  const healthRouteIndex = findMatchIndex(source, /app\.get\(["']\/api\/health["']/);
+  const healthRouteIndex = findMatchIndex(
+    source,
+    /app\.get\(["']\/api\/health["']/
+  );
   assert.ok(releaseRouteIndex >= 0, "/api/release route must be registered");
-  assert.ok(healthRouteIndex > releaseRouteIndex, "/api/release must be registered before /api/health");
+  assert.ok(
+    healthRouteIndex > releaseRouteIndex,
+    "/api/release must be registered before /api/health"
+  );
 
   const batchUpsertIndex = findMatchIndex(
     source,
-    /app\.post\(["']\/api\/dashboard\/product-data\/batch-upsert["'],\s*batchUpsertDashboardProductData\);/,
+    /app\.post\(["']\/api\/dashboard\/product-data\/batch-upsert["'],\s*batchUpsertDashboardProductData\);/
   );
   const clearProjectsIndex = findMatchIndex(
     source,
-    /app\.delete\(["']\/api\/dashboard\/projects["'],\s*clearDashboardProjects\);/,
+    /app\.delete\(["']\/api\/dashboard\/projects["'],\s*clearDashboardProjects\);/
   );
   const healthCheckIndex = findMatchIndex(
     source,
-    /app\.get\(["']\/api\/dashboard\/health-check["'],\s*getDashboardHealthCheck\);/,
+    /app\.get\(["']\/api\/dashboard\/health-check["'],\s*getDashboardHealthCheck\);/
   );
-  assert.ok(batchUpsertIndex >= 0, "dashboard batch-upsert route must be present");
-  assert.ok(clearProjectsIndex > batchUpsertIndex, "dashboard clear route must stay after batch-upsert");
-  assert.ok(healthCheckIndex > clearProjectsIndex, "dashboard health route must stay after clear route");
+  assert.ok(
+    batchUpsertIndex >= 0,
+    "dashboard batch-upsert route must be present"
+  );
+  assert.ok(
+    clearProjectsIndex > batchUpsertIndex,
+    "dashboard clear route must stay after batch-upsert"
+  );
+  assert.ok(
+    healthCheckIndex > clearProjectsIndex,
+    "dashboard health route must stay after clear route"
+  );
 
   const entryRouteIndex = findMatchIndex(
     source,
-    /app\.post\(["']\/api\/dashboard\/progress-notes\/:moldNumber\/entry["'],\s*upsertProgressNote\);/,
+    /app\.post\(["']\/api\/dashboard\/progress-notes\/:moldNumber\/entry["'],\s*upsertProgressNote\);/
   );
   const createBackupIndex = findMatchIndex(
     source,
-    /app\.post\(["']\/api\/dashboard\/progress-notes\/:moldNumber\/create-backup["'],\s*createProgressBackup\);/,
+    /app\.post\(["']\/api\/dashboard\/progress-notes\/:moldNumber\/create-backup["'],\s*createProgressBackup\);/
   );
   const restoreLatestIndex = findMatchIndex(
     source,
-    /app\.post\(["']\/api\/dashboard\/progress-notes\/:moldNumber\/restore-latest["'],\s*restoreLatestProgressNotes\);/,
+    /app\.post\(["']\/api\/dashboard\/progress-notes\/:moldNumber\/restore-latest["'],\s*restoreLatestProgressNotes\);/
   );
   assert.ok(entryRouteIndex >= 0, "progress note entry route must be present");
-  assert.ok(createBackupIndex > entryRouteIndex, "backup route must remain after entry route");
-  assert.ok(restoreLatestIndex > createBackupIndex, "restore route must remain after backup route");
+  assert.ok(
+    createBackupIndex > entryRouteIndex,
+    "backup route must remain after entry route"
+  );
+  assert.ok(
+    restoreLatestIndex > createBackupIndex,
+    "restore route must remain after backup route"
+  );
 
   expectMatch(
     source,
     /res\.status\(404\)\.json\(\{\s*error:\s*"not found \(dev API only\)",\s*code:\s*"ROUTE_NOT_FOUND"\s*\}\);/,
-    "dev-api-only fallback must keep a machine-readable error payload",
+    "dev-api-only fallback must keep a machine-readable error payload"
   );
 }
 
@@ -257,8 +301,10 @@ async function verifyServerErrorPayloadStructure(): Promise<void> {
     const source = await readFile(filePath, "utf8");
     const relativePath = path.relative(serverRoot, filePath);
     const inlineJsonBlocks = Array.from(
-      source.matchAll(/res\.status\([^)]*\)\.json\(\{\s*error\s*:[\s\S]*?\}\);/g),
-      (match) => match[0],
+      source.matchAll(
+        /res\.status\([^)]*\)\.json\(\{\s*error\s*:[\s\S]*?\}\);/g
+      ),
+      match => match[0]
     );
 
     for (const block of inlineJsonBlocks) {
@@ -268,7 +314,7 @@ async function verifyServerErrorPayloadStructure(): Promise<void> {
     }
 
     const matches = source.match(
-      /res\.(?:status\([^)]*\)\.)?json\([\s\S]*?(?:err|error)\.message[\s\S]*?\);/g,
+      /res\.(?:status\([^)]*\)\.)?json\([\s\S]*?(?:err|error)\.message[\s\S]*?\);/g
     );
 
     for (const match of matches ?? []) {
@@ -276,19 +322,38 @@ async function verifyServerErrorPayloadStructure(): Promise<void> {
     }
   }
 
-  assert.deepStrictEqual(violationsWithoutCode, [], "all inline server JSON errors must include an error code");
-  assert.deepStrictEqual(messageLeaks, [], "server JSON responses must not expose raw error.message values");
+  assert.deepStrictEqual(
+    violationsWithoutCode,
+    [],
+    "all inline server JSON errors must include an error code"
+  );
+  assert.deepStrictEqual(
+    messageLeaks,
+    [],
+    "server JSON responses must not expose raw error.message values"
+  );
 }
 
 async function verifyCriticalEntrypoints(): Promise<void> {
   const scripts = await loadPackageScripts();
 
   const requiredScriptFragments = [
-    ["dev:dashboard:local", ["node scripts/start-local-dashboard.mjs", "-File scripts/report-local-dashboard-state.ps1"]],
-    ["dev:dashboard:status", ["-File scripts/report-local-dashboard-state.ps1"]],
+    [
+      "dev:dashboard:local",
+      [
+        "node scripts/start-local-dashboard.mjs",
+        "-File scripts/report-local-dashboard-state.ps1",
+      ],
+    ],
+    [
+      "dev:dashboard:status",
+      ["-File scripts/report-local-dashboard-state.ps1"],
+    ],
     [
       "verify:release-guards",
-      ["node --import ./scripts/register-ts-path-loader.mjs --experimental-strip-types ./scripts/verify-release-guards.ts"],
+      [
+        "node --import ./scripts/register-ts-path-loader.mjs --experimental-strip-types ./scripts/verify-release-guards.ts",
+      ],
     ],
     ["release", ["node scripts/release-entrypoint.mjs all"]],
     ["_release:build", ["node scripts/release-entrypoint.mjs build"]],
@@ -300,7 +365,10 @@ async function verifyCriticalEntrypoints(): Promise<void> {
     const command = scripts[name];
     assert.equal(typeof command, "string", `missing package script: ${name}`);
     for (const fragment of fragments) {
-      assert.ok(command.includes(fragment), `package script ${name} must include: ${fragment}`);
+      assert.ok(
+        command.includes(fragment),
+        `package script ${name} must include: ${fragment}`
+      );
     }
   }
 
@@ -315,13 +383,19 @@ async function verifyCriticalEntrypoints(): Promise<void> {
     "scripts/board-flow-preview.cmd",
     "docs/release-sop.md",
   ]) {
-    assert.equal(await fileExists(relativePath), true, `critical wrapper file missing: ${relativePath}`);
+    assert.equal(
+      await fileExists(relativePath),
+      true,
+      `critical wrapper file missing: ${relativePath}`
+    );
   }
 
-  const releaseEntrypointSource = await readText("scripts/release-entrypoint.mjs");
+  const releaseEntrypointSource = await readText(
+    "scripts/release-entrypoint.mjs"
+  );
   assert.ok(
     releaseEntrypointSource.includes("release-from-clean-worktree.ps1"),
-    "scripts/release-entrypoint.mjs must forward to scripts/release-from-clean-worktree.ps1",
+    "scripts/release-entrypoint.mjs must forward to scripts/release-from-clean-worktree.ps1"
   );
 }
 
@@ -336,7 +410,7 @@ async function verifyReleaseSopVisibility(): Promise<void> {
     const source = await readText(relativePath);
     assert.ok(
       source.includes("scripts/show-release-sop.ps1"),
-      `${relativePath} must display the shared release SOP before continuing`,
+      `${relativePath} must display the shared release SOP before continuing`
     );
   }
 }
@@ -346,46 +420,58 @@ async function verifyReleaseWrapperCleanWorkspacePolicy(): Promise<void> {
 
   assert.ok(
     source.includes("Require-CleanWorkspace -RepoRootPath $repoRoot"),
-    "release wrapper must require a clean workspace before backup/build flows",
+    "release wrapper must require a clean workspace before backup/build flows"
   );
   assert.ok(
     !source.includes("Invoke-AutoCommit"),
-    "release wrapper must not auto-commit workspace changes",
+    "release wrapper must not auto-commit workspace changes"
   );
 
-  const cleanCheckIndex = source.indexOf("Require-CleanWorkspace -RepoRootPath $repoRoot");
-  const backupIndex = source.indexOf('Log "Creating physical backup snapshot..."');
-  assert.ok(cleanCheckIndex >= 0, "release wrapper clean-workspace check must exist");
-  assert.ok(backupIndex > cleanCheckIndex, "release wrapper must refuse dirty workspaces before backup");
+  const cleanCheckIndex = source.indexOf(
+    "Require-CleanWorkspace -RepoRootPath $repoRoot"
+  );
+  const backupIndex = source.indexOf(
+    'Log "Creating physical backup snapshot..."'
+  );
+  assert.ok(
+    cleanCheckIndex >= 0,
+    "release wrapper clean-workspace check must exist"
+  );
+  assert.ok(
+    backupIndex > cleanCheckIndex,
+    "release wrapper must refuse dirty workspaces before backup"
+  );
 }
 
 async function verifyReleaseGateBypassPolicy(): Promise<void> {
   const releaseBuildSource = await readText("scripts/release-build.ps1");
   assert.ok(
     !releaseBuildSource.includes("AllowDirtyWorkspace"),
-    "release build script must not allow dirty workspaces",
+    "release build script must not allow dirty workspaces"
   );
   assert.ok(
     !releaseBuildSource.includes("SkipVerification"),
-    "release build script must not allow verification bypass",
+    "release build script must not allow verification bypass"
   );
   assert.ok(
-    releaseBuildSource.includes('Err "DeepVerification is required for release builds."'),
-    "release build script must require deep verification for artifact builds",
+    releaseBuildSource.includes(
+      'Err "DeepVerification is required for release builds."'
+    ),
+    "release build script must require deep verification for artifact builds"
   );
 
   const deploySource = await readText("scripts/deploy-release-artifact.ps1");
   assert.ok(
     !deploySource.includes("SkipRemoteSmoke"),
-    "artifact deploy script must not allow remote smoke to be skipped",
+    "artifact deploy script must not allow remote smoke to be skipped"
   );
   assert.ok(
     deploySource.includes('Log "Running remote OSS upload/delete smoke..."'),
-    "artifact deploy script must always run the remote OSS smoke gate",
+    "artifact deploy script must always run the remote OSS smoke gate"
   );
   assert.ok(
     deploySource.includes('Log "Running remote reliability smoke..."'),
-    "artifact deploy script must always run the remote reliability smoke gate",
+    "artifact deploy script must always run the remote reliability smoke gate"
   );
 }
 
@@ -394,73 +480,106 @@ async function verifyDashboardApi(): Promise<void> {
     DashboardApiError,
     getDashboardApiErrorDisplayMessage,
     normalizeDashboardApiError,
-  } = await importFresh<typeof import("../client/src/pages/dashboard/lib/dashboardApi.ts")>(
-    "client/src/pages/dashboard/lib/dashboardApi.ts",
-  );
+  } = await importFresh<
+    typeof import("../client/src/pages/dashboard/lib/dashboardApi.ts")
+  >("client/src/pages/dashboard/lib/dashboardApi.ts");
 
   const normalized = normalizeDashboardApiError(
     { error: "raw backend detail", code: "PROJECT_ASSET_SAVE_FAILED" },
     500,
-    "UNKNOWN_ERROR",
+    "UNKNOWN_ERROR"
   );
-  assert.ok(normalized instanceof DashboardApiError, "normalizeDashboardApiError must return DashboardApiError");
+  assert.ok(
+    normalized instanceof DashboardApiError,
+    "normalizeDashboardApiError must return DashboardApiError"
+  );
   assert.equal(normalized.code, "PROJECT_ASSET_SAVE_FAILED");
   assert.equal(normalized.status, 500);
 
   assert.equal(
     getDashboardApiErrorDisplayMessage(
-      new DashboardApiError("raw backend detail", "PROJECT_ASSET_SAVE_FAILED", 500),
-      "fallback",
+      new DashboardApiError(
+        "raw backend detail",
+        "PROJECT_ASSET_SAVE_FAILED",
+        500
+      ),
+      "fallback"
     ),
-    "Image save failed, please retry",
+    "Image save failed, please retry"
   );
   assert.equal(
     getDashboardApiErrorDisplayMessage(
-      new DashboardApiError("raw backend detail", "INVALID_ASSET_DELETE_REQUEST", 400),
-      "fallback",
+      new DashboardApiError(
+        "raw backend detail",
+        "INVALID_ASSET_DELETE_REQUEST",
+        400
+      ),
+      "fallback"
     ),
-    "Missing mold number or slot type for delete",
+    "Missing mold number or slot type for delete"
   );
   assert.equal(
     getDashboardApiErrorDisplayMessage(
       new DashboardApiError(
         "destructive snapshot confirmation required",
         "SNAPSHOT_DESTRUCTIVE_CONFIRMATION_REQUIRED",
-        409,
+        409
       ),
-      "fallback",
+      "fallback"
     ),
-    "The server blocked this snapshot because it would remove too many progress notes at once",
+    "The server blocked this snapshot because it would remove too many progress notes at once"
   );
 }
 
 async function verifyApiCors(): Promise<void> {
-  const { API_TRUSTED_ORIGINS, createApiCorsMiddleware } =
-    await importFresh<typeof import("../server/middleware/apiCors.ts")>("server/middleware/apiCors.ts");
+  const { API_TRUSTED_ORIGINS, createApiCorsMiddleware } = await importFresh<
+    typeof import("../server/middleware/apiCors.ts")
+  >("server/middleware/apiCors.ts");
 
   assert.equal(API_TRUSTED_ORIGINS.has("http://localhost:3001"), true);
 
-  const middleware = createApiCorsMiddleware(new Set(["http://trusted.example"]));
+  const middleware = createApiCorsMiddleware(
+    new Set(["http://trusted.example"])
+  );
 
   {
-    const req = createMockRequest({ method: "OPTIONS", origin: "http://trusted.example" });
+    const req = createMockRequest({
+      method: "OPTIONS",
+      origin: "http://trusted.example",
+    });
     const { res, state } = createMockResponse();
     let nextCalls = 0;
-    middleware(req as never, res as never, () => { nextCalls += 1; });
+    middleware(req as never, res as never, () => {
+      nextCalls += 1;
+    });
     assert.equal(nextCalls, 0);
     assert.equal(state.statusCode, 204);
-    assert.equal(state.headers["Access-Control-Allow-Origin"], "http://trusted.example");
+    assert.equal(
+      state.headers["Access-Control-Allow-Origin"],
+      "http://trusted.example"
+    );
     assert.equal(state.headers.Vary, "Origin");
-    assert.equal(state.headers["Access-Control-Allow-Methods"], "GET, POST, PATCH, DELETE, OPTIONS");
-    assert.equal(state.headers["Access-Control-Allow-Headers"], "Content-Type, x-api-key");
+    assert.equal(
+      state.headers["Access-Control-Allow-Methods"],
+      "GET, POST, PATCH, DELETE, OPTIONS"
+    );
+    assert.equal(
+      state.headers["Access-Control-Allow-Headers"],
+      "Content-Type, x-api-key"
+    );
     assert.equal(state.headers["Access-Control-Allow-Credentials"], "true");
   }
 
   {
-    const req = createMockRequest({ method: "OPTIONS", origin: "http://untrusted.example" });
+    const req = createMockRequest({
+      method: "OPTIONS",
+      origin: "http://untrusted.example",
+    });
     const { res, state } = createMockResponse();
     let nextCalls = 0;
-    middleware(req as never, res as never, () => { nextCalls += 1; });
+    middleware(req as never, res as never, () => {
+      nextCalls += 1;
+    });
     assert.equal(nextCalls, 0);
     assert.equal(state.statusCode, 204);
     assert.equal(state.headers["Access-Control-Allow-Origin"], undefined);
@@ -474,7 +593,9 @@ async function verifyApiCors(): Promise<void> {
     const req = createMockRequest({ method: "OPTIONS" });
     const { res, state } = createMockResponse();
     let nextCalls = 0;
-    middleware(req as never, res as never, () => { nextCalls += 1; });
+    middleware(req as never, res as never, () => {
+      nextCalls += 1;
+    });
     assert.equal(nextCalls, 0);
     assert.equal(state.statusCode, 204);
     assert.equal(state.headers["Access-Control-Allow-Origin"], undefined);
@@ -483,20 +604,33 @@ async function verifyApiCors(): Promise<void> {
   }
 
   {
-    const req = createMockRequest({ method: "GET", origin: "http://trusted.example" });
+    const req = createMockRequest({
+      method: "GET",
+      origin: "http://trusted.example",
+    });
     const { res, state } = createMockResponse();
     let nextCalls = 0;
-    middleware(req as never, res as never, () => { nextCalls += 1; });
+    middleware(req as never, res as never, () => {
+      nextCalls += 1;
+    });
     assert.equal(nextCalls, 1);
-    assert.equal(state.headers["Access-Control-Allow-Origin"], "http://trusted.example");
+    assert.equal(
+      state.headers["Access-Control-Allow-Origin"],
+      "http://trusted.example"
+    );
     assert.equal(state.headers["Access-Control-Allow-Credentials"], "true");
   }
 
   {
-    const req = createMockRequest({ method: "GET", origin: "http://untrusted.example" });
+    const req = createMockRequest({
+      method: "GET",
+      origin: "http://untrusted.example",
+    });
     const { res, state } = createMockResponse();
     let nextCalls = 0;
-    middleware(req as never, res as never, () => { nextCalls += 1; });
+    middleware(req as never, res as never, () => {
+      nextCalls += 1;
+    });
     assert.equal(nextCalls, 1);
     assert.equal(state.headers["Access-Control-Allow-Origin"], undefined);
     assert.equal(state.headers.Vary, undefined);
@@ -505,15 +639,23 @@ async function verifyApiCors(): Promise<void> {
 }
 
 async function verifyApiAccessPolicy(): Promise<void> {
-  const { apiCors } = await importFresh<typeof import("../server/middleware/apiCors.ts")>(
-    "server/middleware/apiCors.ts",
-  );
+  const { apiCors } = await importFresh<
+    typeof import("../server/middleware/apiCors.ts")
+  >("server/middleware/apiCors.ts");
 
   async function loadAuthModule(env: Record<string, string | undefined>) {
-    return withEnv(env, () => importFresh<typeof import("../server/middleware/auth.ts")>("server/middleware/auth.ts"));
+    return withEnv(env, () =>
+      importFresh<typeof import("../server/middleware/auth.ts")>(
+        "server/middleware/auth.ts"
+      )
+    );
   }
 
-  function runPipeline(middlewares: Array<(req: never, res: never, next: () => void) => void>, req: unknown, res: unknown) {
+  function runPipeline(
+    middlewares: Array<(req: never, res: never, next: () => void) => void>,
+    req: unknown,
+    res: unknown
+  ) {
     let nextCalls = 0;
     const dispatch = (index: number): void => {
       const middleware = middlewares[index];
@@ -528,13 +670,24 @@ async function verifyApiAccessPolicy(): Promise<void> {
   }
 
   {
-    const { apiKeyAuth } = await loadAuthModule({ NODE_ENV: "production", API_SECRET_KEY: undefined, DEV_API: undefined });
+    const { apiKeyAuth, dashboardAccessAuth } = await loadAuthModule({
+      NODE_ENV: "production",
+      API_SECRET_KEY: "expected-key",
+      DEV_API: undefined,
+    });
     const req = createMockRequest({
       method: "GET",
-      headers: { origin: "http://untrusted.example" },
+      headers: {
+        origin: "http://untrusted.example",
+        "x-api-key": "expected-key",
+      },
     });
     const { res, state } = createMockResponse();
-    const nextCalls = runPipeline([apiCors, apiKeyAuth], req, res);
+    const nextCalls = runPipeline(
+      [apiCors, dashboardAccessAuth, apiKeyAuth],
+      req,
+      res
+    );
     assert.equal(nextCalls, 1);
     assert.equal(state.statusCode, null);
     assert.equal(state.headers["Access-Control-Allow-Origin"], undefined);
@@ -543,17 +696,30 @@ async function verifyApiAccessPolicy(): Promise<void> {
   }
 
   {
-    const { apiKeyAuth } = await loadAuthModule({
+    const {
+      apiKeyAuth,
+      createDashboardAccessSessionToken,
+      dashboardAccessAuth,
+      DASHBOARD_ACCESS_SESSION_COOKIE_NAME,
+    } = await loadAuthModule({
       API_SECRET_KEY: "expected-key",
+      DASHBOARD_ACCESS_PASSWORD: "viewer-password",
       NODE_ENV: "production",
       DEV_API: undefined,
     });
     const req = createMockRequest({
       method: "POST",
-      headers: { origin: "http://untrusted.example" },
+      headers: {
+        origin: "http://untrusted.example",
+        cookie: `${DASHBOARD_ACCESS_SESSION_COOKIE_NAME}=${createDashboardAccessSessionToken()}`,
+      },
     });
     const { res, state } = createMockResponse();
-    const nextCalls = runPipeline([apiCors, apiKeyAuth], req, res);
+    const nextCalls = runPipeline(
+      [apiCors, dashboardAccessAuth, apiKeyAuth],
+      req,
+      res
+    );
     assert.equal(nextCalls, 0);
     assert.equal(state.statusCode, 403);
     assert.deepStrictEqual(state.jsonBody, {
@@ -565,7 +731,7 @@ async function verifyApiAccessPolicy(): Promise<void> {
   }
 
   {
-    const { apiKeyAuth } = await loadAuthModule({
+    const { apiKeyAuth, dashboardAccessAuth } = await loadAuthModule({
       DEV_API: "1",
       NODE_ENV: "development",
       API_SECRET_KEY: undefined,
@@ -579,15 +745,22 @@ async function verifyApiAccessPolicy(): Promise<void> {
       hostname: "localhost",
     });
     const { res, state } = createMockResponse();
-    const nextCalls = runPipeline([apiCors, apiKeyAuth], req, res);
+    const nextCalls = runPipeline(
+      [apiCors, dashboardAccessAuth, apiKeyAuth],
+      req,
+      res
+    );
     assert.equal(nextCalls, 1);
     assert.equal(state.statusCode, null);
-    assert.equal(state.headers["Access-Control-Allow-Origin"], "http://localhost:3000");
+    assert.equal(
+      state.headers["Access-Control-Allow-Origin"],
+      "http://localhost:3000"
+    );
     assert.equal(state.headers["Access-Control-Allow-Credentials"], "true");
   }
 
   {
-    const { apiKeyAuth } = await loadAuthModule({
+    const { apiKeyAuth, dashboardAccessAuth } = await loadAuthModule({
       API_SECRET_KEY: "expected-key",
       NODE_ENV: "production",
       DEV_API: undefined,
@@ -602,19 +775,26 @@ async function verifyApiAccessPolicy(): Promise<void> {
       hostname: "120.27.153.140",
     });
     const { res, state } = createMockResponse();
-    const nextCalls = runPipeline([apiCors, apiKeyAuth], req, res);
+    const nextCalls = runPipeline(
+      [apiCors, dashboardAccessAuth, apiKeyAuth],
+      req,
+      res
+    );
     assert.equal(nextCalls, 1);
     assert.equal(state.statusCode, null);
-    assert.equal(state.headers["Access-Control-Allow-Origin"], "http://120.27.153.140:3000");
+    assert.equal(
+      state.headers["Access-Control-Allow-Origin"],
+      "http://120.27.153.140:3000"
+    );
     assert.equal(state.headers["Access-Control-Allow-Credentials"], "true");
   }
 
   {
     const { API_ACCESS_POLICY_PATH, registerApiAccessPolicy } =
-      await importFresh<typeof import("../server/middleware/apiAccessPolicy.ts")>(
-        "server/middleware/apiAccessPolicy.ts",
-      );
-    const { apiKeyAuth } = await loadAuthModule({
+      await importFresh<
+        typeof import("../server/middleware/apiAccessPolicy.ts")
+      >("server/middleware/apiAccessPolicy.ts");
+    const { apiKeyAuth, dashboardAccessAuth } = await loadAuthModule({
       NODE_ENV: "production",
       API_SECRET_KEY: undefined,
       DEV_API: undefined,
@@ -627,11 +807,13 @@ async function verifyApiAccessPolicy(): Promise<void> {
       },
     });
 
-    assert.equal(calls.length, 2);
+    assert.equal(calls.length, 3);
     assert.equal(calls[0]?.path, API_ACCESS_POLICY_PATH);
     assert.equal(typeof calls[0]?.handler, "function");
     assert.equal(calls[1]?.path, API_ACCESS_POLICY_PATH);
     assert.equal(typeof calls[1]?.handler, "function");
+    assert.equal(calls[2]?.path, API_ACCESS_POLICY_PATH);
+    assert.equal(typeof calls[2]?.handler, "function");
   }
 }
 
@@ -640,7 +822,10 @@ async function verifyReleaseMetadata(): Promise<void> {
     buildReleaseInfo,
     normalizeReleaseManifest,
     readReleaseManifestFromFile,
-  } = await importFresh<typeof import("../server/release.ts")>("server/release.ts");
+  } =
+    await importFresh<typeof import("../server/release.ts")>(
+      "server/release.ts"
+    );
 
   assert.deepStrictEqual(
     normalizeReleaseManifest({
@@ -661,7 +846,7 @@ async function verifyReleaseMetadata(): Promise<void> {
       dirty: false,
       buildSource: "clean-worktree",
       sourceWorkspaceDirty: true,
-    },
+    }
   );
 
   const tempDir = mkdtempSync(path.join(tmpdir(), "release-manifest-"));
@@ -678,7 +863,7 @@ async function verifyReleaseMetadata(): Promise<void> {
       buildSource: "workspace",
       sourceWorkspaceDirty: false,
     }),
-    "utf8",
+    "utf8"
   );
 
   assert.deepStrictEqual(readReleaseManifestFromFile(manifestPath), {
@@ -712,7 +897,7 @@ async function verifyReleaseMetadata(): Promise<void> {
       manifestFound: false,
       nodeEnv: "production",
       runtimeStartedAt: "2026-03-19T14:00:00.000Z",
-    },
+    }
   );
 }
 
@@ -723,47 +908,64 @@ async function verifyProgressNotesGuardrails(): Promise<void> {
     assessProgressSnapshotRisk,
     selectLatestRestorableBackup,
   } = await importFresh<typeof import("../server/routes/progress-notes.ts")>(
-    "server/routes/progress-notes.ts",
+    "server/routes/progress-notes.ts"
   );
 
   assert.deepStrictEqual(
-    assessProgressSnapshotRisk({ beforeCount: 6, afterCount: 5, deletedCount: 1 }),
+    assessProgressSnapshotRisk({
+      beforeCount: 6,
+      afterCount: 5,
+      deletedCount: 1,
+    }),
     {
       beforeCount: 6,
       afterCount: 5,
       deletedCount: 1,
       reason: "none",
       requiresConfirmation: false,
-    },
+    }
   );
   assert.deepStrictEqual(
-    assessProgressSnapshotRisk({ beforeCount: 2, afterCount: 0, deletedCount: 2 }),
+    assessProgressSnapshotRisk({
+      beforeCount: 2,
+      afterCount: 0,
+      deletedCount: 2,
+    }),
     {
       beforeCount: 2,
       afterCount: 0,
       deletedCount: 2,
       reason: "clear-all",
       requiresConfirmation: true,
-    },
+    }
   );
   assert.deepStrictEqual(
-    assessProgressSnapshotRisk({ beforeCount: 20, afterCount: 1, deletedCount: 19 }),
+    assessProgressSnapshotRisk({
+      beforeCount: 20,
+      afterCount: 1,
+      deletedCount: 19,
+    }),
     {
       beforeCount: 20,
       afterCount: 1,
       deletedCount: 19,
       reason: "majority-delete",
       requiresConfirmation: true,
-    },
+    }
   );
-  assert.equal(SNAPSHOT_DESTRUCTIVE_CONFIRMATION_HEADER, "x-snapshot-confirmation");
+  assert.equal(
+    SNAPSHOT_DESTRUCTIVE_CONFIRMATION_HEADER,
+    "x-snapshot-confirmation"
+  );
   assert.equal(SNAPSHOT_DESTRUCTIVE_CONFIRMATION_VALUE, "allow-destructive");
 
   const selected = selectLatestRestorableBackup([
     {
       id: 203,
       created_at: "2026-03-19T09:30:00.000Z",
-      snapshot: [{ id: "note-1", date: "2026-03-19", content: "only surviving row" }],
+      snapshot: [
+        { id: "note-1", date: "2026-03-19", content: "only surviving row" },
+      ],
     },
     {
       id: 202,
@@ -811,10 +1013,16 @@ async function verifyProgressNotesGuardrails(): Promise<void> {
 
 async function main(): Promise<void> {
   await runCheck("server/index.ts structure", verifyServerIndexStructure);
-  await runCheck("server error payload structure", verifyServerErrorPayloadStructure);
+  await runCheck(
+    "server error payload structure",
+    verifyServerErrorPayloadStructure
+  );
   await runCheck("critical entrypoints", verifyCriticalEntrypoints);
   await runCheck("release SOP visibility", verifyReleaseSopVisibility);
-  await runCheck("release wrapper clean workspace policy", verifyReleaseWrapperCleanWorkspacePolicy);
+  await runCheck(
+    "release wrapper clean workspace policy",
+    verifyReleaseWrapperCleanWorkspacePolicy
+  );
   await runCheck("release gate bypass policy", verifyReleaseGateBypassPolicy);
   await runCheck("dashboard API error normalization", verifyDashboardApi);
   await runCheck("api CORS policy", verifyApiCors);
@@ -824,8 +1032,10 @@ async function main(): Promise<void> {
   console.log("[release-guard] all checks passed");
 }
 
-main().catch((error) => {
+main().catch(error => {
   console.error("[release-guard] failed");
-  console.error(error instanceof Error ? error.stack ?? error.message : error);
+  console.error(
+    error instanceof Error ? (error.stack ?? error.message) : error
+  );
   process.exitCode = 1;
 });

@@ -5,38 +5,50 @@
  * POST / PUT / PATCH / DELETE → 强制校验机器 API Key 或管理员写会话
  */
 
-import type { NextFunction, Request, Response } from 'express';
-import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
+import type { NextFunction, Request, Response } from "express";
+import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 
-const API_KEY = process.env.API_SECRET_KEY || '';
-const DASHBOARD_WRITE_PASSWORD = process.env.DASHBOARD_WRITE_PASSWORD || '';
-const IS_DEV_API_MODE = process.env.DEV_API === '1' && process.env.NODE_ENV !== 'production';
-const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1']);
-export const WRITE_SESSION_COOKIE_NAME = 'dashboard_write_session';
+const API_KEY = process.env.API_SECRET_KEY || "";
+const DASHBOARD_WRITE_PASSWORD = process.env.DASHBOARD_WRITE_PASSWORD || "";
+const DASHBOARD_ACCESS_PASSWORD = process.env.DASHBOARD_ACCESS_PASSWORD || "";
+const IS_DEV_API_MODE =
+  process.env.DEV_API === "1" && process.env.NODE_ENV !== "production";
+const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
+export const WRITE_SESSION_COOKIE_NAME = "dashboard_write_session";
 export const WRITE_SESSION_TTL_SECONDS = 12 * 60 * 60;
+export const DASHBOARD_ACCESS_SESSION_COOKIE_NAME = "dashboard_access_session";
+export const DASHBOARD_ACCESS_SESSION_TTL_SECONDS = 12 * 60 * 60;
 
-const WRITE_SESSION_VERSION = 'v1';
+const WRITE_SESSION_VERSION = "v1";
+const DASHBOARD_ACCESS_SESSION_VERSION = "v1";
 
-type AuthErrorCode = 'API_KEY_INVALID' | 'API_KEY_NOT_CONFIGURED';
+type AuthErrorCode =
+  | "API_KEY_INVALID"
+  | "API_KEY_NOT_CONFIGURED"
+  | "DASHBOARD_ACCESS_REQUIRED"
+  | "DASHBOARD_ACCESS_NOT_CONFIGURED";
 
 const AUTH_ERROR_MESSAGES: Record<AuthErrorCode, string> = {
-  API_KEY_INVALID: 'api key missing or invalid',
-  API_KEY_NOT_CONFIGURED: 'Write API key is not configured on the server',
+  API_KEY_INVALID: "api key missing or invalid",
+  API_KEY_NOT_CONFIGURED: "Write API key is not configured on the server",
+  DASHBOARD_ACCESS_REQUIRED: "Dashboard login is required",
+  DASHBOARD_ACCESS_NOT_CONFIGURED:
+    "Dashboard access password is not configured on the server",
 };
 
 function extractHostname(input: string): string {
   const trimmed = input.trim();
-  if (!trimmed) return '';
+  if (!trimmed) return "";
 
-  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
     try {
       return new URL(trimmed).hostname.toLowerCase();
     } catch {
-      return '';
+      return "";
     }
   }
 
-  const withoutPort = trimmed.replace(/^\[?([^\]]+)\]?(?::\d+)?$/, '$1');
+  const withoutPort = trimmed.replace(/^\[?([^\]]+)\]?(?::\d+)?$/, "$1");
   return withoutPort.toLowerCase();
 }
 
@@ -49,14 +61,18 @@ function isLocalDevelopmentRequest(req: Request): boolean {
     req.headers.host,
     req.hostname,
   ]
-    .filter((value): value is string => typeof value === 'string')
+    .filter((value): value is string => typeof value === "string")
     .map(extractHostname)
     .filter(Boolean);
 
-  return candidates.some((hostname) => LOCAL_HOSTS.has(hostname));
+  return candidates.some(hostname => LOCAL_HOSTS.has(hostname));
 }
 
-function sendAuthError(res: Response, status: number, code: AuthErrorCode): void {
+function sendAuthError(
+  res: Response,
+  status: number,
+  code: AuthErrorCode
+): void {
   res.status(status).json({
     error: AUTH_ERROR_MESSAGES[code],
     code,
@@ -64,17 +80,17 @@ function sendAuthError(res: Response, status: number, code: AuthErrorCode): void
 }
 
 function readHeaderValue(value: string | string[] | undefined): string {
-  if (typeof value === 'string') return value.trim();
-  if (Array.isArray(value)) return value[0]?.trim() || '';
-  return '';
+  if (typeof value === "string") return value.trim();
+  if (Array.isArray(value)) return value[0]?.trim() || "";
+  return "";
 }
 
 function readCookieValue(req: Request, cookieName: string): string {
   const cookieHeader = readHeaderValue(req.headers.cookie);
-  if (!cookieHeader) return '';
+  if (!cookieHeader) return "";
 
-  for (const pair of cookieHeader.split(';')) {
-    const separatorIndex = pair.indexOf('=');
+  for (const pair of cookieHeader.split(";")) {
+    const separatorIndex = pair.indexOf("=");
     if (separatorIndex <= 0) continue;
 
     const name = pair.slice(0, separatorIndex).trim();
@@ -88,14 +104,22 @@ function readCookieValue(req: Request, cookieName: string): string {
     }
   }
 
-  return '';
+  return "";
 }
 
 function signWriteSessionPayload(payload: string): string {
   const sessionSecret = DASHBOARD_WRITE_PASSWORD
     ? `${API_KEY}\u0000${DASHBOARD_WRITE_PASSWORD}`
     : API_KEY;
-  return createHmac('sha256', sessionSecret).update(payload).digest('base64url');
+  return createHmac("sha256", sessionSecret)
+    .update(payload)
+    .digest("base64url");
+}
+
+function signDashboardAccessSessionPayload(payload: string): string {
+  return createHmac("sha256", `${API_KEY}\u0000${DASHBOARD_ACCESS_PASSWORD}`)
+    .update(payload)
+    .digest("base64url");
 }
 
 function safeEqual(left: string, right: string): boolean {
@@ -105,31 +129,63 @@ function safeEqual(left: string, right: string): boolean {
   return timingSafeEqual(leftBuffer, rightBuffer);
 }
 
-function isPublicWriteSessionRoute(req: Request): boolean {
+function isPublicAuthSessionRoute(req: Request): boolean {
   const method = req.method.toUpperCase();
-  if (method !== 'GET' && method !== 'POST' && method !== 'DELETE') {
+  if (method !== "GET" && method !== "POST" && method !== "DELETE") {
     return false;
   }
 
-  const originalPath = (req.originalUrl || '').split('?')[0] || '';
-  const mountedPath = `${req.baseUrl || ''}${req.path || ''}`;
-  const candidates = new Set([req.path || '', originalPath, mountedPath]);
+  const originalPath = (req.originalUrl || "").split("?")[0] || "";
+  const mountedPath = `${req.baseUrl || ""}${req.path || ""}`;
+  const candidates = new Set([req.path || "", originalPath, mountedPath]);
 
-  return candidates.has('/auth/write-session') || candidates.has('/api/auth/write-session');
+  return (
+    candidates.has("/auth/write-session") ||
+    candidates.has("/api/auth/write-session") ||
+    candidates.has("/auth/access-session") ||
+    candidates.has("/api/auth/access-session")
+  );
+}
+
+function isPublicDashboardApiRoute(req: Request): boolean {
+  const method = req.method.toUpperCase();
+  if (method === "OPTIONS") return true;
+
+  const originalPath = (req.originalUrl || "").split("?")[0] || "";
+  const mountedPath = `${req.baseUrl || ""}${req.path || ""}`;
+  const candidates = new Set([req.path || "", originalPath, mountedPath]);
+
+  if (
+    candidates.has("/auth/access-session") ||
+    candidates.has("/api/auth/access-session")
+  ) {
+    return method === "GET" || method === "POST" || method === "DELETE";
+  }
+
+  if (
+    candidates.has("/health") ||
+    candidates.has("/api/health") ||
+    candidates.has("/release") ||
+    candidates.has("/api/release")
+  ) {
+    return method === "GET" || method === "HEAD";
+  }
+
+  return false;
 }
 
 function isPublicPresignedReadRoute(req: Request): boolean {
-  if (req.method.toUpperCase() !== 'POST') {
+  if (req.method.toUpperCase() !== "POST") {
     return false;
   }
 
-  const originalPath = (req.originalUrl || '').split('?')[0] || '';
-  const mountedPath = `${req.baseUrl || ''}${req.path || ''}`;
-  const candidates = new Set([req.path || '', originalPath, mountedPath]);
+  const originalPath = (req.originalUrl || "").split("?")[0] || "";
+  const mountedPath = `${req.baseUrl || ""}${req.path || ""}`;
+  const candidates = new Set([req.path || "", originalPath, mountedPath]);
 
   return (
-    candidates.has('/storage/presigned-url/preview-url') ||
-    candidates.has('/api/storage/presigned-url/preview-url')
+    candidates.has("/storage/presigned-url/preview-url") ||
+    candidates.has("/api/storage/presigned-url/preview-url")
   );
 }
 
@@ -141,18 +197,27 @@ export function isWriteLoginConfigured(): boolean {
   return Boolean(API_KEY && DASHBOARD_WRITE_PASSWORD);
 }
 
+export function isDashboardAccessConfigured(): boolean {
+  return Boolean(DASHBOARD_ACCESS_PASSWORD);
+}
+
 export function isValidWriteApiKey(value: unknown): boolean {
-  return typeof value === 'string' && Boolean(API_KEY) && value === API_KEY;
+  return typeof value === "string" && Boolean(API_KEY) && value === API_KEY;
 }
 
 export function isValidWriteLoginSecret(value: unknown): boolean {
-  if (typeof value !== 'string' || !isWriteLoginConfigured()) return false;
+  if (typeof value !== "string" || !isWriteLoginConfigured()) return false;
   return safeEqual(value, DASHBOARD_WRITE_PASSWORD);
+}
+
+export function isValidDashboardAccessSecret(value: unknown): boolean {
+  if (typeof value !== "string" || !isDashboardAccessConfigured()) return false;
+  return safeEqual(value, DASHBOARD_ACCESS_PASSWORD);
 }
 
 export function createWriteSessionToken(now = Date.now()): string {
   if (!API_KEY) {
-    throw new Error('API_SECRET_KEY is required to create a write session');
+    throw new Error("API_SECRET_KEY is required to create a write session");
   }
 
   const expiresAt = now + WRITE_SESSION_TTL_SECONDS * 1000;
@@ -162,16 +227,19 @@ export function createWriteSessionToken(now = Date.now()): string {
   return `${payload}.${signature}`;
 }
 
-export function isValidWriteSessionToken(token: string, now = Date.now()): boolean {
+export function isValidWriteSessionToken(
+  token: string,
+  now = Date.now()
+): boolean {
   if (!API_KEY || !token) return false;
 
-  const parts = token.split('.');
+  const parts = token.split(".");
   if (parts.length !== 4) return false;
 
   const [version, expiresAtRaw, nonce, signature] = parts;
   if (version !== WRITE_SESSION_VERSION || !nonce || !signature) return false;
 
-  const expiresAt = Number.parseInt(expiresAtRaw || '', 10);
+  const expiresAt = Number.parseInt(expiresAtRaw || "", 10);
   if (!Number.isFinite(expiresAt) || expiresAt <= now) return false;
 
   const payload = `${version}.${expiresAtRaw}.${nonce}`;
@@ -179,21 +247,101 @@ export function isValidWriteSessionToken(token: string, now = Date.now()): boole
   return safeEqual(signature, expectedSignature);
 }
 
+export function createDashboardAccessSessionToken(now = Date.now()): string {
+  if (!DASHBOARD_ACCESS_PASSWORD) {
+    throw new Error(
+      "DASHBOARD_ACCESS_PASSWORD is required to create a dashboard access session"
+    );
+  }
+
+  const expiresAt = now + DASHBOARD_ACCESS_SESSION_TTL_SECONDS * 1000;
+  const nonce = randomUUID();
+  const payload = `${DASHBOARD_ACCESS_SESSION_VERSION}.${expiresAt}.${nonce}`;
+  const signature = signDashboardAccessSessionPayload(payload);
+  return `${payload}.${signature}`;
+}
+
+export function isValidDashboardAccessSessionToken(
+  token: string,
+  now = Date.now()
+): boolean {
+  if (!DASHBOARD_ACCESS_PASSWORD || !token) return false;
+
+  const parts = token.split(".");
+  if (parts.length !== 4) return false;
+
+  const [version, expiresAtRaw, nonce, signature] = parts;
+  if (version !== DASHBOARD_ACCESS_SESSION_VERSION || !nonce || !signature)
+    return false;
+
+  const expiresAt = Number.parseInt(expiresAtRaw || "", 10);
+  if (!Number.isFinite(expiresAt) || expiresAt <= now) return false;
+
+  const payload = `${version}.${expiresAtRaw}.${nonce}`;
+  const expectedSignature = signDashboardAccessSessionPayload(payload);
+  return safeEqual(signature, expectedSignature);
+}
+
 export function hasValidWriteSession(req: Request): boolean {
-  return isValidWriteSessionToken(readCookieValue(req, WRITE_SESSION_COOKIE_NAME));
+  return isValidWriteSessionToken(
+    readCookieValue(req, WRITE_SESSION_COOKIE_NAME)
+  );
+}
+
+export function hasValidDashboardAccessSession(req: Request): boolean {
+  return isValidDashboardAccessSessionToken(
+    readCookieValue(req, DASHBOARD_ACCESS_SESSION_COOKIE_NAME)
+  );
+}
+
+export function hasDashboardAccess(req: Request): boolean {
+  return isLocalDevelopmentRequest(req) || hasValidDashboardAccessSession(req);
 }
 
 export function hasValidWriteApiKeyHeader(req: Request): boolean {
-  return isValidWriteApiKey(readHeaderValue(req.headers['x-api-key']));
+  return isValidWriteApiKey(readHeaderValue(req.headers["x-api-key"]));
 }
 
-export function apiKeyAuth(req: Request, res: Response, next: NextFunction): void {
-  if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') {
+export function dashboardAccessAuth(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): void {
+  if (isPublicDashboardApiRoute(req)) {
     next();
     return;
   }
 
-  if (isPublicWriteSessionRoute(req)) {
+  if (hasDashboardAccess(req) || hasValidWriteApiKeyHeader(req)) {
+    next();
+    return;
+  }
+
+  res.setHeader("Cache-Control", "no-store");
+
+  if (!isDashboardAccessConfigured()) {
+    sendAuthError(res, 503, "DASHBOARD_ACCESS_NOT_CONFIGURED");
+    return;
+  }
+
+  sendAuthError(res, 401, "DASHBOARD_ACCESS_REQUIRED");
+}
+
+export function apiKeyAuth(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): void {
+  if (
+    req.method === "GET" ||
+    req.method === "HEAD" ||
+    req.method === "OPTIONS"
+  ) {
+    next();
+    return;
+  }
+
+  if (isPublicAuthSessionRoute(req)) {
     next();
     return;
   }
@@ -210,12 +358,12 @@ export function apiKeyAuth(req: Request, res: Response, next: NextFunction): voi
   }
 
   if (!API_KEY) {
-    sendAuthError(res, 503, 'API_KEY_NOT_CONFIGURED');
+    sendAuthError(res, 503, "API_KEY_NOT_CONFIGURED");
     return;
   }
 
   if (!hasValidWriteApiKeyHeader(req) && !hasValidWriteSession(req)) {
-    sendAuthError(res, 403, 'API_KEY_INVALID');
+    sendAuthError(res, 403, "API_KEY_INVALID");
     return;
   }
 

@@ -1,6 +1,7 @@
 import { lazy, Suspense } from "react";
 import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
+import DashboardAccessGate from "./components/DashboardAccessGate";
 import VersionDriftNotice from "./components/VersionDriftNotice";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { Toaster } from "@/components/ui/sonner";
@@ -49,13 +50,15 @@ function App() {
         defaultTheme="dark"
         // switchable
       >
-        <VersionDriftNotice />
-        <TooltipProvider>
-          <Toaster />
-          <Suspense fallback={<RouteLoadingState />}>
-            <Router />
-          </Suspense>
-        </TooltipProvider>
+        <DashboardAccessGate>
+          <VersionDriftNotice />
+          <TooltipProvider>
+            <Toaster />
+            <Suspense fallback={<RouteLoadingState />}>
+              <Router />
+            </Suspense>
+          </TooltipProvider>
+        </DashboardAccessGate>
       </ThemeProvider>
     </ErrorBoundary>
   );

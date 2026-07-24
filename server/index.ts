@@ -10,6 +10,7 @@ import compression from "compression";
 import express from "express";
 import { createServer } from "http";
 import { registerApiAccessPolicy } from "./middleware/apiAccessPolicy.js";
+import { dashboardAccessAuth } from "./middleware/auth.js";
 import { registerDbWarmupGate, type DbWarmupState } from "./middleware/dbWarmupGate.js";
 import { securityHeaders } from "./middleware/security.js";
 import { getReleaseInfoHandler } from "./release.js";
@@ -575,6 +576,20 @@ async function startServer() {
         etag: false,
         lastModified: false,
       }));
+    });
+
+    // Keep the SPA shell and hashed frontend assets public so the login screen can render,
+    // but require a valid access session before serving downloadable dashboard content.
+    app.use((req, res, next) => {
+      const isSpaNavigation =
+        (req.method === 'GET' || req.method === 'HEAD') &&
+        !path.extname(req.path) &&
+        Boolean(req.accepts('html'));
+      if (isSpaNavigation) {
+        next();
+        return;
+      }
+      dashboardAccessAuth(req, res, next);
     });
 
     // 其余静态文件（favicon 等）→ 短缓存
