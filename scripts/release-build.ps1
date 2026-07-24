@@ -322,7 +322,6 @@ try {
   $stagingRoot = Join-Path $resolvedOutputDir ".staging-$artifactBaseName"
   $payloadRoot = Join-Path $stagingRoot "payload"
   $payloadScriptsRoot = Join-Path $payloadRoot "scripts"
-  $grrSnapshotPath = Join-Path $stagingRoot "dashboard-grr-state.snapshot.json"
   $metadataInStagingPath = Join-Path $stagingRoot "release-metadata.json"
   $artifactPath = Join-Path $resolvedOutputDir "$artifactBaseName.tar.gz"
   $metadataPath = Join-Path $resolvedOutputDir "$artifactBaseName.metadata.json"
@@ -334,8 +333,6 @@ try {
   New-Item -ItemType Directory -Path $payloadRoot -Force | Out-Null
   New-Item -ItemType Directory -Path $payloadScriptsRoot -Force | Out-Null
 
-  Invoke-Step "Exporting dashboard GRR workspace state..." { node scripts/export-dashboard-grr-state.mjs --out $grrSnapshotPath } "Failed to export dashboard GRR workspace state."
-
   Copy-Item -Recurse -Force (Join-Path $repoRoot "dist") (Join-Path $payloadRoot "dist")
   Copy-Item -Force (Join-Path $repoRoot "package.json") (Join-Path $payloadRoot "package.json")
   Copy-Item -Force (Join-Path $repoRoot "pnpm-lock.yaml") (Join-Path $payloadRoot "pnpm-lock.yaml")
@@ -346,8 +343,8 @@ try {
   Copy-Item -Force (Join-Path $repoRoot "scripts/verify-reliability-smoke.mjs") (Join-Path $payloadScriptsRoot "verify-reliability-smoke.mjs")
   Copy-Item -Force (Join-Path $repoRoot "scripts/verify-reliability-smoke.ps1") (Join-Path $payloadScriptsRoot "verify-reliability-smoke.ps1")
   Copy-Item -Force (Join-Path $repoRoot "scripts/verify-local-reliability-smoke.ps1") (Join-Path $payloadScriptsRoot "verify-local-reliability-smoke.ps1")
+  Copy-Item -Force (Join-Path $repoRoot "scripts/export-dashboard-grr-state.mjs") (Join-Path $payloadScriptsRoot "export-dashboard-grr-state.mjs")
   Copy-Item -Force (Join-Path $repoRoot "scripts/import-dashboard-grr-state.mjs") (Join-Path $payloadScriptsRoot "import-dashboard-grr-state.mjs")
-  Copy-Item -Force $grrSnapshotPath (Join-Path $payloadRoot "dashboard-grr-state.snapshot.json")
 
   if (Test-Path (Join-Path $repoRoot "patches")) {
     Copy-Item -Recurse -Force (Join-Path $repoRoot "patches") (Join-Path $payloadRoot "patches")

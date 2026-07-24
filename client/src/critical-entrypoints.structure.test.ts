@@ -49,6 +49,8 @@ const criticalRepoFiles = [
   'scripts/release-entrypoint.mjs',
   'scripts/release-from-clean-worktree.ps1',
   'scripts/release-build.ps1',
+  'scripts/deploy-release-artifact.ps1',
+  'scripts/export-dashboard-grr-state.mjs',
   'docs/release-sop.md',
 ] as const;
 
@@ -118,5 +120,23 @@ describe('critical local entrypoints', () => {
     );
 
     expect(checks.filter((entry) => !entry.tracked)).toEqual([]);
+  });
+
+  it('exports the live GRR snapshot on the server before replacing the deployed bundle', async () => {
+    const [buildSource, deploySource, exporterSource] = await Promise.all([
+      readFile(path.resolve(repoRoot, 'scripts/release-build.ps1'), 'utf8'),
+      readFile(path.resolve(repoRoot, 'scripts/deploy-release-artifact.ps1'), 'utf8'),
+      readFile(path.resolve(repoRoot, 'scripts/export-dashboard-grr-state.mjs'), 'utf8'),
+    ]);
+
+    expect(buildSource).toContain('scripts/export-dashboard-grr-state.mjs');
+    expect(buildSource).not.toContain('Copy-Item -Force $grrSnapshotPath');
+    expect(exporterSource).toContain("token === '--env-file'");
+    expect(exporterSource).toContain("token === '--disable-pinned-hosts'");
+
+    const exportIndex = deploySource.indexOf('node scripts/export-dashboard-grr-state.mjs');
+    const replaceIndex = deploySource.indexOf('rm -rf \"$REMOTE_DIR/dist.new\"');
+    expect(exportIndex).toBeGreaterThan(-1);
+    expect(replaceIndex).toBeGreaterThan(exportIndex);
   });
 });

@@ -9,19 +9,29 @@ const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '..');
 
 function parseArgs(argv) {
-  const args = { out: '' };
+  const args = { out: '', envFile: '', disablePinnedHosts: false };
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
     if (token === '--out') {
       args.out = argv[index + 1] || '';
       index += 1;
+    } else if (token === '--env-file') {
+      args.envFile = argv[index + 1] || '';
+      index += 1;
+    } else if (token === '--disable-pinned-hosts') {
+      args.disablePinnedHosts = true;
     }
   }
   return args;
 }
 
-function ensureEnvLoaded() {
-  const envPath = path.join(repoRoot, '.env');
+function resolveEnvPath(rawEnvFile) {
+  if (!rawEnvFile) return path.join(repoRoot, '.env');
+  return path.isAbsolute(rawEnvFile) ? rawEnvFile : path.resolve(process.cwd(), rawEnvFile);
+}
+
+function ensureEnvLoaded(rawEnvFile) {
+  const envPath = resolveEnvPath(rawEnvFile);
   const parsedEnv = fs.existsSync(envPath) ? dotenv.parse(fs.readFileSync(envPath, 'utf8')) : {};
   dotenv.config({ path: envPath });
   return parsedEnv;
@@ -90,11 +100,13 @@ function buildPinnedConnectionString(baseConnectionString, pinnedHosts) {
   }
 }
 
-function resolveDatabase(envMap) {
+function resolveDatabase(envMap, disablePinnedHosts = false) {
   const configuredDatabaseUrl = readEnvValue(envMap, 'DATABASE_URL');
   const poolerConnectionString = readEnvValue(envMap, 'DATABASE_URL_POOLER');
   const directConnectionString = readEnvValue(envMap, 'DATABASE_URL_DIRECT');
-  const pinnedHosts = parsePinnedHosts(readEnvValue(envMap, 'DATABASE_URL_POOLER_IPS'));
+  const pinnedHosts = disablePinnedHosts
+    ? []
+    : parsePinnedHosts(readEnvValue(envMap, 'DATABASE_URL_POOLER_IPS'));
 
   let connectionString = configuredDatabaseUrl;
   let activePinnedHosts = [];
@@ -120,9 +132,9 @@ function resolveDatabase(envMap) {
 async function exportDashboardGrrState() {
   const args = parseArgs(process.argv.slice(2));
   const outputPath = resolveOutputPath(args.out);
-  const envMap = ensureEnvLoaded();
+  const envMap = ensureEnvLoaded(args.envFile);
 
-  const database = resolveDatabase(envMap);
+  const database = resolveDatabase(envMap, args.disablePinnedHosts);
   if (!database.connectionString) {
     throw new Error('DATABASE_URL is required to export dashboard GRR state');
   }
@@ -137,12 +149,21 @@ async function exportDashboardGrrState() {
         : 'require',
   });
 
+  let timeoutHandle;
   try {
-    const rows = await sql.unsafe(`
-      SELECT workspace_key, state_json, updated_at
-      FROM dashboard_grr_states_v1
-      ORDER BY updated_at DESC, workspace_key ASC
-    `);
+    const rows = await Promise.race([
+      sql.unsafe(`
+        SELECT workspace_key, state_json, updated_at
+        FROM dashboard_grr_states_v1
+        ORDER BY updated_at DESC, workspace_key ASC
+      `),
+      new Promise((_, reject) => {
+        timeoutHandle = setTimeout(
+          () => reject(new Error('Dashboard GRR state export timed out after 60 seconds')),
+          60_000,
+        );
+      }),
+    ]);
 
     const payload = {
       schemaVersion: 1,
@@ -159,6 +180,7 @@ async function exportDashboardGrrState() {
     fs.writeFileSync(outputPath, JSON.stringify(payload, null, 2), 'utf8');
     console.log(`[OK] Exported dashboard GRR state snapshot (${payload.rowCount} rows) -> ${outputPath}`);
   } finally {
+    clearTimeout(timeoutHandle);
     await sql.end({ timeout: 5 });
   }
 }
