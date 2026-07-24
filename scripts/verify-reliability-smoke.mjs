@@ -318,8 +318,11 @@ async function main() {
     await waitForDbReady(args.baseUrl, args.waitRetries, args.waitIntervalMs);
   }
 
+  const apiHeaders = apiKey ? { 'x-api-key': apiKey } : {};
+
   const before = await readJson(
     `${args.baseUrl}/api/dashboard/stats/${encodeURIComponent(args.moldId)}?moldNo=${encodeURIComponent(args.moldNo)}`,
+    { headers: apiHeaders },
   );
   const beforeMetrics = before?.reliability ?? {};
   const beforeReliability = readNumber(beforeMetrics.currentReliability, 0);
@@ -334,6 +337,7 @@ async function main() {
 
   const after = await readJson(
     `${args.baseUrl}/api/dashboard/stats/${encodeURIComponent(args.moldId)}?moldNo=${encodeURIComponent(args.moldNo)}`,
+    { headers: apiHeaders },
   );
   const afterMetrics = after?.reliability ?? {};
   const afterReliability = readNumber(afterMetrics.currentReliability, 0);

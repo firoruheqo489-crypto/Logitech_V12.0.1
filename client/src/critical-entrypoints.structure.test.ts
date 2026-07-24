@@ -144,12 +144,14 @@ describe('critical local entrypoints', () => {
   });
 
   it('keeps authenticated release smoke checks and rollback rooted on the remote app', async () => {
-    const [deploySource, ossSmokeSource] = await Promise.all([
+    const [deploySource, ossSmokeSource, reliabilitySmokeSource] = await Promise.all([
       readFile(path.resolve(repoRoot, 'scripts/deploy-release-artifact.ps1'), 'utf8'),
       readFile(path.resolve(repoRoot, 'scripts/verify-oss-http-smoke.mjs'), 'utf8'),
+      readFile(path.resolve(repoRoot, 'scripts/verify-reliability-smoke.mjs'), 'utf8'),
     ]);
 
     expect(ossSmokeSource).toMatch(/redirect: 'manual',\r?\n\s+headers: uploadHeaders,/);
+    expect(reliabilitySmokeSource.match(/\{ headers: apiHeaders \}/g)).toHaveLength(2);
     expect(deploySource).toContain('"cd $targetRemoteDirLiteral"');
   });
 });
