@@ -204,6 +204,7 @@ async function main() {
 
     const proxyResponse = await fetch(new URL(uploadedUrl, `${baseUrl}/`).toString(), {
       redirect: 'manual',
+      headers: uploadHeaders,
     });
     const proxyContentType = proxyResponse.headers.get('content-type') || '';
 

@@ -335,6 +335,7 @@ function Invoke-RemoteRollbackAndErr([string]$Reason, [string]$RepoRootPath, [st
   Warn "$Reason Attempting rollback..."
   $targetRemoteDirLiteral = Format-RemoteShellPath $TargetRemoteDir
   $rollbackCmd = @(
+    "cd $targetRemoteDirLiteral",
     "if [ -d ${targetRemoteDirLiteral}/dist.prev ]; then rm -rf ${targetRemoteDirLiteral}/dist && mv ${targetRemoteDirLiteral}/dist.prev ${targetRemoteDirLiteral}/dist; fi",
     "if pm2 describe logitech > /dev/null 2>&1; then PM2_APP_NAME=logitech pm2 startOrReload ecosystem.config.cjs --only logitech --env production --update-env || pm2 restart logitech --update-env; elif pm2 describe mold-gantt-v3 > /dev/null 2>&1; then PM2_APP_NAME=mold-gantt-v3 pm2 startOrReload ecosystem.config.cjs --only mold-gantt-v3 --env production --update-env || pm2 restart mold-gantt-v3 --update-env; fi",
     "pm2 status || true"
