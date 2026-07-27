@@ -30,4 +30,12 @@ describe("engineering specification sample and final-sample archive policy", () 
     expect(source).toContain("hasDuplicateSkuTestType(hydratedDocuments, updatedSku, updatedTestType, documentId)")
     expect(source).not.toContain("hasDuplicateFileFingerprint(")
   })
+
+  it("keeps the archive scope independent from the main dashboard project name", async () => {
+    const source = await loadSource("./pages/dashboard/components/ProductSpecExcelParserDashboard.tsx")
+
+    expect(source).toContain("const ENGINEERING_SPEC_ARCHIVE_PROJECT_ID = '1';")
+    expect(source).toContain("const projectId = ENGINEERING_SPEC_ARCHIVE_PROJECT_ID;")
+    expect(source).not.toContain("const projectId = projectName.trim() || 'default-engineering-spec-workspace';")
+  })
 })

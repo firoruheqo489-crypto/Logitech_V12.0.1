@@ -209,6 +209,10 @@ const navItems: Array<{
 
 const EVIDENCE_SLOT_COUNT = 4;
 const MAX_EVIDENCE_SIZE_BYTES = 500 * 1024;
+// Engineering-spec archives predate the main dashboard project selector and are
+// stored in the shared OSS namespace `1`. Keep this scope stable so importing a
+// new dashboard workbook cannot hide the existing specification ledger.
+const ENGINEERING_SPEC_ARCHIVE_PROJECT_ID = '1';
 const PACKAGING_LABEL_TRANSLATIONS: Array<{ pattern: RegExp; label: string }> = [
   { pattern: /^pk$/i, label: '包装方式' },
   { pattern: /^inner\s*pc\s*\/\s*box$/i, label: '内盒数量' },
@@ -469,7 +473,7 @@ export default function ProductSpecExcelParserDashboard({
   const suppressNextAutoSaveRef = useRef(false);
   const hasUserSwitchedViewRef = useRef(false);
 
-  const projectId = projectName.trim() || 'default-engineering-spec-workspace';
+  const projectId = ENGINEERING_SPEC_ARCHIVE_PROJECT_ID;
 
   useEffect(() => {
     let cancelled = false;
