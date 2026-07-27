@@ -13,7 +13,7 @@ async function loadSource(relativePath: string): Promise<string> {
 describe("laboratory archive module data restoration", () => {
   it("passes archive snapshots into every laboratory workspace", async () => {
     const source = await loadSource("./pages/dashboard/components/LaboratoryPdfParserDashboard.tsx");
-    expect(source.match(/initialSummary=\{context\?\.initialSummary\}/g)).toHaveLength(10);
+    expect(source.match(/initialSummary=\{context\?\.initialSummary\}/g)).toHaveLength(11);
     expect(source).toContain("initialSummary={nodeSummaries[node.id]}");
   });
 

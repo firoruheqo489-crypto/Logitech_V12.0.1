@@ -28,6 +28,18 @@ describe("laboratory module contract", () => {
     expect(LABORATORY_MODULES.every((module) => typeof module.supportsPrint === "boolean")).toBe(true);
   });
 
+  it("registers the IK impact test as a selectable laboratory module", () => {
+    expect(LABORATORY_MODULES).toContainEqual({
+      type: "IK_IMPACT",
+      label: "IK 冲击试验",
+      printTitle: "IK 冲击试验报告",
+      category: "可靠性",
+      uploadMode: "single-pdf",
+      supportsPrint: true,
+      parserEndpoint: "/api/dashboard/ik-pdf/parse-upload",
+    });
+  });
+
   it("builds a stable mounted summary for the print surface", () => {
     const summary = buildMountedModuleSummary(7, "HARMONIC");
 

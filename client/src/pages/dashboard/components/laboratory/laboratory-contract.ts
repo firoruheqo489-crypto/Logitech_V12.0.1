@@ -10,7 +10,8 @@ export type TelemetryNodeType =
   | "PRODUCT_ILLUSTRATION"
   | "RELIABILITY_LIFE"
   | "TIME_SERIES"
-  | "BATTERY_CYCLE";
+  | "BATTERY_CYCLE"
+  | "IK_IMPACT";
 
 export type LaboratoryModuleStatus = "not_started" | "mounted" | "parsed" | "watch" | "fail";
 
@@ -166,6 +167,15 @@ export const LABORATORY_MODULES: LaboratoryModuleDefinition[] = [
     category: "可靠性",
     uploadMode: "single-excel",
     supportsPrint: true,
+  },
+  {
+    type: "IK_IMPACT",
+    label: "IK 冲击试验",
+    printTitle: "IK 冲击试验报告",
+    category: "可靠性",
+    uploadMode: "single-pdf",
+    supportsPrint: true,
+    parserEndpoint: "/api/dashboard/ik-pdf/parse-upload",
   },
 ];
 

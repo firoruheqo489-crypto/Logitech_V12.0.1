@@ -42,6 +42,7 @@ import { DarkroomTelemetryWorkspace } from "./DarkroomTelemetryWorkspace"
 import EmcRadiationWorkspace from "./EmcRadiationWorkspace"
 import { FlickerTelemetryWorkspace } from "./FlickerTelemetryWorkspace"
 import HarmonicTelemetryWorkspace from "./HarmonicTelemetryWorkspace"
+import { IkImpactWorkspace } from "./ik-impact/IkImpactWorkspace"
 import BatteryCycleDashboard from "./battery-cycle/BatteryCycleDashboard"
 import "./final-sample-report/styles/final-sample-report.css"
 import { FinalSampleReportPage } from "./final-sample-report/source-page"
@@ -1135,6 +1136,15 @@ function renderTelemetryModule(
       return (
         <BatteryCycleDashboard
           key={`battery-cycle-${nodeId}`}
+          nodeId={nodeId}
+          onSummaryChange={onSummaryChange}
+          initialSummary={context?.initialSummary}
+        />
+      )
+    case "IK_IMPACT":
+      return (
+        <IkImpactWorkspace
+          key={`ik-impact-${nodeId}`}
           nodeId={nodeId}
           onSummaryChange={onSummaryChange}
           initialSummary={context?.initialSummary}
