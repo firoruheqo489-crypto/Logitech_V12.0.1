@@ -22,6 +22,30 @@ function classifySampleType(value?: string): "sample" | "final-sample" | null {
   return null;
 }
 
+function parseSampleDeliveryDate(value: string): Date | null {
+  const normalized = String(value || "").trim();
+  if (!normalized) return null;
+
+  const dateOnly = normalized.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
+  if (dateOnly) {
+    const year = Number(dateOnly[1]);
+    const month = Number(dateOnly[2]);
+    const day = Number(dateOnly[3]);
+    const parsed = new Date(year, month - 1, day);
+    if (
+      parsed.getFullYear() !== year ||
+      parsed.getMonth() !== month - 1 ||
+      parsed.getDate() !== day
+    ) {
+      return null;
+    }
+    return parsed;
+  }
+
+  const parsed = new Date(normalized);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
 export function buildEngineeringSpecMonthlyStats(
   archives: EngineeringSpecLedgerRecord[],
   now = new Date()
@@ -41,10 +65,10 @@ export function buildEngineeringSpecMonthlyStats(
   const monthByKey = new Map(months.map(month => [month.monthKey, month]));
 
   for (const archive of archives) {
-    const createdAt = new Date(archive.createdAt);
-    if (Number.isNaN(createdAt.getTime())) continue;
+    const sampleDeliveryDate = parseSampleDeliveryDate(archive.testDate);
+    if (!sampleDeliveryDate) continue;
 
-    const month = monthByKey.get(formatMonthKey(createdAt));
+    const month = monthByKey.get(formatMonthKey(sampleDeliveryDate));
     if (!month) continue;
 
     month.specCount += 1;

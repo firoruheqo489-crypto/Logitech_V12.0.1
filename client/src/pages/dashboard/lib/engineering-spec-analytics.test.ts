@@ -62,13 +62,49 @@ describe("buildEngineeringSpecMonthlyStats", () => {
   it("keeps empty months stable and ignores invalid or out-of-window dates", () => {
     const result = buildEngineeringSpecMonthlyStats(
       [
-        createRecord("1", "invalid-date"),
-        createRecord("2", "2024-12-31T23:59:59+08:00"),
+        createRecord("1", "2026-01-10T08:00:00+08:00", {
+          testDate: "invalid-date",
+        }),
+        createRecord("2", "2026-01-10T08:00:00+08:00", {
+          testDate: "2024-12-31",
+        }),
       ],
       new Date(2026, 0, 15)
     );
 
     expect(result.every(month => month.specCount === 0)).toBe(true);
     expect(result.every(month => month.completionRate === 0)).toBe(true);
+  });
+
+  it("uses the sample delivery date and only counts the current calendar month", () => {
+    const archives = [
+      createRecord("1", "2026-07-10T08:00:00+08:00", {
+        testDate: "2026-06-30",
+      }),
+      createRecord("2", "2026-07-10T08:00:00+08:00", {
+        testDate: "2026-07-01",
+      }),
+      createRecord("3", "2026-07-10T08:00:00+08:00", {
+        testDate: "2026-07-31",
+        sampleType: "终样测试",
+      }),
+      createRecord("4", "2026-07-10T08:00:00+08:00", {
+        testDate: "2026-08-01",
+      }),
+    ];
+
+    const result = buildEngineeringSpecMonthlyStats(
+      archives,
+      new Date(2026, 6, 15)
+    );
+
+    expect(result.at(-2)).toMatchObject({ monthKey: "2026-06", specCount: 1 });
+    expect(result.at(-1)).toMatchObject({
+      monthKey: "2026-07",
+      specCount: 2,
+      sampleCount: 1,
+      finalSampleCount: 1,
+    });
+    expect(result.some(month => month.monthKey === "2026-08")).toBe(false);
   });
 });
