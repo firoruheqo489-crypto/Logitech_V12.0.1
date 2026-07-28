@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import type { EngineeringSpecLedgerRecord } from "@/lib/engineering-spec-ledger-api";
+import type { LaboratoryArchiveRecord } from "@/lib/laboratory-archive-api";
+import * as analytics from "./engineering-spec-analytics";
 import {
   buildEngineeringSpecDailyStats,
   buildEngineeringSpecMonthlyStats,
@@ -29,6 +31,32 @@ function createRecord(
     pendingCount: 0,
     createdAt,
     ossUrl: "https://example.com/spec.json",
+    ...overrides,
+  };
+}
+
+function createLaboratoryRecord(
+  id: string,
+  specSequence: number,
+  overrides: Partial<LaboratoryArchiveRecord> = {}
+): LaboratoryArchiveRecord {
+  return {
+    id,
+    projectId: "1",
+    sequence: Number(id.replace(/\D/g, "")) || 1,
+    reportNo: `LAB-${id}`,
+    projectName: "测试项目",
+    sampleName: "测试样品",
+    sampleNo: `SKU-${specSequence}`,
+    sampleType: "送样测试",
+    specSequence,
+    completionDate: "2026-07-04",
+    testDate: "2026-07-01",
+    verdict: "PASS",
+    moduleCount: 1,
+    printableModuleCount: 1,
+    createdAt: "2026-07-04T08:00:00+08:00",
+    ossUrl: "https://example.com/lab.json",
     ...overrides,
   };
 }
@@ -141,5 +169,87 @@ describe("buildEngineeringSpecDailyStats", () => {
     expect(april.reduce((total, item) => total + item.count, 0)).toBe(2);
     expect(july).toHaveLength(31);
     expect(july.at(-1)?.day).toBe("31号");
+  });
+});
+
+describe("buildEngineeringSpecReportMonthlyStats", () => {
+  it("matches reports by ledger sequence and separates sample and final-sample cycle days", () => {
+    const builder = Reflect.get(
+      analytics,
+      "buildEngineeringSpecReportMonthlyStats"
+    ) as
+      | ((
+          specs: EngineeringSpecLedgerRecord[],
+          reports: LaboratoryArchiveRecord[],
+          now: Date
+        ) => Array<Record<string, unknown>>)
+      | undefined;
+
+    expect(builder).toBeTypeOf("function");
+    if (!builder) return;
+
+    const specs = [
+      createRecord("1", "2026-07-01T08:00:00+08:00", {
+        sequence: 1,
+        testDate: "2026-07-01",
+        sampleType: "送样测试",
+      }),
+      createRecord("2", "2026-07-02T08:00:00+08:00", {
+        sequence: 2,
+        testDate: "2026-07-02",
+        sampleType: "终样测试",
+      }),
+      createRecord("3", "2026-07-03T08:00:00+08:00", {
+        sequence: 3,
+        testDate: "2026-07-03",
+        sampleType: "送样测试",
+      }),
+      createRecord("4", "2026-07-04T08:00:00+08:00", {
+        sequence: 4,
+        testDate: "2026-07-04",
+        sampleType: "终样测试",
+      }),
+      createRecord("5", "2026-06-30T08:00:00+08:00", {
+        sequence: 5,
+        testDate: "2026-06-30",
+        sampleType: "终样测试",
+      }),
+    ];
+    const reports = [
+      createLaboratoryRecord("1", 1, { completionDate: "2026-07-04" }),
+      createLaboratoryRecord("2", 2, {
+        sampleType: "终样测试",
+        completionDate: "2026-07-07",
+      }),
+      createLaboratoryRecord("4", 4, {
+        sampleType: "终样测试",
+        completionDate: undefined,
+      }),
+      createLaboratoryRecord("5", 5, {
+        sampleType: "终样测试",
+        completionDate: "2026-07-02",
+      }),
+      createLaboratoryRecord("99", 99),
+    ];
+
+    const result = builder(specs, reports, new Date(2026, 6, 28));
+
+    expect(result.at(-1)).toMatchObject({
+      monthKey: "2026-07",
+      ledgerCount: 4,
+      matchedReportCount: 3,
+      attainmentRate: 75,
+      sampleAverageCycleDays: 3,
+      sampleCycleCount: 1,
+      finalSampleAverageCycleDays: 5,
+      finalSampleCycleCount: 1,
+    });
+    expect(result.at(-2)).toMatchObject({
+      monthKey: "2026-06",
+      ledgerCount: 1,
+      matchedReportCount: 1,
+      attainmentRate: 100,
+      finalSampleAverageCycleDays: 2,
+    });
   });
 });

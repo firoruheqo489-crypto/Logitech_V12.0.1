@@ -23,10 +23,12 @@ import {
 } from "lucide-react";
 
 import type { EngineeringSpecLedgerRecord } from "@/lib/engineering-spec-ledger-api";
+import type { LaboratoryArchiveRecord } from "@/lib/laboratory-archive-api";
 import { cn } from "@/lib/utils";
 import {
   buildEngineeringSpecDailyStats,
   buildEngineeringSpecMonthlyStats,
+  buildEngineeringSpecReportMonthlyStats,
 } from "../lib/engineering-spec-analytics";
 
 const CATEGORY_COLORS = [
@@ -38,8 +40,10 @@ const CATEGORY_COLORS = [
 
 export function EngineeringSpecAnalyticsDashboard({
   archives,
+  laboratoryArchives = [],
 }: {
   archives: EngineeringSpecLedgerRecord[];
+  laboratoryArchives?: LaboratoryArchiveRecord[];
 }) {
   const orderedArchives = orderArchivesBySequence(archives);
   const monthlyData = buildEngineeringSpecMonthlyStats(orderedArchives);
@@ -59,6 +63,17 @@ export function EngineeringSpecAnalyticsDashboard({
     }%）`,
   }));
   const sampleTypeData = buildCurrentMonthSampleTypeBreakdown(currentMonth);
+  const reportMonthlyData = buildEngineeringSpecReportMonthlyStats(
+    orderedArchives,
+    laboratoryArchives
+  );
+  const currentReportMonth = reportMonthlyData.at(-1) ?? {
+    ledgerCount: 0,
+    matchedReportCount: 0,
+    attainmentRate: 0,
+    sampleAverageCycleDays: null,
+    finalSampleAverageCycleDays: null,
+  };
 
   return (
     <div className="flex h-full flex-col">
@@ -365,6 +380,189 @@ export function EngineeringSpecAnalyticsDashboard({
             </ResponsiveContainer>
           </div>
         </Panel>
+
+        <div className="mt-5 border-t border-white/[0.06] pt-5">
+          <h2 className="text-base font-semibold text-slate-100">
+            报告完成统计
+          </h2>
+          <p className="mt-1 font-mono text-[10px] tracking-wider text-muted-foreground">
+            Ledger-to-Laboratory Report Analytics
+          </p>
+        </div>
+
+        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <KpiCard
+            icon={Gauge}
+            label="本月报告完成率"
+            sub="Report Attainment"
+            value={String(currentReportMonth.attainmentRate)}
+            unit="%"
+            accent
+          />
+          <KpiCard
+            icon={Layers}
+            label="本月台账 / 报告"
+            sub="Ledger / Matched Reports"
+            value={`${currentReportMonth.matchedReportCount}/${currentReportMonth.ledgerCount}`}
+            unit="单"
+          />
+          <KpiCard
+            icon={PackageCheck}
+            label="样品平均周期"
+            sub="Sample Average Cycle"
+            value={formatCycleDays(currentReportMonth.sampleAverageCycleDays)}
+            unit="天"
+          />
+          <KpiCard
+            icon={BadgeCheck}
+            label="终样平均周期"
+            sub="Final Sample Average Cycle"
+            value={formatCycleDays(
+              currentReportMonth.finalSampleAverageCycleDays
+            )}
+            unit="天"
+          />
+        </div>
+
+        <Panel title="月度报告达成率" sub="Recent 12 Months" className="mt-3">
+          <div className="h-[320px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart
+                data={reportMonthlyData}
+                margin={{ top: 12, right: 8, left: -12, bottom: 8 }}
+              >
+                <XAxis
+                  dataKey="monthLabel"
+                  tick={{
+                    fill: "var(--muted-foreground)",
+                    fontSize: 11,
+                    fontFamily: "var(--font-mono)",
+                  }}
+                  axisLine={{ stroke: "var(--border)" }}
+                  tickLine={false}
+                />
+                <YAxis
+                  yAxisId="count"
+                  allowDecimals={false}
+                  tick={{
+                    fill: "var(--muted-foreground)",
+                    fontSize: 11,
+                    fontFamily: "var(--font-mono)",
+                  }}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <YAxis
+                  yAxisId="rate"
+                  orientation="right"
+                  domain={[0, 100]}
+                  ticks={[0, 25, 50, 75, 100]}
+                  tickFormatter={value => `${value}%`}
+                  tick={{
+                    fill: "var(--muted-foreground)",
+                    fontSize: 11,
+                    fontFamily: "var(--font-mono)",
+                  }}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <Tooltip
+                  contentStyle={CHART_TOOLTIP_STYLE}
+                  labelStyle={{ color: "#fff" }}
+                  itemStyle={{ color: "#fff" }}
+                  formatter={(value, name) => [
+                    name === "达成率" ? `${value}%` : value,
+                    name,
+                  ]}
+                />
+                <Legend wrapperStyle={CHART_LEGEND_STYLE} />
+                <Bar
+                  yAxisId="count"
+                  dataKey="ledgerCount"
+                  name="登记台账"
+                  fill="var(--chart-1)"
+                  radius={[3, 3, 0, 0]}
+                  maxBarSize={28}
+                />
+                <Bar
+                  yAxisId="count"
+                  dataKey="matchedReportCount"
+                  name="匹配报告"
+                  fill="var(--chart-3)"
+                  radius={[3, 3, 0, 0]}
+                  maxBarSize={28}
+                />
+                <Line
+                  yAxisId="rate"
+                  type="monotone"
+                  dataKey="attainmentRate"
+                  name="达成率"
+                  stroke="var(--chart-4)"
+                  strokeWidth={2.5}
+                  dot={{ r: 3, fill: "var(--chart-4)", strokeWidth: 0 }}
+                />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+        </Panel>
+
+        <Panel title="月度报告周期" sub="Calendar Days" className="mt-3">
+          <div className="h-[300px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart
+                data={reportMonthlyData}
+                margin={{ top: 12, right: 8, left: -12, bottom: 8 }}
+              >
+                <XAxis
+                  dataKey="monthLabel"
+                  tick={{
+                    fill: "var(--muted-foreground)",
+                    fontSize: 11,
+                    fontFamily: "var(--font-mono)",
+                  }}
+                  axisLine={{ stroke: "var(--border)" }}
+                  tickLine={false}
+                />
+                <YAxis
+                  unit="天"
+                  allowDecimals={false}
+                  tick={{
+                    fill: "var(--muted-foreground)",
+                    fontSize: 11,
+                    fontFamily: "var(--font-mono)",
+                  }}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <Tooltip
+                  contentStyle={CHART_TOOLTIP_STYLE}
+                  labelStyle={{ color: "#fff" }}
+                  itemStyle={{ color: "#fff" }}
+                  formatter={(value, name) => [`${value} 天`, name]}
+                />
+                <Legend wrapperStyle={CHART_LEGEND_STYLE} />
+                <Line
+                  type="monotone"
+                  dataKey="sampleAverageCycleDays"
+                  name="样品平均周期"
+                  stroke="var(--chart-2)"
+                  strokeWidth={2.5}
+                  connectNulls={false}
+                  dot={{ r: 4, fill: "var(--chart-2)", strokeWidth: 0 }}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="finalSampleAverageCycleDays"
+                  name="终样平均周期"
+                  stroke="var(--chart-3)"
+                  strokeWidth={2.5}
+                  connectNulls={false}
+                  dot={{ r: 4, fill: "var(--chart-3)", strokeWidth: 0 }}
+                />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+        </Panel>
       </div>
     </div>
   );
@@ -451,6 +649,24 @@ function Panel({
       {children}
     </section>
   );
+}
+
+const CHART_TOOLTIP_STYLE = {
+  background: "var(--popover)",
+  border: "1px solid var(--border)",
+  borderRadius: 6,
+  fontSize: 12,
+  fontFamily: "var(--font-mono)",
+  color: "#fff",
+};
+
+const CHART_LEGEND_STYLE = {
+  fontSize: 11,
+  fontFamily: "var(--font-mono)",
+};
+
+function formatCycleDays(value: number | null): string {
+  return value == null ? "—" : String(value);
 }
 
 function buildCurrentMonthSampleTypeBreakdown(month: {

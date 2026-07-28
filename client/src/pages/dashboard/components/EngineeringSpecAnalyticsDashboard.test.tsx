@@ -35,6 +35,7 @@ describe("EngineeringSpecAnalyticsDashboard", () => {
   it("renders analytics without the recent archive records panel", () => {
     const html = renderToStaticMarkup(
       <EngineeringSpecAnalyticsDashboard
+        laboratoryArchives={[]}
         archives={[
           createRecord("1", "送样测试", "合格"),
           createRecord("2", "终样测试", "待完善", "球泡"),
@@ -59,6 +60,10 @@ describe("EngineeringSpecAnalyticsDashboard", () => {
     expect(html).not.toContain('data-layout="category-donut"');
     expect(html).not.toContain("最近归档记录");
     expect(html).not.toContain("Latest 5");
+    expect(html).toContain("报告完成统计");
+    expect(html).toContain("本月报告完成率");
+    expect(html).toContain("月度报告达成率");
+    expect(html).toContain("月度报告周期");
     expect(html).not.toContain("Recent 7 Days");
     expect(html).not.toContain("lg:col-span-2");
     expect(html).not.toContain("lg:grid-cols-3");

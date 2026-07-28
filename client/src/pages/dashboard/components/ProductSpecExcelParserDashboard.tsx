@@ -37,6 +37,10 @@ import {
   type EngineeringSpecArchiveState,
   type EngineeringSpecLedgerRecord,
 } from '@/lib/engineering-spec-ledger-api';
+import {
+  listLaboratoryArchives,
+  type LaboratoryArchiveRecord,
+} from '@/lib/laboratory-archive-api';
 import type { ProductSpecPreviewCell, ProductSpecWorkbookPreview } from '@/lib/product-spec-excel-parser';
 import { parseProductSpecWorkbook } from '@/lib/product-spec-excel-parser';
 import {
@@ -441,6 +445,7 @@ export default function ProductSpecExcelParserDashboard({
   const [isParsing, setIsParsing] = useState(false);
   const [isArchiving, setIsArchiving] = useState(false);
   const [ledgerRecords, setLedgerRecords] = useState<EngineeringSpecLedgerRecord[]>([]);
+  const [laboratoryArchives, setLaboratoryArchives] = useState<LaboratoryArchiveRecord[]>([]);
   const [isLoadingLedger, setIsLoadingLedger] = useState(true);
   const [evidenceSlots, setEvidenceSlots] = useState<EvidenceSlot[]>(() => createEmptyEvidenceSlots());
   const [qeConclusion, setQeConclusion] = useState('');
@@ -505,6 +510,29 @@ export default function ProductSpecExcelParserDashboard({
       cancelled = true;
     };
   }, [projectId]);
+
+  useEffect(() => {
+    if (view !== 'analytics') return;
+
+    let cancelled = false;
+    const loadLaboratoryReports = async () => {
+      try {
+        const documents = await listLaboratoryArchives(projectId);
+        if (!cancelled) setLaboratoryArchives(documents);
+      } catch (error) {
+        if (cancelled) return;
+        setLaboratoryArchives([]);
+        toast.error('实验室报告统计读取失败', {
+          description: error instanceof Error ? error.message : '请检查 OSS 配置',
+        });
+      }
+    };
+
+    void loadLaboratoryReports();
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, view]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1245,7 +1273,10 @@ export default function ProductSpecExcelParserDashboard({
             {view === 'laboratory' ? (
               <LaboratoryPdfParserDashboard projectName={projectName} archiveOnly />
             ) : view === 'analytics' ? (
-              <EngineeringSpecAnalyticsDashboard archives={sanitizedLedgerRecords} />
+              <EngineeringSpecAnalyticsDashboard
+                archives={sanitizedLedgerRecords}
+                laboratoryArchives={laboratoryArchives}
+              />
             ) : view === 'ledger' ? (
               <EngineeringSpecLedger
                 records={sanitizedLedgerRecords}

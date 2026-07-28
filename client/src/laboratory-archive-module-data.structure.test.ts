@@ -180,4 +180,12 @@ describe("laboratory archive module data restoration", () => {
     expect(serverSource).toContain("LABORATORY_ARCHIVE_DUPLICATE_SPEC_SEQUENCE");
     expect(serverSource).toContain("if (!requestedDocument && occupiedDocument)");
   });
+
+  it("loads laboratory archives into the engineering specification analytics view", async () => {
+    const source = await loadSource("./pages/dashboard/components/ProductSpecExcelParserDashboard.tsx");
+
+    expect(source).toContain("listLaboratoryArchives(projectId)");
+    expect(source).toContain("setLaboratoryArchives(documents)");
+    expect(source).toContain("laboratoryArchives={laboratoryArchives}");
+  });
 });
