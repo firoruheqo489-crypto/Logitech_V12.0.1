@@ -365,46 +365,6 @@ export function EngineeringSpecAnalyticsDashboard({
             </ResponsiveContainer>
           </div>
         </Panel>
-
-        <Panel title="最近归档记录" sub="Latest 5" className="mt-3">
-          <div className="h-[286px] overflow-y-auto overflow-x-hidden scrollbar-soft pr-2">
-            <table className="w-full border-collapse text-left">
-              <thead>
-                <tr className="sticky top-0 z-10 border-b border-border bg-[#111111] font-mono text-[10px] tracking-wider text-muted-foreground">
-                  <th className="py-2 pr-4 font-medium">产品编号</th>
-                  <th className="py-2 pr-4 font-medium">产品类别</th>
-                  <th className="py-2 pr-4 font-medium">样品状态</th>
-                  <th className="py-2 pr-4 font-medium">产品经理</th>
-                  <th className="py-2 font-medium">归档时间</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {orderedArchives.map(record => (
-                  <tr
-                    key={record.id}
-                    className="font-mono text-xs hover:bg-secondary/30"
-                  >
-                    <td className="py-2 pr-4 font-medium text-foreground">
-                      {record.sku}
-                    </td>
-                    <td className="py-2 pr-4 text-muted-foreground">
-                      {record.category || "—"}
-                    </td>
-                    <td className="py-2 pr-4">
-                      {renderAnalyticsSampleStatus(record.sampleType)}
-                    </td>
-                    <td className="py-2 pr-4 text-muted-foreground">
-                      {record.productGroup || "—"}
-                    </td>
-                    <td className="py-2 tabular-nums text-muted-foreground">
-                      {formatTime(record.createdAt)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Panel>
       </div>
     </div>
   );
@@ -535,63 +495,4 @@ function buildCategoryBreakdown(archives: EngineeringSpecLedgerRecord[]) {
     .map(([type, value], index) => ({ type, value, index }))
     .sort((left, right) => right.value - left.value || left.index - right.index)
     .map(({ type, value }) => ({ type, value }));
-}
-
-function parseArchiveDate(value: string): Date | null {
-  if (!value) return null;
-
-  const native = new Date(value);
-  if (!Number.isNaN(native.getTime())) {
-    return native;
-  }
-
-  const match = value.match(
-    /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?$/
-  );
-  if (!match) return null;
-
-  const [, year, month, day, hours = "00", minutes = "00", seconds = "00"] =
-    match;
-  return new Date(
-    Number(year),
-    Number(month) - 1,
-    Number(day),
-    Number(hours),
-    Number(minutes),
-    Number(seconds)
-  );
-}
-
-function formatTime(value: string) {
-  const date = parseArchiveDate(value);
-  if (!date) return value;
-  return `${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")} ${String(
-    date.getHours()
-  ).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
-}
-
-function renderAnalyticsSampleStatus(sampleType?: string) {
-  const status = formatAnalyticsSampleType(sampleType);
-  if (!status) {
-    return <span className="text-muted-foreground">—</span>;
-  }
-
-  return (
-    <span
-      className={cn(
-        "font-medium",
-        status === "终样" ? "text-cyan-300" : "text-violet-300"
-      )}
-    >
-      {status}
-    </span>
-  );
-}
-
-function formatAnalyticsSampleType(sampleType?: string): string {
-  const normalized = String(sampleType || "").trim();
-  if (!normalized) return "";
-  if (normalized.includes("终样")) return "终样";
-  if (normalized.includes("送样") || normalized.includes("样品")) return "样品";
-  return normalized;
 }

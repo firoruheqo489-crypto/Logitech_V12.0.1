@@ -32,7 +32,7 @@ function createRecord(
 }
 
 describe("EngineeringSpecAnalyticsDashboard", () => {
-  it("renders monthly KPIs and trend without removing the existing detail panels", () => {
+  it("renders analytics without the recent archive records panel", () => {
     const html = renderToStaticMarkup(
       <EngineeringSpecAnalyticsDashboard
         archives={[
@@ -57,7 +57,8 @@ describe("EngineeringSpecAnalyticsDashboard", () => {
     expect(html).toContain('data-layout="horizontal-category-bars"');
     expect(html).toContain('data-category-order="球泡,投光灯"');
     expect(html).not.toContain('data-layout="category-donut"');
-    expect(html).toContain("最近归档记录");
+    expect(html).not.toContain("最近归档记录");
+    expect(html).not.toContain("Latest 5");
     expect(html).not.toContain("Recent 7 Days");
     expect(html).not.toContain("lg:col-span-2");
     expect(html).not.toContain("lg:grid-cols-3");
