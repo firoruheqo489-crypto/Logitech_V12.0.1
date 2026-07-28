@@ -72,8 +72,8 @@ export function EngineeringSpecAnalyticsDashboard({
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <KpiCard
             icon={Layers}
-            label="本月规格书"
-            sub="Monthly Specs"
+            label="本月已收样品数"
+            sub="Samples Received"
             value={String(currentMonth.specCount)}
             unit="份"
           />

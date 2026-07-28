@@ -44,7 +44,9 @@ describe("EngineeringSpecAnalyticsDashboard", () => {
     );
 
     expect(html).toContain("规格书统计看板");
-    expect(html).toContain("本月规格书");
+    expect(html).toContain("本月已收样品数");
+    expect(html).toContain("Samples Received");
+    expect(html).not.toContain("本月规格书");
     expect(html).toContain("本月样品单");
     expect(html).toContain("本月终样单");
     expect(html).toContain("本月完成率");
