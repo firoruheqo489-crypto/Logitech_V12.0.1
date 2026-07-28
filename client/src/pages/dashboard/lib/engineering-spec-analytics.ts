@@ -10,6 +10,12 @@ export interface EngineeringSpecMonthlyStat {
   completionRate: number;
 }
 
+export interface EngineeringSpecDailyStat {
+  day: string;
+  count: number;
+  pass: number;
+}
+
 function formatMonthKey(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
 }
@@ -92,4 +98,35 @@ export function buildEngineeringSpecMonthlyStats(
   }
 
   return months;
+}
+
+export function buildEngineeringSpecDailyStats(
+  archives: EngineeringSpecLedgerRecord[],
+  now = new Date()
+): EngineeringSpecDailyStat[] {
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const days = Array.from({ length: daysInMonth }, (_, index) => ({
+    day: `${index + 1}号`,
+    count: 0,
+    pass: 0,
+  }));
+
+  for (const archive of archives) {
+    const sampleDeliveryDate = parseSampleDeliveryDate(archive.testDate);
+    if (
+      !sampleDeliveryDate ||
+      sampleDeliveryDate.getFullYear() !== year ||
+      sampleDeliveryDate.getMonth() !== month
+    ) {
+      continue;
+    }
+
+    const day = days[sampleDeliveryDate.getDate() - 1];
+    day.count += 1;
+    if (archive.result === "合格") day.pass += 1;
+  }
+
+  return days;
 }

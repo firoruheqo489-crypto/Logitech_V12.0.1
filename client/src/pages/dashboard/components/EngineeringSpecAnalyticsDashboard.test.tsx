@@ -48,7 +48,11 @@ describe("EngineeringSpecAnalyticsDashboard", () => {
     expect(html).toContain("本月完成率");
     expect(html).toContain("月度处理趋势");
     expect(html).toContain("每日处理量");
+    expect(html).toContain("Current Month · Daily");
     expect(html).toContain("样品分布");
     expect(html).toContain("最近归档记录");
+    expect(html).not.toContain("Recent 7 Days");
+    expect(html).not.toContain("lg:col-span-2");
+    expect(html).not.toContain("lg:grid-cols-3");
   });
 });

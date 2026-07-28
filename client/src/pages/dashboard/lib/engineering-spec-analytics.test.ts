@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import type { EngineeringSpecLedgerRecord } from "@/lib/engineering-spec-ledger-api";
-import { buildEngineeringSpecMonthlyStats } from "./engineering-spec-analytics";
+import {
+  buildEngineeringSpecDailyStats,
+  buildEngineeringSpecMonthlyStats,
+} from "./engineering-spec-analytics";
 
 function createRecord(
   id: string,
@@ -106,5 +109,37 @@ describe("buildEngineeringSpecMonthlyStats", () => {
       finalSampleCount: 1,
     });
     expect(result.some(month => month.monthKey === "2026-08")).toBe(false);
+  });
+});
+
+describe("buildEngineeringSpecDailyStats", () => {
+  it("returns every day in the current month and buckets by sample delivery date", () => {
+    const archives = [
+      createRecord("1", "2026-04-10T08:00:00+08:00", {
+        testDate: "2026-04-01",
+      }),
+      createRecord("2", "2026-04-10T08:00:00+08:00", {
+        testDate: "2026-04-30",
+      }),
+      createRecord("3", "2026-04-10T08:00:00+08:00", {
+        testDate: "2026-03-31",
+      }),
+      createRecord("4", "2026-04-10T08:00:00+08:00", {
+        testDate: "2026-05-01",
+      }),
+    ];
+
+    const april = buildEngineeringSpecDailyStats(
+      archives,
+      new Date(2026, 3, 15)
+    );
+    const july = buildEngineeringSpecDailyStats([], new Date(2026, 6, 15));
+
+    expect(april).toHaveLength(30);
+    expect(april[0]).toMatchObject({ day: "1号", count: 1 });
+    expect(april.at(-1)).toMatchObject({ day: "30号", count: 1 });
+    expect(april.reduce((total, item) => total + item.count, 0)).toBe(2);
+    expect(july).toHaveLength(31);
+    expect(july.at(-1)?.day).toBe("31号");
   });
 });

@@ -25,7 +25,10 @@ import {
 
 import type { EngineeringSpecLedgerRecord } from "@/lib/engineering-spec-ledger-api";
 import { cn } from "@/lib/utils";
-import { buildEngineeringSpecMonthlyStats } from "../lib/engineering-spec-analytics";
+import {
+  buildEngineeringSpecDailyStats,
+  buildEngineeringSpecMonthlyStats,
+} from "../lib/engineering-spec-analytics";
 
 const DONUT_COLORS = [
   "var(--chart-1)",
@@ -40,7 +43,6 @@ export function EngineeringSpecAnalyticsDashboard({
   archives: EngineeringSpecLedgerRecord[];
 }) {
   const orderedArchives = orderArchivesBySequence(archives);
-  const recentArchives = getRecentSevenDayArchives(orderedArchives);
   const monthlyData = buildEngineeringSpecMonthlyStats(orderedArchives);
   const currentMonth = monthlyData.at(-1) ?? {
     specCount: 0,
@@ -48,10 +50,10 @@ export function EngineeringSpecAnalyticsDashboard({
     finalSampleCount: 0,
     completionRate: 0,
   };
-  const volumeData = buildDailyVolumeData(recentArchives);
+  const volumeData = buildEngineeringSpecDailyStats(orderedArchives);
   const categoryData = buildCategoryBreakdown(orderedArchives);
   const categoryTotal = categoryData.reduce((sum, item) => sum + item.value, 0);
-  const sampleTypeData = buildSampleTypeBreakdown(orderedArchives);
+  const sampleTypeData = buildCurrentMonthSampleTypeBreakdown(currentMonth);
 
   return (
     <div className="flex h-full flex-col">
@@ -199,162 +201,159 @@ export function EngineeringSpecAnalyticsDashboard({
           </div>
         </Panel>
 
-        <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-3">
-          <Panel
-            title="每日处理量"
-            sub="Recent 7 Days"
-            className="lg:col-span-2"
-            headerAside={
-              <div className="flex items-center gap-3 font-mono text-[11px]">
-                {sampleTypeData.map(item => (
-                  <span
-                    key={item.type}
-                    className="whitespace-nowrap text-muted-foreground"
-                  >
-                    <span
-                      className={
-                        item.type === "终样"
-                          ? "text-cyan-300"
-                          : "text-violet-300"
-                      }
-                    >
-                      {item.type}
-                    </span>{" "}
-                    {item.value} 个（{item.percentage}%）
-                  </span>
-                ))}
-              </div>
-            }
-          >
-            <div className="h-[316px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart
-                  data={volumeData}
-                  margin={{ top: 8, right: 8, left: -16, bottom: 18 }}
-                >
-                  <XAxis
-                    dataKey="day"
-                    tick={{
-                      fill: "var(--muted-foreground)",
-                      fontSize: 11,
-                      fontFamily: "var(--font-mono)",
-                    }}
-                    axisLine={{ stroke: "var(--border)" }}
-                    tickLine={false}
-                  />
-                  <YAxis
-                    tick={{
-                      fill: "var(--muted-foreground)",
-                      fontSize: 11,
-                      fontFamily: "var(--font-mono)",
-                    }}
-                    axisLine={false}
-                    tickLine={false}
-                    allowDecimals={false}
-                  />
-                  <Tooltip
-                    cursor={{ fill: "var(--secondary)", opacity: 0.4 }}
-                    contentStyle={{
-                      background: "var(--popover)",
-                      border: "1px solid var(--border)",
-                      borderRadius: 6,
-                      fontSize: 12,
-                      fontFamily: "var(--font-mono)",
-                      color: "#fff",
-                    }}
-                    labelStyle={{ color: "#fff" }}
-                    itemStyle={{ color: "#fff" }}
-                    wrapperStyle={{ color: "#fff" }}
-                  />
-                  <Bar
-                    dataKey="count"
-                    name="处理总数"
-                    fill="var(--chart-1)"
-                    radius={[3, 3, 0, 0]}
-                    maxBarSize={42}
-                  />
-                  <Bar
-                    dataKey="pass"
-                    name="一次通过"
-                    fill="var(--chart-2)"
-                    radius={[3, 3, 0, 0]}
-                    maxBarSize={42}
-                  />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </Panel>
-
-          <Panel title="样品分布" sub="By Product Category">
-            <div className="relative h-44 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={categoryData}
-                    dataKey="value"
-                    nameKey="type"
-                    innerRadius={48}
-                    outerRadius={72}
-                    paddingAngle={2}
-                    stroke="var(--card)"
-                    strokeWidth={2}
-                  >
-                    {categoryData.map((_, index) => (
-                      <Cell
-                        key={index}
-                        fill={DONUT_COLORS[index % DONUT_COLORS.length]}
-                      />
-                    ))}
-                  </Pie>
-                  <Tooltip
-                    contentStyle={{
-                      background: "var(--popover)",
-                      border: "1px solid var(--border)",
-                      borderRadius: 6,
-                      fontSize: 12,
-                      fontFamily: "var(--font-mono)",
-                      color: "#fff",
-                    }}
-                    labelStyle={{ color: "#fff" }}
-                    itemStyle={{ color: "#fff" }}
-                    wrapperStyle={{ color: "#fff" }}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-                <span className="font-mono text-xl font-bold tabular-nums">
-                  {categoryTotal}
-                </span>
-                <span className="font-mono text-[10px] text-muted-foreground">
-                  单数
-                </span>
-              </div>
-            </div>
-            <ul className="mt-2 flex flex-col gap-1">
-              {categoryData.map((item, index) => (
-                <li
+        <Panel
+          title="每日处理量"
+          sub="Current Month · Daily"
+          className="mt-3"
+          headerAside={
+            <div className="flex items-center gap-3 font-mono text-[11px]">
+              {sampleTypeData.map(item => (
+                <span
                   key={item.type}
-                  className="flex items-center gap-2 font-mono text-xs"
+                  className="whitespace-nowrap text-muted-foreground"
                 >
                   <span
-                    className="h-2.5 w-2.5 shrink-0 rounded-[2px]"
-                    style={{
-                      background: DONUT_COLORS[index % DONUT_COLORS.length],
-                    }}
-                  />
-                  <span className="text-foreground">{item.type}</span>
-                  <span className="ml-auto tabular-nums text-muted-foreground">
-                    {item.value} (
-                    {categoryTotal === 0
-                      ? 0
-                      : ((item.value / categoryTotal) * 100).toFixed(0)}
-                    %)
-                  </span>
-                </li>
+                    className={
+                      item.type === "终样" ? "text-cyan-300" : "text-violet-300"
+                    }
+                  >
+                    {item.type}
+                  </span>{" "}
+                  {item.value} 个（{item.percentage}%）
+                </span>
               ))}
-            </ul>
-          </Panel>
-        </div>
+            </div>
+          }
+        >
+          <div className="h-[316px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                data={volumeData}
+                margin={{ top: 8, right: 8, left: -16, bottom: 18 }}
+              >
+                <XAxis
+                  dataKey="day"
+                  interval={0}
+                  tick={{
+                    fill: "var(--muted-foreground)",
+                    fontSize: 9,
+                    fontFamily: "var(--font-mono)",
+                  }}
+                  axisLine={{ stroke: "var(--border)" }}
+                  tickLine={false}
+                />
+                <YAxis
+                  tick={{
+                    fill: "var(--muted-foreground)",
+                    fontSize: 11,
+                    fontFamily: "var(--font-mono)",
+                  }}
+                  axisLine={false}
+                  tickLine={false}
+                  allowDecimals={false}
+                />
+                <Tooltip
+                  cursor={{ fill: "var(--secondary)", opacity: 0.4 }}
+                  contentStyle={{
+                    background: "var(--popover)",
+                    border: "1px solid var(--border)",
+                    borderRadius: 6,
+                    fontSize: 12,
+                    fontFamily: "var(--font-mono)",
+                    color: "#fff",
+                  }}
+                  labelStyle={{ color: "#fff" }}
+                  itemStyle={{ color: "#fff" }}
+                  wrapperStyle={{ color: "#fff" }}
+                />
+                <Bar
+                  dataKey="count"
+                  name="处理总数"
+                  fill="var(--chart-1)"
+                  radius={[3, 3, 0, 0]}
+                  maxBarSize={42}
+                />
+                <Bar
+                  dataKey="pass"
+                  name="一次通过"
+                  fill="var(--chart-2)"
+                  radius={[3, 3, 0, 0]}
+                  maxBarSize={42}
+                />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </Panel>
+
+        <Panel title="样品分布" sub="By Product Category" className="mt-3">
+          <div className="relative h-44 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={categoryData}
+                  dataKey="value"
+                  nameKey="type"
+                  innerRadius={48}
+                  outerRadius={72}
+                  paddingAngle={2}
+                  stroke="var(--card)"
+                  strokeWidth={2}
+                >
+                  {categoryData.map((_, index) => (
+                    <Cell
+                      key={index}
+                      fill={DONUT_COLORS[index % DONUT_COLORS.length]}
+                    />
+                  ))}
+                </Pie>
+                <Tooltip
+                  contentStyle={{
+                    background: "var(--popover)",
+                    border: "1px solid var(--border)",
+                    borderRadius: 6,
+                    fontSize: 12,
+                    fontFamily: "var(--font-mono)",
+                    color: "#fff",
+                  }}
+                  labelStyle={{ color: "#fff" }}
+                  itemStyle={{ color: "#fff" }}
+                  wrapperStyle={{ color: "#fff" }}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+            <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+              <span className="font-mono text-xl font-bold tabular-nums">
+                {categoryTotal}
+              </span>
+              <span className="font-mono text-[10px] text-muted-foreground">
+                单数
+              </span>
+            </div>
+          </div>
+          <ul className="mt-2 flex flex-col gap-1">
+            {categoryData.map((item, index) => (
+              <li
+                key={item.type}
+                className="flex items-center gap-2 font-mono text-xs"
+              >
+                <span
+                  className="h-2.5 w-2.5 shrink-0 rounded-[2px]"
+                  style={{
+                    background: DONUT_COLORS[index % DONUT_COLORS.length],
+                  }}
+                />
+                <span className="text-foreground">{item.type}</span>
+                <span className="ml-auto tabular-nums text-muted-foreground">
+                  {item.value} (
+                  {categoryTotal === 0
+                    ? 0
+                    : ((item.value / categoryTotal) * 100).toFixed(0)}
+                  %)
+                </span>
+              </li>
+            ))}
+          </ul>
+        </Panel>
 
         <Panel title="最近归档记录" sub="Latest 5" className="mt-3">
           <div className="h-[286px] overflow-y-auto overflow-x-hidden scrollbar-soft pr-2">
@@ -483,16 +482,21 @@ function Panel({
   );
 }
 
-function buildSampleTypeBreakdown(archives: EngineeringSpecLedgerRecord[]) {
-  const total = archives.length;
-  return ["终样", "样品"].map(type => {
-    const value = archives.filter(
-      archive => formatAnalyticsSampleType(archive.sampleType) === type
-    ).length;
+function buildCurrentMonthSampleTypeBreakdown(month: {
+  specCount: number;
+  sampleCount: number;
+  finalSampleCount: number;
+}) {
+  return [
+    { type: "终样", value: month.finalSampleCount },
+    { type: "样品", value: month.sampleCount },
+  ].map(item => {
     return {
-      type,
-      value,
-      percentage: total === 0 ? 0 : ((value / total) * 100).toFixed(0),
+      ...item,
+      percentage:
+        month.specCount === 0
+          ? 0
+          : ((item.value / month.specCount) * 100).toFixed(0),
     };
   });
 }
@@ -507,44 +511,6 @@ function orderArchivesBySequence(
     return String(right.createdAt || "").localeCompare(
       String(left.createdAt || "")
     );
-  });
-}
-
-function getRecentSevenDayArchives(archives: EngineeringSpecLedgerRecord[]) {
-  const end = new Date();
-  end.setHours(23, 59, 59, 999);
-  const start = new Date(end);
-  start.setDate(end.getDate() - 6);
-  start.setHours(0, 0, 0, 0);
-
-  return archives.filter(archive => {
-    const createdAt = parseArchiveDate(archive.createdAt);
-    return createdAt ? createdAt >= start && createdAt <= end : false;
-  });
-}
-
-function buildDailyVolumeData(archives: EngineeringSpecLedgerRecord[]) {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  return Array.from({ length: 7 }, (_, index) => {
-    const date = new Date(today);
-    date.setDate(today.getDate() - (6 - index));
-    const bucket = archives.filter(archive => {
-      const archiveDate = parseArchiveDate(archive.createdAt);
-      if (!archiveDate) return false;
-      return (
-        archiveDate.getFullYear() === date.getFullYear() &&
-        archiveDate.getMonth() === date.getMonth() &&
-        archiveDate.getDate() === date.getDate()
-      );
-    });
-
-    return {
-      day: `${String(date.getMonth() + 1).padStart(2, "0")}/${String(date.getDate()).padStart(2, "0")}`,
-      count: bucket.length,
-      pass: bucket.filter(item => item.result === "合格").length,
-    };
   });
 }
 
