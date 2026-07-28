@@ -7,7 +7,8 @@ import { EngineeringSpecAnalyticsDashboard } from "./EngineeringSpecAnalyticsDas
 function createRecord(
   id: string,
   sampleType: string,
-  result: EngineeringSpecLedgerRecord["result"]
+  result: EngineeringSpecLedgerRecord["result"],
+  category = "投光灯"
 ): EngineeringSpecLedgerRecord {
   return {
     id,
@@ -16,7 +17,7 @@ function createRecord(
     sku: `SKU-${id}`,
     spu: `SPU-${id}`,
     type: "投光灯",
-    category: "投光灯",
+    category,
     description: "测试规格书",
     department: "研发",
     productGroup: "照明",
@@ -36,7 +37,8 @@ describe("EngineeringSpecAnalyticsDashboard", () => {
       <EngineeringSpecAnalyticsDashboard
         archives={[
           createRecord("1", "送样测试", "合格"),
-          createRecord("2", "终样测试", "待完善"),
+          createRecord("2", "终样测试", "待完善", "球泡"),
+          createRecord("3", "终样测试", "待完善", "球泡"),
         ]}
       />
     );
@@ -50,6 +52,9 @@ describe("EngineeringSpecAnalyticsDashboard", () => {
     expect(html).toContain("每日处理量");
     expect(html).toContain("Current Month · Daily");
     expect(html).toContain("样品分布");
+    expect(html).toContain('data-layout="horizontal-category-bars"');
+    expect(html).toContain('data-category-order="球泡,投光灯"');
+    expect(html).not.toContain('data-layout="category-donut"');
     expect(html).toContain("最近归档记录");
     expect(html).not.toContain("Recent 7 Days");
     expect(html).not.toContain("lg:col-span-2");

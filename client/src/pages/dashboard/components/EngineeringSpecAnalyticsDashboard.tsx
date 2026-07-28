@@ -6,10 +6,9 @@ import {
   BarChart,
   Cell,
   ComposedChart,
+  LabelList,
   Legend,
   Line,
-  Pie,
-  PieChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -30,7 +29,7 @@ import {
   buildEngineeringSpecMonthlyStats,
 } from "../lib/engineering-spec-analytics";
 
-const DONUT_COLORS = [
+const CATEGORY_COLORS = [
   "var(--chart-1)",
   "var(--chart-2)",
   "var(--chart-3)",
@@ -53,6 +52,12 @@ export function EngineeringSpecAnalyticsDashboard({
   const volumeData = buildEngineeringSpecDailyStats(orderedArchives);
   const categoryData = buildCategoryBreakdown(orderedArchives);
   const categoryTotal = categoryData.reduce((sum, item) => sum + item.value, 0);
+  const categoryChartData = categoryData.map(item => ({
+    ...item,
+    label: `${item.value}（${
+      categoryTotal === 0 ? 0 : ((item.value / categoryTotal) * 100).toFixed(0)
+    }%）`,
+  }));
   const sampleTypeData = buildCurrentMonthSampleTypeBreakdown(currentMonth);
 
   return (
@@ -286,27 +291,44 @@ export function EngineeringSpecAnalyticsDashboard({
         </Panel>
 
         <Panel title="样品分布" sub="By Product Category" className="mt-3">
-          <div className="relative h-44 w-full">
+          <div
+            data-layout="horizontal-category-bars"
+            data-category-order={categoryData.map(item => item.type).join(",")}
+            className="w-full"
+            style={{ height: Math.max(320, categoryData.length * 34) }}
+          >
             <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={categoryData}
-                  dataKey="value"
-                  nameKey="type"
-                  innerRadius={48}
-                  outerRadius={72}
-                  paddingAngle={2}
-                  stroke="var(--card)"
-                  strokeWidth={2}
-                >
-                  {categoryData.map((_, index) => (
-                    <Cell
-                      key={index}
-                      fill={DONUT_COLORS[index % DONUT_COLORS.length]}
-                    />
-                  ))}
-                </Pie>
+              <BarChart
+                layout="vertical"
+                data={categoryChartData}
+                margin={{ top: 4, right: 96, left: 8, bottom: 4 }}
+              >
+                <XAxis
+                  type="number"
+                  allowDecimals={false}
+                  tick={{
+                    fill: "var(--muted-foreground)",
+                    fontSize: 10,
+                    fontFamily: "var(--font-mono)",
+                  }}
+                  axisLine={{ stroke: "var(--border)" }}
+                  tickLine={false}
+                />
+                <YAxis
+                  type="category"
+                  dataKey="type"
+                  width={100}
+                  interval={0}
+                  tick={{
+                    fill: "var(--foreground)",
+                    fontSize: 11,
+                    fontFamily: "var(--font-mono)",
+                  }}
+                  axisLine={false}
+                  tickLine={false}
+                />
                 <Tooltip
+                  cursor={{ fill: "var(--secondary)", opacity: 0.35 }}
                   contentStyle={{
                     background: "var(--popover)",
                     border: "1px solid var(--border)",
@@ -319,40 +341,29 @@ export function EngineeringSpecAnalyticsDashboard({
                   itemStyle={{ color: "#fff" }}
                   wrapperStyle={{ color: "#fff" }}
                 />
-              </PieChart>
+                <Bar
+                  dataKey="value"
+                  name="单数"
+                  radius={[0, 4, 4, 0]}
+                  maxBarSize={22}
+                >
+                  {categoryChartData.map((_, index) => (
+                    <Cell
+                      key={index}
+                      fill={CATEGORY_COLORS[index % CATEGORY_COLORS.length]}
+                    />
+                  ))}
+                  <LabelList
+                    dataKey="label"
+                    position="right"
+                    fill="var(--muted-foreground)"
+                    fontSize={11}
+                    fontFamily="var(--font-mono)"
+                  />
+                </Bar>
+              </BarChart>
             </ResponsiveContainer>
-            <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-              <span className="font-mono text-xl font-bold tabular-nums">
-                {categoryTotal}
-              </span>
-              <span className="font-mono text-[10px] text-muted-foreground">
-                单数
-              </span>
-            </div>
           </div>
-          <ul className="mt-2 flex flex-col gap-1">
-            {categoryData.map((item, index) => (
-              <li
-                key={item.type}
-                className="flex items-center gap-2 font-mono text-xs"
-              >
-                <span
-                  className="h-2.5 w-2.5 shrink-0 rounded-[2px]"
-                  style={{
-                    background: DONUT_COLORS[index % DONUT_COLORS.length],
-                  }}
-                />
-                <span className="text-foreground">{item.type}</span>
-                <span className="ml-auto tabular-nums text-muted-foreground">
-                  {item.value} (
-                  {categoryTotal === 0
-                    ? 0
-                    : ((item.value / categoryTotal) * 100).toFixed(0)}
-                  %)
-                </span>
-              </li>
-            ))}
-          </ul>
         </Panel>
 
         <Panel title="最近归档记录" sub="Latest 5" className="mt-3">
@@ -520,7 +531,10 @@ function buildCategoryBreakdown(archives: EngineeringSpecLedgerRecord[]) {
     const key = String(archive.category || "").trim() || "未分类";
     map.set(key, (map.get(key) ?? 0) + 1);
   });
-  return Array.from(map.entries()).map(([type, value]) => ({ type, value }));
+  return Array.from(map.entries())
+    .map(([type, value], index) => ({ type, value, index }))
+    .sort((left, right) => right.value - left.value || left.index - right.index)
+    .map(({ type, value }) => ({ type, value }));
 }
 
 function parseArchiveDate(value: string): Date | null {
