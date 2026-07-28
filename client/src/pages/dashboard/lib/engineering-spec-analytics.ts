@@ -17,13 +17,14 @@ function formatMonthKey(date: Date): string {
 function classifySampleType(value?: string): "sample" | "final-sample" | null {
   const normalized = String(value || "").trim();
   if (normalized.includes("终样")) return "final-sample";
-  if (normalized.includes("送样") || normalized.includes("样品")) return "sample";
+  if (normalized.includes("送样") || normalized.includes("样品"))
+    return "sample";
   return null;
 }
 
 export function buildEngineeringSpecMonthlyStats(
   archives: EngineeringSpecLedgerRecord[],
-  now = new Date(),
+  now = new Date()
 ): EngineeringSpecMonthlyStat[] {
   const months = Array.from({ length: 12 }, (_, index) => {
     const date = new Date(now.getFullYear(), now.getMonth() - (11 - index), 1);
@@ -37,7 +38,7 @@ export function buildEngineeringSpecMonthlyStats(
       completionRate: 0,
     } satisfies EngineeringSpecMonthlyStat;
   });
-  const monthByKey = new Map(months.map((month) => [month.monthKey, month]));
+  const monthByKey = new Map(months.map(month => [month.monthKey, month]));
 
   for (const archive of archives) {
     const createdAt = new Date(archive.createdAt);
@@ -57,7 +58,13 @@ export function buildEngineeringSpecMonthlyStats(
     month.completionRate =
       month.specCount === 0
         ? 0
-        : Math.min(100, Math.max(0, Math.round((month.completedCount / month.specCount) * 100)));
+        : Math.min(
+            100,
+            Math.max(
+              0,
+              Math.round((month.completedCount / month.specCount) * 100)
+            )
+          );
   }
 
   return months;

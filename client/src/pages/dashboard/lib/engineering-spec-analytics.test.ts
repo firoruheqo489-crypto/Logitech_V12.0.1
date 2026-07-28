@@ -6,7 +6,7 @@ import { buildEngineeringSpecMonthlyStats } from "./engineering-spec-analytics";
 function createRecord(
   id: string,
   createdAt: string,
-  overrides: Partial<EngineeringSpecLedgerRecord> = {},
+  overrides: Partial<EngineeringSpecLedgerRecord> = {}
 ): EngineeringSpecLedgerRecord {
   return {
     id,
@@ -43,7 +43,7 @@ describe("buildEngineeringSpecMonthlyStats", () => {
           result: "待完善",
         }),
       ],
-      new Date(2026, 0, 15),
+      new Date(2026, 0, 15)
     );
 
     expect(result).toHaveLength(12);
@@ -65,10 +65,10 @@ describe("buildEngineeringSpecMonthlyStats", () => {
         createRecord("1", "invalid-date"),
         createRecord("2", "2024-12-31T23:59:59+08:00"),
       ],
-      new Date(2026, 0, 15),
+      new Date(2026, 0, 15)
     );
 
-    expect(result.every((month) => month.specCount === 0)).toBe(true);
-    expect(result.every((month) => month.completionRate === 0)).toBe(true);
+    expect(result.every(month => month.specCount === 0)).toBe(true);
+    expect(result.every(month => month.completionRate === 0)).toBe(true);
   });
 });
