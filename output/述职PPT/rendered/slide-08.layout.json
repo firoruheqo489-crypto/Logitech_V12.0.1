@@ -1,0 +1,893 @@
+{
+  "schema": "openai.presentation.layout/v4",
+  "unit": "px",
+  "slide": {
+    "aid": "sl/6qg6p0",
+    "id": "6qg6p0",
+    "slide": 8,
+    "layoutId": "b5b074d2-dd30-4339-88b0-e6ada49b960b",
+    "layoutName": "Title Slide",
+    "layoutType": "title",
+    "masterLayoutId": "a4d07be6-3e7c-4cf0-93e6-373759694910",
+    "masterLayoutName": "Master",
+    "backgroundColor": "#07111F",
+    "frame": {
+      "left": 0,
+      "top": 0,
+      "width": 1280,
+      "height": 720
+    }
+  },
+  "theme": {
+    "colorSchemeName": "ChatGPT",
+    "colors": {
+      "accent1": "#156082",
+      "accent2": "#E97132",
+      "accent3": "#196B24",
+      "accent4": "#0F9ED5",
+      "accent5": "#A02B93",
+      "accent6": "#4EA72E",
+      "bg1": "#FFFFFF",
+      "bg2": "#000000",
+      "tx1": "#1F1F1F",
+      "tx2": "#FFFFFF",
+      "dk1": "#000000",
+      "lt1": "#FFFFFF",
+      "dk2": "#0E2841",
+      "lt2": "#E8E8E8",
+      "hlink": "#467886",
+      "folHlink": "#96607D"
+    },
+    "typefaces": [
+      "Noto Sans SC"
+    ]
+  },
+  "inheritedLayers": [
+    {
+      "scope": "layout",
+      "id": "b5b074d2-dd30-4339-88b0-e6ada49b960b",
+      "name": "Title Slide",
+      "type": "title",
+      "parentLayoutId": "a4d07be6-3e7c-4cf0-93e6-373759694910",
+      "elements": []
+    },
+    {
+      "scope": "master",
+      "id": "a4d07be6-3e7c-4cf0-93e6-373759694910",
+      "name": "Master",
+      "type": "master",
+      "elements": []
+    }
+  ],
+  "elements": [
+    {
+      "order": 1,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/2tkfqlwf",
+      "id": "1",
+      "bbox": [
+        72,
+        48,
+        420,
+        22
+      ],
+      "geometry": "rect",
+      "text": "DIGITAL WORKSPACE",
+      "textPreview": "DIGITAL WORKSPACE",
+      "resolvedFontSize": 12,
+      "resolvedTextStyle": {
+        "fontSize": 12,
+        "typeface": "Noto Sans SC",
+        "color": "#06B6D4",
+        "bold": true,
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "DIGITAL WORKSPACE"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "DIGITAL WORKSPACE",
+          "resolvedTextStyle": {
+            "fontSize": 12,
+            "typeface": "Noto Sans SC",
+            "color": "#06B6D4",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "DIGITAL WORKSPACE",
+              "fontSize": 12,
+              "typeface": "Noto Sans SC",
+              "color": "#06B6D4",
+              "bold": true,
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 2,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/pwvy10fq",
+      "id": "2",
+      "bbox": [
+        72,
+        80,
+        1136,
+        66
+      ],
+      "geometry": "rect",
+      "text": "以规格书为中心建立电子质量台账",
+      "textPreview": "以规格书为中心建立电子质量台账",
+      "resolvedFontSize": 36,
+      "resolvedTextStyle": {
+        "fontSize": 36,
+        "typeface": "Noto Sans SC",
+        "color": "#F8FAFC",
+        "bold": true,
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "以规格书为中心建立电子质量台账"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "以规格书为中心建立电子质量台账",
+          "resolvedTextStyle": {
+            "fontSize": 36,
+            "typeface": "Noto Sans SC",
+            "color": "#F8FAFC",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "以规格书为中心建立电子质量台账",
+              "fontSize": 36,
+              "typeface": "Noto Sans SC",
+              "color": "#F8FAFC",
+              "bold": true,
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 3,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/4vmxsve5",
+      "id": "3",
+      "bbox": [
+        72,
+        151,
+        84,
+        4
+      ],
+      "geometry": "rect",
+      "fillColor": "#06B6D4",
+      "lineWidth": 0
+    },
+    {
+      "order": 4,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/fqtgvqxo",
+      "id": "4",
+      "bbox": [
+        72,
+        192,
+        260,
+        42
+      ],
+      "geometry": "rect",
+      "text": "统一入口",
+      "textPreview": "统一入口",
+      "resolvedFontSize": 28,
+      "resolvedTextStyle": {
+        "fontSize": 28,
+        "typeface": "Noto Sans SC",
+        "color": "#06B6D4",
+        "bold": true,
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "统一入口"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "统一入口",
+          "resolvedTextStyle": {
+            "fontSize": 28,
+            "typeface": "Noto Sans SC",
+            "color": "#06B6D4",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "统一入口",
+              "fontSize": 28,
+              "typeface": "Noto Sans SC",
+              "color": "#06B6D4",
+              "bold": true,
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 5,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/upkfmlg3",
+      "id": "5",
+      "bbox": [
+        72,
+        252,
+        380,
+        28
+      ],
+      "geometry": "rect",
+      "text": "项目团队通过产品编号，直接查看：",
+      "textPreview": "项目团队通过产品编号，直接查看：",
+      "resolvedFontSize": 18,
+      "resolvedTextStyle": {
+        "fontSize": 18,
+        "typeface": "Noto Sans SC",
+        "color": "#B7C8DB",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "项目团队通过产品编号，直接查看："
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "项目团队通过产品编号，直接查看：",
+          "resolvedTextStyle": {
+            "fontSize": 18,
+            "typeface": "Noto Sans SC",
+            "color": "#B7C8DB",
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "项目团队通过产品编号，直接查看：",
+              "fontSize": 18,
+              "typeface": "Noto Sans SC",
+              "color": "#B7C8DB",
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 6,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/hsbyxgfu",
+      "id": "6",
+      "bbox": [
+        76,
+        316,
+        18,
+        18
+      ],
+      "geometry": "ellipse",
+      "fillColor": "#06B6D4",
+      "lineWidth": 0
+    },
+    {
+      "order": 7,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/gr2xovy9",
+      "id": "7",
+      "bbox": [
+        112,
+        308,
+        310,
+        32
+      ],
+      "geometry": "rect",
+      "text": "产品规格信息",
+      "textPreview": "产品规格信息",
+      "resolvedFontSize": 20,
+      "resolvedTextStyle": {
+        "fontSize": 20,
+        "typeface": "Noto Sans SC",
+        "color": "#F8FAFC",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "产品规格信息"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "产品规格信息",
+          "resolvedTextStyle": {
+            "fontSize": 20,
+            "typeface": "Noto Sans SC",
+            "color": "#F8FAFC",
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "产品规格信息",
+              "fontSize": 20,
+              "typeface": "Noto Sans SC",
+              "color": "#F8FAFC",
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 8,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/7m9wr6xc",
+      "id": "8",
+      "bbox": [
+        76,
+        374,
+        18,
+        18
+      ],
+      "geometry": "ellipse",
+      "fillColor": "#06B6D4",
+      "lineWidth": 0
+    },
+    {
+      "order": 9,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/610fi1g7",
+      "id": "9",
+      "bbox": [
+        112,
+        366,
+        310,
+        32
+      ],
+      "geometry": "rect",
+      "text": "流程名称与流程单号",
+      "textPreview": "流程名称与流程单号",
+      "resolvedFontSize": 20,
+      "resolvedTextStyle": {
+        "fontSize": 20,
+        "typeface": "Noto Sans SC",
+        "color": "#F8FAFC",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "流程名称与流程单号"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "流程名称与流程单号",
+          "resolvedTextStyle": {
+            "fontSize": 20,
+            "typeface": "Noto Sans SC",
+            "color": "#F8FAFC",
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "流程名称与流程单号",
+              "fontSize": 20,
+              "typeface": "Noto Sans SC",
+              "color": "#F8FAFC",
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 10,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/kj6horul",
+      "id": "10",
+      "bbox": [
+        76,
+        432,
+        18,
+        18
+      ],
+      "geometry": "ellipse",
+      "fillColor": "#06B6D4",
+      "lineWidth": 0
+    },
+    {
+      "order": 11,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/lkfihwb6",
+      "id": "11",
+      "bbox": [
+        112,
+        424,
+        310,
+        32
+      ],
+      "geometry": "rect",
+      "text": "测试状态与历史记录",
+      "textPreview": "测试状态与历史记录",
+      "resolvedFontSize": 20,
+      "resolvedTextStyle": {
+        "fontSize": 20,
+        "typeface": "Noto Sans SC",
+        "color": "#F8FAFC",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "测试状态与历史记录"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "测试状态与历史记录",
+          "resolvedTextStyle": {
+            "fontSize": 20,
+            "typeface": "Noto Sans SC",
+            "color": "#F8FAFC",
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "测试状态与历史记录",
+              "fontSize": 20,
+              "typeface": "Noto Sans SC",
+              "color": "#F8FAFC",
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 12,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/yhozm1cf",
+      "id": "12",
+      "bbox": [
+        76,
+        490,
+        18,
+        18
+      ],
+      "geometry": "ellipse",
+      "fillColor": "#10B981",
+      "lineWidth": 0
+    },
+    {
+      "order": 13,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/jix0f6t0",
+      "id": "13",
+      "bbox": [
+        112,
+        482,
+        310,
+        32
+      ],
+      "geometry": "rect",
+      "text": "可恢复的归档现场",
+      "textPreview": "可恢复的归档现场",
+      "resolvedFontSize": 20,
+      "resolvedTextStyle": {
+        "fontSize": 20,
+        "typeface": "Noto Sans SC",
+        "color": "#F8FAFC",
+        "bold": true,
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "可恢复的归档现场"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "可恢复的归档现场",
+          "resolvedTextStyle": {
+            "fontSize": 20,
+            "typeface": "Noto Sans SC",
+            "color": "#F8FAFC",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "可恢复的归档现场",
+              "fontSize": 20,
+              "typeface": "Noto Sans SC",
+              "color": "#F8FAFC",
+              "bold": true,
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 14,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/wf6hkru9",
+      "id": "14",
+      "bbox": [
+        72,
+        564,
+        390,
+        54
+      ],
+      "geometry": "rect",
+      "text": "由我推动从想法、页面到云端上线，团队可随时访问。",
+      "textPreview": "由我推动从想法、页面到云端上线，团队可随时访问。",
+      "resolvedFontSize": 17,
+      "resolvedTextStyle": {
+        "fontSize": 17,
+        "typeface": "Noto Sans SC",
+        "color": "#90A7BF",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 2,
+        "lines": [
+          {
+            "index": 1,
+            "text": "由我推动从想法、页面到云端上线，团队可随时"
+          },
+          {
+            "index": 2,
+            "text": "访问。"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "由我推动从想法、页面到云端上线，团队可随时访问。",
+          "resolvedTextStyle": {
+            "fontSize": 17,
+            "typeface": "Noto Sans SC",
+            "color": "#90A7BF",
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "由我推动从想法、页面到云端上线，团队可随时访问。",
+              "fontSize": 17,
+              "typeface": "Noto Sans SC",
+              "color": "#90A7BF",
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 15,
+      "kind": "image",
+      "scope": "slide",
+      "aid": "im/ih4rml4b",
+      "id": "15",
+      "bbox": [
+        486,
+        190,
+        722,
+        420
+      ],
+      "geometry": "roundRect",
+      "alt": "产品规格书工作区真实界面",
+      "contentType": "image/jpeg",
+      "imageFit": "cover",
+      "imageMask": {
+        "geometry": "roundRect",
+        "adjustmentList": [
+          {
+            "name": "adj",
+            "formula": "val 3333"
+          }
+        ]
+      },
+      "asset": {
+        "assetId": "9c9dfc06-78b5-403a-8e3f-9ab781a6e010",
+        "contentType": "image/jpeg",
+        "byteLength": 63720
+      }
+    },
+    {
+      "order": 16,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/ad4zihc3",
+      "id": "16",
+      "bbox": [
+        486,
+        626,
+        722,
+        36
+      ],
+      "geometry": "roundRect",
+      "fillColor": "#0F2E42",
+      "lineWidth": 0
+    },
+    {
+      "order": 17,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/bed0bmto",
+      "id": "17",
+      "bbox": [
+        502,
+        634,
+        690,
+        22
+      ],
+      "geometry": "rect",
+      "text": "真实界面：规格书、人员、包装、测试流程和OA信息集中展示",
+      "textPreview": "真实界面：规格书、人员、包装、测试流程和OA信息集中展示",
+      "resolvedFontSize": 14,
+      "resolvedTextStyle": {
+        "fontSize": 14,
+        "typeface": "Noto Sans SC",
+        "color": "#CFFAFE",
+        "alignment": "center",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "真实界面：规格书、人员、包装、测试流程和OA信息集中展示"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "真实界面：规格书、人员、包装、测试流程和OA信息集中展示",
+          "resolvedTextStyle": {
+            "fontSize": 14,
+            "typeface": "Noto Sans SC",
+            "color": "#CFFAFE",
+            "alignment": "center"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "真实界面：规格书、人员、包装、测试流程和OA信息集中展示",
+              "fontSize": 14,
+              "typeface": "Noto Sans SC",
+              "color": "#CFFAFE",
+              "alignment": "center"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 18,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/gbq1wbat",
+      "id": "18",
+      "bbox": [
+        1188,
+        672,
+        40,
+        18
+      ],
+      "geometry": "rect",
+      "text": "08",
+      "textPreview": "08",
+      "resolvedFontSize": 11,
+      "resolvedTextStyle": {
+        "fontSize": 11,
+        "typeface": "Noto Sans SC",
+        "color": "#7F91AA",
+        "bold": true,
+        "alignment": "right",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "08"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "08",
+          "resolvedTextStyle": {
+            "fontSize": 11,
+            "typeface": "Noto Sans SC",
+            "color": "#7F91AA",
+            "bold": true,
+            "alignment": "right"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "08",
+              "fontSize": 11,
+              "typeface": "Noto Sans SC",
+              "color": "#7F91AA",
+              "bold": true,
+              "alignment": "right"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    }
+  ],
+  "composeRuns": []
+}

@@ -52,6 +52,7 @@ export type DashboardApiErrorCode =
   | 'API_KEY_NOT_CONFIGURED'
   | 'BACKUP_NOT_FOUND'
   | 'BODY_MUST_BE_ARRAY'
+  | 'DASHBOARD_REPLACE_CONFIRMATION_REQUIRED'
   | 'DATABASE_NOT_CONFIGURED'
   | 'INVALID_ASSET_DELETE_REQUEST'
   | 'INVALID_ASSET_UPSERT_REQUEST'
@@ -69,6 +70,7 @@ const DASHBOARD_API_ERROR_CODES = new Set<DashboardApiErrorCode>([
   'API_KEY_NOT_CONFIGURED',
   'BACKUP_NOT_FOUND',
   'BODY_MUST_BE_ARRAY',
+  'DASHBOARD_REPLACE_CONFIRMATION_REQUIRED',
   'DATABASE_NOT_CONFIGURED',
   'INVALID_ASSET_DELETE_REQUEST',
   'INVALID_ASSET_UPSERT_REQUEST',
@@ -269,6 +271,8 @@ export function getDashboardApiErrorDisplayMessage(error: unknown, fallbackMessa
         return '提交数据格式无效，请刷新页面后重试';
       case 'DATABASE_NOT_CONFIGURED':
         return '服务端数据库未配置，当前环境无法执行写入';
+      case 'DASHBOARD_REPLACE_CONFIRMATION_REQUIRED':
+        return '上传内容会删除大部分现有项目，服务器已阻止本次覆盖';
       case 'INVALID_ASSET_DELETE_REQUEST':
         return 'Missing mold number or slot type for delete';
       case 'INVALID_ASSET_UPSERT_REQUEST':

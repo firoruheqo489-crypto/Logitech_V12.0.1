@@ -1,0 +1,876 @@
+{
+  "schema": "openai.presentation.layout/v4",
+  "unit": "px",
+  "slide": {
+    "aid": "sl/q1htt7",
+    "id": "q1htt7",
+    "slide": 9,
+    "layoutId": "b5b074d2-dd30-4339-88b0-e6ada49b960b",
+    "layoutName": "Title Slide",
+    "layoutType": "title",
+    "masterLayoutId": "a4d07be6-3e7c-4cf0-93e6-373759694910",
+    "masterLayoutName": "Master",
+    "backgroundColor": "#F5F8FC",
+    "frame": {
+      "left": 0,
+      "top": 0,
+      "width": 1280,
+      "height": 720
+    }
+  },
+  "theme": {
+    "colorSchemeName": "ChatGPT",
+    "colors": {
+      "accent1": "#156082",
+      "accent2": "#E97132",
+      "accent3": "#196B24",
+      "accent4": "#0F9ED5",
+      "accent5": "#A02B93",
+      "accent6": "#4EA72E",
+      "bg1": "#FFFFFF",
+      "bg2": "#000000",
+      "tx1": "#1F1F1F",
+      "tx2": "#FFFFFF",
+      "dk1": "#000000",
+      "lt1": "#FFFFFF",
+      "dk2": "#0E2841",
+      "lt2": "#E8E8E8",
+      "hlink": "#467886",
+      "folHlink": "#96607D"
+    },
+    "typefaces": [
+      "Noto Sans SC"
+    ]
+  },
+  "inheritedLayers": [
+    {
+      "scope": "layout",
+      "id": "b5b074d2-dd30-4339-88b0-e6ada49b960b",
+      "name": "Title Slide",
+      "type": "title",
+      "parentLayoutId": "a4d07be6-3e7c-4cf0-93e6-373759694910",
+      "elements": []
+    },
+    {
+      "scope": "master",
+      "id": "a4d07be6-3e7c-4cf0-93e6-373759694910",
+      "name": "Master",
+      "type": "master",
+      "elements": []
+    }
+  ],
+  "elements": [
+    {
+      "order": 1,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/v2xwb2xk",
+      "id": "1",
+      "bbox": [
+        72,
+        48,
+        420,
+        22
+      ],
+      "geometry": "rect",
+      "text": "TRACEABILITY",
+      "textPreview": "TRACEABILITY",
+      "resolvedFontSize": 12,
+      "resolvedTextStyle": {
+        "fontSize": 12,
+        "typeface": "Noto Sans SC",
+        "color": "#2563EB",
+        "bold": true,
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "TRACEABILITY"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "TRACEABILITY",
+          "resolvedTextStyle": {
+            "fontSize": 12,
+            "typeface": "Noto Sans SC",
+            "color": "#2563EB",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "TRACEABILITY",
+              "fontSize": 12,
+              "typeface": "Noto Sans SC",
+              "color": "#2563EB",
+              "bold": true,
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 2,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/g36x47y5",
+      "id": "2",
+      "bbox": [
+        72,
+        80,
+        1136,
+        66
+      ],
+      "geometry": "rect",
+      "text": "从产品编号出发，可以直达完整实验室报告",
+      "textPreview": "从产品编号出发，可以直达完整实验室报告",
+      "resolvedFontSize": 36,
+      "resolvedTextStyle": {
+        "fontSize": 36,
+        "typeface": "Noto Sans SC",
+        "color": "#14233B",
+        "bold": true,
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "从产品编号出发，可以直达完整实验室报告"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "从产品编号出发，可以直达完整实验室报告",
+          "resolvedTextStyle": {
+            "fontSize": 36,
+            "typeface": "Noto Sans SC",
+            "color": "#14233B",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "从产品编号出发，可以直达完整实验室报告",
+              "fontSize": 36,
+              "typeface": "Noto Sans SC",
+              "color": "#14233B",
+              "bold": true,
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 3,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/h4fedcfq",
+      "id": "3",
+      "bbox": [
+        72,
+        151,
+        84,
+        4
+      ],
+      "geometry": "rect",
+      "fillColor": "#2563EB",
+      "lineWidth": 0
+    },
+    {
+      "order": 4,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/i5of6hwb",
+      "id": "4",
+      "bbox": [
+        146,
+        226,
+        800,
+        4
+      ],
+      "geometry": "rect",
+      "fillColor": "#D9E2EF",
+      "lineWidth": 0
+    },
+    {
+      "order": 5,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/36xwf2xw",
+      "id": "5",
+      "bbox": [
+        90,
+        198,
+        64,
+        64
+      ],
+      "geometry": "ellipse",
+      "fillColor": "#2563EB",
+      "lineColor": "#F8FAFC",
+      "lineWidth": 2
+    },
+    {
+      "order": 6,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/4rqx87e1",
+      "id": "6",
+      "bbox": [
+        90,
+        216,
+        64,
+        22
+      ],
+      "geometry": "rect",
+      "text": "01",
+      "textPreview": "01",
+      "resolvedFontSize": 15,
+      "resolvedTextStyle": {
+        "fontSize": 15,
+        "typeface": "Noto Sans SC",
+        "color": "#F8FAFC",
+        "bold": true,
+        "alignment": "center",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "01"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "01",
+          "resolvedTextStyle": {
+            "fontSize": 15,
+            "typeface": "Noto Sans SC",
+            "color": "#F8FAFC",
+            "bold": true,
+            "alignment": "center"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "01",
+              "fontSize": 15,
+              "typeface": "Noto Sans SC",
+              "color": "#F8FAFC",
+              "bold": true,
+              "alignment": "center"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 7,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/5szehcfm",
+      "id": "7",
+      "bbox": [
+        42,
+        278,
+        160,
+        30
+      ],
+      "geometry": "rect",
+      "text": "产品编号检索",
+      "textPreview": "产品编号检索",
+      "resolvedFontSize": 20,
+      "resolvedTextStyle": {
+        "fontSize": 20,
+        "typeface": "Noto Sans SC",
+        "color": "#14233B",
+        "bold": true,
+        "alignment": "center",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "产品编号检索"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "产品编号检索",
+          "resolvedTextStyle": {
+            "fontSize": 20,
+            "typeface": "Noto Sans SC",
+            "color": "#14233B",
+            "bold": true,
+            "alignment": "center"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "产品编号检索",
+              "fontSize": 20,
+              "typeface": "Noto Sans SC",
+              "color": "#14233B",
+              "bold": true,
+              "alignment": "center"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 8,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/qt8fahw7",
+      "id": "8",
+      "bbox": [
+        490,
+        198,
+        64,
+        64
+      ],
+      "geometry": "ellipse",
+      "fillColor": "#2563EB",
+      "lineColor": "#F8FAFC",
+      "lineWidth": 2
+    },
+    {
+      "order": 9,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/ruhwjmxs",
+      "id": "9",
+      "bbox": [
+        490,
+        216,
+        64,
+        22
+      ],
+      "geometry": "rect",
+      "text": "02",
+      "textPreview": "02",
+      "resolvedFontSize": 15,
+      "resolvedTextStyle": {
+        "fontSize": 15,
+        "typeface": "Noto Sans SC",
+        "color": "#F8FAFC",
+        "bold": true,
+        "alignment": "center",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "02"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "02",
+          "resolvedTextStyle": {
+            "fontSize": 15,
+            "typeface": "Noto Sans SC",
+            "color": "#F8FAFC",
+            "bold": true,
+            "alignment": "center"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "02",
+              "fontSize": 15,
+              "typeface": "Noto Sans SC",
+              "color": "#F8FAFC",
+              "bold": true,
+              "alignment": "center"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 10,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/n65gre9s",
+      "id": "10",
+      "bbox": [
+        442,
+        278,
+        160,
+        30
+      ],
+      "geometry": "rect",
+      "text": "电子台账定位",
+      "textPreview": "电子台账定位",
+      "resolvedFontSize": 20,
+      "resolvedTextStyle": {
+        "fontSize": 20,
+        "typeface": "Noto Sans SC",
+        "color": "#14233B",
+        "bold": true,
+        "alignment": "center",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "电子台账定位"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "电子台账定位",
+          "resolvedTextStyle": {
+            "fontSize": 20,
+            "typeface": "Noto Sans SC",
+            "color": "#14233B",
+            "bold": true,
+            "alignment": "center"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "电子台账定位",
+              "fontSize": 20,
+              "typeface": "Noto Sans SC",
+              "color": "#14233B",
+              "bold": true,
+              "alignment": "center"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 11,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/m5wfi987",
+      "id": "11",
+      "bbox": [
+        890,
+        198,
+        64,
+        64
+      ],
+      "geometry": "ellipse",
+      "fillColor": "#10B981",
+      "lineColor": "#F8FAFC",
+      "lineWidth": 2
+    },
+    {
+      "order": 12,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/9snytory",
+      "id": "12",
+      "bbox": [
+        890,
+        216,
+        64,
+        22
+      ],
+      "geometry": "rect",
+      "text": "03",
+      "textPreview": "03",
+      "resolvedFontSize": 15,
+      "resolvedTextStyle": {
+        "fontSize": 15,
+        "typeface": "Noto Sans SC",
+        "color": "#F8FAFC",
+        "bold": true,
+        "alignment": "center",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "03"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "03",
+          "resolvedTextStyle": {
+            "fontSize": 15,
+            "typeface": "Noto Sans SC",
+            "color": "#F8FAFC",
+            "bold": true,
+            "alignment": "center"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "03",
+              "fontSize": 15,
+              "typeface": "Noto Sans SC",
+              "color": "#F8FAFC",
+              "bold": true,
+              "alignment": "center"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 13,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/o7exkjqd",
+      "id": "13",
+      "bbox": [
+        842,
+        278,
+        160,
+        30
+      ],
+      "geometry": "rect",
+      "text": "实验室报告",
+      "textPreview": "实验室报告",
+      "resolvedFontSize": 20,
+      "resolvedTextStyle": {
+        "fontSize": 20,
+        "typeface": "Noto Sans SC",
+        "color": "#14233B",
+        "bold": true,
+        "alignment": "center",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "实验室报告"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "实验室报告",
+          "resolvedTextStyle": {
+            "fontSize": 20,
+            "typeface": "Noto Sans SC",
+            "color": "#14233B",
+            "bold": true,
+            "alignment": "center"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "实验室报告",
+              "fontSize": 20,
+              "typeface": "Noto Sans SC",
+              "color": "#14233B",
+              "bold": true,
+              "alignment": "center"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 14,
+      "kind": "image",
+      "scope": "slide",
+      "aid": "im/o7utsfup",
+      "id": "14",
+      "bbox": [
+        72,
+        342,
+        590,
+        248
+      ],
+      "geometry": "roundRect",
+      "alt": "83条规格书登记台账",
+      "contentType": "image/jpeg",
+      "imageFit": "cover",
+      "imageMask": {
+        "geometry": "roundRect",
+        "adjustmentList": [
+          {
+            "name": "adj",
+            "formula": "val 5645"
+          }
+        ]
+      },
+      "asset": {
+        "assetId": "8da01f79-5d34-4842-b6de-911cf0768cb7",
+        "contentType": "image/jpeg",
+        "byteLength": 71958
+      }
+    },
+    {
+      "order": 15,
+      "kind": "image",
+      "scope": "slide",
+      "aid": "im/p83u1kva",
+      "id": "15",
+      "bbox": [
+        690,
+        342,
+        518,
+        248
+      ],
+      "geometry": "roundRect",
+      "alt": "完整终样测试报告界面",
+      "contentType": "image/jpeg",
+      "imageFit": "cover",
+      "imageMask": {
+        "geometry": "roundRect",
+        "adjustmentList": [
+          {
+            "name": "adj",
+            "formula": "val 5645"
+          }
+        ]
+      },
+      "asset": {
+        "assetId": "14a7cc2f-17d1-4aa5-916a-7eb1b4dd9202",
+        "contentType": "image/jpeg",
+        "byteLength": 58335
+      }
+    },
+    {
+      "order": 16,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/14neporm",
+      "id": "16",
+      "bbox": [
+        72,
+        606,
+        1136,
+        50
+      ],
+      "geometry": "roundRect",
+      "fillColor": "#DBEAFE",
+      "lineWidth": 0
+    },
+    {
+      "order": 17,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/03uxgjq1",
+      "id": "17",
+      "bbox": [
+        96,
+        619,
+        1088,
+        26
+      ],
+      "geometry": "rect",
+      "text": "已沉淀 83 条台账记录｜规格、流程与报告形成同一条质量证据链",
+      "textPreview": "已沉淀 83 条台账记录｜规格、流程与报告形成同一条质量证据链",
+      "resolvedFontSize": 20,
+      "resolvedTextStyle": {
+        "fontSize": 20,
+        "typeface": "Noto Sans SC",
+        "color": "#10223C",
+        "bold": true,
+        "alignment": "center",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "已沉淀 83 条台账记录｜规格、流程与报告形成同一条质量证据链"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "已沉淀 83 条台账记录｜规格、流程与报告形成同一条质量证据链",
+          "resolvedTextStyle": {
+            "fontSize": 20,
+            "typeface": "Noto Sans SC",
+            "color": "#10223C",
+            "bold": true,
+            "alignment": "center"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "已沉淀 83 条台账记录｜规格、流程与报告形成同一条质量证据链",
+              "fontSize": 20,
+              "typeface": "Noto Sans SC",
+              "color": "#10223C",
+              "bold": true,
+              "alignment": "center"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 18,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/jypgzy90",
+      "id": "18",
+      "bbox": [
+        1188,
+        672,
+        40,
+        18
+      ],
+      "geometry": "rect",
+      "text": "09",
+      "textPreview": "09",
+      "resolvedFontSize": 11,
+      "resolvedTextStyle": {
+        "fontSize": 11,
+        "typeface": "Noto Sans SC",
+        "color": "#8B9AB0",
+        "bold": true,
+        "alignment": "right",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "09"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "09",
+          "resolvedTextStyle": {
+            "fontSize": 11,
+            "typeface": "Noto Sans SC",
+            "color": "#8B9AB0",
+            "bold": true,
+            "alignment": "right"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "09",
+              "fontSize": 11,
+              "typeface": "Noto Sans SC",
+              "color": "#8B9AB0",
+              "bold": true,
+              "alignment": "right"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    }
+  ],
+  "composeRuns": []
+}

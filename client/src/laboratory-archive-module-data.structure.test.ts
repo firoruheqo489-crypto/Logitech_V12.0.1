@@ -11,6 +11,14 @@ async function loadSource(relativePath: string): Promise<string> {
 }
 
 describe("laboratory archive module data restoration", () => {
+  it("keeps laboratory archives independent from the imported dashboard project name", async () => {
+    const source = await loadSource("./pages/dashboard/components/LaboratoryPdfParserDashboard.tsx");
+
+    expect(source).toContain('const LABORATORY_ARCHIVE_PROJECT_ID = "1"');
+    expect(source).toContain("const projectId = LABORATORY_ARCHIVE_PROJECT_ID");
+    expect(source).not.toContain('const projectId = projectName.trim() || "default-engineering-spec-workspace"');
+  });
+
   it("passes archive snapshots into every laboratory workspace", async () => {
     const source = await loadSource("./pages/dashboard/components/LaboratoryPdfParserDashboard.tsx");
     expect(source.match(/initialSummary=\{context\?\.initialSummary\}/g)).toHaveLength(11);

@@ -1,0 +1,1609 @@
+{
+  "schema": "openai.presentation.layout/v4",
+  "unit": "px",
+  "slide": {
+    "aid": "sl/br5d8d",
+    "id": "br5d8d",
+    "slide": 4,
+    "layoutId": "b5b074d2-dd30-4339-88b0-e6ada49b960b",
+    "layoutName": "Title Slide",
+    "layoutType": "title",
+    "masterLayoutId": "a4d07be6-3e7c-4cf0-93e6-373759694910",
+    "masterLayoutName": "Master",
+    "backgroundColor": "#F5F8FC",
+    "frame": {
+      "left": 0,
+      "top": 0,
+      "width": 1280,
+      "height": 720
+    }
+  },
+  "theme": {
+    "colorSchemeName": "ChatGPT",
+    "colors": {
+      "accent1": "#156082",
+      "accent2": "#E97132",
+      "accent3": "#196B24",
+      "accent4": "#0F9ED5",
+      "accent5": "#A02B93",
+      "accent6": "#4EA72E",
+      "bg1": "#FFFFFF",
+      "bg2": "#000000",
+      "tx1": "#1F1F1F",
+      "tx2": "#FFFFFF",
+      "dk1": "#000000",
+      "lt1": "#FFFFFF",
+      "dk2": "#0E2841",
+      "lt2": "#E8E8E8",
+      "hlink": "#467886",
+      "folHlink": "#96607D"
+    },
+    "typefaces": [
+      "Noto Sans SC"
+    ]
+  },
+  "inheritedLayers": [
+    {
+      "scope": "layout",
+      "id": "b5b074d2-dd30-4339-88b0-e6ada49b960b",
+      "name": "Title Slide",
+      "type": "title",
+      "parentLayoutId": "a4d07be6-3e7c-4cf0-93e6-373759694910",
+      "elements": []
+    },
+    {
+      "scope": "master",
+      "id": "a4d07be6-3e7c-4cf0-93e6-373759694910",
+      "name": "Master",
+      "type": "master",
+      "elements": []
+    }
+  ],
+  "elements": [
+    {
+      "order": 1,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/h0byt8n6",
+      "id": "1",
+      "bbox": [
+        72,
+        48,
+        420,
+        22
+      ],
+      "geometry": "rect",
+      "text": "8D CASE",
+      "textPreview": "8D CASE",
+      "resolvedFontSize": 12,
+      "resolvedTextStyle": {
+        "fontSize": 12,
+        "typeface": "Noto Sans SC",
+        "color": "#2563EB",
+        "bold": true,
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "8D CASE"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "8D CASE",
+          "resolvedTextStyle": {
+            "fontSize": 12,
+            "typeface": "Noto Sans SC",
+            "color": "#2563EB",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "8D CASE",
+              "fontSize": 12,
+              "typeface": "Noto Sans SC",
+              "color": "#2563EB",
+              "bold": true,
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 2,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/uxkzit4f",
+      "id": "2",
+      "bbox": [
+        72,
+        80,
+        1136,
+        66
+      ],
+      "geometry": "rect",
+      "text": "供应商结论并不能解释全部现象",
+      "textPreview": "供应商结论并不能解释全部现象",
+      "resolvedFontSize": 36,
+      "resolvedTextStyle": {
+        "fontSize": 36,
+        "typeface": "Noto Sans SC",
+        "color": "#14233B",
+        "bold": true,
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "供应商结论并不能解释全部现象"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "供应商结论并不能解释全部现象",
+          "resolvedTextStyle": {
+            "fontSize": 36,
+            "typeface": "Noto Sans SC",
+            "color": "#14233B",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "供应商结论并不能解释全部现象",
+              "fontSize": 36,
+              "typeface": "Noto Sans SC",
+              "color": "#14233B",
+              "bold": true,
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 3,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/vytgry50",
+      "id": "3",
+      "bbox": [
+        72,
+        151,
+        84,
+        4
+      ],
+      "geometry": "rect",
+      "fillColor": "#2563EB",
+      "lineWidth": 0
+    },
+    {
+      "order": 4,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/8vihgjm9",
+      "id": "4",
+      "bbox": [
+        72,
+        188,
+        180,
+        56
+      ],
+      "geometry": "rect",
+      "text": "2026.05",
+      "textPreview": "2026.05",
+      "resolvedFontSize": 40,
+      "resolvedTextStyle": {
+        "fontSize": 40,
+        "typeface": "Noto Sans SC",
+        "color": "#F97316",
+        "bold": true,
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "2026.05"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "2026.05",
+          "resolvedTextStyle": {
+            "fontSize": 40,
+            "typeface": "Noto Sans SC",
+            "color": "#F97316",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "2026.05",
+              "fontSize": 40,
+              "typeface": "Noto Sans SC",
+              "color": "#F97316",
+              "bold": true,
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 5,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/9wryponu",
+      "id": "5",
+      "bbox": [
+        72,
+        246,
+        160,
+        28
+      ],
+      "geometry": "rect",
+      "text": "案件发生",
+      "textPreview": "案件发生",
+      "resolvedFontSize": 18,
+      "resolvedTextStyle": {
+        "fontSize": 18,
+        "typeface": "Noto Sans SC",
+        "color": "#66758C",
+        "bold": true,
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "案件发生"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "案件发生",
+          "resolvedTextStyle": {
+            "fontSize": 18,
+            "typeface": "Noto Sans SC",
+            "color": "#66758C",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "案件发生",
+              "fontSize": 18,
+              "typeface": "Noto Sans SC",
+              "color": "#66758C",
+              "bold": true,
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 6,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/mt0ze94j",
+      "id": "6",
+      "bbox": [
+        252,
+        220,
+        88,
+        3
+      ],
+      "geometry": "rect",
+      "fillColor": "#D9E2EF",
+      "lineWidth": 0
+    },
+    {
+      "order": 7,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/7u9gne54",
+      "id": "7",
+      "bbox": [
+        362,
+        188,
+        180,
+        56
+      ],
+      "geometry": "rect",
+      "text": "2026.06",
+      "textPreview": "2026.06",
+      "resolvedFontSize": 40,
+      "resolvedTextStyle": {
+        "fontSize": 40,
+        "typeface": "Noto Sans SC",
+        "color": "#2563EB",
+        "bold": true,
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "2026.06"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "2026.06",
+          "resolvedTextStyle": {
+            "fontSize": 40,
+            "typeface": "Noto Sans SC",
+            "color": "#2563EB",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "2026.06",
+              "fontSize": 40,
+              "typeface": "Noto Sans SC",
+              "color": "#2563EB",
+              "bold": true,
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 8,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/k7ixcjmd",
+      "id": "8",
+      "bbox": [
+        362,
+        246,
+        260,
+        28
+      ],
+      "geometry": "rect",
+      "text": "入职后接手并推进8D",
+      "textPreview": "入职后接手并推进8D",
+      "resolvedFontSize": 18,
+      "resolvedTextStyle": {
+        "fontSize": 18,
+        "typeface": "Noto Sans SC",
+        "color": "#66758C",
+        "bold": true,
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "入职后接手并推进8D"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "入职后接手并推进8D",
+          "resolvedTextStyle": {
+            "fontSize": 18,
+            "typeface": "Noto Sans SC",
+            "color": "#66758C",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "入职后接手并推进8D",
+              "fontSize": 18,
+              "typeface": "Noto Sans SC",
+              "color": "#66758C",
+              "bold": true,
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 9,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/l8rylony",
+      "id": "9",
+      "bbox": [
+        72,
+        310,
+        476,
+        230
+      ],
+      "geometry": "roundRect",
+      "fillColor": "#FFEDD5",
+      "lineWidth": 0
+    },
+    {
+      "order": 10,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/xsnilsny",
+      "id": "10",
+      "bbox": [
+        102,
+        340,
+        330,
+        30
+      ],
+      "geometry": "rect",
+      "text": "灯珠供应商的初步方向",
+      "textPreview": "灯珠供应商的初步方向",
+      "resolvedFontSize": 22,
+      "resolvedTextStyle": {
+        "fontSize": 22,
+        "typeface": "Noto Sans SC",
+        "color": "#F97316",
+        "bold": true,
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "灯珠供应商的初步方向"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "灯珠供应商的初步方向",
+          "resolvedTextStyle": {
+            "fontSize": 22,
+            "typeface": "Noto Sans SC",
+            "color": "#F97316",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "灯珠供应商的初步方向",
+              "fontSize": 22,
+              "typeface": "Noto Sans SC",
+              "color": "#F97316",
+              "bold": true,
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 11,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/crehcn6d",
+      "id": "11",
+      "bbox": [
+        102,
+        392,
+        390,
+        28
+      ],
+      "geometry": "rect",
+      "text": "广东中阳广电科技（灯珠供应商）",
+      "textPreview": "广东中阳广电科技（灯珠供应商）",
+      "resolvedFontSize": 19,
+      "resolvedTextStyle": {
+        "fontSize": 19,
+        "typeface": "Noto Sans SC",
+        "color": "#14233B",
+        "bold": true,
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "广东中阳广电科技（灯珠供应商）"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "广东中阳广电科技（灯珠供应商）",
+          "resolvedTextStyle": {
+            "fontSize": 19,
+            "typeface": "Noto Sans SC",
+            "color": "#14233B",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "广东中阳广电科技（灯珠供应商）",
+              "fontSize": 19,
+              "typeface": "Noto Sans SC",
+              "color": "#14233B",
+              "bold": true,
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 12,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/bq50ji5s",
+      "id": "12",
+      "bbox": [
+        102,
+        444,
+        388,
+        54
+      ],
+      "geometry": "rect",
+      "text": "“外部物理损伤，方向指向 SMT 贴片制程”",
+      "textPreview": "“外部物理损伤，方向指向 SMT 贴片制程”",
+      "resolvedFontSize": 21,
+      "resolvedTextStyle": {
+        "fontSize": 21,
+        "typeface": "Noto Sans SC",
+        "color": "#10223C",
+        "bold": true,
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 2,
+        "lines": [
+          {
+            "index": 1,
+            "text": "“外部物理损伤，方向指向 SMT"
+          },
+          {
+            "index": 2,
+            "text": "贴片制程”"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "“外部物理损伤，方向指向 SMT 贴片制程”",
+          "resolvedTextStyle": {
+            "fontSize": 21,
+            "typeface": "Noto Sans SC",
+            "color": "#10223C",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "“外部物理损伤，方向指向 SMT 贴片制程”",
+              "fontSize": 21,
+              "typeface": "Noto Sans SC",
+              "color": "#10223C",
+              "bold": true,
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 13,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/apwzadon",
+      "id": "13",
+      "bbox": [
+        102,
+        512,
+        390,
+        24
+      ],
+      "geometry": "rect",
+      "text": "没有直接接受结论，而是组织内部复核",
+      "textPreview": "没有直接接受结论，而是组织内部复核",
+      "resolvedFontSize": 15,
+      "resolvedTextStyle": {
+        "fontSize": 15,
+        "typeface": "Noto Sans SC",
+        "color": "#66758C",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "没有直接接受结论，而是组织内部复核"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "没有直接接受结论，而是组织内部复核",
+          "resolvedTextStyle": {
+            "fontSize": 15,
+            "typeface": "Noto Sans SC",
+            "color": "#66758C",
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "没有直接接受结论，而是组织内部复核",
+              "fontSize": 15,
+              "typeface": "Noto Sans SC",
+              "color": "#66758C",
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 14,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/ponihsn2",
+      "id": "14",
+      "bbox": [
+        622,
+        185,
+        220,
+        34
+      ],
+      "geometry": "rect",
+      "text": "跨部门协作",
+      "textPreview": "跨部门协作",
+      "resolvedFontSize": 22,
+      "resolvedTextStyle": {
+        "fontSize": 22,
+        "typeface": "Noto Sans SC",
+        "color": "#2563EB",
+        "bold": true,
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "跨部门协作"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "跨部门协作",
+          "resolvedTextStyle": {
+            "fontSize": 22,
+            "typeface": "Noto Sans SC",
+            "color": "#2563EB",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "跨部门协作",
+              "fontSize": 22,
+              "typeface": "Noto Sans SC",
+              "color": "#2563EB",
+              "bold": true,
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 15,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/oneh8n6h",
+      "id": "15",
+      "bbox": [
+        622,
+        242,
+        570,
+        80
+      ],
+      "geometry": "roundRect",
+      "fillColor": "#DBEAFE",
+      "lineWidth": 0
+    },
+    {
+      "order": 16,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/nml0fi5w",
+      "id": "16",
+      "bbox": [
+        642,
+        258,
+        100,
+        26
+      ],
+      "geometry": "rect",
+      "text": "左聪",
+      "textPreview": "左聪",
+      "resolvedFontSize": 20,
+      "resolvedTextStyle": {
+        "fontSize": 20,
+        "typeface": "Noto Sans SC",
+        "color": "#14233B",
+        "bold": true,
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "左聪"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "左聪",
+          "resolvedTextStyle": {
+            "fontSize": 20,
+            "typeface": "Noto Sans SC",
+            "color": "#14233B",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "左聪",
+              "fontSize": 20,
+              "typeface": "Noto Sans SC",
+              "color": "#14233B",
+              "bold": true,
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 17,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/2lcz6dob",
+      "id": "17",
+      "bbox": [
+        642,
+        288,
+        520,
+        22
+      ],
+      "geometry": "rect",
+      "text": "质量｜分析路径与8D推进",
+      "textPreview": "质量｜分析路径与8D推进",
+      "resolvedFontSize": 14,
+      "resolvedTextStyle": {
+        "fontSize": 14,
+        "typeface": "Noto Sans SC",
+        "color": "#66758C",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "质量｜分析路径与8D推进"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "质量｜分析路径与8D推进",
+          "resolvedTextStyle": {
+            "fontSize": 14,
+            "typeface": "Noto Sans SC",
+            "color": "#66758C",
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "质量｜分析路径与8D推进",
+              "fontSize": 14,
+              "typeface": "Noto Sans SC",
+              "color": "#66758C",
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 18,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/103id8nq",
+      "id": "18",
+      "bbox": [
+        622,
+        316,
+        270,
+        80
+      ],
+      "geometry": "roundRect",
+      "fillColor": "#EAF0F8",
+      "lineWidth": 0
+    },
+    {
+      "order": 19,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/0zuh4365",
+      "id": "19",
+      "bbox": [
+        642,
+        332,
+        100,
+        26
+      ],
+      "geometry": "rect",
+      "text": "程海洋",
+      "textPreview": "程海洋",
+      "resolvedFontSize": 20,
+      "resolvedTextStyle": {
+        "fontSize": 20,
+        "typeface": "Noto Sans SC",
+        "color": "#14233B",
+        "bold": true,
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "程海洋"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "程海洋",
+          "resolvedTextStyle": {
+            "fontSize": 20,
+            "typeface": "Noto Sans SC",
+            "color": "#14233B",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "程海洋",
+              "fontSize": 20,
+              "typeface": "Noto Sans SC",
+              "color": "#14233B",
+              "bold": true,
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 20,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/sfi9g7id",
+      "id": "20",
+      "bbox": [
+        642,
+        362,
+        230,
+        22
+      ],
+      "geometry": "rect",
+      "text": "装配车间资源",
+      "textPreview": "装配车间资源",
+      "resolvedFontSize": 14,
+      "resolvedTextStyle": {
+        "fontSize": 14,
+        "typeface": "Noto Sans SC",
+        "color": "#66758C",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "装配车间资源"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "装配车间资源",
+          "resolvedTextStyle": {
+            "fontSize": 14,
+            "typeface": "Noto Sans SC",
+            "color": "#66758C",
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "装配车间资源",
+              "fontSize": 14,
+              "typeface": "Noto Sans SC",
+              "color": "#66758C",
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 21,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/dgra9czy",
+      "id": "21",
+      "bbox": [
+        920,
+        316,
+        270,
+        80
+      ],
+      "geometry": "roundRect",
+      "fillColor": "#EAF0F8",
+      "lineWidth": 0
+    },
+    {
+      "order": 22,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/qdgrex07",
+      "id": "22",
+      "bbox": [
+        940,
+        332,
+        100,
+        26
+      ],
+      "geometry": "rect",
+      "text": "王高星",
+      "textPreview": "王高星",
+      "resolvedFontSize": 20,
+      "resolvedTextStyle": {
+        "fontSize": 20,
+        "typeface": "Noto Sans SC",
+        "color": "#14233B",
+        "bold": true,
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "王高星"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "王高星",
+          "resolvedTextStyle": {
+            "fontSize": 20,
+            "typeface": "Noto Sans SC",
+            "color": "#14233B",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "王高星",
+              "fontSize": 20,
+              "typeface": "Noto Sans SC",
+              "color": "#14233B",
+              "bold": true,
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 23,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/re9s72hs",
+      "id": "23",
+      "bbox": [
+        940,
+        362,
+        230,
+        22
+      ],
+      "geometry": "rect",
+      "text": "SMT贴片车间资源",
+      "textPreview": "SMT贴片车间资源",
+      "resolvedFontSize": 14,
+      "resolvedTextStyle": {
+        "fontSize": 14,
+        "typeface": "Noto Sans SC",
+        "color": "#66758C",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "SMT贴片车间资源"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "SMT贴片车间资源",
+          "resolvedTextStyle": {
+            "fontSize": 14,
+            "typeface": "Noto Sans SC",
+            "color": "#66758C",
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "SMT贴片车间资源",
+              "fontSize": 14,
+              "typeface": "Noto Sans SC",
+              "color": "#66758C",
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 24,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/4by9cnih",
+      "id": "24",
+      "bbox": [
+        622,
+        438,
+        270,
+        80
+      ],
+      "geometry": "roundRect",
+      "fillColor": "#EAF0F8",
+      "lineWidth": 0
+    },
+    {
+      "order": 25,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/5c7q5sjm",
+      "id": "25",
+      "bbox": [
+        642,
+        454,
+        100,
+        26
+      ],
+      "geometry": "rect",
+      "text": "吴昭顺",
+      "textPreview": "吴昭顺",
+      "resolvedFontSize": 20,
+      "resolvedTextStyle": {
+        "fontSize": 20,
+        "typeface": "Noto Sans SC",
+        "color": "#14233B",
+        "bold": true,
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "吴昭顺"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "吴昭顺",
+          "resolvedTextStyle": {
+            "fontSize": 20,
+            "typeface": "Noto Sans SC",
+            "color": "#14233B",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "吴昭顺",
+              "fontSize": 20,
+              "typeface": "Noto Sans SC",
+              "color": "#14233B",
+              "bold": true,
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 26,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/ipgrax0b",
+      "id": "26",
+      "bbox": [
+        642,
+        484,
+        230,
+        22
+      ],
+      "geometry": "rect",
+      "text": "生产工艺改善",
+      "textPreview": "生产工艺改善",
+      "resolvedFontSize": 14,
+      "resolvedTextStyle": {
+        "fontSize": 14,
+        "typeface": "Noto Sans SC",
+        "color": "#66758C",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "生产工艺改善"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "生产工艺改善",
+          "resolvedTextStyle": {
+            "fontSize": 14,
+            "typeface": "Noto Sans SC",
+            "color": "#66758C",
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "生产工艺改善",
+              "fontSize": 14,
+              "typeface": "Noto Sans SC",
+              "color": "#66758C",
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 27,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/3qp8321w",
+      "id": "27",
+      "bbox": [
+        920,
+        438,
+        270,
+        80
+      ],
+      "geometry": "roundRect",
+      "fillColor": "#EAF0F8",
+      "lineWidth": 0
+    },
+    {
+      "order": 28,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/o729oril",
+      "id": "28",
+      "bbox": [
+        940,
+        454,
+        100,
+        26
+      ],
+      "geometry": "rect",
+      "text": "陈中平",
+      "textPreview": "陈中平",
+      "resolvedFontSize": 20,
+      "resolvedTextStyle": {
+        "fontSize": 20,
+        "typeface": "Noto Sans SC",
+        "color": "#14233B",
+        "bold": true,
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "陈中平"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "陈中平",
+          "resolvedTextStyle": {
+            "fontSize": 20,
+            "typeface": "Noto Sans SC",
+            "color": "#14233B",
+            "bold": true,
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "陈中平",
+              "fontSize": 20,
+              "typeface": "Noto Sans SC",
+              "color": "#14233B",
+              "bold": true,
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 29,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/p8bahwz6",
+      "id": "29",
+      "bbox": [
+        940,
+        484,
+        230,
+        22
+      ],
+      "geometry": "rect",
+      "text": "产品设计改善",
+      "textPreview": "产品设计改善",
+      "resolvedFontSize": 14,
+      "resolvedTextStyle": {
+        "fontSize": 14,
+        "typeface": "Noto Sans SC",
+        "color": "#66758C",
+        "alignment": "left",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "产品设计改善"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "产品设计改善",
+          "resolvedTextStyle": {
+            "fontSize": 14,
+            "typeface": "Noto Sans SC",
+            "color": "#66758C",
+            "alignment": "left"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "产品设计改善",
+              "fontSize": 14,
+              "typeface": "Noto Sans SC",
+              "color": "#66758C",
+              "alignment": "left"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    },
+    {
+      "order": 30,
+      "kind": "shape",
+      "scope": "slide",
+      "aid": "sh/z2dc7q18",
+      "id": "30",
+      "bbox": [
+        1188,
+        672,
+        40,
+        18
+      ],
+      "geometry": "rect",
+      "text": "04",
+      "textPreview": "04",
+      "resolvedFontSize": 11,
+      "resolvedTextStyle": {
+        "fontSize": 11,
+        "typeface": "Noto Sans SC",
+        "color": "#8B9AB0",
+        "bold": true,
+        "alignment": "right",
+        "insets": {
+          "top": 4.8,
+          "right": 9.6,
+          "bottom": 4.8,
+          "left": 9.6
+        }
+      },
+      "textLayout": {
+        "lineCount": 1,
+        "lines": [
+          {
+            "index": 1,
+            "text": "04"
+          }
+        ]
+      },
+      "paragraphs": [
+        {
+          "index": 1,
+          "text": "04",
+          "resolvedTextStyle": {
+            "fontSize": 11,
+            "typeface": "Noto Sans SC",
+            "color": "#8B9AB0",
+            "bold": true,
+            "alignment": "right"
+          },
+          "runs": [
+            {
+              "index": 1,
+              "text": "04",
+              "fontSize": 11,
+              "typeface": "Noto Sans SC",
+              "color": "#8B9AB0",
+              "bold": true,
+              "alignment": "right"
+            }
+          ],
+          "marginLeft": 0
+        }
+      ],
+      "lineWidth": 0
+    }
+  ],
+  "composeRuns": []
+}

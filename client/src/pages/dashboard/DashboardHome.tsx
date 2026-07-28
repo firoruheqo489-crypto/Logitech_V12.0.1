@@ -120,10 +120,18 @@ async function fetchProjects(): Promise<ProjectData[]> {
   return fetchDashboardProjectData();
 }
 
-async function batchReplaceProjects(data: Record<string, string | undefined>[]): Promise<void> {
+async function batchReplaceProjects(
+  data: Record<string, string | undefined>[],
+  allowDestructive = false,
+): Promise<void> {
   const res = await apiFetch('/api/dashboard/projects/batch-replace', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(allowDestructive
+        ? { 'x-dashboard-replace-confirmation': 'allow-destructive' }
+        : {}),
+    },
     body: JSON.stringify(data),
   });
   if (!res.ok) {
@@ -578,6 +586,7 @@ export default function DashboardHome() {
   const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
   const [isInitialLoading, setIsInitialLoading] = useState(false);
   const [showDuplicateUploadConfirm, setShowDuplicateUploadConfirm] = useState(false);
+  const [showDestructiveUploadConfirm, setShowDestructiveUploadConfirm] = useState(false);
   const [pendingUploadData, setPendingUploadData] = useState<ProjectData[] | null>(null);
   const [searchProjectName, setSearchProjectName] = useState('');
   const [searchMoldId, setSearchMoldId] = useState('');
@@ -614,15 +623,23 @@ export default function DashboardHome() {
     await executeDataUpdate(normalizedData);
   };
 
-  const executeDataUpdate = async (data: ProjectData[]) => {
+  const executeDataUpdate = async (data: ProjectData[], allowDestructive = false) => {
     setIsInitialLoading(true);
     try {
       const transformed = data.map(transformDataToProject);
-      await batchReplaceProjects(transformed);
+      await batchReplaceProjects(transformed, allowDestructive);
       toast.success(`成功加载 ${data.length} 个项目`);
       setIsAdminModalOpen(false);
       await loadProjects();
     } catch (error) {
+      if (
+        error instanceof DashboardApiError &&
+        error.code === 'DASHBOARD_REPLACE_CONFIRMATION_REQUIRED'
+      ) {
+        setPendingUploadData(data);
+        setShowDestructiveUploadConfirm(true);
+        return;
+      }
       const message = getDashboardApiErrorDisplayMessage(error, '上传失败');
 
       if (shouldFallbackToLocalPreview(error)) {
@@ -646,6 +663,17 @@ export default function DashboardHome() {
     setPendingUploadData(null);
     setShowDuplicateUploadConfirm(false);
     await executeDataUpdate(nextData);
+  };
+
+  const handleConfirmDestructiveUpload = async () => {
+    if (!pendingUploadData) {
+      setShowDestructiveUploadConfirm(false);
+      return;
+    }
+    const nextData = pendingUploadData;
+    setPendingUploadData(null);
+    setShowDestructiveUploadConfirm(false);
+    await executeDataUpdate(nextData, true);
   };
 
   const handleClearData = async () => {
@@ -1339,6 +1367,19 @@ export default function DashboardHome() {
         onConfirm={handleConfirmDuplicateUpload}
         confirmText="继续上传"
         cancelText="取消"
+      />
+
+      <CyberConfirmDialog
+        open={showDestructiveUploadConfirm}
+        title="检测到高风险覆盖"
+        message={`当前台账有 ${sourceProjects.length} 条，上传文件仅有 ${pendingUploadData?.length ?? 0} 条。继续会删除大部分现有项目；系统已自动保留覆盖前快照。请确认该文件确实是完整台账。`}
+        onCancel={() => {
+          setShowDestructiveUploadConfirm(false);
+          setPendingUploadData(null);
+        }}
+        onConfirm={handleConfirmDestructiveUpload}
+        confirmText="确认全量覆盖"
+        cancelText="取消上传"
       />
     </div>
   );

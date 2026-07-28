@@ -1,0 +1,268 @@
+{"kind":"deck","id":"pr/rxqfoi","name":"Deck"}
+{"kind":"layout","layoutId":"a4d07be6-3e7c-4cf0-93e6-373759694910","name":"Master","type":"master"}
+{"kind":"layout","layoutId":"b5b074d2-dd30-4339-88b0-e6ada49b960b","name":"Title Slide","type":"title"}
+{"kind":"slide","id":"sl/ximogl","slide":1,"title":"试用期转正述职","textShapes":9}
+{"kind":"shape","id":"sh/6xcvipcb","slide":1,"bbox":[968,-210,560,560]}
+{"kind":"shape","id":"sh/t0ned4b2","slide":1,"bbox":[1050,-110,390,390]}
+{"kind":"shape","id":"sh/szudkzuh","slide":1,"bbox":[72,138,112,5]}
+{"kind":"textbox","id":"sh/julw7at0","slide":1,"text":"试用期转正述职","textPreview":"试用期转正述职","textChars":7,"textLines":1,"bbox":[72,76,360,34]}
+{"kind":"textbox","id":"sh/itcvepcf","slide":1,"text":"让质量问题可闭环\n让质量数据可追溯","textPreview":"让质量问题可闭环 | 让质量数据可追溯","textChars":17,"textLines":2,"bbox":[72,184,830,172]}
+{"kind":"textbox","id":"sh/5w3e9kbq","slide":1,"text":"左聪  ·  质量  ·  8D Champion","textPreview":"左聪  ·  质量  ·  8D Champion","textChars":25,"textLines":1,"bbox":[76,402,600,34]}
+{"kind":"shape","id":"sh/kvudgful","slide":1,"bbox":[76,466,560,1]}
+{"kind":"textbox","id":"sh/v61w3ado","slide":1,"text":"宁波宜兴照明有限公司","textPreview":"宁波宜兴照明有限公司","textChars":10,"textLines":1,"bbox":[76,498,500,30]}
+{"kind":"textbox","id":"sh/a5sva5c3","slide":1,"text":"2026","textPreview":"2026","textChars":4,"textLines":1,"bbox":[76,548,200,52]}
+{"kind":"shape","id":"sh/credwr6p","slide":1,"bbox":[830,502,330,4]}
+{"kind":"shape","id":"sh/dsnepwna","slide":1,"bbox":[830,484,38,38]}
+{"kind":"textbox","id":"sh/qpwvu1oz","slide":1,"text":"发现","textPreview":"发现","textChars":2,"textLines":1,"bbox":[812,540,76,24]}
+{"kind":"shape","id":"sh/rq5wnm5k","slide":1,"bbox":[940,484,38,38]}
+{"kind":"textbox","id":"sh/4nedsr6t","slide":1,"text":"验证","textPreview":"验证","textChars":2,"textLines":1,"bbox":[922,540,76,24]}
+{"kind":"shape","id":"sh/ponelwne","slide":1,"bbox":[1050,484,38,38]}
+{"kind":"textbox","id":"sh/ilcvqhon","slide":1,"text":"闭环","textPreview":"闭环","textChars":2,"textLines":1,"bbox":[1032,540,76,24]}
+{"kind":"shape","id":"sh/3m5wjmp8","slide":1,"bbox":[1160,484,38,38]}
+{"kind":"textbox","id":"sh/ojyx4b6x","slide":1,"text":"沉淀","textPreview":"沉淀","textChars":2,"textLines":1,"bbox":[1142,540,76,24]}
+{"kind":"notes","id":"nt/ximogl","slide":1,"text":"各位领导好，我是质量岗位的左聪，目前主要承担 8D Champion 的工作。今天我想汇报的，不只是试用期内完成了哪些任务，更想说明我为团队带来了什么价值。过去三个月，我主要围绕两件事展开：第一，把已经发生的质量问题分析清楚、推动改善并验证闭环；第二，把分散的质量信息沉淀下来，让项目团队能够共享和追溯。下面我会用一个 8D 案例和规格书看板，具体说明这两项成果。"}
+{"kind":"slide","id":"sl/5xj3w1","slide":2,"title":"03 MONTHS","textShapes":17}
+{"kind":"textbox","id":"sh/ov25wvmp","slide":2,"text":"03 MONTHS","textPreview":"03 MONTHS","textChars":9,"textLines":1,"bbox":[72,48,420,22]}
+{"kind":"textbox","id":"sh/nuto3q54","slide":2,"text":"入职三个月：从解决问题到建设体系","textPreview":"入职三个月：从解决问题到建设体系","textChars":16,"textLines":1,"bbox":[72,80,1136,66]}
+{"kind":"shape","id":"sh/290nul4j","slide":2,"bbox":[72,151,84,4]}
+{"kind":"textbox","id":"sh/18r61gny","slide":2,"text":"一条连续的成长路径","textPreview":"一条连续的成长路径","textChars":9,"textLines":1,"bbox":[72,181,280,30]}
+{"kind":"shape","id":"sh/07i5sb6t","slide":2,"bbox":[132,372,1010,4]}
+{"kind":"shape","id":"sh/f694z658","slide":2,"bbox":[150,338,72,72]}
+{"kind":"textbox","id":"sh/e50nqlon","slide":2,"text":"01","textPreview":"01","textChars":2,"textLines":1,"bbox":[150,357,72,30]}
+{"kind":"textbox","id":"sh/d4rmxgn2","slide":2,"text":"接手问题","textPreview":"接手问题","textChars":4,"textLines":1,"bbox":[100,438,172,34]}
+{"kind":"textbox","id":"sh/s3i5ob6h","slide":2,"text":"批量死灯\n跨部门复杂问题","textPreview":"批量死灯 | 跨部门复杂问题","textChars":12,"textLines":2,"bbox":[88,488,196,64]}
+{"kind":"shape","id":"sh/ixwj2hs7","slide":2,"bbox":[435,338,72,72]}
+{"kind":"textbox","id":"sh/3i50bm9s","slide":2,"text":"02","textPreview":"02","textChars":2,"textLines":1,"bbox":[435,357,72,30]}
+{"kind":"textbox","id":"sh/4je14rax","slide":2,"text":"主导验证","textPreview":"主导验证","textChars":4,"textLines":1,"bbox":[385,438,172,34]}
+{"kind":"textbox","id":"sh/5knidwri","slide":2,"text":"排除假设\n建立证据链","textPreview":"排除假设 | 建立证据链","textChars":10,"textLines":2,"bbox":[373,488,196,64]}
+{"kind":"shape","id":"sh/utczyhsv","slide":2,"bbox":[720,338,72,72]}
+{"kind":"textbox","id":"sh/vul07m9g","slide":2,"text":"03","textPreview":"03","textChars":2,"textLines":1,"bbox":[720,357,72,30]}
+{"kind":"textbox","id":"sh/gvuh07a1","slide":2,"text":"推动结案","textPreview":"推动结案","textChars":4,"textLines":1,"bbox":[670,438,172,34]}
+{"kind":"textbox","id":"sh/hwni9crm","slide":2,"text":"试产验证\n量产确认","textPreview":"试产验证 | 量产确认","textChars":9,"textLines":2,"bbox":[658,488,196,64]}
+{"kind":"shape","id":"sh/6pczuxsz","slide":2,"bbox":[1005,338,72,72]}
+{"kind":"textbox","id":"sh/7ql0329k","slide":2,"text":"04","textPreview":"04","textChars":2,"textLines":1,"bbox":[1005,357,72,30]}
+{"kind":"textbox","id":"sh/buhgvypc","slide":2,"text":"沉淀体系","textPreview":"沉淀体系","textChars":4,"textLines":1,"bbox":[955,438,172,34]}
+{"kind":"textbox","id":"sh/at8f2t8r","slide":2,"text":"规格书电子台账\n质量数据闭环","textPreview":"规格书电子台账 | 质量数据闭环","textChars":14,"textLines":2,"bbox":[943,488,196,64]}
+{"kind":"shape","id":"sh/xwzyx872","slide":2,"bbox":[72,600,1136,58]}
+{"kind":"textbox","id":"sh/cvqx43qx","slide":2,"text":"入职首月就承担复杂问题；完成闭环后，进一步把经验变成团队长期可用的质量资产。","textPreview":"入职首月就承担复杂问题；完成闭环后，进一步把经验变成团队长期可用的质量资产。","textChars":38,"textLines":1,"bbox":[100,615,1080,30]}
+{"kind":"textbox","id":"sh/jy1gzip8","slide":2,"text":"02","textPreview":"02","textChars":2,"textLines":1,"bbox":[1188,672,40,18]}
+{"kind":"notes","id":"nt/5xj3w1","slide":2,"text":"我在入职第一个月就接手了批量死灯问题。这个案件涉及供应商、研发、工艺、SMT 和装配多个环节，对一个刚加入团队的人来说，既是挑战，也是快速熟悉业务的机会。我的工作路径比较清晰：先梳理现象，再设计验证，推动跨部门改善，最后用试产和量产结果确认方案。完成问题闭环之后，我也开始思考，怎样把这些过程和证据留下来，所以后续进一步建设了规格书电子台账。"}
+{"kind":"slide","id":"sl/2a3cnx","slide":3,"title":"CORE OUTCOMES","textShapes":17}
+{"kind":"textbox","id":"sh/hcr6xs7q","slide":3,"text":"CORE OUTCOMES","textPreview":"CORE OUTCOMES","textChars":13,"textLines":1,"bbox":[72,48,420,22]}
+{"kind":"textbox","id":"sh/u9g72d8f","slide":3,"text":"两项核心成果：问题闭环与数据闭环","textPreview":"两项核心成果：问题闭环与数据闭环","textChars":16,"textLines":1,"bbox":[72,80,1136,66]}
+{"kind":"shape","id":"sh/vapovipk","slide":3,"bbox":[72,151,84,4]}
+{"kind":"shape","id":"sh/4zip87qh","slide":3,"bbox":[72,190,540,406]}
+{"kind":"shape","id":"sh/50r61c72","slide":3,"bbox":[668,190,540,406]}
+{"kind":"textbox","id":"sh/ix076x8b","slide":3,"text":"01  8D 问题闭环","textPreview":"01  8D 问题闭环","textChars":11,"textLines":1,"bbox":[104,222,420,30]}
+{"kind":"textbox","id":"sh/3y9oz2pw","slide":3,"text":"把复杂问题分析清楚\n并推动量产结案","textPreview":"把复杂问题分析清楚 | 并推动量产结案","textChars":17,"textLines":2,"bbox":[104,280,430,82]}
+{"kind":"textbox","id":"sh/s32pc76d","slide":3,"text":"1,505","textPreview":"1,505","textChars":5,"textLines":1,"bbox":[104,420,150,48]}
+{"kind":"textbox","id":"sh/d4b65c7y","slide":3,"text":"Pcs 成品灯板","textPreview":"Pcs 成品灯板","textChars":8,"textLines":1,"bbox":[104,474,150,24]}
+{"kind":"textbox","id":"sh/d8va10n2","slide":3,"text":"135,450","textPreview":"135,450","textChars":7,"textLines":1,"bbox":[268,420,150,48]}
+{"kind":"textbox","id":"sh/c7m98vmh","slide":3,"text":"Pcs 紫光灯珠","textPreview":"Pcs 紫光灯珠","textChars":8,"textLines":1,"bbox":[268,474,150,24]}
+{"kind":"textbox","id":"sh/bmd8zq5w","slide":3,"text":"¥15,652","textPreview":"¥15,652","textChars":7,"textLines":1,"bbox":[432,420,150,48]}
+{"kind":"textbox","id":"sh/ql4r6l4b","slide":3,"text":"案件报废金额","textPreview":"案件报废金额","textChars":6,"textLines":1,"bbox":[432,474,150,24]}
+{"kind":"textbox","id":"sh/lcfa50ne","slide":3,"text":"02  规格书数据闭环","textPreview":"02  规格书数据闭环","textChars":11,"textLines":1,"bbox":[700,222,420,30]}
+{"kind":"textbox","id":"sh/0b69cfmt","slide":3,"text":"把分散信息变成\n团队共享的质量入口","textPreview":"把分散信息变成 | 团队共享的质量入口","textChars":17,"textLines":2,"bbox":[700,280,430,82]}
+{"kind":"textbox","id":"sh/zaxs3a58","slide":3,"text":"产品编号","textPreview":"产品编号","textChars":4,"textLines":1,"bbox":[704,430,120,26]}
+{"kind":"textbox","id":"sh/y9ora54n","slide":3,"text":"流程信息","textPreview":"流程信息","textChars":4,"textLines":1,"bbox":[848,430,120,26]}
+{"kind":"textbox","id":"sh/hgbqtgnu","slide":3,"text":"实验室报告","textPreview":"实验室报告","textChars":5,"textLines":1,"bbox":[992,430,140,26]}
+{"kind":"shape","id":"sh/gf290bm9","slide":3,"bbox":[740,484,360,3]}
+{"kind":"shape","id":"sh/8z69gbe5","slide":3,"bbox":[738,470,28,28]}
+{"kind":"shape","id":"sh/t0fapgvq","slide":3,"bbox":[918,470,28,28]}
+{"kind":"shape","id":"sh/6xore1wz","slide":3,"bbox":[1098,470,28,28]}
+{"kind":"textbox","id":"sh/7yxsn6dk","slide":3,"text":"案件影响范围，不等同于个人节省金额","textPreview":"案件影响范围，不等同于个人节省金额","textChars":17,"textLines":1,"bbox":[104,548,420,24]}
+{"kind":"textbox","id":"sh/gnq9kvuh","slide":3,"text":"03","textPreview":"03","textChars":2,"textLines":1,"bbox":[1188,672,40,18]}
+{"kind":"notes","id":"nt/2a3cnx","slide":3,"text":"这三个月的成果可以概括成两个闭环。第一个是问题闭环：批量死灯案件涉及成品灯板 1,505 Pcs、紫光灯珠 135,450 Pcs，已产生报废金额 15,652 元。这些数字代表的是案件影响范围，并不是个人节省金额。第二个是数据闭环：以产品编号为入口，把规格信息、流程信息和实验室报告串联起来。前者体现我解决复杂问题的能力，后者体现我把一次性经验转化为长期管理能力的思考。"}
+{"kind":"slide","id":"sl/br5d8d","slide":4,"title":"8D CASE","textShapes":22}
+{"kind":"textbox","id":"sh/h0byt8n6","slide":4,"text":"8D CASE","textPreview":"8D CASE","textChars":7,"textLines":1,"bbox":[72,48,420,22]}
+{"kind":"textbox","id":"sh/uxkzit4f","slide":4,"text":"供应商结论并不能解释全部现象","textPreview":"供应商结论并不能解释全部现象","textChars":14,"textLines":1,"bbox":[72,80,1136,66]}
+{"kind":"shape","id":"sh/vytgry50","slide":4,"bbox":[72,151,84,4]}
+{"kind":"textbox","id":"sh/8vihgjm9","slide":4,"text":"2026.05","textPreview":"2026.05","textChars":7,"textLines":1,"bbox":[72,188,180,56]}
+{"kind":"textbox","id":"sh/9wryponu","slide":4,"text":"案件发生","textPreview":"案件发生","textChars":4,"textLines":1,"bbox":[72,246,160,28]}
+{"kind":"shape","id":"sh/mt0ze94j","slide":4,"bbox":[252,220,88,3]}
+{"kind":"textbox","id":"sh/7u9gne54","slide":4,"text":"2026.06","textPreview":"2026.06","textChars":7,"textLines":1,"bbox":[362,188,180,56]}
+{"kind":"textbox","id":"sh/k7ixcjmd","slide":4,"text":"入职后接手并推进8D","textPreview":"入职后接手并推进8D","textChars":10,"textLines":1,"bbox":[362,246,260,28]}
+{"kind":"shape","id":"sh/l8rylony","slide":4,"bbox":[72,310,476,230]}
+{"kind":"textbox","id":"sh/xsnilsny","slide":4,"text":"灯珠供应商的初步方向","textPreview":"灯珠供应商的初步方向","textChars":10,"textLines":1,"bbox":[102,340,330,30]}
+{"kind":"textbox","id":"sh/crehcn6d","slide":4,"text":"广东中阳广电科技（灯珠供应商）","textPreview":"广东中阳广电科技（灯珠供应商）","textChars":15,"textLines":1,"bbox":[102,392,390,28]}
+{"kind":"textbox","id":"sh/bq50ji5s","slide":4,"text":"“外部物理损伤，方向指向 SMT 贴片制程”","textPreview":"“外部物理损伤，方向指向 SMT 贴片制程”","textChars":22,"textLines":1,"bbox":[102,444,388,54]}
+{"kind":"textbox","id":"sh/apwzadon","slide":4,"text":"没有直接接受结论，而是组织内部复核","textPreview":"没有直接接受结论，而是组织内部复核","textChars":17,"textLines":1,"bbox":[102,512,390,24]}
+{"kind":"textbox","id":"sh/ponihsn2","slide":4,"text":"跨部门协作","textPreview":"跨部门协作","textChars":5,"textLines":1,"bbox":[622,185,220,34]}
+{"kind":"shape","id":"sh/oneh8n6h","slide":4,"bbox":[622,242,570,80]}
+{"kind":"textbox","id":"sh/nml0fi5w","slide":4,"text":"左聪","textPreview":"左聪","textChars":2,"textLines":1,"bbox":[642,258,100,26]}
+{"kind":"textbox","id":"sh/2lcz6dob","slide":4,"text":"质量｜分析路径与8D推进","textPreview":"质量｜分析路径与8D推进","textChars":12,"textLines":1,"bbox":[642,288,520,22]}
+{"kind":"shape","id":"sh/103id8nq","slide":4,"bbox":[622,316,270,80]}
+{"kind":"textbox","id":"sh/0zuh4365","slide":4,"text":"程海洋","textPreview":"程海洋","textChars":3,"textLines":1,"bbox":[642,332,100,26]}
+{"kind":"textbox","id":"sh/sfi9g7id","slide":4,"text":"装配车间资源","textPreview":"装配车间资源","textChars":6,"textLines":1,"bbox":[642,362,230,22]}
+{"kind":"shape","id":"sh/dgra9czy","slide":4,"bbox":[920,316,270,80]}
+{"kind":"textbox","id":"sh/qdgrex07","slide":4,"text":"王高星","textPreview":"王高星","textChars":3,"textLines":1,"bbox":[940,332,100,26]}
+{"kind":"textbox","id":"sh/re9s72hs","slide":4,"text":"SMT贴片车间资源","textPreview":"SMT贴片车间资源","textChars":9,"textLines":1,"bbox":[940,362,230,22]}
+{"kind":"shape","id":"sh/4by9cnih","slide":4,"bbox":[622,438,270,80]}
+{"kind":"textbox","id":"sh/5c7q5sjm","slide":4,"text":"吴昭顺","textPreview":"吴昭顺","textChars":3,"textLines":1,"bbox":[642,454,100,26]}
+{"kind":"textbox","id":"sh/ipgrax0b","slide":4,"text":"生产工艺改善","textPreview":"生产工艺改善","textChars":6,"textLines":1,"bbox":[642,484,230,22]}
+{"kind":"shape","id":"sh/3qp8321w","slide":4,"bbox":[920,438,270,80]}
+{"kind":"textbox","id":"sh/o729oril","slide":4,"text":"陈中平","textPreview":"陈中平","textChars":3,"textLines":1,"bbox":[940,454,100,26]}
+{"kind":"textbox","id":"sh/p8bahwz6","slide":4,"text":"产品设计改善","textPreview":"产品设计改善","textChars":6,"textLines":1,"bbox":[940,484,230,22]}
+{"kind":"textbox","id":"sh/z2dc7q18","slide":4,"text":"04","textPreview":"04","textChars":2,"textLines":1,"bbox":[1188,672,40,18]}
+{"kind":"notes","id":"nt/br5d8d","slide":4,"text":"这个案件发生在 2026 年 5 月，我于 6 月加入宁波宜兴照明有限公司后接手分析。广东中阳广电科技是本次灯珠供应商，并不是我的任职公司。供应商最初根据灯珠外部物理损伤，把方向指向 SMT 贴片制程。我们没有直接接受这个判断，而是组织内部复核。我负责分析路径和 8D 推进，程海洋、王高星提供装配和 SMT 资源，吴昭顺负责工艺改善，陈中平负责产品设计改善，最终依靠团队协作逐步形成完整证据链。"}
+{"kind":"slide","id":"sl/kxb8uy","slide":5,"title":"EVIDENCE CHAIN","textShapes":20}
+{"kind":"textbox","id":"sh/7a54jm9g","slide":5,"text":"EVIDENCE CHAIN","textPreview":"EVIDENCE CHAIN","textChars":14,"textLines":1,"bbox":[72,48,420,22]}
+{"kind":"textbox","id":"sh/sbelcra1","slide":5,"text":"用验证逐步逼近真正原因","textPreview":"用验证逐步逼近真正原因","textChars":11,"textLines":1,"bbox":[72,80,1136,66]}
+{"kind":"shape","id":"sh/tcnmlwr6","slide":5,"bbox":[72,151,84,4]}
+{"kind":"shape","id":"sh/uxg3e1sr","slide":5,"bbox":[76,198,28,28]}
+{"kind":"textbox","id":"sh/fyp4n69c","slide":5,"text":"1","textPreview":"1","textChars":1,"textLines":1,"bbox":[76,202,28,20]}
+{"kind":"textbox","id":"sh/gzy5gbax","slide":5,"text":"贴片方式","textPreview":"贴片方式","textChars":4,"textLines":1,"bbox":[120,190,160,28]}
+{"kind":"textbox","id":"sh/h07mpgri","slide":5,"text":"手工与机器均未复现","textPreview":"手工与机器均未复现","textChars":9,"textLines":1,"bbox":[120,224,360,24]}
+{"kind":"textbox","id":"sh/21gnils3","slide":5,"text":"初步排除单一贴片方式","textPreview":"初步排除单一贴片方式","textChars":10,"textLines":1,"bbox":[120,256,330,20]}
+{"kind":"shape","id":"sh/32p4r69o","slide":5,"bbox":[89,230,2,74]}
+{"kind":"shape","id":"sh/bu5ozq5c","slide":5,"bbox":[76,300,28,28]}
+{"kind":"textbox","id":"sh/atw7ql4r","slide":5,"text":"2","textPreview":"2","textChars":1,"textLines":1,"bbox":[76,304,28,20]}
+{"kind":"textbox","id":"sh/xwn610ni","slide":5,"text":"应力复现","textPreview":"应力复现","textChars":4,"textLines":1,"bbox":[120,292,160,28]}
+{"kind":"textbox","id":"sh/wvepsvmx","slide":5,"text":"震动 33.33%｜跌落 66.67%","textPreview":"震动 33.33%｜跌落 66.67%","textChars":19,"textLines":1,"bbox":[120,326,360,24]}
+{"kind":"textbox","id":"sh/n6lovq5g","slide":5,"text":"问题转向可靠性","textPreview":"问题转向可靠性","textChars":7,"textLines":1,"bbox":[120,358,330,20]}
+{"kind":"shape","id":"sh/m5c7ml4v","slide":5,"bbox":[89,332,2,74]}
+{"kind":"shape","id":"sh/9s36x0n6","slide":5,"bbox":[76,402,28,28]}
+{"kind":"textbox","id":"sh/orupovm1","slide":5,"text":"3","textPreview":"3","textChars":1,"textLines":1,"bbox":[76,406,28,20]}
+{"kind":"textbox","id":"sh/7mp87a5k","slide":5,"text":"变量交叉","textPreview":"变量交叉","textChars":4,"textLines":1,"bbox":[120,394,160,28]}
+{"kind":"textbox","id":"sh/61g7y54z","slide":5,"text":"旧灯板 50%｜新灯板 0%","textPreview":"旧灯板 50%｜新灯板 0%","textChars":14,"textLines":1,"bbox":[120,428,360,24]}
+{"kind":"textbox","id":"sh/2h0rq9o7","slide":5,"text":"锁定设计冗余","textPreview":"锁定设计冗余","textChars":6,"textLines":1,"bbox":[120,460,330,20]}
+{"kind":"shape","id":"sh/3i9szeps","slide":5,"bbox":[89,434,2,74]}
+{"kind":"shape","id":"sh/4ji9sj6d","slide":5,"bbox":[76,504,28,28]}
+{"kind":"textbox","id":"sh/pkba1o7y","slide":5,"text":"4","textPreview":"4","textChars":1,"textLines":1,"bbox":[76,508,28,20]}
+{"kind":"textbox","id":"sh/qlkrutoj","slide":5,"text":"温升复测","textPreview":"温升复测","textChars":4,"textLines":1,"bbox":[120,496,160,28]}
+{"kind":"textbox","id":"sh/rmts3yp4","slide":5,"text":"峰值 129℃｜原报告 115℃","textPreview":"峰值 129℃｜原报告 115℃","textChars":16,"textLines":1,"bbox":[120,530,360,24]}
+{"kind":"textbox","id":"sh/cn29w369","slide":5,"text":"确认温升异常","textPreview":"确认温升异常","textChars":6,"textLines":1,"bbox":[120,562,330,20]}
+{"kind":"shape","id":"sh/6pgripoz","slide":5,"bbox":[522,594,686,56]}
+{"kind":"textbox","id":"sh/7qpsrupk","slide":5,"text":"证据不是附件，而是每一次方向调整的依据。","textPreview":"证据不是附件，而是每一次方向调整的依据。","textChars":20,"textLines":1,"bbox":[548,609,630,26]}
+{"kind":"textbox","id":"sh/9wzmdwve","slide":5,"text":"05","textPreview":"05","textChars":2,"textLines":1,"bbox":[1188,672,40,18]}
+{"kind":"image","id":"im/u1gr6xg3","slide":5,"name":"","geometry":"roundRect","alt":"8D验证三：震动测试与灯珠损伤图片","bbox":[522,190,686,386]}
+{"kind":"notes","id":"nt/kxb8uy","slide":5,"text":"我们的原则是不靠猜测，而是让每一轮验证回答一个问题。首先比较手工贴片和机器贴片，两种方式都没有复现死灯，说明不能简单归因于某一种贴片方式。随后进行应力测试，震动后死灯率为 33.33%，跌落后为 66.67%，问题开始指向产品可靠性。交叉验证中，旧灯板应力测试后死灯率为 50%，新灯板为 0%。同时温升复测峰值达到 129℃，明显高于原终测报告的 115℃。这些证据最终把分析方向锁定在设计可靠性和温升异常。"}
+{"kind":"slide","id":"sl/e5pdt1","slide":6,"title":"RESULT","textShapes":13}
+{"kind":"textbox","id":"sh/toj6lsbu","slide":6,"text":"RESULT","textPreview":"RESULT","textChars":6,"textLines":1,"bbox":[72,48,420,22]}
+{"kind":"textbox","id":"sh/6l87adc3","slide":6,"text":"两项主因得到确认，改善方案通过量产验证","textPreview":"两项主因得到确认，改善方案通过量产验证","textChars":19,"textLines":1,"bbox":[72,80,1136,66]}
+{"kind":"shape","id":"sh/7mhojito","slide":6,"bbox":[72,151,84,4]}
+{"kind":"textbox","id":"sh/kjq583ud","slide":6,"text":"主要原因","textPreview":"主要原因","textChars":4,"textLines":1,"bbox":[72,186,180,30]}
+{"kind":"textbox","id":"sh/lkz6h8bi","slide":6,"text":"产品设计可靠性\n冗余不足","textPreview":"产品设计可靠性 | 冗余不足","textChars":12,"textLines":2,"bbox":[72,232,350,78]}
+{"kind":"textbox","id":"sh/yx8n6tc7","slide":6,"text":"产品温升异常","textPreview":"产品温升异常","textChars":6,"textLines":1,"bbox":[72,338,350,48]}
+{"kind":"shape","id":"sh/zyhofyts","slide":6,"bbox":[468,194,2,330]}
+{"kind":"textbox","id":"sh/4fapk7ah","slide":6,"text":"改善与验证","textPreview":"改善与验证","textChars":5,"textLines":1,"bbox":[516,186,180,30]}
+{"kind":"textbox","id":"sh/5g36tcb2","slide":6,"text":"灯板厚度优化 + 贴片工艺参数调整","textPreview":"灯板厚度优化 + 贴片工艺参数调整","textChars":17,"textLines":1,"bbox":[516,232,620,34]}
+{"kind":"textbox","id":"sh/lcji5wr2","slide":6,"text":"旧灯板应力后","textPreview":"旧灯板应力后","textChars":6,"textLines":1,"bbox":[516,310,190,24]}
+{"kind":"textbox","id":"sh/kbahcrqh","slide":6,"text":"50%","textPreview":"50%","textChars":3,"textLines":1,"bbox":[516,340,150,48]}
+{"kind":"shape","id":"sh/jq103m9w","slide":6,"bbox":[516,399,270,16]}
+{"kind":"textbox","id":"sh/yp8zah8b","slide":6,"text":"新灯板应力后","textPreview":"新灯板应力后","textChars":6,"textLines":1,"bbox":[516,448,190,24]}
+{"kind":"textbox","id":"sh/xozi1cr6","slide":6,"text":"0%","textPreview":"0%","textChars":2,"textLines":1,"bbox":[516,478,150,48]}
+{"kind":"shape","id":"sh/wnqh87ql","slide":6,"bbox":[516,537,270,16]}
+{"kind":"shape","id":"sh/al8z6h8f","slide":6,"bbox":[72,590,1136,66]}
+{"kind":"textbox","id":"sh/hk3idgra","slide":6,"text":"48 Pcs 小批验证通过   →   6月22日大批量生产老化正常   →   案件正式结案","textPreview":"48 Pcs 小批验证通过   →   6月22日大批量生产老化正常   →   案件正式结案","textChars":47,"textLines":1,"bbox":[100,607,1080,32]}
+{"kind":"textbox","id":"sh/gjuhkbqp","slide":6,"text":"06","textPreview":"06","textChars":2,"textLines":1,"bbox":[1188,672,40,18]}
+{"kind":"image","id":"im/c7m98zq5","slide":6,"name":"","geometry":"roundRect","alt":"48件试产验证现场","bbox":[818,300,390,248]}
+{"kind":"notes","id":"nt/e5pdt1","slide":6,"text":"最终我们确认了两项主要原因：一是产品设计可靠性冗余不足，二是产品温升异常。对应的改善动作是优化灯板厚度，并同步调整贴片工艺参数。改善后，我们先安排了 48 Pcs 小批验证，完成老化、装配、跌落和震动测试后均未出现死灯。之后在 6 月 22 日进行大批量生产，老化结果正常，方案有效，案件正式结案。另外，多轮对比显示现象没有随新旧灯珠批次变化，这是一项验证结果，不把它扩大表述为对任何一方的绝对归责或免责。"}
+{"kind":"slide","id":"sl/fqigde","slide":7,"title":"NEXT PROBLEM","textShapes":19}
+{"kind":"textbox","id":"sh/8nudof2d","slide":7,"text":"NEXT PROBLEM","textPreview":"NEXT PROBLEM","textChars":12,"textLines":1,"bbox":[72,48,420,22]}
+{"kind":"textbox","id":"sh/7mlcfa1s","slide":7,"text":"质量数据仍分散在流程和人员之间","textPreview":"质量数据仍分散在流程和人员之间","textChars":15,"textLines":1,"bbox":[72,80,1136,66]}
+{"kind":"shape","id":"sh/mlcvm5kn","slide":7,"bbox":[72,151,84,4]}
+{"kind":"textbox","id":"sh/lkjud0j2","slide":7,"text":"改造前","textPreview":"改造前","textChars":3,"textLines":1,"bbox":[72,186,120,28]}
+{"kind":"shape","id":"sh/kzadkv2h","slide":7,"bbox":[72,246,290,132]}
+{"kind":"textbox","id":"sh/zy1cbq1w","slide":7,"text":"研发测试","textPreview":"研发测试","textChars":4,"textLines":1,"bbox":[96,274,240,34]}
+{"kind":"textbox","id":"sh/yxsvilkb","slide":7,"text":"测试数据","textPreview":"测试数据","textChars":4,"textLines":1,"bbox":[96,324,240,24]}
+{"kind":"shape","id":"sh/xwju9gjq","slide":7,"bbox":[372,310,58,4]}
+{"kind":"shape","id":"sh/cvatgv25","slide":7,"bbox":[396,298,28,28]}
+{"kind":"textbox","id":"sh/yd83mt0b","slide":7,"text":"×","textPreview":"×","textChars":1,"textLines":1,"bbox":[396,300,28,24]}
+{"kind":"shape","id":"sh/zeh4fy1w","slide":7,"bbox":[450,246,290,132]}
+{"kind":"textbox","id":"sh/0fqlojih","slide":7,"text":"产品经理送样","textPreview":"产品经理送样","textChars":6,"textLines":1,"bbox":[474,274,240,34]}
+{"kind":"textbox","id":"sh/lgzmhoj2","slide":7,"text":"流程与样品","textPreview":"流程与样品","textChars":5,"textLines":1,"bbox":[474,324,240,24]}
+{"kind":"shape","id":"sh/q9o3i90f","slide":7,"bbox":[750,310,58,4]}
+{"kind":"shape","id":"sh/bax4be10","slide":7,"bbox":[774,298,28,28]}
+{"kind":"textbox","id":"sh/cb6lkjil","slide":7,"text":"×","textPreview":"×","textChars":1,"textLines":1,"bbox":[774,300,28,24]}
+{"kind":"shape","id":"sh/dczmdoj6","slide":7,"bbox":[828,246,290,132]}
+{"kind":"textbox","id":"sh/2lo3e903","slide":7,"text":"DQE终样","textPreview":"DQE终样","textChars":5,"textLines":1,"bbox":[852,274,240,34]}
+{"kind":"textbox","id":"sh/3mxk7e1o","slide":7,"text":"结论与报告","textPreview":"结论与报告","textChars":5,"textLines":1,"bbox":[852,324,240,24]}
+{"kind":"textbox","id":"sh/rqt0fahg","slide":7,"text":"入口分散","textPreview":"入口分散","textChars":4,"textLines":1,"bbox":[72,444,290,32]}
+{"kind":"textbox","id":"sh/6pkjm5gv","slide":7,"text":"需要在多个文件和渠道中查找","textPreview":"需要在多个文件和渠道中查找","textChars":13,"textLines":1,"bbox":[72,490,290,54]}
+{"kind":"textbox","id":"sh/tsbih0zm","slide":7,"text":"依赖知情人","textPreview":"依赖知情人","textChars":5,"textLines":1,"bbox":[450,444,290,32]}
+{"kind":"textbox","id":"sh/sr21ofy1","slide":7,"text":"完整情况掌握在少数人员手中","textPreview":"完整情况掌握在少数人员手中","textChars":13,"textLines":1,"bbox":[450,490,290,54]}
+{"kind":"textbox","id":"sh/fed0jahs","slide":7,"text":"难以追溯","textPreview":"难以追溯","textChars":4,"textLines":1,"bbox":[828,444,290,32]}
+{"kind":"textbox","id":"sh/ed4jq5g7","slide":7,"text":"历史数据无法围绕产品快速还原","textPreview":"历史数据无法围绕产品快速还原","textChars":14,"textLines":1,"bbox":[828,490,290,54]}
+{"kind":"shape","id":"sh/1gvilkzy","slide":7,"bbox":[72,584,1136,66]}
+{"kind":"textbox","id":"sh/gfm1sfyd","slide":7,"text":"质量信息如果只存在于个人记忆中，就无法成为可持续的项目能力。","textPreview":"质量信息如果只存在于个人记忆中，就无法成为可持续的项目能力。","textChars":30,"textLines":1,"bbox":[104,602,1072,30]}
+{"kind":"textbox","id":"sh/vi907qh8","slide":7,"text":"07","textPreview":"07","textChars":2,"textLines":1,"bbox":[1188,672,40,18]}
+{"kind":"notes","id":"nt/fqigde","slide":7,"text":"在处理问题的过程中，我也发现另一个长期痛点。一个产品从研发测试，到产品经理送样，再到 DQE 终样，会产生很多数据，但这些数据原来分散在不同流程、文件和人员手中。项目成员想了解完整情况时，往往需要逐个询问熟悉历史的人。这样不仅查询效率低，也容易造成信息断层。对质量管理来说，只有把结果和过程集中起来，问题经验才不会随着人员或项目变化而流失。"}
+{"kind":"slide","id":"sl/6qg6p0","slide":8,"title":"DIGITAL WORKSPACE","textShapes":11}
+{"kind":"textbox","id":"sh/2tkfqlwf","slide":8,"text":"DIGITAL WORKSPACE","textPreview":"DIGITAL WORKSPACE","textChars":17,"textLines":1,"bbox":[72,48,420,22]}
+{"kind":"textbox","id":"sh/pwvy10fq","slide":8,"text":"以规格书为中心建立电子质量台账","textPreview":"以规格书为中心建立电子质量台账","textChars":15,"textLines":1,"bbox":[72,80,1136,66]}
+{"kind":"shape","id":"sh/4vmxsve5","slide":8,"bbox":[72,151,84,4]}
+{"kind":"textbox","id":"sh/fqtgvqxo","slide":8,"text":"统一入口","textPreview":"统一入口","textChars":4,"textLines":1,"bbox":[72,192,260,42]}
+{"kind":"textbox","id":"sh/upkfmlg3","slide":8,"text":"项目团队通过产品编号，直接查看：","textPreview":"项目团队通过产品编号，直接查看：","textChars":16,"textLines":1,"bbox":[72,252,380,28]}
+{"kind":"shape","id":"sh/hsbyxgfu","slide":8,"bbox":[76,316,18,18]}
+{"kind":"textbox","id":"sh/gr2xovy9","slide":8,"text":"产品规格信息","textPreview":"产品规格信息","textChars":6,"textLines":1,"bbox":[112,308,310,32]}
+{"kind":"shape","id":"sh/7m9wr6xc","slide":8,"bbox":[76,374,18,18]}
+{"kind":"textbox","id":"sh/610fi1g7","slide":8,"text":"流程名称与流程单号","textPreview":"流程名称与流程单号","textChars":9,"textLines":1,"bbox":[112,366,310,32]}
+{"kind":"shape","id":"sh/kj6horul","slide":8,"bbox":[76,432,18,18]}
+{"kind":"textbox","id":"sh/lkfihwb6","slide":8,"text":"测试状态与历史记录","textPreview":"测试状态与历史记录","textChars":9,"textLines":1,"bbox":[112,424,310,32]}
+{"kind":"shape","id":"sh/yhozm1cf","slide":8,"bbox":[76,490,18,18]}
+{"kind":"textbox","id":"sh/jix0f6t0","slide":8,"text":"可恢复的归档现场","textPreview":"可恢复的归档现场","textChars":8,"textLines":1,"bbox":[112,482,310,32]}
+{"kind":"textbox","id":"sh/wf6hkru9","slide":8,"text":"由我推动从想法、页面到云端上线，团队可随时访问。","textPreview":"由我推动从想法、页面到云端上线，团队可随时访问。","textChars":24,"textLines":1,"bbox":[72,564,390,54]}
+{"kind":"shape","id":"sh/ad4zihc3","slide":8,"bbox":[486,626,722,36]}
+{"kind":"textbox","id":"sh/bed0bmto","slide":8,"text":"真实界面：规格书、人员、包装、测试流程和OA信息集中展示","textPreview":"真实界面：规格书、人员、包装、测试流程和OA信息集中展示","textChars":28,"textLines":1,"bbox":[502,634,690,22]}
+{"kind":"textbox","id":"sh/gbq1wbat","slide":8,"text":"08","textPreview":"08","textChars":2,"textLines":1,"bbox":[1188,672,40,18]}
+{"kind":"image","id":"im/ih4rml4b","slide":8,"name":"","geometry":"roundRect","alt":"产品规格书工作区真实界面","bbox":[486,190,722,420]}
+{"kind":"notes","id":"nt/6qg6p0","slide":8,"text":"针对这个问题，我以规格书为中心搭建了电子质量台账。现在，项目团队只需要通过产品编号，就能查看相关规格信息、流程名称、流程单号以及历史记录。它改变的并不只是资料的存放位置，更重要的是建立了统一入口，让原本掌握在少数人手中的信息变成团队可以随时共享的数据。看板部署在阿里云轻量服务器上，这里我不展开技术细节，重点是我推动它从想法落地成了团队能够实际访问和使用的工具。"}
+{"kind":"slide","id":"sl/q1htt7","slide":9,"title":"TRACEABILITY","textShapes":10}
+{"kind":"textbox","id":"sh/v2xwb2xk","slide":9,"text":"TRACEABILITY","textPreview":"TRACEABILITY","textChars":12,"textLines":1,"bbox":[72,48,420,22]}
+{"kind":"textbox","id":"sh/g36x47y5","slide":9,"text":"从产品编号出发，可以直达完整实验室报告","textPreview":"从产品编号出发，可以直达完整实验室报告","textChars":19,"textLines":1,"bbox":[72,80,1136,66]}
+{"kind":"shape","id":"sh/h4fedcfq","slide":9,"bbox":[72,151,84,4]}
+{"kind":"shape","id":"sh/i5of6hwb","slide":9,"bbox":[146,226,800,4]}
+{"kind":"shape","id":"sh/36xwf2xw","slide":9,"bbox":[90,198,64,64]}
+{"kind":"textbox","id":"sh/4rqx87e1","slide":9,"text":"01","textPreview":"01","textChars":2,"textLines":1,"bbox":[90,216,64,22]}
+{"kind":"textbox","id":"sh/5szehcfm","slide":9,"text":"产品编号检索","textPreview":"产品编号检索","textChars":6,"textLines":1,"bbox":[42,278,160,30]}
+{"kind":"shape","id":"sh/qt8fahw7","slide":9,"bbox":[490,198,64,64]}
+{"kind":"textbox","id":"sh/ruhwjmxs","slide":9,"text":"02","textPreview":"02","textChars":2,"textLines":1,"bbox":[490,216,64,22]}
+{"kind":"textbox","id":"sh/n65gre9s","slide":9,"text":"电子台账定位","textPreview":"电子台账定位","textChars":6,"textLines":1,"bbox":[442,278,160,30]}
+{"kind":"shape","id":"sh/m5wfi987","slide":9,"bbox":[890,198,64,64]}
+{"kind":"textbox","id":"sh/9snytory","slide":9,"text":"03","textPreview":"03","textChars":2,"textLines":1,"bbox":[890,216,64,22]}
+{"kind":"textbox","id":"sh/o7exkjqd","slide":9,"text":"实验室报告","textPreview":"实验室报告","textChars":5,"textLines":1,"bbox":[842,278,160,30]}
+{"kind":"shape","id":"sh/14neporm","slide":9,"bbox":[72,606,1136,50]}
+{"kind":"textbox","id":"sh/03uxgjq1","slide":9,"text":"已沉淀 83 条台账记录｜规格、流程与报告形成同一条质量证据链","textPreview":"已沉淀 83 条台账记录｜规格、流程与报告形成同一条质量证据链","textChars":31,"textLines":1,"bbox":[96,619,1088,26]}
+{"kind":"textbox","id":"sh/jypgzy90","slide":9,"text":"09","textPreview":"09","textChars":2,"textLines":1,"bbox":[1188,672,40,18]}
+{"kind":"image","id":"im/o7utsfup","slide":9,"name":"","geometry":"roundRect","alt":"83条规格书登记台账","bbox":[72,342,590,248]}
+{"kind":"image","id":"im/p83u1kva","slide":9,"name":"","geometry":"roundRect","alt":"完整终样测试报告界面","bbox":[690,342,518,248]}
+{"kind":"notes","id":"nt/q1htt7","slide":9,"text":"规格书看板比较亮眼的一点，是它并不止于查规格书。台账编号还联动了实验室区域，每个编号都可以对应一份完整的产品报告。实际使用时，从产品编号检索到台账记录，再点击实验室报告，就能快速查看相关测试证据。目前台账已沉淀 83 条记录。这样，规格、流程和报告不再是彼此独立的文件，而是形成了一条完整的质量证据链，也减少了对个人记忆的依赖。"}
+{"kind":"slide","id":"sl/1irqkk","slide":10,"title":"NEXT 03 MONTHS","textShapes":24}
+{"kind":"textbox","id":"sh/58je5gne","slide":10,"text":"NEXT 03 MONTHS","textPreview":"NEXT 03 MONTHS","textChars":14,"textLines":1,"bbox":[72,48,420,22]}
+{"kind":"textbox","id":"sh/i5svalon","slide":10,"text":"转正后，持续深化质量数据闭环","textPreview":"转正后，持续深化质量数据闭环","textChars":14,"textLines":1,"bbox":[72,80,1136,66]}
+{"kind":"shape","id":"sh/361w3q58","slide":10,"bbox":[72,151,84,4]}
+{"kind":"textbox","id":"sh/sbadgv6p","slide":10,"text":"已经沉淀的能力","textPreview":"已经沉淀的能力","textChars":7,"textLines":1,"bbox":[72,190,300,32]}
+{"kind":"textbox","id":"sh/dc3e90na","slide":10,"text":"01","textPreview":"01","textChars":2,"textLines":1,"bbox":[72,252,40,26]}
+{"kind":"textbox","id":"sh/q9sveloj","slide":10,"text":"系统分析","textPreview":"系统分析","textChars":4,"textLines":1,"bbox":[126,246,250,34]}
+{"kind":"shape","id":"sh/ra1w7q54","slide":10,"bbox":[126,286,280,1]}
+{"kind":"textbox","id":"sh/0zudkf61","slide":10,"text":"02","textPreview":"02","textChars":2,"textLines":1,"bbox":[72,314,40,26]}
+{"kind":"textbox","id":"sh/103ed0n6","slide":10,"text":"验证设计","textPreview":"验证设计","textChars":4,"textLines":1,"bbox":[126,308,250,34]}
+{"kind":"shape","id":"sh/1gzmlw7q","slide":10,"bbox":[126,348,280,1]}
+{"kind":"textbox","id":"sh/gfq5crq5","slide":10,"text":"03","textPreview":"03","textChars":2,"textLines":1,"bbox":[72,376,40,26]}
+{"kind":"textbox","id":"sh/feh4jmpk","slide":10,"text":"跨部门推动","textPreview":"跨部门推动","textChars":5,"textLines":1,"bbox":[126,370,250,34]}
+{"kind":"shape","id":"sh/ed8nah8z","slide":10,"bbox":[126,410,280,1]}
+{"kind":"textbox","id":"sh/p4j6pw7m","slide":10,"text":"04","textPreview":"04","textChars":2,"textLines":1,"bbox":[72,438,40,26]}
+{"kind":"textbox","id":"sh/oja5grq1","slide":10,"text":"结果闭环","textPreview":"结果闭环","textChars":4,"textLines":1,"bbox":[126,432,250,34]}
+{"kind":"shape","id":"sh/3i1onmpw","slide":10,"bbox":[126,472,280,1]}
+{"kind":"textbox","id":"sh/2hsne18b","slide":10,"text":"05","textPreview":"05","textChars":2,"textLines":1,"bbox":[72,500,40,26]}
+{"kind":"textbox","id":"sh/58fmdc7i","slide":10,"text":"数字化落地","textPreview":"数字化落地","textChars":5,"textLines":1,"bbox":[126,494,250,34]}
+{"kind":"shape","id":"sh/4n6547qx","slide":10,"bbox":[126,534,280,1]}
+{"kind":"shape","id":"sh/wra5k7yt","slide":10,"bbox":[454,190,2,356]}
+{"kind":"textbox","id":"sh/xsj6tcfe","slide":10,"text":"未来三个月","textPreview":"未来三个月","textChars":5,"textLines":1,"bbox":[504,190,300,32]}
+{"kind":"shape","id":"sh/apsnixgn","slide":10,"bbox":[508,254,24,24]}
+{"kind":"textbox","id":"sh/vq14r2x8","slide":10,"text":"1","textPreview":"1","textChars":1,"textLines":1,"bbox":[508,258,24,16]}
+{"kind":"textbox","id":"sh/kvu5oryp","slide":10,"text":"提升规格书与实验室报告的数据完整性","textPreview":"提升规格书与实验室报告的数据完整性","textChars":17,"textLines":1,"bbox":[548,246,590,42]}
+{"kind":"shape","id":"sh/5w36xcfa","slide":10,"bbox":[508,326,24,24]}
+{"kind":"textbox","id":"sh/itsnmhgz","slide":10,"text":"2","textPreview":"2","textChars":1,"textLines":1,"bbox":[508,330,24,16]}
+{"kind":"textbox","id":"sh/julovmxk","slide":10,"text":"完善产品编号、流程单号和报告关联","textPreview":"完善产品编号、流程单号和报告关联","textChars":16,"textLines":1,"bbox":[548,318,590,42]}
+{"kind":"shape","id":"sh/sju5sry1","slide":10,"bbox":[508,398,24,24]}
+{"kind":"textbox","id":"sh/tk361wfm","slide":10,"text":"3","textPreview":"3","textChars":1,"textLines":1,"bbox":[508,402,24,16]}
+{"kind":"textbox","id":"sh/3qpg7ul0","slide":10,"text":"推动项目成员稳定使用并收集反馈","textPreview":"推动项目成员稳定使用并收集反馈","textChars":15,"textLines":1,"bbox":[548,390,590,42]}
+{"kind":"shape","id":"sh/2pgzep4f","slide":10,"bbox":[508,470,24,24]}
+{"kind":"textbox","id":"sh/psri9k36","slide":10,"text":"4","textPreview":"4","textChars":1,"textLines":1,"bbox":[508,474,24,16]}
+{"kind":"textbox","id":"sh/orihgfml","slide":10,"text":"持续沉淀典型质量问题和验证证据","textPreview":"持续沉淀典型质量问题和验证证据","textChars":15,"textLines":1,"bbox":[548,462,590,42]}
+{"kind":"shape","id":"sh/f2pg3alo","slide":10,"bbox":[504,566,704,84]}
+{"kind":"textbox","id":"sh/e1gza543","slide":10,"text":"把一次问题解决好，把一套方法沉淀下来，\n让质量信息真正服务项目决策。","textPreview":"把一次问题解决好，把一套方法沉淀下来， | 让质量信息真正服务项目决策。","textChars":34,"textLines":2,"bbox":[532,580,650,58]}
+{"kind":"textbox","id":"sh/1o7y5k3u","slide":10,"text":"10","textPreview":"10","textChars":2,"textLines":1,"bbox":[1188,672,40,18]}
+{"kind":"notes","id":"nt/1irqkk","slide":10,"text":"回顾这三个月，我沉淀下来的不只是一次 8D 经验，也包括系统分析、验证设计、跨部门推动、结果闭环和数字化落地几方面能力。转正后，我会继续提高规格书与实验室报告的数据完整性，完善产品编号、流程单号和报告之间的关联，同时推动项目成员稳定使用，并根据反馈持续优化。我的目标是：把一次问题解决好，把一套方法沉淀下来，让质量信息真正服务项目决策。以上是我的汇报，谢谢各位。"}

@@ -123,6 +123,9 @@ type LaboratoryWorkspaceDraft = {
 
 const LABORATORY_WORKSPACE_DRAFT_PREFIX = "dashboard:laboratory-workspace-draft:v2"
 const LEGACY_LABORATORY_WORKSPACE_DRAFT_PREFIX = "dashboard:laboratory-workspace-draft:v1"
+// Laboratory archives share the same established OSS namespace as the
+// engineering-spec ledger and must not follow mutable dashboard project names.
+const LABORATORY_ARCHIVE_PROJECT_ID = "1"
 
 function readLaboratoryWorkspaceDraft(projectId: string): LaboratoryWorkspaceDraft | null {
   if (typeof window === "undefined") return null
@@ -1355,7 +1358,7 @@ export default function LaboratoryPdfParserDashboard({
   projectName?: string;
   archiveOnly?: boolean;
 }) {
-  const projectId = projectName.trim() || "default-engineering-spec-workspace"
+  const projectId = LABORATORY_ARCHIVE_PROJECT_ID
   const hydratedDraftRef = useRef(false)
   const clearDraftAfterArchiveRef = useRef(false)
   const [archiveOnlyMode, setArchiveOnlyMode] = useState(archiveOnly)

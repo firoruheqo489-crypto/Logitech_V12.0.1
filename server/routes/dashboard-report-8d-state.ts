@@ -167,7 +167,7 @@ const STATUS_SET = new Set<Report8DStatus>(["completed", "in-progress", "pending
 const EIGHT_D_STAGE_SET = new Set<EightDStage>(["D0", "D1", "D2", "D3", "D4", "D5", "D6", "D7", "D8"]);
 const EIGHT_D_CASE_STATUS_SET = new Set<EightDCaseStatus>(["Open", "Pending", "Closed"]);
 const REPORT_8D_OUTPUT_CUTOFF_SET = new Set<Report8DOutputCutoff>(["D0", "D1", "D2", "D3", "D4", "D5", "D6", "D7", "D8", "SIGNOFF"]);
-export const DEFAULT_REPORT_8D_WORKSPACE_KEY = "dashboard-report-8d-workspace";
+export const DEFAULT_REPORT_8D_WORKSPACE_KEY = "dashboard-report-8d";
 
 let dashboardReport8DSubmissionTableReady: Promise<void> | null = null;
 

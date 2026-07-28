@@ -126,7 +126,9 @@ export type Report8DWorkspaceState = {
   updatedAt?: string;
 };
 
-export const DEFAULT_REPORT_8D_WORKSPACE_KEY = "dashboard-report-8d-workspace";
+// 8D is a shared quality archive. Its persistence key must not be derived from
+// the mutable project list imported by the main dashboard workbook.
+export const DEFAULT_REPORT_8D_WORKSPACE_KEY = "dashboard-report-8d";
 
 type Report8DRemoteStateIdentity = {
   workspaceKey?: string;

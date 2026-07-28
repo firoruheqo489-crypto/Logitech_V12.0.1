@@ -30,6 +30,7 @@ type DashboardModuleOrderRow = {
 
 type DashboardRouteErrorCode =
   | 'BODY_MUST_BE_ARRAY'
+  | 'DASHBOARD_REPLACE_CONFIRMATION_REQUIRED'
   | 'DATABASE_NOT_CONFIGURED'
   | 'HEALTH_CHECK_UNAVAILABLE'
   | 'INTERNAL_ERROR'
@@ -40,6 +41,7 @@ const PINNED_HEAD_MODULE_NAMES = ['Ziti', 'Bioko -M'] as const;
 const PINNED_TAIL_MODULE_NAMES = ['KIDDY'] as const;
 const DASHBOARD_ROUTE_ERROR_MESSAGES: Record<DashboardRouteErrorCode, string> = {
   BODY_MUST_BE_ARRAY: 'request body must be an array',
+  DASHBOARD_REPLACE_CONFIRMATION_REQUIRED: 'dashboard replacement would remove most existing data',
   DATABASE_NOT_CONFIGURED: 'database not configured',
   HEALTH_CHECK_UNAVAILABLE: 'health check unavailable',
   INTERNAL_ERROR: 'internal server error',
@@ -47,8 +49,64 @@ const DASHBOARD_ROUTE_ERROR_MESSAGES: Record<DashboardRouteErrorCode, string> = 
   NOT_FOUND: 'not found',
 };
 
+export const DASHBOARD_REPLACE_CONFIRMATION_HEADER = 'x-dashboard-replace-confirmation';
+export const DASHBOARD_REPLACE_CONFIRMATION_VALUE = 'allow-destructive';
+const DASHBOARD_PROJECT_IMPORT_BACKUP_TABLE = 'dashboard_project_import_backups_v1';
+const DASHBOARD_PROJECT_IMPORT_BACKUP_KEEP_LIMIT = 20;
+
+export type DashboardReplaceRisk = {
+  beforeCount: number;
+  afterCount: number;
+  deletedCount: number;
+  beforeModuleCount: number;
+  afterModuleCount: number;
+  removedModuleCount: number;
+  reason: 'none' | 'clear-all' | 'majority-row-delete' | 'majority-module-delete';
+  requiresConfirmation: boolean;
+};
+
+export function assessDashboardReplaceRisk(input: {
+  beforeCount: number;
+  afterCount: number;
+  beforeModuleCount: number;
+  afterModuleCount: number;
+  removedModuleCount: number;
+}): DashboardReplaceRisk {
+  const beforeCount = Math.max(0, Math.trunc(input.beforeCount));
+  const afterCount = Math.max(0, Math.trunc(input.afterCount));
+  const beforeModuleCount = Math.max(0, Math.trunc(input.beforeModuleCount));
+  const afterModuleCount = Math.max(0, Math.trunc(input.afterModuleCount));
+  const removedModuleCount = Math.max(0, Math.trunc(input.removedModuleCount));
+  const deletedCount = Math.max(0, beforeCount - afterCount);
+
+  let reason: DashboardReplaceRisk['reason'] = 'none';
+  if (beforeCount > 0 && afterCount === 0) {
+    reason = 'clear-all';
+  } else if (beforeCount >= 4 && deletedCount >= 3 && afterCount * 2 <= beforeCount) {
+    reason = 'majority-row-delete';
+  } else if (
+    beforeModuleCount >= 3 &&
+    removedModuleCount >= 2 &&
+    removedModuleCount * 2 >= beforeModuleCount
+  ) {
+    reason = 'majority-module-delete';
+  }
+
+  return {
+    beforeCount,
+    afterCount,
+    deletedCount,
+    beforeModuleCount,
+    afterModuleCount,
+    removedModuleCount,
+    reason,
+    requiresConfirmation: reason !== 'none',
+  };
+}
+
 let dashboardHealthTableReady: Promise<void> | null = null;
 let dashboardModuleOrderTableReady: Promise<void> | null = null;
+let dashboardProjectImportBackupTableReady: Promise<void> | null = null;
 const parsedDashboardProjectsCacheTtlMs = Number.parseInt(
   process.env.DASHBOARD_PROJECTS_CACHE_TTL_MS || '300000',
   10,
@@ -159,6 +217,72 @@ function writeDashboardProjectsListCache(rows: DashboardProjectRow[]): void {
 
 function invalidateDashboardProjectsListCache(): void {
   dashboardProjectsListCache = null;
+}
+
+function hasDashboardReplaceConfirmation(req: Request): boolean {
+  return req.get(DASHBOARD_REPLACE_CONFIRMATION_HEADER)?.trim().toLowerCase()
+    === DASHBOARD_REPLACE_CONFIRMATION_VALUE;
+}
+
+async function ensureDashboardProjectImportBackupTable(): Promise<void> {
+  if (!dbSql) return;
+  if (!dashboardProjectImportBackupTableReady) {
+    dashboardProjectImportBackupTableReady = (async () => {
+      await dbSql.unsafe(`
+        CREATE TABLE IF NOT EXISTS ${DASHBOARD_PROJECT_IMPORT_BACKUP_TABLE} (
+          id BIGSERIAL PRIMARY KEY,
+          snapshot_json JSONB NOT NULL,
+          before_count INTEGER NOT NULL,
+          incoming_count INTEGER NOT NULL,
+          created_at TIMESTAMP NOT NULL DEFAULT NOW()
+        )
+      `);
+    })();
+  }
+  await dashboardProjectImportBackupTableReady;
+}
+
+async function backupDashboardProjectsBeforeReplace(
+  rows: DashboardProjectRow[],
+  incomingCount: number,
+): Promise<void> {
+  if (!dbSql || rows.length === 0) return;
+  await ensureDashboardProjectImportBackupTable();
+  await dbSql.unsafe(
+    `
+      INSERT INTO ${DASHBOARD_PROJECT_IMPORT_BACKUP_TABLE} (
+        snapshot_json,
+        before_count,
+        incoming_count,
+        created_at
+      ) VALUES ($1::jsonb, $2, $3, NOW())
+    `,
+    [JSON.stringify(rows), rows.length, incomingCount],
+  );
+  await dbSql.unsafe(`
+    DELETE FROM ${DASHBOARD_PROJECT_IMPORT_BACKUP_TABLE}
+    WHERE id IN (
+      SELECT id
+      FROM ${DASHBOARD_PROJECT_IMPORT_BACKUP_TABLE}
+      ORDER BY created_at DESC, id DESC
+      OFFSET ${DASHBOARD_PROJECT_IMPORT_BACKUP_KEEP_LIMIT}
+    )
+  `);
+}
+
+function sendDashboardReplaceConfirmationRequired(
+  res: Response,
+  risk: DashboardReplaceRisk,
+): void {
+  res.status(409).json({
+    error: DASHBOARD_ROUTE_ERROR_MESSAGES.DASHBOARD_REPLACE_CONFIRMATION_REQUIRED,
+    code: 'DASHBOARD_REPLACE_CONFIRMATION_REQUIRED',
+    ...risk,
+    confirmation: {
+      header: DASHBOARD_REPLACE_CONFIRMATION_HEADER,
+      value: DASHBOARD_REPLACE_CONFIRMATION_VALUE,
+    },
+  });
 }
 
 function extractOrderedModuleNames(items: Array<Record<string, unknown>>): string[] {
@@ -407,6 +531,38 @@ export async function batchReplaceDashboardProjects(req: Request, res: Response)
     }
 
     const normalizedItems = [...noMoldItems, ...Array.from(dedupedByMold.values())];
+    const currentRows = await withDashboardDbRetry('load dashboard projects before replace', () =>
+      dashboardDb.select().from(dashboardProjects),
+    );
+    const beforeModuleNames = new Set(
+      currentRows
+        .map((row) => normalizeModuleName(row.projectName))
+        .filter(Boolean),
+    );
+    const afterModuleNames = new Set(
+      normalizedItems
+        .map((item) => normalizeModuleName(item.projectName))
+        .filter(Boolean),
+    );
+    const removedModuleCount = [...beforeModuleNames]
+      .filter((moduleName) => !afterModuleNames.has(moduleName))
+      .length;
+    const replaceRisk = assessDashboardReplaceRisk({
+      beforeCount: currentRows.length,
+      afterCount: normalizedItems.length,
+      beforeModuleCount: beforeModuleNames.size,
+      afterModuleCount: afterModuleNames.size,
+      removedModuleCount,
+    });
+
+    if (replaceRisk.requiresConfirmation && !hasDashboardReplaceConfirmation(req)) {
+      sendDashboardReplaceConfirmationRequired(res, replaceRisk);
+      return;
+    }
+
+    await withDashboardDbRetry('backup dashboard projects before replace', () =>
+      backupDashboardProjectsBeforeReplace(currentRows, normalizedItems.length),
+    );
     await withDashboardDbRetry('sync dashboard module order before replace', () =>
       syncDashboardModuleOrder(normalizedItems),
     );

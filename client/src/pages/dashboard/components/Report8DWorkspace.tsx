@@ -203,17 +203,6 @@ async function compressReport8DImage(file: File): Promise<File> {
   throw new Error("图片压缩后仍超过 1MB，请换一张更小的图片或先手工压缩后再上传");
 }
 
-function normalizeWorkspaceKey(projectName: string): string {
-  const normalized = projectName
-    .trim()
-    .replace(/[^\w\u4e00-\u9fa5.-]+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^[-_.]+|[-_.]+$/g, "")
-    .slice(0, 120);
-
-  return normalized ? `dashboard-report-8d-${normalized}` : DEFAULT_REPORT_8D_WORKSPACE_KEY;
-}
-
 function formatSyncLabel(prefix: string, updatedAt?: string): string {
   if (!updatedAt) {
     return prefix;
@@ -1359,7 +1348,7 @@ export default function Report8DWorkspace({
   productName,
   moldNumbers = EMPTY_MOLD_NUMBERS,
 }: Report8DWorkspaceProps) {
-  const workspaceKey = useMemo(() => normalizeWorkspaceKey(projectName), [projectName]);
+  const workspaceKey = DEFAULT_REPORT_8D_WORKSPACE_KEY;
   const moldNumbersKey = moldNumbers.join("\u001f");
   const stableMoldNumbers = useMemo(
     () => moldNumbers.map((moldNumber) => moldNumber.trim()).filter(Boolean),
